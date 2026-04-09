@@ -11,6 +11,7 @@ use ratatui::prelude::Backend;
 use ratatui::Terminal;
 
 use crate::action::Action;
+use crate::config::Config;
 use crate::event::{map_key_event, poll_event};
 use crate::model::{Message, Provider, Session, SessionId};
 use crate::provider::HistoryProvider;
@@ -25,14 +26,97 @@ pub enum AppMode {
     ViewSession,
     Search,
     Help,
+    Filter,
+}
+
+#[derive(Debug, Clone)]
+pub struct FilterState {
+    pub provider_enabled: std::collections::HashMap<Provider, bool>,
+    pub project_query: String,
+    pub date_from: Option<chrono::NaiveDate>,
+    pub date_to: Option<chrono::NaiveDate>,
+    pub cursor: usize,
+    pub editing_field: Option<FilterField>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilterField {
+    Project,
+    DateFrom,
+    DateTo,
+}
+
+impl FilterState {
+    fn new() -> Self {
+        let mut provider_enabled = std::collections::HashMap::new();
+        for p in Provider::all() {
+            provider_enabled.insert(*p, true);
+        }
+        Self {
+            provider_enabled,
+            project_query: String::new(),
+            date_from: None,
+            date_to: None,
+            cursor: 0,
+            editing_field: None,
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.provider_enabled.values().any(|v| !v)
+            || !self.project_query.is_empty()
+            || self.date_from.is_some()
+            || self.date_to.is_some()
+    }
+
+    fn matches(&self, session: &Session) -> bool {
+        if !self.provider_enabled.get(&session.provider).copied().unwrap_or(true) {
+            return false;
+        }
+
+        if !self.project_query.is_empty() {
+            let query = self.project_query.to_lowercase();
+            let name_match = session
+                .project_name
+                .as_deref()
+                .is_some_and(|n| n.to_lowercase().contains(&query));
+            let path_match = session
+                .project_path
+                .as_ref()
+                .and_then(|p| p.to_str())
+                .is_some_and(|p| p.to_lowercase().contains(&query));
+            if !name_match && !path_match {
+                return false;
+            }
+        }
+
+        if let Some(from) = self.date_from {
+            if session.started_at.date_naive() < from {
+                return false;
+            }
+        }
+        if let Some(to) = self.date_to {
+            if session.started_at.date_naive() > to {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn item_count() -> usize {
+        Provider::all().len() + 3 // providers + project + date_from + date_to
+    }
 }
 
 pub struct App {
+    config: Config,
     sessions: Vec<Session>,
     message_cache: LruCache<String, Vec<Message>>,
     mode: AppMode,
     loading: bool,
     should_quit: bool,
+    warnings: Vec<String>,
 
     session_list: SessionListComponent,
     message_view: MessageViewComponent,
@@ -48,21 +132,29 @@ pub struct App {
     filtered_session_ids: Option<Vec<String>>,
     index_ready: bool,
     index_progress: Option<(usize, usize)>,
+
+    filter: FilterState,
 }
 
 impl App {
-    pub fn new(providers: Vec<Box<dyn HistoryProvider>>) -> Self {
+    pub fn new(providers: Vec<Box<dyn HistoryProvider>>, config: Config) -> Self {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
+        let cache_size = NonZeroUsize::new(config.cache_size).unwrap_or(NonZeroUsize::new(20).unwrap());
+
+        let mut message_view = MessageViewComponent::new();
+        message_view.show_tool_calls = config.show_tool_calls;
 
         Self {
+            config,
             sessions: Vec::new(),
-            message_cache: LruCache::new(NonZeroUsize::new(20).unwrap()),
+            message_cache: LruCache::new(cache_size),
             mode: AppMode::Browse,
             loading: true,
             should_quit: false,
+            warnings: Vec::new(),
 
             session_list: SessionListComponent::new(),
-            message_view: MessageViewComponent::new(),
+            message_view,
             status_bar: StatusBarComponent::new(),
 
             providers: Arc::new(providers),
@@ -75,6 +167,8 @@ impl App {
             filtered_session_ids: None,
             index_ready: false,
             index_progress: None,
+
+            filter: FilterState::new(),
         }
     }
 
@@ -168,21 +262,37 @@ impl App {
         });
     }
 
+    fn display_sessions(&self) -> Vec<&Session> {
+        let base: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
+            ids.iter()
+                .filter_map(|id| self.sessions.iter().find(|s| s.id.0 == *id))
+                .collect()
+        } else {
+            self.sessions.iter().collect()
+        };
+
+        if self.filter.is_active() {
+            base.into_iter().filter(|s| self.filter.matches(s)).collect()
+        } else {
+            base
+        }
+    }
+
     fn display_count(&self) -> usize {
-        self.filtered_session_ids
-            .as_ref()
-            .map_or(self.sessions.len(), Vec::len)
+        self.display_sessions().len()
     }
 
     fn resolve_selected_session(&self) -> Option<(String, std::path::PathBuf, Provider)> {
         let idx = self.session_list.selected_index()?;
-        let session = if let Some(ref ids) = self.filtered_session_ids {
-            ids.get(idx)
-                .and_then(|id| self.sessions.iter().find(|s| s.id.0 == *id))
-        } else {
-            self.sessions.get(idx)
-        };
-        session.map(|s| (s.id.0.clone(), s.source_path.clone(), s.provider))
+        let display = self.display_sessions();
+        display.get(idx).map(|s| (s.id.0.clone(), s.source_path.clone(), s.provider))
+    }
+
+    fn apply_filters(&mut self) {
+        let count = self.display_count();
+        self.session_list
+            .state
+            .select(if count > 0 { Some(0) } else { None });
     }
 
     fn execute_search(&mut self) {
@@ -263,7 +373,7 @@ impl App {
                 AppMode::ViewSession => {
                     self.message_view.scroll_offset = 0;
                 }
-                AppMode::Help => {}
+                AppMode::Help | AppMode::Filter => {}
             },
             Action::GoToBottom => match self.mode {
                 AppMode::Browse | AppMode::Search => {
@@ -275,7 +385,7 @@ impl App {
                 AppMode::ViewSession => {
                     self.message_view.scroll_offset = u16::MAX;
                 }
-                AppMode::Help => {}
+                AppMode::Help | AppMode::Filter => {}
             },
             Action::ScrollUp => {
                 self.message_view.scroll_up(1);
@@ -336,6 +446,75 @@ impl App {
                 self.index_progress = None;
             }
 
+            // Filter
+            Action::ToggleFilter => {
+                if self.mode == AppMode::Filter {
+                    self.apply_filters();
+                    self.mode = AppMode::Browse;
+                } else {
+                    self.mode = AppMode::Filter;
+                }
+            }
+            Action::FilterNext => {
+                let max = FilterState::item_count();
+                if self.filter.cursor + 1 < max {
+                    self.filter.editing_field = None;
+                    self.filter.cursor += 1;
+                }
+            }
+            Action::FilterPrev => {
+                if self.filter.cursor > 0 {
+                    self.filter.editing_field = None;
+                    self.filter.cursor -= 1;
+                }
+            }
+            Action::FilterToggle => {
+                let providers = Provider::all();
+                if self.filter.cursor < providers.len() {
+                    let p = providers[self.filter.cursor];
+                    let enabled = self.filter.provider_enabled.entry(p).or_insert(true);
+                    *enabled = !*enabled;
+                }
+            }
+            Action::FilterEdit => {
+                let providers = Provider::all();
+                let offset = self.filter.cursor.saturating_sub(providers.len());
+                self.filter.editing_field = match offset {
+                    0 => Some(FilterField::Project),
+                    1 => Some(FilterField::DateFrom),
+                    2 => Some(FilterField::DateTo),
+                    _ => None,
+                };
+            }
+            Action::FilterInput(c) => {
+                match self.filter.editing_field {
+                    Some(FilterField::Project) => self.filter.project_query.push(c),
+                    Some(FilterField::DateFrom) => {
+                        push_date_char(&mut self.filter.date_from, c);
+                    }
+                    Some(FilterField::DateTo) => {
+                        push_date_char(&mut self.filter.date_to, c);
+                    }
+                    None => {
+                        // Space toggles provider checkboxes
+                        if c == ' ' {
+                            self.dispatch(Action::FilterToggle);
+                        }
+                    }
+                }
+            }
+            Action::FilterBackspace => {
+                match self.filter.editing_field {
+                    Some(FilterField::Project) => { self.filter.project_query.pop(); }
+                    Some(FilterField::DateFrom) => { self.filter.date_from = None; }
+                    Some(FilterField::DateTo) => { self.filter.date_to = None; }
+                    None => {}
+                }
+            }
+            Action::FilterClearAll => {
+                self.filter = FilterState::new();
+            }
+
             // Data events
             Action::SessionsLoaded(sessions) => {
                 self.sessions = sessions;
@@ -347,7 +526,9 @@ impl App {
             Action::MessagesLoaded(session_id, messages) => {
                 self.message_cache.put(session_id.0, messages);
             }
-            Action::LoadError(_msg) => {}
+            Action::LoadError(msg) => {
+                self.warnings.push(msg);
+            }
 
             Action::Resize(_, _) | Action::SwitchFocus => {}
         }
@@ -382,7 +563,15 @@ impl App {
 
         if let Some(provider) = provider {
             match provider.load_messages(&tmp_session) {
-                Ok(messages) => {
+                Ok(mut messages) => {
+                    let max = self.config.max_messages_per_session;
+                    if messages.len() > max {
+                        let total = messages.len();
+                        messages.truncate(max);
+                        self.warnings.push(format!(
+                            "Session truncated: showing {max} of {total} messages"
+                        ));
+                    }
                     self.message_cache.put(session_id.to_string(), messages);
                 }
                 Err(e) => {
@@ -413,13 +602,17 @@ impl App {
             ])
             .split(main_layout[0]);
 
-        // Compute display sessions (filtered or all)
-        let display: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
+        let base: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
             ids.iter()
                 .filter_map(|id| self.sessions.iter().find(|s| s.id.0 == *id))
                 .collect()
         } else {
             self.sessions.iter().collect()
+        };
+        let display: Vec<&Session> = if self.filter.is_active() {
+            base.into_iter().filter(|s| self.filter.matches(s)).collect()
+        } else {
+            base
         };
 
         // Session list
@@ -439,11 +632,14 @@ impl App {
             .render(selected_session, messages, view_focused, frame, content_layout[1]);
 
         // Status bar
+        let warning_count = self.warnings.len();
         self.status_bar.render(
             self.mode,
             self.loading,
             &self.search_query,
             self.index_progress,
+            warning_count,
+            self.filter.is_active(),
             frame,
             main_layout[1],
         );
@@ -452,30 +648,72 @@ impl App {
         if self.mode == AppMode::Help {
             render_help_overlay(frame, size);
         }
+
+        // Filter overlay
+        if self.mode == AppMode::Filter {
+            render_filter_overlay(frame, size, &self.filter);
+        }
     }
 }
 
+fn push_date_char(date: &mut Option<chrono::NaiveDate>, c: char) {
+    if !c.is_ascii_digit() && c != '-' {
+        return;
+    }
+    let mut buf = date.map_or_else(String::new, |d| d.format("%Y-%m-%d").to_string());
+    buf.push(c);
+    *date = chrono::NaiveDate::parse_from_str(&buf, "%Y-%m-%d").ok();
+}
+
 fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
-    use ratatui::style::{Color, Style};
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
     use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-    let help_text = "\
-Keybindings:
+    let header = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+    let key = Style::default().fg(Color::Yellow);
+    let desc = Style::default().fg(Color::White);
 
-  j / ↓       Next session / scroll down
-  k / ↑       Previous session / scroll up
-  Enter       Open selected session
-  Esc         Back to session list
-  g           Go to top
-  G           Go to bottom
-  t           Toggle tool call details
-  /           Search conversations
-  ?           Toggle this help
-  q           Quit
-  Ctrl+C      Force quit";
+    let lines = vec![
+        Line::from(Span::styled("Browse Mode", header)),
+        Line::from(vec![Span::styled("  j / Down  ", key), Span::styled("Next session", desc)]),
+        Line::from(vec![Span::styled("  k / Up    ", key), Span::styled("Previous session", desc)]),
+        Line::from(vec![Span::styled("  Enter     ", key), Span::styled("Open session", desc)]),
+        Line::from(vec![Span::styled("  g         ", key), Span::styled("Go to top", desc)]),
+        Line::from(vec![Span::styled("  G         ", key), Span::styled("Go to bottom", desc)]),
+        Line::from(vec![Span::styled("  /         ", key), Span::styled("Search conversations", desc)]),
+        Line::from(vec![Span::styled("  f         ", key), Span::styled("Open filter panel", desc)]),
+        Line::from(vec![Span::styled("  Tab       ", key), Span::styled("Switch focus", desc)]),
+        Line::raw(""),
+        Line::from(Span::styled("View Mode", header)),
+        Line::from(vec![Span::styled("  j / Down  ", key), Span::styled("Scroll down", desc)]),
+        Line::from(vec![Span::styled("  k / Up    ", key), Span::styled("Scroll up", desc)]),
+        Line::from(vec![Span::styled("  Ctrl+D    ", key), Span::styled("Page down", desc)]),
+        Line::from(vec![Span::styled("  Ctrl+U    ", key), Span::styled("Page up", desc)]),
+        Line::from(vec![Span::styled("  g / G     ", key), Span::styled("Top / bottom", desc)]),
+        Line::from(vec![Span::styled("  t         ", key), Span::styled("Toggle tool calls", desc)]),
+        Line::from(vec![Span::styled("  Esc       ", key), Span::styled("Back to list", desc)]),
+        Line::raw(""),
+        Line::from(Span::styled("Search Mode", header)),
+        Line::from(vec![Span::styled("  Type      ", key), Span::styled("Filter sessions", desc)]),
+        Line::from(vec![Span::styled("  Enter     ", key), Span::styled("Open selected", desc)]),
+        Line::from(vec![Span::styled("  Esc       ", key), Span::styled("Cancel search", desc)]),
+        Line::raw(""),
+        Line::from(Span::styled("Filter Panel", header)),
+        Line::from(vec![Span::styled("  j / k     ", key), Span::styled("Navigate items", desc)]),
+        Line::from(vec![Span::styled("  Space     ", key), Span::styled("Toggle provider", desc)]),
+        Line::from(vec![Span::styled("  e         ", key), Span::styled("Edit text field", desc)]),
+        Line::from(vec![Span::styled("  Ctrl+C    ", key), Span::styled("Clear all filters", desc)]),
+        Line::from(vec![Span::styled("  Esc / f   ", key), Span::styled("Close panel", desc)]),
+        Line::raw(""),
+        Line::from(Span::styled("Global", header)),
+        Line::from(vec![Span::styled("  ?         ", key), Span::styled("Toggle this help", desc)]),
+        Line::from(vec![Span::styled("  q         ", key), Span::styled("Quit", desc)]),
+        Line::from(vec![Span::styled("  Ctrl+C    ", key), Span::styled("Force quit", desc)]),
+    ];
 
     let help_width = 48;
-    let help_height = 16;
+    let help_height = u16::try_from(lines.len() + 2).unwrap_or(38).min(area.height.saturating_sub(2));
     let x = area.width.saturating_sub(help_width) / 2;
     let y = area.height.saturating_sub(help_height) / 2;
 
@@ -483,12 +721,118 @@ Keybindings:
 
     frame.render_widget(Clear, help_area);
     frame.render_widget(
-        Paragraph::new(help_text).block(
+        Paragraph::new(lines).block(
             Block::default()
                 .title(" Help ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)),
         ),
         help_area,
+    );
+}
+
+fn render_filter_overlay(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    filter: &FilterState,
+) {
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+
+    let providers = Provider::all();
+    let mut lines: Vec<Line> = Vec::new();
+
+    let header = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+    let selected_style = Style::default().bg(Color::DarkGray);
+
+    lines.push(Line::from(Span::styled("Providers", header)));
+    for (i, p) in providers.iter().enumerate() {
+        let enabled = filter.provider_enabled.get(p).copied().unwrap_or(true);
+        let checkbox = if enabled { "[x]" } else { "[ ]" };
+        let mut line = Line::from(vec![
+            Span::styled(
+                format!("  {checkbox} "),
+                Style::default().fg(if enabled { Color::Green } else { Color::Red }),
+            ),
+            Span::raw(p.as_str()),
+        ]);
+        if filter.cursor == i {
+            line = line.style(selected_style);
+        }
+        lines.push(line);
+    }
+
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled("Filters", header)));
+
+    // Project filter
+    let proj_idx = providers.len();
+    let proj_value = if filter.project_query.is_empty() {
+        "(any)".to_string()
+    } else {
+        filter.project_query.clone()
+    };
+    let editing_proj = filter.editing_field == Some(FilterField::Project);
+    let proj_suffix = if editing_proj { "█" } else { "" };
+    let mut proj_line = Line::from(vec![
+        Span::styled("  Project: ", Style::default().fg(Color::Yellow)),
+        Span::raw(format!("{proj_value}{proj_suffix}")),
+    ]);
+    if filter.cursor == proj_idx {
+        proj_line = proj_line.style(selected_style);
+    }
+    lines.push(proj_line);
+
+    // Date from
+    let from_idx = proj_idx + 1;
+    let from_value = filter
+        .date_from
+        .map_or_else(|| "(any)".to_string(), |d| d.format("%Y-%m-%d").to_string());
+    let editing_from = filter.editing_field == Some(FilterField::DateFrom);
+    let from_suffix = if editing_from { "█" } else { "" };
+    let mut from_line = Line::from(vec![
+        Span::styled("  From:    ", Style::default().fg(Color::Yellow)),
+        Span::raw(format!("{from_value}{from_suffix}")),
+    ]);
+    if filter.cursor == from_idx {
+        from_line = from_line.style(selected_style);
+    }
+    lines.push(from_line);
+
+    // Date to
+    let to_idx = from_idx + 1;
+    let to_value = filter
+        .date_to
+        .map_or_else(|| "(any)".to_string(), |d| d.format("%Y-%m-%d").to_string());
+    let editing_to = filter.editing_field == Some(FilterField::DateTo);
+    let to_suffix = if editing_to { "█" } else { "" };
+    let mut to_line = Line::from(vec![
+        Span::styled("  To:      ", Style::default().fg(Color::Yellow)),
+        Span::raw(format!("{to_value}{to_suffix}")),
+    ]);
+    if filter.cursor == to_idx {
+        to_line = to_line.style(selected_style);
+    }
+    lines.push(to_line);
+
+    let _ = to_idx; // used above
+
+    let panel_width = 40;
+    let panel_height = u16::try_from(lines.len() + 2).unwrap_or(20).min(area.height.saturating_sub(2));
+    let x = area.width.saturating_sub(panel_width) / 2;
+    let y = area.height.saturating_sub(panel_height) / 2;
+
+    let panel_area = ratatui::layout::Rect::new(x, y, panel_width, panel_height);
+
+    frame.render_widget(Clear, panel_area);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(" Filter ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        ),
+        panel_area,
     );
 }

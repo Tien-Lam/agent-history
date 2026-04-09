@@ -27,6 +27,15 @@ pub enum Action {
     SessionsLoaded(Vec<Session>),
     MessagesLoaded(SessionId, Vec<Message>),
     LoadError(String),
+    // Filter
+    ToggleFilter,
+    FilterNext,
+    FilterPrev,
+    FilterToggle,
+    FilterEdit,
+    FilterInput(char),
+    FilterBackspace,
+    FilterClearAll,
     // UI
     Resize(u16, u16),
     ToggleToolCalls,

@@ -38,7 +38,7 @@ fn make_terminal() -> Terminal<TestBackend> {
 
 #[test]
 fn app_initial_render_no_panic() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     app.load_sessions();
@@ -51,7 +51,7 @@ fn app_initial_render_no_panic() {
 
 #[test]
 fn app_navigate_and_select_session() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     app.load_sessions();
@@ -74,7 +74,7 @@ fn app_navigate_and_select_session() {
 
 #[test]
 fn app_scroll_in_session_view() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     app.load_sessions();
@@ -100,7 +100,7 @@ fn app_scroll_in_session_view() {
 
 #[test]
 fn app_toggle_tool_calls() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     app.load_sessions();
@@ -115,7 +115,7 @@ fn app_toggle_tool_calls() {
 
 #[test]
 fn app_help_overlay() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     app.load_sessions();
@@ -129,7 +129,7 @@ fn app_help_overlay() {
 
 #[test]
 fn app_go_to_top_and_bottom() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     app.load_sessions();
 
     app.dispatch(aghist::action::Action::GoToBottom);
@@ -141,7 +141,7 @@ fn app_go_to_top_and_bottom() {
 
 #[test]
 fn app_quit_action() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     app.load_sessions();
 
     assert!(!app.should_quit());
@@ -153,7 +153,7 @@ fn app_quit_action() {
 
 #[test]
 fn app_search_mode_enter_and_cancel() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     app.load_sessions();
 
     app.dispatch(aghist::action::Action::SearchStart);
@@ -166,7 +166,7 @@ fn app_search_mode_enter_and_cancel() {
 
 #[test]
 fn app_search_input_and_backspace() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     app.load_sessions();
 
     app.dispatch(aghist::action::Action::SearchStart);
@@ -182,7 +182,7 @@ fn app_search_input_and_backspace() {
 
 #[test]
 fn app_search_navigate_with_arrows() {
-    let mut app = App::new(all_providers());
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     app.load_sessions();
@@ -271,7 +271,7 @@ fn app_with_corrupt_fixtures_no_crash() {
         Box::new(OpenCodeProvider::new(vec![edge_cases_dir().join("opencode")])),
     ];
 
-    let mut app = App::new(providers);
+    let mut app = App::new(providers, aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     // Should not panic despite corrupt fixture data
@@ -291,7 +291,7 @@ fn app_with_corrupt_fixtures_no_crash() {
 #[test]
 fn app_with_no_providers_empty_state() {
     let providers: Vec<Box<dyn HistoryProvider>> = Vec::new();
-    let mut app = App::new(providers);
+    let mut app = App::new(providers, aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     app.load_sessions();
@@ -312,7 +312,7 @@ fn app_with_nonexistent_dirs_empty_state() {
         Box::new(OpenCodeProvider::new(vec![fake])),
     ];
 
-    let mut app = App::new(providers);
+    let mut app = App::new(providers, aghist::config::Config::default());
     let mut terminal = make_terminal();
 
     app.load_sessions();

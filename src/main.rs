@@ -1,4 +1,4 @@
-use aghist::{app, provider, search};
+use aghist::{app, config, provider, search};
 
 use std::io;
 
@@ -35,6 +35,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    let config = config::Config::load();
     let providers = provider::detect_all_providers();
 
     if cli.list {
@@ -49,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Run app
-    let mut app = app::App::new(providers);
+    let mut app = app::App::new(providers, config);
     let result = app.run(&mut terminal);
 
     // Restore terminal

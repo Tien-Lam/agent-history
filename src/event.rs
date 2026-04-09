@@ -24,6 +24,7 @@ pub fn map_key_event(key: KeyEvent, mode: AppMode) -> Option<Action> {
         AppMode::ViewSession => map_view_key(key),
         AppMode::Search => map_search_key(key),
         AppMode::Help => map_help_key(key),
+        AppMode::Filter => map_filter_key(key),
     }
 }
 
@@ -35,6 +36,7 @@ fn map_browse_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('g') => Some(Action::GoToTop),
         KeyCode::Char('G') => Some(Action::GoToBottom),
         KeyCode::Char('/') => Some(Action::SearchStart),
+        KeyCode::Char('f') => Some(Action::ToggleFilter),
         KeyCode::Char('?') => Some(Action::ToggleHelp),
         KeyCode::Tab => Some(Action::SwitchFocus),
         _ => None,
@@ -77,6 +79,22 @@ fn map_search_key(key: KeyEvent) -> Option<Action> {
 fn map_help_key(key: KeyEvent) -> Option<Action> {
     match key.code {
         KeyCode::Esc | KeyCode::Char('?') => Some(Action::ToggleHelp),
+        _ => None,
+    }
+}
+
+fn map_filter_key(key: KeyEvent) -> Option<Action> {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('f') => Some(Action::ToggleFilter),
+        KeyCode::Char('j') | KeyCode::Down => Some(Action::FilterNext),
+        KeyCode::Char('k') | KeyCode::Up => Some(Action::FilterPrev),
+        KeyCode::Char(' ') | KeyCode::Enter => Some(Action::FilterToggle),
+        KeyCode::Char('e') => Some(Action::FilterEdit),
+        KeyCode::Backspace => Some(Action::FilterBackspace),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(Action::FilterClearAll)
+        }
+        KeyCode::Char(c) => Some(Action::FilterInput(c)),
         _ => None,
     }
 }

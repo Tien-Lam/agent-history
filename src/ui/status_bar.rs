@@ -19,12 +19,15 @@ impl StatusBarComponent {
         Self
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         mode: AppMode,
         loading: bool,
         search_query: &str,
         index_progress: Option<(usize, usize)>,
+        warning_count: usize,
+        filter_active: bool,
         frame: &mut Frame,
         area: Rect,
     ) {
@@ -50,6 +53,7 @@ impl StatusBarComponent {
                 ("j/k", "navigate"),
                 ("Enter", "open"),
                 ("/", "search"),
+                ("f", "filter"),
                 ("?", "help"),
                 ("q", "quit"),
             ],
@@ -62,6 +66,13 @@ impl StatusBarComponent {
             ],
             AppMode::Search => unreachable!(),
             AppMode::Help => vec![("Esc", "close")],
+            AppMode::Filter => vec![
+                ("j/k", "navigate"),
+                ("Space", "toggle"),
+                ("e", "edit"),
+                ("Ctrl+C", "clear all"),
+                ("Esc", "close"),
+            ],
         };
 
         let mut spans: Vec<Span> = Vec::new();
@@ -89,6 +100,24 @@ impl StatusBarComponent {
             spans.push(Span::styled(
                 format!(": {desc}"),
                 Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        if filter_active {
+            spans.push(Span::raw("  │ "));
+            spans.push(Span::styled(
+                "FILTERED",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        if warning_count > 0 {
+            spans.push(Span::raw("  │ "));
+            spans.push(Span::styled(
+                format!("{warning_count} warning(s)"),
+                Style::default().fg(Color::Red),
             ));
         }
 

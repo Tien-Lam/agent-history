@@ -17,6 +17,16 @@ impl Provider {
             Self::OpenCode => "OpenCode",
         }
     }
+
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::ClaudeCode,
+            Self::CopilotCli,
+            Self::GeminiCli,
+            Self::CodexCli,
+            Self::OpenCode,
+        ]
+    }
 }
 
 impl std::fmt::Display for Provider {
