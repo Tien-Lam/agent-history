@@ -10,6 +10,7 @@ use aghist::provider::copilot_cli::CopilotCliProvider;
 use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
+use aghist::search::SearchIndex;
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -315,4 +316,87 @@ fn cache_lru_access_prevents_eviction() {
     assert!(cache.contains(&all_sessions[0].id.0), "recently accessed should survive");
     assert!(!cache.contains(&all_sessions[1].id.0), "LRU entry should be evicted");
     assert!(cache.contains(&all_sessions[2].id.0), "newest entry should be present");
+}
+
+// ─── Search index ───────────────────────────────────────────────────────────
+
+#[test]
+fn search_index_build_and_query() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+
+    let providers = all_providers();
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    let stats = index.build_index(&sessions, &providers, &tx).unwrap();
+    assert!(stats.messages_indexed > 0);
+
+    // Search for content we know exists in Claude fixture
+    let hits = index.search("build error", 10).unwrap();
+    assert!(!hits.is_empty(), "should find 'build error' in Claude fixture");
+    assert_eq!(hits[0].session_id, "session-abc123");
+    assert!(!hits[0].snippet.is_empty());
+
+    // Search for content in Gemini fixture
+    let hits = index.search("async", 10).unwrap();
+    assert!(!hits.is_empty(), "should find 'async' in Gemini fixture");
+
+    // Search for content that doesn't exist
+    let hits = index.search("xyznonexistent", 10).unwrap();
+    assert!(hits.is_empty());
+}
+
+#[test]
+fn search_index_incremental_rebuild() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+
+    let providers = all_providers();
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+
+    let (tx, _rx) = crossbeam_channel::unbounded();
+
+    // First build indexes everything
+    let stats1 = index.build_index(&sessions, &providers, &tx).unwrap();
+    assert!(stats1.sessions_indexed > 0);
+
+    // Second build should skip (mtime unchanged)
+    let stats2 = index.build_index(&sessions, &providers, &tx).unwrap();
+    assert_eq!(stats2.sessions_indexed, 0, "no sessions should need re-indexing");
+
+    // Search still works after incremental rebuild
+    let hits = index.search("build error", 10).unwrap();
+    assert!(!hits.is_empty());
+}
+
+#[test]
+fn search_index_clear_and_rebuild() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+
+    let providers = all_providers();
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    index.build_index(&sessions, &providers, &tx).unwrap();
+
+    // Clear wipes everything
+    index.clear().unwrap();
+    let hits = index.search("build error", 10).unwrap();
+    assert!(hits.is_empty(), "should find nothing after clear");
+
+    // Rebuild restores results
+    index.build_index(&sessions, &providers, &tx).unwrap();
+    let hits = index.search("build error", 10).unwrap();
+    assert!(!hits.is_empty(), "should find results after rebuild");
 }

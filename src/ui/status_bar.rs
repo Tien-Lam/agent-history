@@ -19,7 +19,32 @@ impl StatusBarComponent {
         Self
     }
 
-    pub fn render(&self, mode: AppMode, loading: bool, frame: &mut Frame, area: Rect) {
+    pub fn render(
+        &self,
+        mode: AppMode,
+        loading: bool,
+        search_query: &str,
+        index_progress: Option<(usize, usize)>,
+        frame: &mut Frame,
+        area: Rect,
+    ) {
+        let bg = Style::default().bg(Color::Rgb(30, 30, 30));
+
+        if mode == AppMode::Search {
+            let line = Line::from(vec![
+                Span::styled(
+                    " / ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(search_query),
+                Span::styled("█", Style::default().fg(Color::Cyan)),
+            ]);
+            frame.render_widget(Paragraph::new(line).style(bg), area);
+            return;
+        }
+
         let keys = match mode {
             AppMode::Browse => vec![
                 ("j/k", "navigate"),
@@ -35,13 +60,8 @@ impl StatusBarComponent {
                 ("?", "help"),
                 ("q", "quit"),
             ],
-            AppMode::Search => vec![
-                ("Enter", "search"),
-                ("Esc", "cancel"),
-            ],
-            AppMode::Help => vec![
-                ("Esc", "close"),
-            ],
+            AppMode::Search => unreachable!(),
+            AppMode::Help => vec![("Esc", "close")],
         };
 
         let mut spans: Vec<Span> = Vec::new();
@@ -53,7 +73,7 @@ impl StatusBarComponent {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::raw(" │ "));
+            spans.push(Span::raw("│ "));
         }
 
         for (i, (key, desc)) in keys.iter().enumerate() {
@@ -72,8 +92,15 @@ impl StatusBarComponent {
             ));
         }
 
+        if let Some((done, total)) = index_progress {
+            spans.push(Span::raw("  │ "));
+            spans.push(Span::styled(
+                format!("Indexing {done}/{total}"),
+                Style::default().fg(Color::Yellow),
+            ));
+        }
+
         let line = Line::from(spans);
-        let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Rgb(30, 30, 30)));
-        frame.render_widget(paragraph, area);
+        frame.render_widget(Paragraph::new(line).style(bg), area);
     }
 }

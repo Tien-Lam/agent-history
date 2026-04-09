@@ -20,6 +20,9 @@ pub enum Action {
     SearchBackspace,
     SearchSubmit,
     SearchCancel,
+    // Index (from background thread)
+    IndexProgress(usize, usize),
+    IndexReady,
     // Data (from background threads)
     SessionsLoaded(Vec<Session>),
     MessagesLoaded(SessionId, Vec<Message>),

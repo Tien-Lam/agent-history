@@ -24,7 +24,7 @@ impl SessionListComponent {
         Self { state }
     }
 
-    pub fn render(&mut self, sessions: &[Session], focused: bool, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, sessions: &[&Session], focused: bool, frame: &mut Frame, area: Rect) {
         let items: Vec<ListItem> = sessions
             .iter()
             .map(|s| {

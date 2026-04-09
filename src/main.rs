@@ -1,4 +1,4 @@
-use aghist::{app, provider};
+use aghist::{app, provider, search};
 
 use std::io;
 
@@ -16,12 +16,25 @@ struct Cli {
     /// List sessions without opening the TUI
     #[arg(long)]
     list: bool,
+
+    /// Force rebuild the search index
+    #[arg(long)]
+    reindex: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     color_eyre::install().ok();
 
     let cli = Cli::parse();
+
+    if cli.reindex {
+        let index_dir = search::SearchIndex::default_index_dir();
+        if let Ok(index) = search::SearchIndex::open_or_create(&index_dir) {
+            let _ = index.clear();
+            eprintln!("Search index cleared. Will rebuild on next launch.");
+        }
+    }
+
     let providers = provider::detect_all_providers();
 
     if cli.list {

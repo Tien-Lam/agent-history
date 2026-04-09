@@ -67,6 +67,8 @@ fn map_search_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Esc => Some(Action::SearchCancel),
         KeyCode::Enter => Some(Action::SearchSubmit),
         KeyCode::Backspace => Some(Action::SearchBackspace),
+        KeyCode::Up => Some(Action::PrevItem),
+        KeyCode::Down => Some(Action::NextItem),
         KeyCode::Char(c) => Some(Action::SearchInput(c)),
         _ => None,
     }

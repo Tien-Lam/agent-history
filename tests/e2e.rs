@@ -149,6 +149,56 @@ fn app_quit_action() {
     assert!(app.should_quit());
 }
 
+// ─── Search mode ─────────────────────────────────────────────────────────────
+
+#[test]
+fn app_search_mode_enter_and_cancel() {
+    let mut app = App::new(all_providers());
+    app.load_sessions();
+
+    app.dispatch(aghist::action::Action::SearchStart);
+    assert_eq!(app.mode(), AppMode::Search);
+    assert_eq!(app.session_count(), 5);
+
+    app.dispatch(aghist::action::Action::SearchCancel);
+    assert_eq!(app.mode(), AppMode::Browse);
+}
+
+#[test]
+fn app_search_input_and_backspace() {
+    let mut app = App::new(all_providers());
+    app.load_sessions();
+
+    app.dispatch(aghist::action::Action::SearchStart);
+    app.dispatch(aghist::action::Action::SearchInput('t'));
+    app.dispatch(aghist::action::Action::SearchInput('e'));
+    app.dispatch(aghist::action::Action::SearchInput('s'));
+    assert_eq!(app.mode(), AppMode::Search);
+
+    app.dispatch(aghist::action::Action::SearchBackspace);
+    app.dispatch(aghist::action::Action::SearchCancel);
+    assert_eq!(app.mode(), AppMode::Browse);
+}
+
+#[test]
+fn app_search_navigate_with_arrows() {
+    let mut app = App::new(all_providers());
+    let mut terminal = make_terminal();
+
+    app.load_sessions();
+    app.dispatch(aghist::action::Action::SearchStart);
+
+    app.dispatch(aghist::action::Action::NextItem);
+    app.dispatch(aghist::action::Action::NextItem);
+    terminal.draw(|frame| app.render(frame)).unwrap();
+
+    app.dispatch(aghist::action::Action::PrevItem);
+    terminal.draw(|frame| app.render(frame)).unwrap();
+
+    app.dispatch(aghist::action::Action::SearchSubmit);
+    assert_eq!(app.mode(), AppMode::ViewSession);
+}
+
 // ─── Key mapping integration ─────────────────────────────────────────────────
 
 #[test]
@@ -181,6 +231,32 @@ fn key_mapping_view_mode() {
     let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE);
     let action = map_key_event(key, AppMode::ViewSession);
     assert!(matches!(action, Some(aghist::action::Action::ToggleToolCalls)));
+}
+
+#[test]
+fn key_mapping_search_mode() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use aghist::event::map_key_event;
+
+    let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+    let action = map_key_event(key, AppMode::Search);
+    assert!(matches!(action, Some(aghist::action::Action::SearchCancel)));
+
+    let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    let action = map_key_event(key, AppMode::Search);
+    assert!(matches!(action, Some(aghist::action::Action::SearchSubmit)));
+
+    let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+    let action = map_key_event(key, AppMode::Search);
+    assert!(matches!(action, Some(aghist::action::Action::SearchInput('a'))));
+
+    let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+    let action = map_key_event(key, AppMode::Search);
+    assert!(matches!(action, Some(aghist::action::Action::PrevItem)));
+
+    let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+    let action = map_key_event(key, AppMode::Search);
+    assert!(matches!(action, Some(aghist::action::Action::NextItem)));
 }
 
 // ─── Error resilience E2E ────────────────────────────────────────────────────
