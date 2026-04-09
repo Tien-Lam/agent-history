@@ -71,45 +71,34 @@ impl HistoryProvider for CodexCliProvider {
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn collect_rollout_files(
     base: &Path,
     sessions: &mut Vec<Session>,
 ) -> Result<(), ProviderError> {
     // Walk year/month/day directories
-    let years = match std::fs::read_dir(base) {
-        Ok(entries) => entries,
-        Err(_) => return Ok(()),
-    };
+    let Ok(years) = std::fs::read_dir(base) else { return Ok(()) };
 
     for year_entry in years.flatten() {
-        if !year_entry.file_type().map_or(false, |t| t.is_dir()) {
+        if !year_entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
 
-        let months = match std::fs::read_dir(year_entry.path()) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
+        let Ok(months) = std::fs::read_dir(year_entry.path()) else { continue };
 
         for month_entry in months.flatten() {
-            if !month_entry.file_type().map_or(false, |t| t.is_dir()) {
+            if !month_entry.file_type().is_ok_and(|t| t.is_dir()) {
                 continue;
             }
 
-            let days = match std::fs::read_dir(month_entry.path()) {
-                Ok(entries) => entries,
-                Err(_) => continue,
-            };
+            let Ok(days) = std::fs::read_dir(month_entry.path()) else { continue };
 
             for day_entry in days.flatten() {
-                if !day_entry.file_type().map_or(false, |t| t.is_dir()) {
+                if !day_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
-                let files = match std::fs::read_dir(day_entry.path()) {
-                    Ok(entries) => entries,
-                    Err(_) => continue,
-                };
+                let Ok(files) = std::fs::read_dir(day_entry.path()) else { continue };
 
                 for file_entry in files.flatten() {
                     let path = file_entry.path();
@@ -118,7 +107,11 @@ fn collect_rollout_files(
                         .and_then(|n| n.to_str())
                         .unwrap_or("");
 
-                    if fname.starts_with("rollout-") && fname.ends_with(".jsonl") {
+                    if fname.starts_with("rollout-")
+                        && std::path::Path::new(fname)
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("jsonl"))
+                    {
                         if let Some(session) = build_session_from_rollout(&path) {
                             sessions.push(session);
                         }
@@ -140,7 +133,7 @@ fn build_session_from_rollout(path: &Path) -> Option<Session> {
     let mut message_count: usize = 0;
     let mut first_user_message: Option<String> = None;
 
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         if line.trim().is_empty() {
             continue;
         }
@@ -159,17 +152,14 @@ fn build_session_from_rollout(path: &Path) -> Option<Session> {
             }
         }
 
-        match entry.entry_type.as_deref() {
-            Some("user") | Some("assistant") => {
-                message_count += 1;
-                if entry.entry_type.as_deref() == Some("user")
-                    && first_user_message.is_none()
-                {
-                    first_user_message =
-                        entry.content.map(|c| c.chars().take(80).collect());
-                }
+        if let Some("user" | "assistant") = entry.entry_type.as_deref() {
+            message_count += 1;
+            if entry.entry_type.as_deref() == Some("user")
+                && first_user_message.is_none()
+            {
+                first_user_message =
+                    entry.content.map(|c| c.chars().take(80).collect());
             }
-            _ => {}
         }
     }
 

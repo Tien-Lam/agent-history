@@ -8,6 +8,12 @@ use crate::app::AppMode;
 
 pub struct StatusBarComponent;
 
+impl Default for StatusBarComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StatusBarComponent {
     pub fn new() -> Self {
         Self

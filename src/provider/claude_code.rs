@@ -80,7 +80,7 @@ impl HistoryProvider for ClaudeCodeProvider {
             })?;
 
             for project_entry in project_dirs.flatten() {
-                if !project_entry.file_type().map_or(false, |t| t.is_dir()) {
+                if !project_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
@@ -135,6 +135,7 @@ impl HistoryProvider for ClaudeCodeProvider {
 struct HistoryEntry {
     display: Option<String>,
     timestamp: Option<u64>,
+    #[allow(dead_code)]
     project: Option<String>,
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
@@ -186,10 +187,7 @@ fn build_session_metadata(
     let mut total_output_tokens: u64 = 0;
 
     for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
+        let Ok(line) = line else { continue };
         if line.trim().is_empty() {
             continue;
         }
@@ -208,38 +206,35 @@ fn build_session_metadata(
             }
         }
 
-        match entry.entry_type.as_deref() {
-            Some("user") | Some("assistant") => {
-                message_count += 1;
+        if let Some("user" | "assistant") = entry.entry_type.as_deref() {
+            message_count += 1;
 
-                if git_branch.is_none() {
-                    if let Some(ref branch) = entry.git_branch {
-                        git_branch = Some(branch.clone());
-                    }
+            if git_branch.is_none() {
+                if let Some(ref branch) = entry.git_branch {
+                    git_branch = Some(branch.clone());
                 }
-                if cwd.is_none() {
-                    if let Some(ref c) = entry.cwd {
-                        cwd = Some(c.clone());
-                    }
+            }
+            if cwd.is_none() {
+                if let Some(ref c) = entry.cwd {
+                    cwd = Some(c.clone());
                 }
+            }
 
-                if entry.entry_type.as_deref() == Some("assistant") {
-                    if let Some(ref msg) = entry.message {
-                        if model.is_none() {
-                            if let Some(ref m) = msg.model {
-                                model = Some(m.clone());
-                            }
+            if entry.entry_type.as_deref() == Some("assistant") {
+                if let Some(ref msg) = entry.message {
+                    if model.is_none() {
+                        if let Some(ref m) = msg.model {
+                            model = Some(m.clone());
                         }
-                        if let Some(ref usage) = msg.usage {
-                            total_input_tokens +=
-                                usage.input_tokens.unwrap_or(0);
-                            total_output_tokens +=
-                                usage.output_tokens.unwrap_or(0);
-                        }
+                    }
+                    if let Some(ref usage) = msg.usage {
+                        total_input_tokens +=
+                            usage.input_tokens.unwrap_or(0);
+                        total_output_tokens +=
+                            usage.output_tokens.unwrap_or(0);
                     }
                 }
             }
-            _ => {}
         }
     }
 
@@ -259,7 +254,7 @@ fn build_session_metadata(
             .iter()
             .find(|e| e.session_id.as_deref() == Some(session_id))
             .and_then(|e| e.timestamp)
-            .and_then(|ts| Utc.timestamp_millis_opt(ts as i64).single())
+            .and_then(|ts| Utc.timestamp_millis_opt(ts.cast_signed()).single())
     })?;
 
     let token_usage = if total_input_tokens > 0 || total_output_tokens > 0 {
@@ -305,12 +300,14 @@ struct RawSessionEntry {
 
 #[derive(Deserialize)]
 struct RawMessage {
+    #[allow(dead_code)]
     role: Option<String>,
     content: Option<serde_json::Value>,
     model: Option<String>,
     usage: Option<RawUsage>,
 }
 
+#[allow(clippy::struct_field_names)]
 #[derive(Deserialize)]
 struct RawUsage {
     input_tokens: Option<u64>,
@@ -341,10 +338,7 @@ fn parse_session_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
             _ => continue,
         };
 
-        let msg = match entry.message {
-            Some(ref m) => m,
-            None => continue,
-        };
+        let Some(ref msg) = entry.message else { continue };
 
         let timestamp = entry
             .timestamp
@@ -435,7 +429,7 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
                                 .to_string();
                             let is_error = item
                                 .get("is_error")
-                                .and_then(|v| v.as_bool())
+                                .and_then(serde_json::Value::as_bool)
                                 .unwrap_or(false);
                             let output = extract_tool_result_text(item);
                             blocks.push(ContentBlock::ToolResult(ToolResult {

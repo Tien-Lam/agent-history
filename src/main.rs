@@ -47,6 +47,7 @@ fn main() -> anyhow::Result<()> {
     result
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn list_sessions(providers: &[Box<dyn provider::HistoryProvider>]) -> anyhow::Result<()> {
     let mut all_sessions = Vec::new();
 

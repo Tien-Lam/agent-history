@@ -12,6 +12,12 @@ pub struct MessageViewComponent {
     pub show_tool_calls: bool,
 }
 
+impl Default for MessageViewComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MessageViewComponent {
     pub fn new() -> Self {
         Self {
@@ -20,6 +26,7 @@ impl MessageViewComponent {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn render(
         &self,
         session: Option<&Session>,
@@ -34,13 +41,11 @@ impl MessageViewComponent {
             Style::default().fg(Color::DarkGray)
         };
 
-        let title = session
-            .map(|s| {
-                let project = s.project_name.as_deref().unwrap_or("Session");
-                let model = s.model.as_deref().unwrap_or("unknown");
-                format!(" {project} ({model}) ")
-            })
-            .unwrap_or_else(|| " No session selected ".to_string());
+        let title = session.map_or_else(|| " No session selected ".to_string(), |s| {
+            let project = s.project_name.as_deref().unwrap_or("Session");
+            let model = s.model.as_deref().unwrap_or("unknown");
+            format!(" {project} ({model}) ")
+        });
 
         let block = Block::default()
             .title(title)

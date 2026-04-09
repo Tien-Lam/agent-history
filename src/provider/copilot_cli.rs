@@ -60,7 +60,7 @@ impl HistoryProvider for CopilotCliProvider {
             })?;
 
             for entry in session_dirs.flatten() {
-                if !entry.file_type().map_or(false, |t| t.is_dir()) {
+                if !entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
@@ -159,14 +159,11 @@ fn build_session(session_dir: &Path, workspace_path: &Path) -> Option<Session> {
 }
 
 fn count_message_events(path: &Path) -> usize {
-    let file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return 0,
-    };
+    let Ok(file) = std::fs::File::open(path) else { return 0 };
     let reader = BufReader::new(file);
     reader
         .lines()
-        .filter_map(|l| l.ok())
+        .map_while(Result::ok)
         .filter(|l| {
             l.contains("\"user.message\"")
                 || l.contains("\"assistant.message\"")

@@ -11,6 +11,12 @@ pub struct SessionListComponent {
     pub state: ListState,
 }
 
+impl Default for SessionListComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionListComponent {
     pub fn new() -> Self {
         let mut state = ListState::default();

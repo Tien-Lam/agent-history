@@ -87,11 +87,9 @@ impl App {
         loop {
             terminal.draw(|frame| self.render(frame))?;
 
-            if let Some(event) = poll_event(Duration::from_millis(50))? {
-                if let Event::Key(key) = event {
-                    if let Some(action) = map_key_event(key, self.mode) {
-                        self.dispatch(action);
-                    }
+            if let Some(Event::Key(key)) = poll_event(Duration::from_millis(50))? {
+                if let Some(action) = map_key_event(key, self.mode) {
+                    self.dispatch(action);
                 }
             }
 
@@ -129,6 +127,7 @@ impl App {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn dispatch(&mut self, action: Action) {
         match action {
             Action::Quit => {
@@ -162,7 +161,7 @@ impl App {
                     }
                 }
             }
-            Action::BackToList => {
+            Action::BackToList | Action::SearchCancel => {
                 self.mode = AppMode::Browse;
             }
             Action::GoToTop => match self.mode {
@@ -234,9 +233,6 @@ impl App {
             // Search (stubbed for Phase 1)
             Action::SearchStart => {
                 self.mode = AppMode::Search;
-            }
-            Action::SearchCancel => {
-                self.mode = AppMode::Browse;
             }
 
             // Unhandled for now

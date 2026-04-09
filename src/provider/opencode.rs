@@ -84,15 +84,11 @@ impl HistoryProvider for OpenCodeProvider {
                 })?;
 
             for project_entry in project_dirs.flatten() {
-                if !project_entry.file_type().map_or(false, |t| t.is_dir()) {
+                if !project_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
-                let files =
-                    match std::fs::read_dir(project_entry.path()) {
-                        Ok(entries) => entries,
-                        Err(_) => continue,
-                    };
+                let Ok(files) = std::fs::read_dir(project_entry.path()) else { continue };
 
                 for file_entry in files.flatten() {
                     let path = file_entry.path();
@@ -165,7 +161,7 @@ fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> 
         std::fs::read_dir(&message_dir)
             .map(|entries| {
                 entries
-                    .filter_map(|e| e.ok())
+                    .filter_map(Result::ok)
                     .filter(|e| {
                         e.path()
                             .extension()

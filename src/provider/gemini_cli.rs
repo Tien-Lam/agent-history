@@ -67,7 +67,7 @@ impl HistoryProvider for GeminiCliProvider {
             })?;
 
             for project_entry in project_dirs.flatten() {
-                if !project_entry.file_type().map_or(false, |t| t.is_dir()) {
+                if !project_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
@@ -95,7 +95,11 @@ impl HistoryProvider for GeminiCliProvider {
                         .and_then(|n| n.to_str())
                         .unwrap_or("");
 
-                    if !fname.starts_with("session-") || !fname.ends_with(".json") {
+                    if !fname.starts_with("session-")
+                        || !std::path::Path::new(fname)
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+                    {
                         continue;
                     }
 
@@ -121,15 +125,15 @@ impl HistoryProvider for GeminiCliProvider {
     }
 }
 
+#[derive(Deserialize)]
+struct ProjectsFile {
+    projects: HashMap<String, String>,
+}
+
 fn load_project_map(base: &Path) -> HashMap<String, String> {
     let path = base.join("projects.json");
     if !path.exists() {
         return HashMap::new();
-    }
-
-    #[derive(Deserialize)]
-    struct ProjectsFile {
-        projects: HashMap<String, String>,
     }
 
     std::fs::read_to_string(&path)
