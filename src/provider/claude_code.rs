@@ -24,7 +24,6 @@ impl ClaudeCodeProvider {
         }
     }
 
-    #[cfg(test)]
     pub fn new(dirs: Vec<PathBuf>) -> Self {
         Self { dirs }
     }

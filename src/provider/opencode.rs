@@ -14,6 +14,10 @@ pub struct OpenCodeProvider {
 }
 
 impl OpenCodeProvider {
+    pub fn new(dirs: Vec<PathBuf>) -> Self {
+        Self { dirs }
+    }
+
     pub fn detect() -> Option<Self> {
         let dirs = base_dirs();
         if dirs.iter().any(|d| d.exists()) {

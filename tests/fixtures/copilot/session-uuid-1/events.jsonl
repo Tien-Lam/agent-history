@@ -1,0 +1,3 @@
+{"id":"evt-001","type":"user.message","timestamp":"2025-04-08T09:00:00Z","content":"How do I sort a list in Python?"}
+{"id":"evt-002","type":"assistant.message","timestamp":"2025-04-08T09:00:03Z","content":"You can sort a list using the `sorted()` function or the `.sort()` method:\n```python\nmy_list = [3, 1, 2]\nsorted_list = sorted(my_list)\n```","model":"gpt-4o","usage":{"inputTokens":50,"outputTokens":80}}
+{"id":"evt-003","type":"tool.invoke","timestamp":"2025-04-08T09:00:05Z","toolName":"RunCommand","toolCallId":"tc-001","toolArgs":{"command":"python -c 'print(sorted([3,1,2]))'"},"content":""}

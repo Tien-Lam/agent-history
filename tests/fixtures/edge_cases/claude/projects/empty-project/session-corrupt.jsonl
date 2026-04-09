@@ -1,0 +1,6 @@
+this is not valid json at all
+{"type":"user","uuid":"msg-c01","timestamp":"2025-04-08T10:00:00Z","message":{"role":"user","content":"Hello"},"gitBranch":"main","cwd":"/tmp"}
+{invalid json missing closing brace
+{"type":"assistant","uuid":"msg-c02","timestamp":"2025-04-08T10:00:05Z","message":{"role":"assistant","content":"Hi there!","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5}}}
+
+{"type":"user","uuid":"msg-c03","timestamp":"2025-04-08T10:00:10Z","message":{"role":"user","content":""}}

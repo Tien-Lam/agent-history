@@ -1,0 +1,4 @@
+not json
+{"type":"user","content":"Hello","timestamp":"2025-01-01T00:00:00Z"}
+{broken
+{"type":"assistant","content":"Hi!","timestamp":"2025-01-01T00:00:05Z"}

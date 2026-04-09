@@ -1,0 +1,13 @@
+{
+  "sessionId": "gemini-bad-001",
+  "startTime": "2025-04-08T08:00:00Z",
+  "lastUpdated": "2025-04-08T08:10:00Z",
+  "messages": [
+    {
+      "id": "gm-bad-001",
+      "timestamp": "2025-04-08T08:00:00Z",
+      "type": "system",
+      "content": "Session started"
+    }
+  ]
+}

@@ -1,9 +1,4 @@
-mod action;
-mod app;
-mod event;
-mod model;
-mod provider;
-mod ui;
+use aghist::{app, provider};
 
 use std::io;
 

@@ -61,8 +61,28 @@ impl App {
         }
     }
 
+    pub fn mode(&self) -> AppMode {
+        self.mode
+    }
+
+    pub fn is_loading(&self) -> bool {
+        self.loading
+    }
+
+    pub fn session_count(&self) -> usize {
+        self.sessions.len()
+    }
+
+    pub fn selected_index(&self) -> Option<usize> {
+        self.session_list.selected_index()
+    }
+
+    pub fn should_quit(&self) -> bool {
+        self.should_quit
+    }
+
     pub fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> anyhow::Result<()> {
-        self.load_sessions_sync();
+        self.load_sessions();
 
         loop {
             terminal.draw(|frame| self.render(frame))?;
@@ -70,14 +90,14 @@ impl App {
             if let Some(event) = poll_event(Duration::from_millis(50))? {
                 if let Event::Key(key) = event {
                     if let Some(action) = map_key_event(key, self.mode) {
-                        self.update(action);
+                        self.dispatch(action);
                     }
                 }
             }
 
             // Drain background actions
             while let Ok(action) = self.action_rx.try_recv() {
-                self.update(action);
+                self.dispatch(action);
             }
 
             if self.should_quit {
@@ -88,7 +108,7 @@ impl App {
         Ok(())
     }
 
-    fn load_sessions_sync(&self) {
+    pub fn load_sessions(&mut self) {
         let tx = self.action_tx.clone();
         let mut all_sessions = Vec::new();
 
@@ -103,9 +123,13 @@ impl App {
 
         all_sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
         let _ = tx.send(Action::SessionsLoaded(all_sessions));
+
+        while let Ok(action) = self.action_rx.try_recv() {
+            self.dispatch(action);
+        }
     }
 
-    fn update(&mut self, action: Action) {
+    pub fn dispatch(&mut self, action: Action) {
         match action {
             Action::Quit => {
                 self.should_quit = true;
@@ -269,7 +293,7 @@ impl App {
         }
     }
 
-    fn render(&mut self, frame: &mut ratatui::Frame) {
+    pub fn render(&mut self, frame: &mut ratatui::Frame) {
         let size = frame.area();
 
         let main_layout = Layout::default()
