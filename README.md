@@ -4,6 +4,9 @@ Cross-platform TUI for viewing and searching AI agent conversation history.
 
 [![CI](https://github.com/Tien-Lam/agent-history/actions/workflows/ci.yml/badge.svg)](https://github.com/Tien-Lam/agent-history/actions/workflows/ci.yml)
 
+<!-- To record: install VHS (https://github.com/charmbracelet/vhs) and run `vhs demo.tape` -->
+![demo](demo.gif)
+
 ## Supported Providers
 
 - **Claude Code** — `~/.claude/projects/` conversations
@@ -24,6 +27,16 @@ Providers are auto-detected based on platform-specific default paths.
 - No async — fast startup, low resource usage
 
 ## Installation
+
+### Prebuilt binaries
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/Tien-Lam/agent-history/releases).
+
+| Platform | Archive |
+|----------|---------|
+| Linux x86_64 | `aghist-v*-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows x86_64 | `aghist-v*-x86_64-pc-windows-msvc.zip` |
+| macOS Apple Silicon | `aghist-v*-aarch64-apple-darwin.tar.gz` |
 
 ### From source
 
