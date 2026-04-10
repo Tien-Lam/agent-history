@@ -1,10 +1,11 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::app::AppMode;
+use crate::ui::palette;
 
 pub struct StatusBarComponent;
 
@@ -32,18 +33,18 @@ impl StatusBarComponent {
         frame: &mut Frame,
         area: Rect,
     ) {
-        let bg = Style::default().bg(Color::Rgb(30, 30, 30));
+        let bg = Style::default().bg(palette::SURFACE);
 
         if mode == AppMode::Search {
             let line = Line::from(vec![
                 Span::styled(
                     " / ",
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(palette::ACCENT)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::raw(search_query),
-                Span::styled("█", Style::default().fg(Color::Cyan)),
+                Span::styled(search_query, Style::default().fg(palette::TEXT)),
+                Span::styled("\u{2588}", Style::default().fg(palette::ACCENT)),
             ]);
             frame.render_widget(Paragraph::new(line).style(bg), area);
             return;
@@ -64,7 +65,6 @@ impl StatusBarComponent {
                 ("e", "export"),
                 ("Esc", "back"),
                 ("?", "help"),
-                ("q", "quit"),
             ],
             AppMode::Search => unreachable!(),
             AppMode::Help => vec![("Esc", "close")],
@@ -72,7 +72,7 @@ impl StatusBarComponent {
                 ("j/k", "navigate"),
                 ("Space", "toggle"),
                 ("e", "edit"),
-                ("Ctrl+C", "clear all"),
+                ("Ctrl+C", "clear"),
                 ("Esc", "close"),
             ],
             AppMode::ExportMenu => vec![
@@ -86,61 +86,79 @@ impl StatusBarComponent {
 
         if loading {
             spans.push(Span::styled(
-                " Loading... ",
+                " \u{25cf} Loading ",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(palette::YELLOW)
                     .add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::raw("│ "));
+            spans.push(Span::styled(
+                "\u{2502} ",
+                Style::default().fg(palette::TEXT_FAINT),
+            ));
         }
 
         for (i, (key, desc)) in keys.iter().enumerate() {
             if i > 0 {
-                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
+                    "  \u{2022}  ",
+                    Style::default().fg(palette::TEXT_FAINT),
+                ));
             }
             spans.push(Span::styled(
-                *key,
+                format!(" {key}"),
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(palette::ACCENT)
                     .add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::styled(
-                format!(": {desc}"),
-                Style::default().fg(Color::DarkGray),
+                format!(" {desc}"),
+                Style::default().fg(palette::TEXT_DIM),
             ));
         }
 
         if filter_active {
-            spans.push(Span::raw("  │ "));
             spans.push(Span::styled(
-                "FILTERED",
+                "  \u{2502} ",
+                Style::default().fg(palette::TEXT_FAINT),
+            ));
+            spans.push(Span::styled(
+                "\u{25cf} FILTERED",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(palette::YELLOW)
                     .add_modifier(Modifier::BOLD),
             ));
         }
 
         if warning_count > 0 {
-            spans.push(Span::raw("  │ "));
             spans.push(Span::styled(
-                format!("{warning_count} warning(s)"),
-                Style::default().fg(Color::Red),
+                "  \u{2502} ",
+                Style::default().fg(palette::TEXT_FAINT),
+            ));
+            spans.push(Span::styled(
+                format!("\u{26a0} {warning_count} warning(s)"),
+                Style::default().fg(palette::RED),
             ));
         }
 
         if let Some((done, total)) = index_progress {
-            spans.push(Span::raw("  │ "));
+            spans.push(Span::styled(
+                "  \u{2502} ",
+                Style::default().fg(palette::TEXT_FAINT),
+            ));
             spans.push(Span::styled(
                 format!("Indexing {done}/{total}"),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(palette::YELLOW),
             ));
         }
 
         if let Some(msg) = status_message {
-            spans.push(Span::raw("  │ "));
+            spans.push(Span::styled(
+                "  \u{2502} ",
+                Style::default().fg(palette::TEXT_FAINT),
+            ));
             spans.push(Span::styled(
                 msg.to_string(),
-                Style::default().fg(Color::Green),
+                Style::default().fg(palette::GREEN),
             ));
         }
 

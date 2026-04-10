@@ -210,6 +210,9 @@ impl App {
             terminal.draw(|frame| self.render(frame))?;
 
             if let Some(Event::Key(key)) = poll_event(Duration::from_millis(50))? {
+                if key.kind != crossterm::event::KeyEventKind::Press {
+                    continue;
+                }
                 if let Some(action) = map_key_event(key, self.mode) {
                     self.dispatch(action);
                 }
@@ -734,13 +737,17 @@ fn push_date_char(date: &mut Option<chrono::NaiveDate>, c: char) {
 }
 
 fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
-    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+    use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 
-    let header = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
-    let key = Style::default().fg(Color::Yellow);
-    let desc = Style::default().fg(Color::White);
+    use crate::ui::palette;
+
+    let header = Style::default()
+        .fg(palette::ACCENT)
+        .add_modifier(Modifier::BOLD);
+    let key = Style::default().fg(palette::PEACH);
+    let desc = Style::default().fg(palette::TEXT);
 
     let lines = vec![
         Line::from(Span::styled("Browse Mode", header)),
@@ -793,38 +800,52 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Paragraph::new(lines).block(
             Block::default()
                 .title(" Help ")
+                .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(palette::ACCENT)),
         ),
         help_area,
     );
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_filter_overlay(
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
     filter: &FilterState,
 ) {
-    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+    use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
+
+    use crate::ui::palette;
 
     let providers = Provider::all();
     let mut lines: Vec<Line> = Vec::new();
 
-    let header = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
-    let selected_style = Style::default().bg(Color::DarkGray);
+    let header = Style::default()
+        .fg(palette::ACCENT)
+        .add_modifier(Modifier::BOLD);
+    let selected_style = Style::default().bg(palette::OVERLAY);
 
     lines.push(Line::from(Span::styled("Providers", header)));
     for (i, p) in providers.iter().enumerate() {
         let enabled = filter.provider_enabled.get(p).copied().unwrap_or(true);
-        let checkbox = if enabled { "[x]" } else { "[ ]" };
+        let checkbox = if enabled { "\u{25c9}" } else { "\u{25ef}" };
         let mut line = Line::from(vec![
             Span::styled(
                 format!("  {checkbox} "),
-                Style::default().fg(if enabled { Color::Green } else { Color::Red }),
+                Style::default().fg(if enabled {
+                    palette::GREEN
+                } else {
+                    palette::TEXT_FAINT
+                }),
             ),
-            Span::raw(p.as_str()),
+            Span::styled(
+                p.as_str(),
+                Style::default().fg(palette::TEXT),
+            ),
         ]);
         if filter.cursor == i {
             line = line.style(selected_style);
@@ -835,7 +856,6 @@ fn render_filter_overlay(
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled("Filters", header)));
 
-    // Project filter
     let proj_idx = providers.len();
     let proj_value = if filter.project_query.is_empty() {
         "(any)".to_string()
@@ -843,49 +863,56 @@ fn render_filter_overlay(
         filter.project_query.clone()
     };
     let editing_proj = filter.editing_field == Some(FilterField::Project);
-    let proj_suffix = if editing_proj { "█" } else { "" };
+    let proj_suffix = if editing_proj { "\u{2588}" } else { "" };
     let mut proj_line = Line::from(vec![
-        Span::styled("  Project: ", Style::default().fg(Color::Yellow)),
-        Span::raw(format!("{proj_value}{proj_suffix}")),
+        Span::styled("  Project: ", Style::default().fg(palette::PEACH)),
+        Span::styled(
+            format!("{proj_value}{proj_suffix}"),
+            Style::default().fg(palette::TEXT),
+        ),
     ]);
     if filter.cursor == proj_idx {
         proj_line = proj_line.style(selected_style);
     }
     lines.push(proj_line);
 
-    // Date from
     let from_idx = proj_idx + 1;
     let from_value = filter
         .date_from
         .map_or_else(|| "(any)".to_string(), |d| d.format("%Y-%m-%d").to_string());
     let editing_from = filter.editing_field == Some(FilterField::DateFrom);
-    let from_suffix = if editing_from { "█" } else { "" };
+    let from_suffix = if editing_from { "\u{2588}" } else { "" };
     let mut from_line = Line::from(vec![
-        Span::styled("  From:    ", Style::default().fg(Color::Yellow)),
-        Span::raw(format!("{from_value}{from_suffix}")),
+        Span::styled("  From:    ", Style::default().fg(palette::PEACH)),
+        Span::styled(
+            format!("{from_value}{from_suffix}"),
+            Style::default().fg(palette::TEXT),
+        ),
     ]);
     if filter.cursor == from_idx {
         from_line = from_line.style(selected_style);
     }
     lines.push(from_line);
 
-    // Date to
     let to_idx = from_idx + 1;
     let to_value = filter
         .date_to
         .map_or_else(|| "(any)".to_string(), |d| d.format("%Y-%m-%d").to_string());
     let editing_to = filter.editing_field == Some(FilterField::DateTo);
-    let to_suffix = if editing_to { "█" } else { "" };
+    let to_suffix = if editing_to { "\u{2588}" } else { "" };
     let mut to_line = Line::from(vec![
-        Span::styled("  To:      ", Style::default().fg(Color::Yellow)),
-        Span::raw(format!("{to_value}{to_suffix}")),
+        Span::styled("  To:      ", Style::default().fg(palette::PEACH)),
+        Span::styled(
+            format!("{to_value}{to_suffix}"),
+            Style::default().fg(palette::TEXT),
+        ),
     ]);
     if filter.cursor == to_idx {
         to_line = to_line.style(selected_style);
     }
     lines.push(to_line);
 
-    let _ = to_idx; // used above
+    let _ = to_idx;
 
     let panel_width = 40;
     let panel_height = u16::try_from(lines.len() + 2).unwrap_or(20).min(area.height.saturating_sub(2));
@@ -899,8 +926,10 @@ fn render_filter_overlay(
         Paragraph::new(lines).block(
             Block::default()
                 .title(" Filter ")
+                .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow)),
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(palette::YELLOW)),
         ),
         panel_area,
     );
@@ -911,22 +940,29 @@ fn render_export_overlay(
     area: ratatui::layout::Rect,
     cursor: usize,
 ) {
-    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+    use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
+
+    use crate::ui::palette;
 
     let formats = ExportFormat::all();
-    let selected_style = Style::default().bg(Color::DarkGray);
-    let key_style = Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD);
+    let selected_style = Style::default().bg(palette::OVERLAY);
 
     let mut lines: Vec<Line> = Vec::new();
     for (i, fmt) in formats.iter().enumerate() {
-        let marker = if i == cursor { ">" } else { " " };
+        let marker = if i == cursor { "\u{25b8}" } else { " " };
         let mut line = Line::from(vec![
-            Span::styled(format!(" {marker} "), key_style),
-            Span::raw(format!("{} (.{})", fmt.label(), fmt.extension())),
+            Span::styled(
+                format!(" {marker} "),
+                Style::default()
+                    .fg(palette::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{} (.{})", fmt.label(), fmt.extension()),
+                Style::default().fg(palette::TEXT),
+            ),
         ]);
         if i == cursor {
             line = line.style(selected_style);
@@ -947,8 +983,10 @@ fn render_export_overlay(
         Paragraph::new(lines).block(
             Block::default()
                 .title(" Export As ")
+                .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Green)),
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(palette::GREEN)),
         ),
         panel_area,
     );

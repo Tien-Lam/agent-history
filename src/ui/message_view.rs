@@ -1,11 +1,11 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::model::{ContentBlock, Message, Role, Session};
-use crate::ui::role_style;
+use crate::ui::{border_style, palette, role_style};
 
 pub struct MessageViewComponent {
     pub scroll_offset: u16,
@@ -35,32 +35,38 @@ impl MessageViewComponent {
         frame: &mut Frame,
         area: Rect,
     ) {
-        let border_style = if focused {
-            Style::default().fg(Color::Blue)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-
-        let title = session.map_or_else(|| " No session selected ".to_string(), |s| {
-            let project = s.project_name.as_deref().unwrap_or("Session");
-            let model = s.model.as_deref().unwrap_or("unknown");
-            format!(" {project} ({model}) ")
-        });
+        let title = session.map_or_else(
+            || " No session selected ".to_string(),
+            |s| {
+                let project = s.project_name.as_deref().unwrap_or("Session");
+                let model = s.model.as_deref().unwrap_or("unknown");
+                format!(" {project} \u{2022} {model} ")
+            },
+        );
 
         let block = Block::default()
             .title(title)
+            .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
             .borders(Borders::ALL)
-            .border_style(border_style);
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .border_style(border_style(focused));
 
         let Some(messages) = messages else {
-            let placeholder =
-                Paragraph::new("Select a session to view the conversation").block(block);
+            let placeholder = Paragraph::new(Line::from(Span::styled(
+                "Select a session to view the conversation",
+                Style::default().fg(palette::TEXT_DIM),
+            )))
+            .block(block);
             frame.render_widget(placeholder, area);
             return;
         };
 
         if messages.is_empty() {
-            let placeholder = Paragraph::new("No messages in this session").block(block);
+            let placeholder = Paragraph::new(Line::from(Span::styled(
+                "No messages in this session",
+                Style::default().fg(palette::TEXT_DIM),
+            )))
+            .block(block);
             frame.render_widget(placeholder, area);
             return;
         }
@@ -68,7 +74,6 @@ impl MessageViewComponent {
         let mut lines: Vec<Line> = Vec::new();
 
         for msg in messages {
-            // Skip tool results in user messages — they're shown with the tool call
             if msg.role == Role::User
                 && msg
                     .content
@@ -78,79 +83,104 @@ impl MessageViewComponent {
                 continue;
             }
 
-            // Role header
+            // Role header with separator
             let time_str = msg.timestamp.format("%H:%M:%S").to_string();
+            let role_label = format!(" {} ", msg.role);
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("[{}]", msg.role),
-                    role_style(msg.role).add_modifier(Modifier::BOLD),
+                    role_label,
+                    role_style(msg.role)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::raw(" "),
-                Span::styled(time_str, Style::default().fg(Color::DarkGray)),
+                Span::styled("  ", Style::default()),
+                Span::styled(time_str, Style::default().fg(palette::TEXT_FAINT)),
             ]));
+            // Thin separator after header
+            lines.push(Line::from(Span::styled(
+                "\u{2500}".repeat(40),
+                Style::default().fg(palette::TEXT_FAINT),
+            )));
 
-            for block in &msg.content {
-                match block {
+            for content_block in &msg.content {
+                match content_block {
                     ContentBlock::Text(text) => {
                         for text_line in text.lines() {
-                            lines.push(Line::from(Span::raw(text_line.to_string())));
+                            lines.push(Line::from(Span::styled(
+                                format!(" {text_line}"),
+                                Style::default().fg(palette::TEXT),
+                            )));
                         }
                     }
                     ContentBlock::CodeBlock { language, code } => {
                         let lang_label = language.as_deref().unwrap_or("code");
                         lines.push(Line::from(Span::styled(
-                            format!("  ┌─ {lang_label} ─"),
-                            Style::default().fg(Color::DarkGray),
+                            format!(" \u{256d}\u{2500} {lang_label} \u{2500}\u{2500}\u{2500}"),
+                            Style::default().fg(palette::TEXT_FAINT),
                         )));
                         for code_line in code.lines() {
-                            lines.push(Line::from(Span::styled(
-                                format!("  │ {code_line}"),
-                                Style::default().fg(Color::Rgb(180, 180, 180)),
-                            )));
+                            lines.push(Line::from(vec![
+                                Span::styled(
+                                    " \u{2502} ",
+                                    Style::default().fg(palette::TEXT_FAINT),
+                                ),
+                                Span::styled(
+                                    code_line.to_string(),
+                                    Style::default().fg(palette::TEAL),
+                                ),
+                            ]));
                         }
                         lines.push(Line::from(Span::styled(
-                            "  └────",
-                            Style::default().fg(Color::DarkGray),
+                            " \u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+                            Style::default().fg(palette::TEXT_FAINT),
                         )));
                     }
                     ContentBlock::ToolUse(tool_call) => {
-                        let marker = if self.show_tool_calls { "▼" } else { "▶" };
+                        let marker = if self.show_tool_calls {
+                            "\u{25bc}"
+                        } else {
+                            "\u{25b6}"
+                        };
                         lines.push(Line::from(vec![
                             Span::styled(
-                                format!("  {marker} [Tool: {}]", tool_call.name),
+                                format!(" {marker} "),
+                                Style::default().fg(palette::YELLOW),
+                            ),
+                            Span::styled(
+                                &tool_call.name,
                                 Style::default()
-                                    .fg(Color::Yellow)
+                                    .fg(palette::YELLOW)
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         if self.show_tool_calls {
                             for arg_line in tool_call.arguments.lines().take(20) {
                                 lines.push(Line::from(Span::styled(
-                                    format!("    {arg_line}"),
-                                    Style::default().fg(Color::DarkGray),
+                                    format!("   {arg_line}"),
+                                    Style::default().fg(palette::TEXT_DIM),
                                 )));
                             }
                         }
                     }
                     ContentBlock::ToolResult(result) => {
                         if self.show_tool_calls {
-                            let status = if result.success { "ok" } else { "err" };
-                            let status_color = if result.success {
-                                Color::Green
+                            let (status, color) = if result.success {
+                                ("\u{2714} ok", palette::GREEN)
                             } else {
-                                Color::Red
+                                ("\u{2718} error", palette::RED)
                             };
                             lines.push(Line::from(vec![
-                                Span::raw("    "),
+                                Span::styled("   ", Style::default()),
                                 Span::styled(
-                                    format!("[{status}] "),
-                                    Style::default().fg(status_color),
+                                    status,
+                                    Style::default()
+                                        .fg(color)
+                                        .add_modifier(Modifier::BOLD),
                                 ),
                             ]));
                             for out_line in result.output.lines().take(10) {
                                 lines.push(Line::from(Span::styled(
-                                    format!("    {out_line}"),
-                                    Style::default().fg(Color::DarkGray),
+                                    format!("   {out_line}"),
+                                    Style::default().fg(palette::TEXT_DIM),
                                 )));
                             }
                         }
@@ -158,29 +188,33 @@ impl MessageViewComponent {
                     ContentBlock::Thinking(text) => {
                         if self.show_tool_calls && !text.is_empty() {
                             lines.push(Line::from(Span::styled(
-                                "  [Thinking...]",
+                                " \u{1f4ad} Thinking",
                                 Style::default()
-                                    .fg(Color::DarkGray)
+                                    .fg(palette::MAUVE)
                                     .add_modifier(Modifier::ITALIC),
                             )));
                             for thought_line in text.lines().take(5) {
                                 lines.push(Line::from(Span::styled(
-                                    format!("    {thought_line}"),
-                                    Style::default().fg(Color::DarkGray),
+                                    format!("   {thought_line}"),
+                                    Style::default()
+                                        .fg(palette::TEXT_DIM)
+                                        .add_modifier(Modifier::ITALIC),
                                 )));
                             }
                         }
                     }
                     ContentBlock::Error(text) => {
                         lines.push(Line::from(Span::styled(
-                            format!("  Error: {text}"),
-                            Style::default().fg(Color::Red),
+                            format!(" \u{2718} Error: {text}"),
+                            Style::default()
+                                .fg(palette::RED)
+                                .add_modifier(Modifier::BOLD),
                         )));
                     }
                 }
             }
 
-            // Blank line between messages
+            // Spacing between messages
             lines.push(Line::raw(""));
         }
 

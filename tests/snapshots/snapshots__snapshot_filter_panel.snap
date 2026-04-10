@@ -2,32 +2,32 @@
 source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
-┌ Sessions (5) ────────────────────┐┌ test/project (claude-sonnet-4-20250514) ─────────────────────────────────────────┐
-│Apr 08  Claude Code               ││Select a session to view the conversation                                         │
-│  test/project                    ││                                                                                  │
-│  main                            ││                                                                                  │
-│  Fix the build error             ││                                                                                  │
+╭ Sessions (5) ────────────────────╮╭ test/project • claude-sonnet-4-20250514 ─────────────────────────────────────────╮
+│  Claude Code  Apr 08             ││Select a session to view the conversation                                         │
+│    test/project                  ││                                                                                  │
+│     main                        ││                                                                                  │
+│    Fix the build error           ││                                                                                  │
 │                                  ││                                                                                  │
-│Apr 08  Copilot CLI               ││                                                                                  │
-│  myapp                           ││                                                                                  │
+│  Copilot CLI  Apr 08             ││                                                                                  │
+│    myapp                         ││                                                                                  │
 │                                  ││                                                                                  │
-│Apr 08  Gemini CLI                ││                                                                                  │
-│  test-project                    ││                                                                                  │
-│  Explain how async/await works in││                                                                                  │
+│  Gemini CLI  Apr 08              ││                                                                                  │
+│    test-project                  ││                                                                                  │
+│    Explain how async/await works ││                                                                                  │
 │                                  ││                                                                                  │
-│Apr 08  Codex CLI                 ││   ┌ Filter ──────────────────────────────┐                                       │
-│  (unknown project)               ││   │Providers                             │                                       │
-│  Add error handling to the API en││   │  [x] Claude Code                     │                                       │
-│                                  ││   │  [x] Copilot CLI                     │                                       │
-│Apr 08  OpenCode                  ││   │  [x] Gemini CLI                      │                                       │
-│  dbproject                       ││   │  [x] Codex CLI                       │                                       │
-│  Refactor database layer         ││   │  [x] OpenCode                        │                                       │
+│  Codex CLI  Apr 08               ││   ╭ Filter ──────────────────────────────╮                                       │
+│    (unknown project)             ││   │Providers                             │                                       │
+│    Add error handling to the API ││   │  ◉ Claude Code                       │                                       │
+│                                  ││   │  ◉ Copilot CLI                       │                                       │
+│  OpenCode  Apr 08                ││   │  ◉ Gemini CLI                        │                                       │
+│    dbproject                     ││   │  ◉ Codex CLI                         │                                       │
+│    Refactor database layer       ││   │  ◉ OpenCode                          │                                       │
 │                                  ││   │                                      │                                       │
 │                                  ││   │Filters                               │                                       │
 │                                  ││   │  Project: (any)                      │                                       │
 │                                  ││   │  From:    (any)                      │                                       │
 │                                  ││   │  To:      (any)                      │                                       │
-│                                  ││   └──────────────────────────────────────┘                                       │
+│                                  ││   ╰──────────────────────────────────────╯                                       │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
@@ -40,5 +40,5 @@ expression: render_to_text(&terminal)
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
-└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
-j/k: navigate  Space: toggle  e: edit  Ctrl+C: clear all  Esc: close
+╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯
+ j/k navigate  •   Space toggle  •   e edit  •   Ctrl+C clear  •   Esc close

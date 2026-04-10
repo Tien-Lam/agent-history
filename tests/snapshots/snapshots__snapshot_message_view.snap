@@ -2,28 +2,26 @@
 source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
-┌ Sessions (5) ────────────────────┐┌ test/project (claude-sonnet-4-20250514) ─────────────────────────────────────────┐
-│Apr 08  Claude Code               ││[You] 10:00:00                                                                    │
-│  test/project                    ││Fix the build error in main.rs                                                    │
-│  main                            ││                                                                                  │
-│  Fix the build error             ││[Assistant] 10:00:05                                                              │
-│                                  ││I'll fix the build error.                                                         │
-│Apr 08  Copilot CLI               ││  ▶ [Tool: Read]                                                                  │
-│  myapp                           ││                                                                                  │
-│                                  ││[Assistant] 10:00:15                                                              │
-│Apr 08  Gemini CLI                ││Here's the fix:                                                                   │
-│  test-project                    ││  ┌─ rust ─                                                                       │
-│  Explain how async/await works in││  │ fn main() {                                                                   │
-│                                  ││  │     println!("hello");                                                        │
-│Apr 08  Codex CLI                 ││  │ }                                                                             │
-│  (unknown project)               ││  └────                                                                           │
-│  Add error handling to the API en││The issue was a missing semicolon.                                                │
-│                                  ││                                                                                  │
-│Apr 08  OpenCode                  ││                                                                                  │
-│  dbproject                       ││                                                                                  │
-│  Refactor database layer         ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
+╭ Sessions (5) ────────────────────╮╭ test/project • claude-sonnet-4-20250514 ─────────────────────────────────────────╮
+│  Claude Code  Apr 08             ││ You   10:00:00                                                                   │
+│    test/project                  ││────────────────────────────────────────                                          │
+│     main                        ││ Fix the build error in main.rs                                                   │
+│    Fix the build error           ││                                                                                  │
+│                                  ││ Assistant   10:00:05                                                             │
+│  Copilot CLI  Apr 08             ││────────────────────────────────────────                                          │
+│    myapp                         ││ I'll fix the build error.                                                        │
+│                                  ││ ▶ Read                                                                           │
+│  Gemini CLI  Apr 08              ││                                                                                  │
+│    test-project                  ││ Assistant   10:00:15                                                             │
+│    Explain how async/await works ││────────────────────────────────────────                                          │
+│                                  ││ Here's the fix:                                                                  │
+│  Codex CLI  Apr 08               ││ ╭─ rust ───                                                                      │
+│    (unknown project)             ││ │ fn main() {                                                                    │
+│    Add error handling to the API ││ │     println!("hello");                                                         │
+│                                  ││ │ }                                                                              │
+│  OpenCode  Apr 08                ││ ╰─────                                                                           │
+│    dbproject                     ││ The issue was a missing semicolon.                                               │
+│    Refactor database layer       ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
@@ -40,5 +38,7 @@ expression: render_to_text(&terminal)
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
-└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
-j/k: scroll  t: tool calls  e: export  Esc: back  ?: help  q: quit
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯
+ j/k scroll  •   t tool calls  •   e export  •   Esc back  •   ? help

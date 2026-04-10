@@ -1,11 +1,12 @@
 use chrono::Utc;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 use ratatui::Frame;
 
 use crate::model::Session;
+use crate::ui::{border_style, highlight_style, palette};
 
 pub struct SessionListComponent {
     pub state: ListState,
@@ -40,65 +41,60 @@ impl SessionListComponent {
                     .as_deref()
                     .unwrap_or("")
                     .chars()
-                    .take(60)
+                    .take(80)
                     .collect::<String>();
 
                 let mut lines = vec![
                     Line::from(vec![
-                        Span::styled(time, Style::default().fg(Color::DarkGray)),
-                        Span::raw("  "),
                         Span::styled(
                             provider,
                             Style::default()
                                 .fg(provider_color(s.provider))
                                 .add_modifier(Modifier::BOLD),
                         ),
+                        Span::styled("  ", Style::default()),
+                        Span::styled(time, Style::default().fg(palette::TEXT_DIM)),
                     ]),
                     Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(project, Style::default().fg(Color::White)),
+                        Span::styled("  ", Style::default()),
+                        Span::styled(project, Style::default().fg(palette::TEXT)),
                     ]),
                 ];
 
                 if !branch.is_empty() {
                     lines.push(Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(branch, Style::default().fg(Color::Magenta)),
+                        Span::styled("  ", Style::default()),
+                        Span::styled(
+                            format!("\u{e0a0} {branch}"),
+                            Style::default().fg(palette::MAUVE),
+                        ),
                     ]));
                 }
 
                 if !summary.is_empty() {
                     lines.push(Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(summary, Style::default().fg(Color::DarkGray)),
+                        Span::styled("  ", Style::default()),
+                        Span::styled(summary, Style::default().fg(palette::TEXT_DIM)),
                     ]));
                 }
 
-                // Empty line as separator
                 lines.push(Line::raw(""));
 
                 ListItem::new(lines)
             })
             .collect();
 
-        let border_style = if focused {
-            Style::default().fg(Color::Blue)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-
         let list = List::new(items)
             .block(
                 Block::default()
                     .title(format!(" Sessions ({}) ", sessions.len()))
+                    .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
                     .borders(Borders::ALL)
-                    .border_style(border_style),
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .border_style(border_style(focused)),
             )
-            .highlight_style(
-                Style::default()
-                    .bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
-            );
+            .highlight_style(highlight_style())
+            .highlight_symbol("  ");
 
         frame.render_stateful_widget(list, area, &mut self.state);
     }
@@ -108,13 +104,13 @@ impl SessionListComponent {
     }
 }
 
-fn provider_color(provider: crate::model::Provider) -> Color {
+fn provider_color(provider: crate::model::Provider) -> ratatui::style::Color {
     match provider {
-        crate::model::Provider::ClaudeCode => Color::Rgb(204, 120, 50),
-        crate::model::Provider::CopilotCli => Color::Rgb(100, 200, 100),
-        crate::model::Provider::GeminiCli => Color::Rgb(66, 133, 244),
-        crate::model::Provider::CodexCli => Color::Rgb(200, 200, 200),
-        crate::model::Provider::OpenCode => Color::Rgb(150, 100, 200),
+        crate::model::Provider::ClaudeCode => palette::CLAUDE,
+        crate::model::Provider::CopilotCli => palette::COPILOT,
+        crate::model::Provider::GeminiCli => palette::GEMINI,
+        crate::model::Provider::CodexCli => palette::CODEX,
+        crate::model::Provider::OpenCode => palette::OPENCODE,
     }
 }
 

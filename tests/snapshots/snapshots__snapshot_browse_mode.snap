@@ -2,28 +2,26 @@
 source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
-┌ Sessions (5) ────────────────────┐┌ test/project (claude-sonnet-4-20250514) ─────────────────────────────────────────┐
-│Apr 08  Claude Code               ││Select a session to view the conversation                                         │
-│  test/project                    ││                                                                                  │
-│  main                            ││                                                                                  │
-│  Fix the build error             ││                                                                                  │
+╭ Sessions (5) ────────────────────╮╭ test/project • claude-sonnet-4-20250514 ─────────────────────────────────────────╮
+│  Claude Code  Apr 08             ││Select a session to view the conversation                                         │
+│    test/project                  ││                                                                                  │
+│     main                        ││                                                                                  │
+│    Fix the build error           ││                                                                                  │
 │                                  ││                                                                                  │
-│Apr 08  Copilot CLI               ││                                                                                  │
-│  myapp                           ││                                                                                  │
+│  Copilot CLI  Apr 08             ││                                                                                  │
+│    myapp                         ││                                                                                  │
 │                                  ││                                                                                  │
-│Apr 08  Gemini CLI                ││                                                                                  │
-│  test-project                    ││                                                                                  │
-│  Explain how async/await works in││                                                                                  │
+│  Gemini CLI  Apr 08              ││                                                                                  │
+│    test-project                  ││                                                                                  │
+│    Explain how async/await works ││                                                                                  │
 │                                  ││                                                                                  │
-│Apr 08  Codex CLI                 ││                                                                                  │
-│  (unknown project)               ││                                                                                  │
-│  Add error handling to the API en││                                                                                  │
+│  Codex CLI  Apr 08               ││                                                                                  │
+│    (unknown project)             ││                                                                                  │
+│    Add error handling to the API ││                                                                                  │
 │                                  ││                                                                                  │
-│Apr 08  OpenCode                  ││                                                                                  │
-│  dbproject                       ││                                                                                  │
-│  Refactor database layer         ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
+│  OpenCode  Apr 08                ││                                                                                  │
+│    dbproject                     ││                                                                                  │
+│    Refactor database layer       ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
@@ -40,5 +38,7 @@ expression: render_to_text(&terminal)
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
-└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
-j/k: navigate  Enter: open  /: search  f: filter  ?: help  q: quit
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯
+ j/k navigate  •   Enter open  •   / search  •   f filter  •   ? help  •   q quit

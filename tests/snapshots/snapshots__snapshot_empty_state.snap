@@ -2,7 +2,7 @@
 source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
-┌ Sessions (0) ────────────────────┐┌ No session selected ─────────────────────────────────────────────────────────────┐
+╭ Sessions (0) ────────────────────╮╭ No session selected ─────────────────────────────────────────────────────────────╮
 │                                  ││Select a session to view the conversation                                         │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
@@ -40,5 +40,5 @@ expression: render_to_text(&terminal)
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
-└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
-j/k: navigate  Enter: open  /: search  f: filter  ?: help  q: quit
+╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯
+ j/k navigate  •   Enter open  •   / search  •   f filter  •   ? help  •   q quit

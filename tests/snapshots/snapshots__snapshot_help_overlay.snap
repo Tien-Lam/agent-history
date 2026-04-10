@@ -2,26 +2,26 @@
 source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
-┌ Sessions (5) ────────────────────┐┌ test/project (claude-sonnet-4-20250514) ─────────────────────────────────────────┐
-│Apr 08  Claude Code               │┌ Help ────────────────────────────────────────┐                                   │
-│  test/project                    ││Browse Mode                                   │                                   │
-│  main                            ││  j / Down  Next session                      │                                   │
-│  Fix the build error             ││  k / Up    Previous session                  │                                   │
+╭ Sessions (5) ────────────────────╮╭ test/project • claude-sonnet-4-20250514 ─────────────────────────────────────────╮
+│  Claude Code  Apr 08             │╭ Help ────────────────────────────────────────╮                                   │
+│    test/project                  ││Browse Mode                                   │                                   │
+│     main                        ││  j / Down  Next session                      │                                   │
+│    Fix the build error           ││  k / Up    Previous session                  │                                   │
 │                                  ││  Enter     Open session                      │                                   │
-│Apr 08  Copilot CLI               ││  g         Go to top                         │                                   │
-│  myapp                           ││  G         Go to bottom                      │                                   │
+│  Copilot CLI  Apr 08             ││  g         Go to top                         │                                   │
+│    myapp                         ││  G         Go to bottom                      │                                   │
 │                                  ││  /         Search conversations              │                                   │
-│Apr 08  Gemini CLI                ││  f         Open filter panel                 │                                   │
-│  test-project                    ││  Tab       Switch focus                      │                                   │
-│  Explain how async/await works in││                                              │                                   │
+│  Gemini CLI  Apr 08              ││  f         Open filter panel                 │                                   │
+│    test-project                  ││  Tab       Switch focus                      │                                   │
+│    Explain how async/await works ││                                              │                                   │
 │                                  ││View Mode                                     │                                   │
-│Apr 08  Codex CLI                 ││  j / Down  Scroll down                       │                                   │
-│  (unknown project)               ││  k / Up    Scroll up                         │                                   │
-│  Add error handling to the API en││  Ctrl+D    Page down                         │                                   │
+│  Codex CLI  Apr 08               ││  j / Down  Scroll down                       │                                   │
+│    (unknown project)             ││  k / Up    Scroll up                         │                                   │
+│    Add error handling to the API ││  Ctrl+D    Page down                         │                                   │
 │                                  ││  Ctrl+U    Page up                           │                                   │
-│Apr 08  OpenCode                  ││  g / G     Top / bottom                      │                                   │
-│  dbproject                       ││  t         Toggle tool calls                 │                                   │
-│  Refactor database layer         ││  e         Export session                    │                                   │
+│  OpenCode  Apr 08                ││  g / G     Top / bottom                      │                                   │
+│    dbproject                     ││  t         Toggle tool calls                 │                                   │
+│    Refactor database layer       ││  e         Export session                    │                                   │
 │                                  ││  Esc       Back to list                      │                                   │
 │                                  ││                                              │                                   │
 │                                  ││Search Mode                                   │                                   │
@@ -40,5 +40,5 @@ expression: render_to_text(&terminal)
 │                                  ││  ?         Toggle this help                  │                                   │
 │                                  ││  q         Quit                              │                                   │
 │                                  ││  Ctrl+C    Force quit                        │                                   │
-└──────────────────────────────────┘└──────────────────────────────────────────────┘───────────────────────────────────┘
-Esc: close
+╰──────────────────────────────────╯╰──────────────────────────────────────────────╯───────────────────────────────────╯
+ Esc close
