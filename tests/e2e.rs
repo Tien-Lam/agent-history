@@ -199,6 +199,94 @@ fn app_search_navigate_with_arrows() {
     assert_eq!(app.mode(), AppMode::ViewSession);
 }
 
+// ─── Resume command ─────────────────────────────────────────────────────────
+
+#[test]
+fn app_resume_command_claude_code() {
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
+    app.load_sessions();
+
+    // Index 0 is Claude Code session
+    app.dispatch(aghist::action::Action::CopyResumeCommand);
+
+    let msg = app.status_message.as_deref().unwrap();
+    assert!(msg.contains("claude --resume session-abc123"), "got: {msg}");
+}
+
+#[test]
+fn app_resume_command_copilot_cli() {
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
+    app.load_sessions();
+
+    app.dispatch(aghist::action::Action::NextItem); // → index 1 = Copilot
+    app.dispatch(aghist::action::Action::CopyResumeCommand);
+
+    let msg = app.status_message.as_deref().unwrap();
+    assert!(msg.contains("copilot --resume=copilot-session-001"), "got: {msg}");
+}
+
+#[test]
+fn app_resume_command_gemini_cli() {
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
+    app.load_sessions();
+
+    app.dispatch(aghist::action::Action::NextItem);
+    app.dispatch(aghist::action::Action::NextItem); // → index 2 = Gemini
+    app.dispatch(aghist::action::Action::CopyResumeCommand);
+
+    let msg = app.status_message.as_deref().unwrap();
+    assert!(msg.contains("gemini --resume gemini-sess-001"), "got: {msg}");
+}
+
+#[test]
+fn app_resume_command_codex_cli() {
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
+    app.load_sessions();
+
+    app.dispatch(aghist::action::Action::GoToBottom);
+    app.dispatch(aghist::action::Action::PrevItem); // → index 3 = Codex
+    app.dispatch(aghist::action::Action::CopyResumeCommand);
+
+    let msg = app.status_message.as_deref().unwrap();
+    assert!(msg.contains("codex resume test123"), "got: {msg}");
+}
+
+#[test]
+fn app_resume_command_opencode() {
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
+    app.load_sessions();
+
+    app.dispatch(aghist::action::Action::GoToBottom); // → index 4 = OpenCode
+    app.dispatch(aghist::action::Action::CopyResumeCommand);
+
+    let msg = app.status_message.as_deref().unwrap();
+    assert!(msg.contains("opencode --session sess-001"), "got: {msg}");
+}
+
+#[test]
+fn app_resume_command_in_view_mode() {
+    let mut app = App::new(all_providers(), aghist::config::Config::default());
+    app.load_sessions();
+
+    app.dispatch(aghist::action::Action::SelectSession);
+    assert_eq!(app.mode(), AppMode::ViewSession);
+
+    app.dispatch(aghist::action::Action::CopyResumeCommand);
+
+    let msg = app.status_message.as_deref().unwrap();
+    assert!(msg.contains("claude --resume session-abc123"), "got: {msg}");
+}
+
+#[test]
+fn app_resume_command_no_selection() {
+    let providers: Vec<Box<dyn HistoryProvider>> = Vec::new();
+    let mut app = App::new(providers, aghist::config::Config::default());
+    app.load_sessions();
+
+    app.dispatch(aghist::action::Action::CopyResumeCommand);
+    assert!(app.status_message.is_none());
+}
+
 // ─── Key mapping integration ─────────────────────────────────────────────────
 
 #[test]
@@ -213,6 +301,10 @@ fn key_mapping_browse_mode() {
     let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
     let action = map_key_event(key, AppMode::Browse, false);
     assert!(matches!(action, Some(aghist::action::Action::SelectSession)));
+
+    let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+    let action = map_key_event(key, AppMode::Browse, false);
+    assert!(matches!(action, Some(aghist::action::Action::CopyResumeCommand)));
 
     let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
     let action = map_key_event(key, AppMode::Browse, false);
@@ -231,6 +323,10 @@ fn key_mapping_view_mode() {
     let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE);
     let action = map_key_event(key, AppMode::ViewSession, false);
     assert!(matches!(action, Some(aghist::action::Action::ToggleToolCalls)));
+
+    let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+    let action = map_key_event(key, AppMode::ViewSession, false);
+    assert!(matches!(action, Some(aghist::action::Action::CopyResumeCommand)));
 }
 
 #[test]

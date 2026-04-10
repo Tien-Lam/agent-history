@@ -10,18 +10,20 @@ expression: render_to_text(&terminal)
 │                                  ││  Enter     Open session                      │                                   │
 │  Copilot CLI  Apr 08             ││  g         Go to top                         │                                   │
 │    myapp                         ││  G         Go to bottom                      │                                   │
-│                                  ││  /         Search conversations              │                                   │
-│  Gemini CLI  Apr 08              ││  f         Open filter panel                 │                                   │
-│    test-project                  ││  Tab       Switch focus                      │                                   │
-│    Explain how async/await works ││                                              │                                   │
-│                                  ││View Mode                                     │                                   │
-│  Codex CLI  Apr 08               ││  j / Down  Scroll down                       │                                   │
-│    (unknown project)             ││  k / Up    Scroll up                         │                                   │
-│    Add error handling to the API ││  Ctrl+D    Page down                         │                                   │
-│                                  ││  Ctrl+U    Page up                           │                                   │
-│  OpenCode  Apr 08                ││  g / G     Top / bottom                      │                                   │
-│    dbproject                     ││  t         Toggle tool calls                 │                                   │
-│    Refactor database layer       ││  e         Export session                    │                                   │
+│                                  ││  y         Show resume command               │                                   │
+│  Gemini CLI  Apr 08              ││  /         Search conversations              │                                   │
+│    test-project                  ││  f         Open filter panel                 │                                   │
+│    Explain how async/await works ││  Tab       Switch focus                      │                                   │
+│                                  ││                                              │                                   │
+│  Codex CLI  Apr 08               ││View Mode                                     │                                   │
+│    (unknown project)             ││  j / Down  Scroll down                       │                                   │
+│    Add error handling to the API ││  k / Up    Scroll up                         │                                   │
+│                                  ││  Ctrl+D    Page down                         │                                   │
+│  OpenCode  Apr 08                ││  Ctrl+U    Page up                           │                                   │
+│    dbproject                     ││  g / G     Top / bottom                      │                                   │
+│    Refactor database layer       ││  t         Toggle tool calls                 │                                   │
+│                                  ││  e         Export session                    │                                   │
+│                                  ││  y         Show resume command               │                                   │
 │                                  ││  Esc       Back to list                      │                                   │
 │                                  ││                                              │                                   │
 │                                  ││Search Mode                                   │                                   │
@@ -38,7 +40,5 @@ expression: render_to_text(&terminal)
 │                                  ││                                              │                                   │
 │                                  ││Global                                        │                                   │
 │                                  ││  ?         Toggle this help                  │                                   │
-│                                  ││  q         Quit                              │                                   │
-│                                  ││  Ctrl+C    Force quit                        │                                   │
 ╰──────────────────────────────────╯╰──────────────────────────────────────────────╯───────────────────────────────────╯
  Esc close

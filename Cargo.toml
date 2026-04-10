@@ -6,6 +6,7 @@ description = "Cross-platform TUI for viewing and searching AI agent conversatio
 
 [dependencies]
 anyhow = "1"
+arboard = "3"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"] }
 color-eyre = "0.6"

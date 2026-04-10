@@ -528,6 +528,21 @@ impl App {
                 self.filter = FilterState::new();
             }
 
+            // Resume
+            Action::CopyResumeCommand => {
+                if let Some((session_id, _, provider)) = self.resolve_selected_session() {
+                    let cmd = provider.resume_command(&session_id);
+                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(&cmd)) {
+                        Ok(()) => {
+                            self.status_message = Some(format!("Copied: {cmd}"));
+                        }
+                        Err(_) => {
+                            self.status_message = Some(format!("Resume: {cmd}"));
+                        }
+                    }
+                }
+            }
+
             // Export
             Action::ExportStart => {
                 self.export_cursor = 0;
@@ -760,6 +775,7 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Line::from(vec![Span::styled("  Enter     ", key), Span::styled("Open session", desc)]),
         Line::from(vec![Span::styled("  g         ", key), Span::styled("Go to top", desc)]),
         Line::from(vec![Span::styled("  G         ", key), Span::styled("Go to bottom", desc)]),
+        Line::from(vec![Span::styled("  y         ", key), Span::styled("Show resume command", desc)]),
         Line::from(vec![Span::styled("  /         ", key), Span::styled("Search conversations", desc)]),
         Line::from(vec![Span::styled("  f         ", key), Span::styled("Open filter panel", desc)]),
         Line::from(vec![Span::styled("  Tab       ", key), Span::styled("Switch focus", desc)]),
@@ -772,6 +788,7 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Line::from(vec![Span::styled("  g / G     ", key), Span::styled("Top / bottom", desc)]),
         Line::from(vec![Span::styled("  t         ", key), Span::styled("Toggle tool calls", desc)]),
         Line::from(vec![Span::styled("  e         ", key), Span::styled("Export session", desc)]),
+        Line::from(vec![Span::styled("  y         ", key), Span::styled("Show resume command", desc)]),
         Line::from(vec![Span::styled("  Esc       ", key), Span::styled("Back to list", desc)]),
         Line::raw(""),
         Line::from(Span::styled("Search Mode", header)),
