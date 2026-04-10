@@ -1,0 +1,44 @@
+---
+source: tests/snapshots.rs
+expression: render_to_text(&terminal)
+---
+┌ Sessions (5) ────────────────────┐┌ test/project (claude-sonnet-4-20250514) ─────────────────────────────────────────┐
+│Apr 08  Claude Code               ││Select a session to view the conversation                                         │
+│  test/project                    ││                                                                                  │
+│  main                            ││                                                                                  │
+│  Fix the build error             ││                                                                                  │
+│                                  ││                                                                                  │
+│Apr 08  Copilot CLI               ││                                                                                  │
+│  myapp                           ││                                                                                  │
+│                                  ││                                                                                  │
+│Apr 08  Gemini CLI                ││                                                                                  │
+│  test-project                    ││                                                                                  │
+│  Explain how async/await works in││                                                                                  │
+│                                  ││                                                                                  │
+│Apr 08  Codex CLI                 ││                                                                                  │
+│  (unknown project)               ││                                                                                  │
+│  Add error handling to the API en││                                                                                  │
+│                                  ││                                                                                  │
+│Apr 08  OpenCode                  ││                                                                                  │
+│  dbproject                       ││                                                                                  │
+│  Refactor database layer         ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+j/k: navigate  Enter: open  /: search  f: filter  ?: help  q: quit

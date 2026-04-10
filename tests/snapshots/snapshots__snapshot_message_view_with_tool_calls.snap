@@ -1,0 +1,44 @@
+---
+source: tests/snapshots.rs
+expression: render_to_text(&terminal)
+---
+┌ Sessions (5) ────────────────────┐┌ test/project (claude-sonnet-4-20250514) ─────────────────────────────────────────┐
+│Apr 08  Claude Code               ││[You] 10:00:00                                                                    │
+│  test/project                    ││Fix the build error in main.rs                                                    │
+│  main                            ││                                                                                  │
+│  Fix the build error             ││[Assistant] 10:00:05                                                              │
+│                                  ││I'll fix the build error.                                                         │
+│Apr 08  Copilot CLI               ││  ▼ [Tool: Read]                                                                  │
+│  myapp                           ││    {                                                                             │
+│                                  ││      "path": "main.rs"                                                           │
+│Apr 08  Gemini CLI                ││    }                                                                             │
+│  test-project                    ││                                                                                  │
+│  Explain how async/await works in││[Assistant] 10:00:15                                                              │
+│                                  ││  [Thinking...]                                                                   │
+│Apr 08  Codex CLI                 ││    The build error is a missing semicolon.                                       │
+│  (unknown project)               ││Here's the fix:                                                                   │
+│  Add error handling to the API en││  ┌─ rust ─                                                                       │
+│                                  ││  │ fn main() {                                                                   │
+│Apr 08  OpenCode                  ││  │     println!("hello");                                                        │
+│  dbproject                       ││  │ }                                                                             │
+│  Refactor database layer         ││  └────                                                                           │
+│                                  ││The issue was a missing semicolon.                                                │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+j/k: scroll  t: tool calls  Esc: back  ?: help  q: quit

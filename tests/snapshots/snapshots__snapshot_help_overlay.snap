@@ -1,0 +1,44 @@
+---
+source: tests/snapshots.rs
+expression: render_to_text(&terminal)
+---
+┌ Sessions (5) ────────────────────┐┌ test/project (claude-sonnet-4-20250514) ─────────────────────────────────────────┐
+│Apr 08  Claude Code               │┌ Help ────────────────────────────────────────┐                                   │
+│  test/project                    ││Browse Mode                                   │                                   │
+│  main                            ││  j / Down  Next session                      │                                   │
+│  Fix the build error             ││  k / Up    Previous session                  │                                   │
+│                                  ││  Enter     Open session                      │                                   │
+│Apr 08  Copilot CLI               ││  g         Go to top                         │                                   │
+│  myapp                           ││  G         Go to bottom                      │                                   │
+│                                  ││  /         Search conversations              │                                   │
+│Apr 08  Gemini CLI                ││  f         Open filter panel                 │                                   │
+│  test-project                    ││  Tab       Switch focus                      │                                   │
+│  Explain how async/await works in││                                              │                                   │
+│                                  ││View Mode                                     │                                   │
+│Apr 08  Codex CLI                 ││  j / Down  Scroll down                       │                                   │
+│  (unknown project)               ││  k / Up    Scroll up                         │                                   │
+│  Add error handling to the API en││  Ctrl+D    Page down                         │                                   │
+│                                  ││  Ctrl+U    Page up                           │                                   │
+│Apr 08  OpenCode                  ││  g / G     Top / bottom                      │                                   │
+│  dbproject                       ││  t         Toggle tool calls                 │                                   │
+│  Refactor database layer         ││  Esc       Back to list                      │                                   │
+│                                  ││                                              │                                   │
+│                                  ││Search Mode                                   │                                   │
+│                                  ││  Type      Filter sessions                   │                                   │
+│                                  ││  Enter     Open selected                     │                                   │
+│                                  ││  Esc       Cancel search                     │                                   │
+│                                  ││                                              │                                   │
+│                                  ││Filter Panel                                  │                                   │
+│                                  ││  j / k     Navigate items                    │                                   │
+│                                  ││  Space     Toggle provider                   │                                   │
+│                                  ││  e         Edit text field                   │                                   │
+│                                  ││  Ctrl+C    Clear all filters                 │                                   │
+│                                  ││  Esc / f   Close panel                       │                                   │
+│                                  ││                                              │                                   │
+│                                  ││Global                                        │                                   │
+│                                  ││  ?         Toggle this help                  │                                   │
+│                                  ││  q         Quit                              │                                   │
+│                                  ││  Ctrl+C    Force quit                        │                                   │
+│                                  │└──────────────────────────────────────────────┘                                   │
+└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+Esc: close
