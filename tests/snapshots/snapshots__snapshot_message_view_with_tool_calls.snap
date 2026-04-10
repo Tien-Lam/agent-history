@@ -41,4 +41,4 @@ expression: render_to_text(&terminal)
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 └──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
-j/k: scroll  t: tool calls  Esc: back  ?: help  q: quit
+j/k: scroll  t: tool calls  e: export  Esc: back  ?: help  q: quit

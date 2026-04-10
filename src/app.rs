@@ -13,6 +13,7 @@ use ratatui::Terminal;
 use crate::action::Action;
 use crate::config::Config;
 use crate::event::{map_key_event, poll_event};
+use crate::export::ExportFormat;
 use crate::model::{Message, Provider, Session, SessionId};
 use crate::provider::HistoryProvider;
 use crate::search::{SearchHit, SearchIndex};
@@ -27,6 +28,7 @@ pub enum AppMode {
     Search,
     Help,
     Filter,
+    ExportMenu,
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +136,8 @@ pub struct App {
     index_progress: Option<(usize, usize)>,
 
     filter: FilterState,
+    export_cursor: usize,
+    pub status_message: Option<String>,
 }
 
 impl App {
@@ -169,6 +173,8 @@ impl App {
             index_progress: None,
 
             filter: FilterState::new(),
+            export_cursor: 0,
+            status_message: None,
         }
     }
 
@@ -373,7 +379,7 @@ impl App {
                 AppMode::ViewSession => {
                     self.message_view.scroll_offset = 0;
                 }
-                AppMode::Help | AppMode::Filter => {}
+                AppMode::Help | AppMode::Filter | AppMode::ExportMenu => {}
             },
             Action::GoToBottom => match self.mode {
                 AppMode::Browse | AppMode::Search => {
@@ -385,7 +391,7 @@ impl App {
                 AppMode::ViewSession => {
                     self.message_view.scroll_offset = u16::MAX;
                 }
-                AppMode::Help | AppMode::Filter => {}
+                AppMode::Help | AppMode::Filter | AppMode::ExportMenu => {}
             },
             Action::ScrollUp => {
                 self.message_view.scroll_up(1);
@@ -515,6 +521,31 @@ impl App {
                 self.filter = FilterState::new();
             }
 
+            // Export
+            Action::ExportStart => {
+                self.export_cursor = 0;
+                self.status_message = None;
+                self.mode = AppMode::ExportMenu;
+            }
+            Action::ExportNext => {
+                if self.export_cursor + 1 < ExportFormat::all().len() {
+                    self.export_cursor += 1;
+                }
+            }
+            Action::ExportPrev => {
+                if self.export_cursor > 0 {
+                    self.export_cursor -= 1;
+                }
+            }
+            Action::ExportConfirm => {
+                let format = ExportFormat::all()[self.export_cursor];
+                self.perform_export(format);
+                self.mode = AppMode::ViewSession;
+            }
+            Action::ExportCancel => {
+                self.mode = AppMode::ViewSession;
+            }
+
             // Data events
             Action::SessionsLoaded(sessions) => {
                 self.sessions = sessions;
@@ -583,6 +614,37 @@ impl App {
         }
     }
 
+    fn perform_export(&mut self, format: ExportFormat) {
+        let session = {
+            let Some(idx) = self.session_list.selected_index() else {
+                return;
+            };
+            let display = self.display_sessions();
+            match display.get(idx) {
+                Some(s) => (*s).clone(),
+                None => return,
+            }
+        };
+
+        let messages = match self.message_cache.get(&session.id.0) {
+            Some(m) => m.clone(),
+            None => return,
+        };
+
+        let content = crate::export::export(format, &session, &messages);
+        let id_short = &session.id.0[..session.id.0.len().min(8)];
+        let filename = format!("aghist-{id_short}.{}", format.extension());
+
+        match std::fs::write(&filename, &content) {
+            Ok(()) => {
+                self.status_message = Some(format!("Exported to {filename}"));
+            }
+            Err(e) => {
+                self.warnings.push(format!("Export failed: {e}"));
+            }
+        }
+    }
+
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
         let size = frame.area();
 
@@ -640,6 +702,7 @@ impl App {
             self.index_progress,
             warning_count,
             self.filter.is_active(),
+            self.status_message.as_deref(),
             frame,
             main_layout[1],
         );
@@ -652,6 +715,11 @@ impl App {
         // Filter overlay
         if self.mode == AppMode::Filter {
             render_filter_overlay(frame, size, &self.filter);
+        }
+
+        // Export overlay
+        if self.mode == AppMode::ExportMenu {
+            render_export_overlay(frame, size, self.export_cursor);
         }
     }
 }
@@ -692,6 +760,7 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Line::from(vec![Span::styled("  Ctrl+U    ", key), Span::styled("Page up", desc)]),
         Line::from(vec![Span::styled("  g / G     ", key), Span::styled("Top / bottom", desc)]),
         Line::from(vec![Span::styled("  t         ", key), Span::styled("Toggle tool calls", desc)]),
+        Line::from(vec![Span::styled("  e         ", key), Span::styled("Export session", desc)]),
         Line::from(vec![Span::styled("  Esc       ", key), Span::styled("Back to list", desc)]),
         Line::raw(""),
         Line::from(Span::styled("Search Mode", header)),
@@ -832,6 +901,54 @@ fn render_filter_overlay(
                 .title(" Filter ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow)),
+        ),
+        panel_area,
+    );
+}
+
+fn render_export_overlay(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    cursor: usize,
+) {
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+
+    let formats = ExportFormat::all();
+    let selected_style = Style::default().bg(Color::DarkGray);
+    let key_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, fmt) in formats.iter().enumerate() {
+        let marker = if i == cursor { ">" } else { " " };
+        let mut line = Line::from(vec![
+            Span::styled(format!(" {marker} "), key_style),
+            Span::raw(format!("{} (.{})", fmt.label(), fmt.extension())),
+        ]);
+        if i == cursor {
+            line = line.style(selected_style);
+        }
+        lines.push(line);
+    }
+
+    let panel_width = 28;
+    let panel_height =
+        u16::try_from(lines.len() + 2).unwrap_or(6).min(area.height.saturating_sub(2));
+    let x = area.width.saturating_sub(panel_width) / 2;
+    let y = area.height.saturating_sub(panel_height) / 2;
+
+    let panel_area = ratatui::layout::Rect::new(x, y, panel_width, panel_height);
+
+    frame.render_widget(Clear, panel_area);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(" Export As ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green)),
         ),
         panel_area,
     );

@@ -14,7 +14,7 @@ impl std::fmt::Display for SessionId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Session {
     pub id: SessionId,
     pub provider: Provider,
@@ -30,7 +30,7 @@ pub struct Session {
     pub source_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct TokenUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,

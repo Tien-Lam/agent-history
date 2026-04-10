@@ -19,7 +19,7 @@ impl StatusBarComponent {
         Self
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     pub fn render(
         &self,
         mode: AppMode,
@@ -28,6 +28,7 @@ impl StatusBarComponent {
         index_progress: Option<(usize, usize)>,
         warning_count: usize,
         filter_active: bool,
+        status_message: Option<&str>,
         frame: &mut Frame,
         area: Rect,
     ) {
@@ -60,6 +61,7 @@ impl StatusBarComponent {
             AppMode::ViewSession => vec![
                 ("j/k", "scroll"),
                 ("t", "tool calls"),
+                ("e", "export"),
                 ("Esc", "back"),
                 ("?", "help"),
                 ("q", "quit"),
@@ -72,6 +74,11 @@ impl StatusBarComponent {
                 ("e", "edit"),
                 ("Ctrl+C", "clear all"),
                 ("Esc", "close"),
+            ],
+            AppMode::ExportMenu => vec![
+                ("j/k", "navigate"),
+                ("Enter", "export"),
+                ("Esc", "cancel"),
             ],
         };
 
@@ -126,6 +133,14 @@ impl StatusBarComponent {
             spans.push(Span::styled(
                 format!("Indexing {done}/{total}"),
                 Style::default().fg(Color::Yellow),
+            ));
+        }
+
+        if let Some(msg) = status_message {
+            spans.push(Span::raw("  │ "));
+            spans.push(Span::styled(
+                msg.to_string(),
+                Style::default().fg(Color::Green),
             ));
         }
 

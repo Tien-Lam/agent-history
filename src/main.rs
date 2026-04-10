@@ -1,8 +1,9 @@
-use aghist::{app, config, provider, search};
+use aghist::{app, config, export, provider, search};
 
 use std::io;
+use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -20,6 +21,27 @@ struct Cli {
     /// Force rebuild the search index
     #[arg(long)]
     reindex: bool,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Export a session to Markdown, JSON, or HTML
+    Export {
+        /// Output format: md, json, html
+        #[arg(long, short)]
+        format: export::ExportFormat,
+
+        /// Session ID (or prefix) to export
+        #[arg(long, short)]
+        session: String,
+
+        /// Output file path (defaults to stdout)
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -35,8 +57,18 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let config = config::Config::load();
     let providers = provider::detect_all_providers();
+
+    if let Some(Command::Export {
+        format,
+        session,
+        output,
+    }) = cli.command
+    {
+        return export_session(&providers, format, &session, output.as_deref());
+    }
+
+    let config = config::Config::load();
 
     if cli.list {
         return list_sessions(&providers);
@@ -59,6 +91,42 @@ fn main() -> anyhow::Result<()> {
     terminal.show_cursor()?;
 
     result
+}
+
+fn export_session(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    format: export::ExportFormat,
+    session_id: &str,
+    output: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
+    let mut all_sessions = Vec::new();
+    for p in providers {
+        if let Ok(sessions) = p.discover_sessions() {
+            all_sessions.extend(sessions);
+        }
+    }
+
+    let session = all_sessions
+        .iter()
+        .find(|s| s.id.0 == session_id || s.id.0.starts_with(session_id))
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {session_id}"))?;
+
+    let provider = providers
+        .iter()
+        .find(|p| p.provider() == session.provider)
+        .ok_or_else(|| anyhow::anyhow!("Provider not available for session"))?;
+
+    let messages = provider.load_messages(session)?;
+    let content = export::export(format, session, &messages);
+
+    if let Some(path) = output {
+        std::fs::write(path, &content)?;
+        eprintln!("Exported to {}", path.display());
+    } else {
+        print!("{content}");
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]

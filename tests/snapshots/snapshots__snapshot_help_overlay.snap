@@ -21,7 +21,8 @@ expression: render_to_text(&terminal)
 │                                  ││  Ctrl+U    Page up                           │                                   │
 │Apr 08  OpenCode                  ││  g / G     Top / bottom                      │                                   │
 │  dbproject                       ││  t         Toggle tool calls                 │                                   │
-│  Refactor database layer         ││  Esc       Back to list                      │                                   │
+│  Refactor database layer         ││  e         Export session                    │                                   │
+│                                  ││  Esc       Back to list                      │                                   │
 │                                  ││                                              │                                   │
 │                                  ││Search Mode                                   │                                   │
 │                                  ││  Type      Filter sessions                   │                                   │
@@ -39,6 +40,5 @@ expression: render_to_text(&terminal)
 │                                  ││  ?         Toggle this help                  │                                   │
 │                                  ││  q         Quit                              │                                   │
 │                                  ││  Ctrl+C    Force quit                        │                                   │
-│                                  │└──────────────────────────────────────────────┘                                   │
-└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────┘└──────────────────────────────────────────────┘───────────────────────────────────┘
 Esc: close

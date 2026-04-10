@@ -36,6 +36,12 @@ pub enum Action {
     FilterInput(char),
     FilterBackspace,
     FilterClearAll,
+    // Export
+    ExportStart,
+    ExportNext,
+    ExportPrev,
+    ExportConfirm,
+    ExportCancel,
     // UI
     Resize(u16, u16),
     ToggleToolCalls,

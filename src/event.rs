@@ -25,6 +25,7 @@ pub fn map_key_event(key: KeyEvent, mode: AppMode) -> Option<Action> {
         AppMode::Search => map_search_key(key),
         AppMode::Help => map_help_key(key),
         AppMode::Filter => map_filter_key(key),
+        AppMode::ExportMenu => map_export_key(key),
     }
 }
 
@@ -59,6 +60,7 @@ fn map_view_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('g') => Some(Action::GoToTop),
         KeyCode::Char('G') => Some(Action::GoToBottom),
         KeyCode::Char('t') => Some(Action::ToggleToolCalls),
+        KeyCode::Char('e') => Some(Action::ExportStart),
         KeyCode::Char('?') => Some(Action::ToggleHelp),
         _ => None,
     }
@@ -95,6 +97,16 @@ fn map_filter_key(key: KeyEvent) -> Option<Action> {
             Some(Action::FilterClearAll)
         }
         KeyCode::Char(c) => Some(Action::FilterInput(c)),
+        _ => None,
+    }
+}
+
+fn map_export_key(key: KeyEvent) -> Option<Action> {
+    match key.code {
+        KeyCode::Esc => Some(Action::ExportCancel),
+        KeyCode::Char('j') | KeyCode::Down => Some(Action::ExportNext),
+        KeyCode::Char('k') | KeyCode::Up => Some(Action::ExportPrev),
+        KeyCode::Enter => Some(Action::ExportConfirm),
         _ => None,
     }
 }

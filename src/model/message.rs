@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 
 use super::session::TokenUsage;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct MessageId(pub String);
 
 impl std::fmt::Display for MessageId {
@@ -11,7 +12,7 @@ impl std::fmt::Display for MessageId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Message {
     pub id: MessageId,
     pub role: Role,
@@ -21,7 +22,8 @@ pub struct Message {
     pub token_usage: Option<TokenUsage>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
     User,
     Assistant,
@@ -46,7 +48,8 @@ impl std::fmt::Display for Role {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ContentBlock {
     Text(String),
     CodeBlock {
@@ -59,14 +62,14 @@ pub enum ContentBlock {
     Error(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ToolResult {
     pub tool_call_id: String,
     pub success: bool,
