@@ -207,15 +207,15 @@ fn key_mapping_browse_mode() {
     use aghist::event::map_key_event;
 
     let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Browse);
+    let action = map_key_event(key, AppMode::Browse, false);
     assert!(matches!(action, Some(aghist::action::Action::NextItem)));
 
     let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Browse);
+    let action = map_key_event(key, AppMode::Browse, false);
     assert!(matches!(action, Some(aghist::action::Action::SelectSession)));
 
     let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-    let action = map_key_event(key, AppMode::Browse);
+    let action = map_key_event(key, AppMode::Browse, false);
     assert!(matches!(action, Some(aghist::action::Action::Quit)));
 }
 
@@ -225,11 +225,11 @@ fn key_mapping_view_mode() {
     use aghist::event::map_key_event;
 
     let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::ViewSession);
+    let action = map_key_event(key, AppMode::ViewSession, false);
     assert!(matches!(action, Some(aghist::action::Action::BackToList)));
 
     let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::ViewSession);
+    let action = map_key_event(key, AppMode::ViewSession, false);
     assert!(matches!(action, Some(aghist::action::Action::ToggleToolCalls)));
 }
 
@@ -239,23 +239,23 @@ fn key_mapping_search_mode() {
     use aghist::event::map_key_event;
 
     let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search);
+    let action = map_key_event(key, AppMode::Search, false);
     assert!(matches!(action, Some(aghist::action::Action::SearchCancel)));
 
     let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search);
+    let action = map_key_event(key, AppMode::Search, false);
     assert!(matches!(action, Some(aghist::action::Action::SearchSubmit)));
 
     let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search);
+    let action = map_key_event(key, AppMode::Search, false);
     assert!(matches!(action, Some(aghist::action::Action::SearchInput('a'))));
 
     let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search);
+    let action = map_key_event(key, AppMode::Search, false);
     assert!(matches!(action, Some(aghist::action::Action::PrevItem)));
 
     let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search);
+    let action = map_key_event(key, AppMode::Search, false);
     assert!(matches!(action, Some(aghist::action::Action::NextItem)));
 }
 

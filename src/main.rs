@@ -12,7 +12,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 #[derive(Parser)]
-#[command(name = "aghist", about = "Browse and search AI agent conversation history")]
+#[command(name = "aghist", version, about = "Browse and search AI agent conversation history")]
 struct Cli {
     /// List sessions without opening the TUI
     #[arg(long)]
@@ -57,7 +57,12 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let providers = provider::detect_all_providers();
+    let config = config::Config::load();
+    let enabled = config.enabled_providers();
+    let providers: Vec<_> = provider::detect_all_providers()
+        .into_iter()
+        .filter(|p| enabled.contains(&p.provider()))
+        .collect();
 
     if let Some(Command::Export {
         format,
@@ -67,8 +72,6 @@ fn main() -> anyhow::Result<()> {
     {
         return export_session(&providers, format, &session, output.as_deref());
     }
-
-    let config = config::Config::load();
 
     if cli.list {
         return list_sessions(&providers);
@@ -152,13 +155,15 @@ fn list_sessions(providers: &[Box<dyn provider::HistoryProvider>]) -> anyhow::Re
     for s in all_sessions.iter().take(20) {
         let project = s.project_name.as_deref().unwrap_or("(unknown)");
         let branch = s.git_branch.as_deref().unwrap_or("");
-        let summary = s
-            .summary
-            .as_deref()
-            .unwrap_or("")
-            .chars()
-            .take(60)
-            .collect::<String>();
+        let summary = match s.summary.as_deref() {
+            Some(text) if text.chars().count() > 60 => {
+                let mut s: String = text.chars().take(57).collect();
+                s.push_str("...");
+                s
+            }
+            Some(text) => text.to_string(),
+            None => String::new(),
+        };
         println!(
             "  {} | {} | {} | {} | {}",
             s.started_at.format("%Y-%m-%d %H:%M"),

@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -40,13 +42,32 @@ impl MessageViewComponent {
             |s| {
                 let project = s.project_name.as_deref().unwrap_or("Session");
                 let model = s.model.as_deref().unwrap_or("unknown");
-                format!(" {project} \u{2022} {model} ")
+                let mut parts = format!(" {project} \u{2022} {model}");
+                if let Some(ref usage) = s.token_usage {
+                    let total = usage.input_tokens + usage.output_tokens;
+                    if total > 0 {
+                        let _ = write!(parts, " \u{2022} {}k tok", total / 1000);
+                    }
+                }
+                parts.push(' ');
+                parts
             },
         );
+
+        let scroll_indicator = if self.scroll_offset > 0 {
+            format!(" \u{2191}{} ", self.scroll_offset)
+        } else {
+            String::new()
+        };
 
         let block = Block::default()
             .title(title)
             .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
+            .title_bottom(
+                Line::from(scroll_indicator)
+                    .style(Style::default().fg(palette::TEXT_DIM))
+                    .right_aligned(),
+            )
             .borders(Borders::ALL)
             .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(border_style(focused));

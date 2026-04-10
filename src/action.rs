@@ -33,6 +33,7 @@ pub enum Action {
     FilterPrev,
     FilterToggle,
     FilterEdit,
+    FilterEditDone,
     FilterInput(char),
     FilterBackspace,
     FilterClearAll,

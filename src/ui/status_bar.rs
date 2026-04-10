@@ -66,7 +66,7 @@ impl StatusBarComponent {
                 ("Esc", "back"),
                 ("?", "help"),
             ],
-            AppMode::Search => unreachable!(),
+            AppMode::Search => vec![],
             AppMode::Help => vec![("Esc", "close")],
             AppMode::Filter => vec![
                 ("j/k", "navigate"),

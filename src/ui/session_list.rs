@@ -36,13 +36,15 @@ impl SessionListComponent {
                     .as_deref()
                     .unwrap_or("(unknown project)");
                 let branch = s.git_branch.as_deref().unwrap_or("");
-                let summary = s
-                    .summary
-                    .as_deref()
-                    .unwrap_or("")
-                    .chars()
-                    .take(80)
-                    .collect::<String>();
+                let summary = match s.summary.as_deref() {
+                    Some(text) if text.chars().count() > 80 => {
+                        let mut s: String = text.chars().take(77).collect();
+                        s.push_str("...");
+                        s
+                    }
+                    Some(text) => text.to_string(),
+                    None => String::new(),
+                };
 
                 let mut lines = vec![
                     Line::from(vec![

@@ -56,10 +56,14 @@ impl Config {
             return Self::default();
         };
 
-        match std::fs::read_to_string(&path) {
+        let mut config: Self = match std::fs::read_to_string(&path) {
             Ok(contents) => toml::from_str(&contents).unwrap_or_default(),
             Err(_) => Self::default(),
+        };
+        if config.cache_size == 0 {
+            config.cache_size = 1;
         }
+        config
     }
 
     pub fn enabled_providers(&self) -> HashSet<Provider> {

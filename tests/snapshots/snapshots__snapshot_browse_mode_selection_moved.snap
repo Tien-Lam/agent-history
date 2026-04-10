@@ -2,9 +2,9 @@
 source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
-╭ Sessions (5) ────────────────────╮╭ test-project • gemini-2.5-pro ───────────────────────────────────────────────────╮
+╭ Sessions (5) ────────────────────╮╭ test-project • gemini-2.5-pro • 0k tok ──────────────────────────────────────────╮
 │  Claude Code  Apr 08             ││Select a session to view the conversation                                         │
-│    test/project                  ││                                                                                  │
+│    test-project                  ││                                                                                  │
 │     main                        ││                                                                                  │
 │    Fix the build error           ││                                                                                  │
 │                                  ││                                                                                  │

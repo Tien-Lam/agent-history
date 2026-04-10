@@ -27,7 +27,7 @@ fn claude_discover_sessions() {
     let s = &sessions[0];
     assert_eq!(s.id.0, "session-abc123");
     assert_eq!(s.provider, Provider::ClaudeCode);
-    assert_eq!(s.project_name.as_deref(), Some("test/project"));
+    assert_eq!(s.project_name.as_deref(), Some("test-project"));
     assert_eq!(s.git_branch.as_deref(), Some("main"));
     assert_eq!(s.summary.as_deref(), Some("Fix the build error"));
     assert_eq!(s.model.as_deref(), Some("claude-sonnet-4-20250514"));

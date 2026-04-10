@@ -2,9 +2,9 @@
 source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
-╭ Sessions (5) ────────────────────╮╭ test/project • claude-sonnet-4-20250514 ─────────────────────────────────────────╮
+╭ Sessions (5) ────────────────────╮╭ test-project • claude-sonnet-4-20250514 • 0k tok ────────────────────────────────╮
 │  Claude Code  Apr 08             ││ You   10:00:00                                                                   │
-│    test/project                  ││────────────────────────────────────────                                          │
+│    test-project                  ││────────────────────────────────────────                                          │
 │     main                        ││ Fix the build error in main.rs                                                   │
 │    Fix the build error           ││                                                                                  │
 │                                  ││ Assistant   10:00:05                                                             │

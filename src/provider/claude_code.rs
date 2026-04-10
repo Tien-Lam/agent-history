@@ -159,12 +159,12 @@ fn parse_history_index(path: &Path) -> Result<Vec<HistoryEntry>, ProviderError> 
     Ok(entries)
 }
 
-/// Decode the project directory name back to a path.
-/// Claude Code encodes paths like `V--Projects-agent-history` for `V:\Projects\agent-history`.
+/// Decode the project directory name back to a readable path.
+/// Claude Code encodes `V:\Projects\agent-history` as `V--Projects-agent-history`.
+/// The encoding is lossy (both `/` and literal `-` become `-`), so we only
+/// decode `--` (drive separator) and leave single dashes as-is.
 fn decode_project_name(encoded: &str) -> String {
-    // The encoding replaces path separators and special chars with dashes.
-    // We can't perfectly reverse this, but we can make it human-readable.
-    encoded.replace("--", ":/").replace('-', "/")
+    encoded.replace("--", ":/")
 }
 
 fn build_session_metadata(
@@ -561,7 +561,7 @@ mod tests {
     fn decode_project_name_basic() {
         assert_eq!(
             decode_project_name("V--Projects-agent-history"),
-            "V:/Projects/agent/history"
+            "V:/Projects-agent-history"
         );
     }
 }

@@ -31,7 +31,6 @@ dependencies = [
  "insta",
  "lru 0.16.3",
  "ratatui",
- "rayon",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -39,7 +38,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml",
- "unicode-width 0.2.0",
 ]
 
 [[package]]

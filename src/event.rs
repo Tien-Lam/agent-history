@@ -11,11 +11,17 @@ pub fn poll_event(timeout: std::time::Duration) -> std::io::Result<Option<Event>
     }
 }
 
-pub fn map_key_event(key: KeyEvent, mode: AppMode) -> Option<Action> {
-    // Global keybindings
+pub fn map_key_event(key: KeyEvent, mode: AppMode, filter_editing: bool) -> Option<Action> {
+    // Global keybindings (only in modes where they make sense)
     match (key.code, key.modifiers) {
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Some(Action::Quit),
-        (KeyCode::Char('q'), _) if mode != AppMode::Search => return Some(Action::Quit),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL) if !filter_editing => {
+            return Some(Action::Quit);
+        }
+        (KeyCode::Char('q'), _)
+            if matches!(mode, AppMode::Browse | AppMode::ViewSession) =>
+        {
+            return Some(Action::Quit);
+        }
         _ => {}
     }
 
@@ -24,7 +30,7 @@ pub fn map_key_event(key: KeyEvent, mode: AppMode) -> Option<Action> {
         AppMode::ViewSession => map_view_key(key),
         AppMode::Search => map_search_key(key),
         AppMode::Help => map_help_key(key),
-        AppMode::Filter => map_filter_key(key),
+        AppMode::Filter => map_filter_key(key, filter_editing),
         AppMode::ExportMenu => map_export_key(key),
     }
 }
@@ -85,7 +91,16 @@ fn map_help_key(key: KeyEvent) -> Option<Action> {
     }
 }
 
-fn map_filter_key(key: KeyEvent) -> Option<Action> {
+fn map_filter_key(key: KeyEvent, editing: bool) -> Option<Action> {
+    if editing {
+        return match key.code {
+            KeyCode::Esc | KeyCode::Enter => Some(Action::FilterEditDone),
+            KeyCode::Backspace => Some(Action::FilterBackspace),
+            KeyCode::Char(c) => Some(Action::FilterInput(c)),
+            _ => None,
+        };
+    }
+
     match key.code {
         KeyCode::Esc | KeyCode::Char('f') => Some(Action::ToggleFilter),
         KeyCode::Char('j') | KeyCode::Down => Some(Action::FilterNext),

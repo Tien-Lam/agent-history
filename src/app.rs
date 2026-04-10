@@ -213,7 +213,8 @@ impl App {
                 if key.kind != crossterm::event::KeyEventKind::Press {
                     continue;
                 }
-                if let Some(action) = map_key_event(key, self.mode) {
+                let editing = self.filter.editing_field.is_some();
+                if let Some(action) = map_key_event(key, self.mode, editing) {
                     self.dispatch(action);
                 }
             }
@@ -494,6 +495,9 @@ impl App {
                     2 => Some(FilterField::DateTo),
                     _ => None,
                 };
+            }
+            Action::FilterEditDone => {
+                self.filter.editing_field = None;
             }
             Action::FilterInput(c) => {
                 match self.filter.editing_field {
@@ -911,8 +915,6 @@ fn render_filter_overlay(
         to_line = to_line.style(selected_style);
     }
     lines.push(to_line);
-
-    let _ = to_idx;
 
     let panel_width = 40;
     let panel_height = u16::try_from(lines.len() + 2).unwrap_or(20).min(area.height.saturating_sub(2));
