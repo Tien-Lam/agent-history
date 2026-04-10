@@ -32,7 +32,9 @@ fn claude_full_pipeline_content_blocks() {
 
         for block in &msg.content {
             match block {
-                ContentBlock::Text(t) => assert!(!t.is_empty()),
+                ContentBlock::Text(t) | ContentBlock::Thinking(t) => {
+                    assert!(!t.is_empty());
+                }
                 ContentBlock::CodeBlock { code, .. } => assert!(!code.is_empty()),
                 ContentBlock::ToolUse(tc) => {
                     assert!(!tc.name.is_empty(), "tool call name must not be empty");
@@ -40,7 +42,6 @@ fn claude_full_pipeline_content_blocks() {
                 ContentBlock::ToolResult(tr) => {
                     assert!(!tr.tool_call_id.is_empty(), "tool result must reference a call");
                 }
-                ContentBlock::Thinking(t) => assert!(!t.is_empty()),
                 ContentBlock::Error(e) => assert!(!e.is_empty()),
             }
         }
