@@ -55,8 +55,11 @@ impl Config {
         let Some(path) = Self::config_path() else {
             return Self::default();
         };
+        Self::load_from(&path)
+    }
 
-        let mut config: Self = match std::fs::read_to_string(&path) {
+    pub fn load_from(path: &std::path::Path) -> Self {
+        let mut config: Self = match std::fs::read_to_string(path) {
             Ok(contents) => toml::from_str(&contents).unwrap_or_default(),
             Err(_) => Self::default(),
         };

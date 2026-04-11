@@ -23,7 +23,9 @@ toml = "0.8"
 tantivy = "0.22"
 
 [dev-dependencies]
+assert_cmd = "2"
 insta = "1"
+predicates = "3"
 tempfile = "3"
 
 [lints.rust]

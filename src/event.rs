@@ -1,13 +1,23 @@
+use std::time::Duration;
+
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 use crate::action::Action;
 use crate::app::AppMode;
 
-pub fn poll_event(timeout: std::time::Duration) -> std::io::Result<Option<Event>> {
-    if event::poll(timeout)? {
-        Ok(Some(event::read()?))
-    } else {
-        Ok(None)
+pub trait EventSource: Send {
+    fn poll_event(&mut self, timeout: Duration) -> std::io::Result<Option<Event>>;
+}
+
+pub struct CrosstermEventSource;
+
+impl EventSource for CrosstermEventSource {
+    fn poll_event(&mut self, timeout: Duration) -> std::io::Result<Option<Event>> {
+        if event::poll(timeout)? {
+            Ok(Some(event::read()?))
+        } else {
+            Ok(None)
+        }
     }
 }
 

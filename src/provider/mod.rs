@@ -11,6 +11,15 @@ use crate::model::{Message, Provider, Session};
 
 pub use error::ProviderError;
 
+/// Returns the home directory, respecting `AGHIST_HOME` env var override.
+/// When `AGHIST_HOME` is set, it is used instead of the system home directory.
+pub(crate) fn home_dir() -> Option<PathBuf> {
+    if let Ok(home) = std::env::var("AGHIST_HOME") {
+        return Some(PathBuf::from(home));
+    }
+    directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf())
+}
+
 pub trait HistoryProvider: Send + Sync {
     fn provider(&self) -> Provider;
     fn base_dirs(&self) -> &[PathBuf];

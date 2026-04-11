@@ -12,7 +12,7 @@ use ratatui::Terminal;
 
 use crate::action::Action;
 use crate::config::Config;
-use crate::event::{map_key_event, poll_event};
+use crate::event::{map_key_event, CrosstermEventSource, EventSource};
 use crate::export::ExportFormat;
 use crate::model::{Message, Provider, Session, SessionId};
 use crate::provider::HistoryProvider;
@@ -199,6 +199,14 @@ impl App {
     }
 
     pub fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> anyhow::Result<()> {
+        self.run_with_event_source(terminal, CrosstermEventSource)
+    }
+
+    pub fn run_with_event_source(
+        &mut self,
+        terminal: &mut Terminal<impl Backend>,
+        mut events: impl EventSource,
+    ) -> anyhow::Result<()> {
         self.search_index = SearchIndex::open_or_create(&SearchIndex::default_index_dir())
             .map(Arc::new)
             .ok();
@@ -209,7 +217,7 @@ impl App {
         loop {
             terminal.draw(|frame| self.render(frame))?;
 
-            if let Some(Event::Key(key)) = poll_event(Duration::from_millis(50))? {
+            if let Some(Event::Key(key)) = events.poll_event(Duration::from_millis(50))? {
                 if key.kind != crossterm::event::KeyEventKind::Press {
                     continue;
                 }

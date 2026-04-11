@@ -31,18 +31,25 @@ impl OpenCodeProvider {
 fn base_dirs() -> Vec<PathBuf> {
     let mut result = Vec::new();
 
-    // Linux: ~/.local/share/opencode/storage/
-    if let Some(data_dir) =
-        directories::ProjectDirs::from("", "", "opencode").map(|d| d.data_dir().to_path_buf())
-    {
-        result.push(data_dir.join("storage"));
-    }
+    // When AGHIST_HOME is set, derive opencode path from it
+    if std::env::var("AGHIST_HOME").is_ok() {
+        if let Some(home) = super::home_dir() {
+            result.push(home.join(".local").join("share").join("opencode").join("storage"));
+        }
+    } else {
+        // Linux: ~/.local/share/opencode/storage/
+        if let Some(data_dir) =
+            directories::ProjectDirs::from("", "", "opencode").map(|d| d.data_dir().to_path_buf())
+        {
+            result.push(data_dir.join("storage"));
+        }
 
-    // Windows: %APPDATA%\opencode\
-    if let Some(base) = directories::BaseDirs::new() {
-        let appdata_path = base.data_dir().join("opencode");
-        if !result.iter().any(|p| p == &appdata_path) {
-            result.push(appdata_path);
+        // Windows: %APPDATA%\opencode\
+        if let Some(base) = directories::BaseDirs::new() {
+            let appdata_path = base.data_dir().join("opencode");
+            if !result.iter().any(|p| p == &appdata_path) {
+                result.push(appdata_path);
+            }
         }
     }
 

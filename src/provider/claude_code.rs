@@ -31,14 +31,10 @@ impl ClaudeCodeProvider {
 
 fn base_dirs() -> Vec<PathBuf> {
     let mut result = Vec::new();
-    if let Some(home) = home_dir() {
+    if let Some(home) = super::home_dir() {
         result.push(home.join(".claude"));
     }
     result
-}
-
-fn home_dir() -> Option<PathBuf> {
-    directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf())
 }
 
 fn projects_dir(base: &Path) -> PathBuf {

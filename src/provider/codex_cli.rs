@@ -31,10 +31,9 @@ impl CodexCliProvider {
 
 fn base_dirs() -> Vec<PathBuf> {
     let mut result = Vec::new();
-    if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
+    if let Some(home) = super::home_dir() {
         result.push(home.join(".codex").join("sessions"));
     }
-    // Also check CODEX_HOME env var
     if let Ok(codex_home) = std::env::var("CODEX_HOME") {
         result.push(PathBuf::from(codex_home).join("sessions"));
     }
