@@ -7,11 +7,7 @@ use aghist::provider::HistoryProvider;
 
 use common::fixtures;
 
-// All performance tests are #[ignore] so they don't run in normal `cargo test`.
-// Run with: cargo test --test performance -- --ignored
-
 #[test]
-#[ignore]
 fn session_discovery_many_sessions() {
     let (dirs, providers) = fixtures::all_generated_providers(50, 4);
     let start = Instant::now();
@@ -38,7 +34,6 @@ fn session_discovery_many_sessions() {
 }
 
 #[test]
-#[ignore]
 fn message_loading_large_session() {
     let fixture = fixtures::claude_single_session(200);
     let provider =
@@ -64,7 +59,6 @@ fn message_loading_large_session() {
 }
 
 #[test]
-#[ignore]
 fn lru_cache_under_pressure() {
     use std::num::NonZeroUsize;
     use lru::LruCache;
@@ -89,7 +83,6 @@ fn lru_cache_under_pressure() {
 }
 
 #[test]
-#[ignore]
 fn multi_provider_aggregation_and_sort() {
     let (dirs, providers) = fixtures::all_generated_providers(20, 6);
 
@@ -118,7 +111,6 @@ fn multi_provider_aggregation_and_sort() {
 }
 
 #[test]
-#[ignore]
 fn full_app_render_cycle() {
     use crossterm::event::KeyCode;
     use ratatui::backend::TestBackend;
