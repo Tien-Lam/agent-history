@@ -611,7 +611,12 @@ impl GeminiFixtureBuilder {
                 msg_json_parts.join(","),
             );
 
-            let filename = format!("{}.json", session.session_id);
+            let name = &session.session_id;
+            let filename = if name.starts_with("session-") {
+                format!("{name}.json")
+            } else {
+                format!("session-{name}.json")
+            };
             fs::write(chats_dir.join(filename), session_json).unwrap();
         }
 
