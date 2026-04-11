@@ -1,5 +1,6 @@
+mod common;
+
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 use std::{fs, thread, time::Duration};
 
 use lru::LruCache;
@@ -13,9 +14,7 @@ use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
 use aghist::search::SearchIndex;
 
-fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
-}
+use common::helpers::{copy_dir_recursive, fixtures_dir};
 
 // ─── Full parse pipeline: JSONL → RawEntry → Message → ContentBlock ─────────
 
@@ -582,17 +581,4 @@ fn search_incremental_reindex_after_file_change() {
         !hits.is_empty(),
         "original content should survive incremental reindex"
     );
-}
-
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) {
-    fs::create_dir_all(dst).unwrap();
-    for entry in fs::read_dir(src).unwrap() {
-        let entry = entry.unwrap();
-        let target = dst.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_dir_recursive(&entry.path(), &target);
-        } else {
-            fs::copy(entry.path(), &target).unwrap();
-        }
-    }
 }

@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 
 use aghist::model::{ContentBlock, Provider, Role};
@@ -8,13 +10,7 @@ use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
 
-fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
-}
-
-fn edge_cases_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/edge_cases")
-}
+use common::helpers::{edge_cases_dir, fixtures_dir};
 
 // ─── Claude Code ─────────────────────────────────────────────────────────────
 

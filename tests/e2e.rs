@@ -1,7 +1,6 @@
-use std::path::PathBuf;
+mod common;
 
-use ratatui::backend::TestBackend;
-use ratatui::Terminal;
+use std::path::PathBuf;
 
 use aghist::app::{App, AppMode};
 use aghist::provider::claude_code::ClaudeCodeProvider;
@@ -11,28 +10,7 @@ use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
 
-fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
-}
-
-fn edge_cases_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/edge_cases")
-}
-
-fn all_providers() -> Vec<Box<dyn HistoryProvider>> {
-    vec![
-        Box::new(ClaudeCodeProvider::new(vec![fixtures_dir().join("claude")])),
-        Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot")])),
-        Box::new(GeminiCliProvider::new(vec![fixtures_dir().join("gemini")])),
-        Box::new(CodexCliProvider::new(vec![fixtures_dir().join("codex")])),
-        Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode")])),
-    ]
-}
-
-fn make_terminal() -> Terminal<TestBackend> {
-    let backend = TestBackend::new(120, 40);
-    Terminal::new(backend).unwrap()
-}
+use common::helpers::{all_providers, edge_cases_dir, make_terminal};
 
 // ─── TUI smoke test: construct App, render, verify no panics ─────────────────
 

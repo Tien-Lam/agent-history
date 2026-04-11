@@ -94,11 +94,34 @@ impl ScriptedEventSource {
             .collect();
         Self::new(events)
     }
+
+    /// Insert N empty ticks (no key event) at the current position.
+    /// Useful for giving background threads (e.g. search indexer) time to complete.
+    pub fn with_idle_ticks(mut self, n: usize) -> Self {
+        for _ in 0..n {
+            self.events.push_back(None);
+        }
+        self
+    }
+
+    /// Append a key event to the end of the queue.
+    pub fn then_key(mut self, code: KeyCode) -> Self {
+        self.events.push_back(Some(Event::Key(KeyEvent::new_with_kind(
+            code,
+            KeyModifiers::NONE,
+            KeyEventKind::Press,
+        ))));
+        self
+    }
 }
 
 impl EventSource for ScriptedEventSource {
-    fn poll_event(&mut self, _timeout: Duration) -> std::io::Result<Option<Event>> {
+    fn poll_event(&mut self, timeout: Duration) -> std::io::Result<Option<Event>> {
         if let Some(evt) = self.events.pop_front() {
+            if evt.is_none() {
+                // Idle tick: sleep for the poll timeout to give background threads time
+                std::thread::sleep(timeout);
+            }
             Ok(evt)
         } else {
             // Auto-quit when events are exhausted to prevent infinite loop

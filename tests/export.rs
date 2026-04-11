@@ -1,12 +1,12 @@
+mod common;
+
 use std::path::PathBuf;
 
 use aghist::export::{self, ExportFormat};
 use aghist::provider::claude_code::ClaudeCodeProvider;
 use aghist::provider::HistoryProvider;
 
-fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
-}
+use common::helpers::fixtures_dir;
 
 fn load_fixture_session() -> (aghist::model::Session, Vec<aghist::model::Message>) {
     let provider = ClaudeCodeProvider::new(vec![fixtures_dir().join("claude")]);

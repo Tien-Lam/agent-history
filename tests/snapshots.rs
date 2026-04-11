@@ -1,53 +1,11 @@
-use std::path::PathBuf;
-
-use ratatui::backend::TestBackend;
-use ratatui::Terminal;
+mod common;
 
 use aghist::action::Action;
 use aghist::app::App;
 use aghist::config::Config;
-use aghist::provider::claude_code::ClaudeCodeProvider;
-use aghist::provider::codex_cli::CodexCliProvider;
-use aghist::provider::copilot_cli::CopilotCliProvider;
-use aghist::provider::gemini_cli::GeminiCliProvider;
-use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
 
-fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
-}
-
-fn all_providers() -> Vec<Box<dyn HistoryProvider>> {
-    vec![
-        Box::new(ClaudeCodeProvider::new(vec![fixtures_dir().join("claude")])),
-        Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot")])),
-        Box::new(GeminiCliProvider::new(vec![fixtures_dir().join("gemini")])),
-        Box::new(CodexCliProvider::new(vec![fixtures_dir().join("codex")])),
-        Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode")])),
-    ]
-}
-
-fn make_terminal() -> Terminal<TestBackend> {
-    let backend = TestBackend::new(120, 40);
-    Terminal::new(backend).unwrap()
-}
-
-fn render_to_text(terminal: &Terminal<TestBackend>) -> String {
-    let buf = terminal.backend().buffer();
-    let area = buf.area;
-    let mut result = String::new();
-    for y in area.y..area.y + area.height {
-        let mut line = String::new();
-        for x in area.x..area.x + area.width {
-            if let Some(cell) = buf.cell((x, y)) {
-                line.push_str(cell.symbol());
-            }
-        }
-        result.push_str(line.trim_end());
-        result.push('\n');
-    }
-    result
-}
+use common::helpers::{all_providers, make_terminal, render_to_text};
 
 // ─── Session list rendering ────────────────────────────────────────────────────
 
