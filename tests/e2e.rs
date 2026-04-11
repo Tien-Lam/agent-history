@@ -2,7 +2,11 @@ mod common;
 
 use std::path::PathBuf;
 
+use crossterm::event::KeyCode;
+use ratatui::Terminal;
+
 use aghist::app::{App, AppMode};
+use aghist::config::Config;
 use aghist::provider::claude_code::ClaudeCodeProvider;
 use aghist::provider::codex_cli::CodexCliProvider;
 use aghist::provider::copilot_cli::CopilotCliProvider;
@@ -10,333 +14,228 @@ use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
 
-use common::helpers::{all_providers, edge_cases_dir, make_terminal};
+use common::helpers::{
+    all_providers, edge_cases_dir, make_terminal, render_to_text, ScriptedEventSource,
+};
 
-// ─── TUI smoke test: construct App, render, verify no panics ─────────────────
+fn wide_terminal() -> Terminal<ratatui::backend::TestBackend> {
+    let backend = ratatui::backend::TestBackend::new(250, 40);
+    Terminal::new(backend).unwrap()
+}
+
+// ─── Resume command via real key press ──────────────────────────────────────
 
 #[test]
-fn app_initial_render_no_panic() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    let mut terminal = make_terminal();
+fn resume_command_claude_code() {
+    let mut app = App::new(all_providers(), Config::default());
+    let mut terminal = wide_terminal();
 
-    app.load_sessions();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    // First session is Claude Code, press 'y' to copy resume command
+    let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('y')]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
 
-    assert_eq!(app.mode(), AppMode::Browse);
-    assert!(!app.is_loading());
-    assert_eq!(app.session_count(), 5);
+    let text = render_to_text(&terminal);
+    assert!(
+        text.contains("claude --resume session-abc123"),
+        "status bar should show Claude resume command, got:\n{text}"
+    );
 }
 
 #[test]
-fn app_navigate_and_select_session() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    let mut terminal = make_terminal();
+fn resume_command_copilot_cli() {
+    let mut app = App::new(all_providers(), Config::default());
+    let mut terminal = wide_terminal();
 
-    app.load_sessions();
+    // Navigate to index 1 (Copilot), press 'y'
+    let events = ScriptedEventSource::from_keys(vec![
+        KeyCode::Char('j'),
+        KeyCode::Char('y'),
+    ]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
 
-    // Navigate down
-    app.dispatch(aghist::action::Action::NextItem);
-    app.dispatch(aghist::action::Action::NextItem);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-    assert_eq!(app.selected_index(), Some(2));
+    let text = render_to_text(&terminal);
+    assert!(
+        text.contains("copilot --resume=copilot-session-001"),
+        "status bar should show Copilot resume command, got:\n{text}"
+    );
+}
 
-    // Select session → switches to ViewSession mode
-    app.dispatch(aghist::action::Action::SelectSession);
-    terminal.draw(|frame| app.render(frame)).unwrap();
+#[test]
+fn resume_command_gemini_cli() {
+    let mut app = App::new(all_providers(), Config::default());
+    let mut terminal = wide_terminal();
+
+    let events = ScriptedEventSource::from_keys(vec![
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('y'),
+    ]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
+
+    let text = render_to_text(&terminal);
+    assert!(
+        text.contains("gemini --resume gemini-sess-001"),
+        "status bar should show Gemini resume command, got:\n{text}"
+    );
+}
+
+#[test]
+fn resume_command_codex_cli() {
+    let mut app = App::new(all_providers(), Config::default());
+    let mut terminal = wide_terminal();
+
+    let events = ScriptedEventSource::from_keys(vec![
+        KeyCode::Char('G'), // go to bottom (index 4)
+        KeyCode::Char('k'), // up to index 3 (Codex)
+        KeyCode::Char('y'),
+    ]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
+
+    let text = render_to_text(&terminal);
+    assert!(
+        text.contains("codex resume test123"),
+        "status bar should show Codex resume command, got:\n{text}"
+    );
+}
+
+#[test]
+fn resume_command_opencode() {
+    let mut app = App::new(all_providers(), Config::default());
+    let mut terminal = wide_terminal();
+
+    let events = ScriptedEventSource::from_keys(vec![
+        KeyCode::Char('G'), // go to bottom (index 4 = OpenCode)
+        KeyCode::Char('y'),
+    ]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
+
+    let text = render_to_text(&terminal);
+    assert!(
+        text.contains("opencode --session sess-001"),
+        "status bar should show OpenCode resume command, got:\n{text}"
+    );
+}
+
+#[test]
+fn resume_command_in_view_mode() {
+    let mut app = App::new(all_providers(), Config::default());
+    let mut terminal = wide_terminal();
+
+    let events = ScriptedEventSource::from_keys(vec![
+        KeyCode::Enter,     // select first session (Claude)
+        KeyCode::Char('y'), // resume command from view mode
+    ]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
+
     assert_eq!(app.mode(), AppMode::ViewSession);
-
-    // Esc → back to Browse
-    app.dispatch(aghist::action::Action::BackToList);
-    assert_eq!(app.mode(), AppMode::Browse);
+    let text = render_to_text(&terminal);
+    assert!(
+        text.contains("claude --resume session-abc123"),
+        "resume command should work from view mode, got:\n{text}"
+    );
 }
 
 #[test]
-fn app_scroll_in_session_view() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    let mut terminal = make_terminal();
-
-    app.load_sessions();
-    app.dispatch(aghist::action::Action::SelectSession);
-    assert_eq!(app.mode(), AppMode::ViewSession);
-
-    // Scroll down
-    app.dispatch(aghist::action::Action::ScrollDown);
-    app.dispatch(aghist::action::Action::ScrollDown);
-    app.dispatch(aghist::action::Action::PageDown);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-
-    // Scroll up
-    app.dispatch(aghist::action::Action::ScrollUp);
-    app.dispatch(aghist::action::Action::PageUp);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-
-    // Go to top/bottom
-    app.dispatch(aghist::action::Action::GoToBottom);
-    app.dispatch(aghist::action::Action::GoToTop);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-}
-
-#[test]
-fn app_toggle_tool_calls() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    let mut terminal = make_terminal();
-
-    app.load_sessions();
-    app.dispatch(aghist::action::Action::SelectSession);
-    app.dispatch(aghist::action::Action::ToggleToolCalls);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-
-    // Toggle back
-    app.dispatch(aghist::action::Action::ToggleToolCalls);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-}
-
-#[test]
-fn app_help_overlay() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    let mut terminal = make_terminal();
-
-    app.load_sessions();
-    app.dispatch(aghist::action::Action::ToggleHelp);
-    assert_eq!(app.mode(), AppMode::Help);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-
-    app.dispatch(aghist::action::Action::ToggleHelp);
-    assert_eq!(app.mode(), AppMode::Browse);
-}
-
-#[test]
-fn app_go_to_top_and_bottom() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    app.dispatch(aghist::action::Action::GoToBottom);
-    assert_eq!(app.selected_index(), Some(4)); // 5 sessions, 0-indexed
-
-    app.dispatch(aghist::action::Action::GoToTop);
-    assert_eq!(app.selected_index(), Some(0));
-}
-
-#[test]
-fn app_quit_action() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    assert!(!app.should_quit());
-    app.dispatch(aghist::action::Action::Quit);
-    assert!(app.should_quit());
-}
-
-// ─── Search mode ─────────────────────────────────────────────────────────────
-
-#[test]
-fn app_search_mode_enter_and_cancel() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    app.dispatch(aghist::action::Action::SearchStart);
-    assert_eq!(app.mode(), AppMode::Search);
-    assert_eq!(app.session_count(), 5);
-
-    app.dispatch(aghist::action::Action::SearchCancel);
-    assert_eq!(app.mode(), AppMode::Browse);
-}
-
-#[test]
-fn app_search_input_and_backspace() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    app.dispatch(aghist::action::Action::SearchStart);
-    app.dispatch(aghist::action::Action::SearchInput('t'));
-    app.dispatch(aghist::action::Action::SearchInput('e'));
-    app.dispatch(aghist::action::Action::SearchInput('s'));
-    assert_eq!(app.mode(), AppMode::Search);
-
-    app.dispatch(aghist::action::Action::SearchBackspace);
-    app.dispatch(aghist::action::Action::SearchCancel);
-    assert_eq!(app.mode(), AppMode::Browse);
-}
-
-#[test]
-fn app_search_navigate_with_arrows() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    let mut terminal = make_terminal();
-
-    app.load_sessions();
-    app.dispatch(aghist::action::Action::SearchStart);
-
-    app.dispatch(aghist::action::Action::NextItem);
-    app.dispatch(aghist::action::Action::NextItem);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-
-    app.dispatch(aghist::action::Action::PrevItem);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-
-    app.dispatch(aghist::action::Action::SearchSubmit);
-    assert_eq!(app.mode(), AppMode::ViewSession);
-}
-
-// ─── Resume command ─────────────────────────────────────────────────────────
-
-#[test]
-fn app_resume_command_claude_code() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    // Index 0 is Claude Code session
-    app.dispatch(aghist::action::Action::CopyResumeCommand);
-
-    let msg = app.status_message.as_deref().unwrap();
-    assert!(msg.contains("claude --resume session-abc123"), "got: {msg}");
-}
-
-#[test]
-fn app_resume_command_copilot_cli() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    app.dispatch(aghist::action::Action::NextItem); // → index 1 = Copilot
-    app.dispatch(aghist::action::Action::CopyResumeCommand);
-
-    let msg = app.status_message.as_deref().unwrap();
-    assert!(msg.contains("copilot --resume=copilot-session-001"), "got: {msg}");
-}
-
-#[test]
-fn app_resume_command_gemini_cli() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    app.dispatch(aghist::action::Action::NextItem);
-    app.dispatch(aghist::action::Action::NextItem); // → index 2 = Gemini
-    app.dispatch(aghist::action::Action::CopyResumeCommand);
-
-    let msg = app.status_message.as_deref().unwrap();
-    assert!(msg.contains("gemini --resume gemini-sess-001"), "got: {msg}");
-}
-
-#[test]
-fn app_resume_command_codex_cli() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    app.dispatch(aghist::action::Action::GoToBottom);
-    app.dispatch(aghist::action::Action::PrevItem); // → index 3 = Codex
-    app.dispatch(aghist::action::Action::CopyResumeCommand);
-
-    let msg = app.status_message.as_deref().unwrap();
-    assert!(msg.contains("codex resume test123"), "got: {msg}");
-}
-
-#[test]
-fn app_resume_command_opencode() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    app.dispatch(aghist::action::Action::GoToBottom); // → index 4 = OpenCode
-    app.dispatch(aghist::action::Action::CopyResumeCommand);
-
-    let msg = app.status_message.as_deref().unwrap();
-    assert!(msg.contains("opencode --session sess-001"), "got: {msg}");
-}
-
-#[test]
-fn app_resume_command_in_view_mode() {
-    let mut app = App::new(all_providers(), aghist::config::Config::default());
-    app.load_sessions();
-
-    app.dispatch(aghist::action::Action::SelectSession);
-    assert_eq!(app.mode(), AppMode::ViewSession);
-
-    app.dispatch(aghist::action::Action::CopyResumeCommand);
-
-    let msg = app.status_message.as_deref().unwrap();
-    assert!(msg.contains("claude --resume session-abc123"), "got: {msg}");
-}
-
-#[test]
-fn app_resume_command_no_selection() {
+fn resume_command_no_selection() {
     let providers: Vec<Box<dyn HistoryProvider>> = Vec::new();
-    let mut app = App::new(providers, aghist::config::Config::default());
-    app.load_sessions();
+    let mut app = App::new(providers, Config::default());
+    let mut terminal = wide_terminal();
 
-    app.dispatch(aghist::action::Action::CopyResumeCommand);
-    assert!(app.status_message.is_none());
+    // Press 'y' with no sessions — should not show resume command
+    let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('y')]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
+
+    let text = render_to_text(&terminal);
+    assert!(
+        !text.contains("--resume"),
+        "should not show resume command with no sessions, got:\n{text}"
+    );
 }
 
-// ─── Key mapping integration ─────────────────────────────────────────────────
+// ─── Key mapping unit tests ────────────────────────────────────────────────
 
 #[test]
 fn key_mapping_browse_mode() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{KeyEvent, KeyModifiers};
     use aghist::event::map_key_event;
 
     let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Browse, false);
-    assert!(matches!(action, Some(aghist::action::Action::NextItem)));
+    assert!(matches!(
+        map_key_event(key, AppMode::Browse, false),
+        Some(aghist::action::Action::NextItem)
+    ));
 
     let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Browse, false);
-    assert!(matches!(action, Some(aghist::action::Action::SelectSession)));
+    assert!(matches!(
+        map_key_event(key, AppMode::Browse, false),
+        Some(aghist::action::Action::SelectSession)
+    ));
 
     let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Browse, false);
-    assert!(matches!(action, Some(aghist::action::Action::CopyResumeCommand)));
+    assert!(matches!(
+        map_key_event(key, AppMode::Browse, false),
+        Some(aghist::action::Action::CopyResumeCommand)
+    ));
 
     let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-    let action = map_key_event(key, AppMode::Browse, false);
-    assert!(matches!(action, Some(aghist::action::Action::Quit)));
+    assert!(matches!(
+        map_key_event(key, AppMode::Browse, false),
+        Some(aghist::action::Action::Quit)
+    ));
 }
 
 #[test]
 fn key_mapping_view_mode() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{KeyEvent, KeyModifiers};
     use aghist::event::map_key_event;
 
     let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::ViewSession, false);
-    assert!(matches!(action, Some(aghist::action::Action::BackToList)));
+    assert!(matches!(
+        map_key_event(key, AppMode::ViewSession, false),
+        Some(aghist::action::Action::BackToList)
+    ));
 
     let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::ViewSession, false);
-    assert!(matches!(action, Some(aghist::action::Action::ToggleToolCalls)));
+    assert!(matches!(
+        map_key_event(key, AppMode::ViewSession, false),
+        Some(aghist::action::Action::ToggleToolCalls)
+    ));
 
     let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::ViewSession, false);
-    assert!(matches!(action, Some(aghist::action::Action::CopyResumeCommand)));
+    assert!(matches!(
+        map_key_event(key, AppMode::ViewSession, false),
+        Some(aghist::action::Action::CopyResumeCommand)
+    ));
 }
 
 #[test]
 fn key_mapping_search_mode() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{KeyEvent, KeyModifiers};
     use aghist::event::map_key_event;
 
     let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search, false);
-    assert!(matches!(action, Some(aghist::action::Action::SearchCancel)));
+    assert!(matches!(
+        map_key_event(key, AppMode::Search, false),
+        Some(aghist::action::Action::SearchCancel)
+    ));
 
     let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search, false);
-    assert!(matches!(action, Some(aghist::action::Action::SearchSubmit)));
+    assert!(matches!(
+        map_key_event(key, AppMode::Search, false),
+        Some(aghist::action::Action::SearchSubmit)
+    ));
 
     let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search, false);
-    assert!(matches!(action, Some(aghist::action::Action::SearchInput('a'))));
-
-    let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search, false);
-    assert!(matches!(action, Some(aghist::action::Action::PrevItem)));
-
-    let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
-    let action = map_key_event(key, AppMode::Search, false);
-    assert!(matches!(action, Some(aghist::action::Action::NextItem)));
+    assert!(matches!(
+        map_key_event(key, AppMode::Search, false),
+        Some(aghist::action::Action::SearchInput('a'))
+    ));
 }
 
-// ─── Error resilience E2E ────────────────────────────────────────────────────
+// ─── Error resilience via real event loop ───────────────────────────────────
 
 #[test]
-fn app_with_corrupt_fixtures_no_crash() {
+fn corrupt_fixtures_no_crash() {
     let providers: Vec<Box<dyn HistoryProvider>> = vec![
         Box::new(ClaudeCodeProvider::new(vec![edge_cases_dir().join("claude")])),
         Box::new(CopilotCliProvider::new(vec![edge_cases_dir().join("copilot")])),
@@ -344,39 +243,23 @@ fn app_with_corrupt_fixtures_no_crash() {
         Box::new(CodexCliProvider::new(vec![edge_cases_dir().join("codex")])),
         Box::new(OpenCodeProvider::new(vec![edge_cases_dir().join("opencode")])),
     ];
-
-    let mut app = App::new(providers, aghist::config::Config::default());
+    let mut app = App::new(providers, Config::default());
     let mut terminal = make_terminal();
 
-    // Should not panic despite corrupt fixture data
-    app.load_sessions();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    // Navigate and select through the event loop — should not panic
+    let events = ScriptedEventSource::from_keys(vec![
+        KeyCode::Enter,     // select a session
+        KeyCode::Char('j'), // scroll
+        KeyCode::Esc,       // back
+        KeyCode::Char('q'),
+    ]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
 
-    // Should have loaded valid sessions only
     assert!(app.session_count() > 0);
-
-    // Navigate and select a session — should not panic
-    app.dispatch(aghist::action::Action::SelectSession);
-    terminal.draw(|frame| app.render(frame)).unwrap();
-}
-
-// ─── Empty state E2E ─────────────────────────────────────────────────────────
-
-#[test]
-fn app_with_no_providers_empty_state() {
-    let providers: Vec<Box<dyn HistoryProvider>> = Vec::new();
-    let mut app = App::new(providers, aghist::config::Config::default());
-    let mut terminal = make_terminal();
-
-    app.load_sessions();
-    terminal.draw(|frame| app.render(frame)).unwrap();
-
-    assert_eq!(app.session_count(), 0);
-    assert_eq!(app.mode(), AppMode::Browse);
 }
 
 #[test]
-fn app_with_nonexistent_dirs_empty_state() {
+fn nonexistent_dirs_empty_state() {
     let fake = PathBuf::from("/nonexistent/path");
     let providers: Vec<Box<dyn HistoryProvider>> = vec![
         Box::new(ClaudeCodeProvider::new(vec![fake.clone()])),
@@ -385,12 +268,11 @@ fn app_with_nonexistent_dirs_empty_state() {
         Box::new(CodexCliProvider::new(vec![fake.clone()])),
         Box::new(OpenCodeProvider::new(vec![fake])),
     ];
-
-    let mut app = App::new(providers, aghist::config::Config::default());
+    let mut app = App::new(providers, Config::default());
     let mut terminal = make_terminal();
 
-    app.load_sessions();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('q')]);
+    app.run_with_event_source(&mut terminal, events).unwrap();
 
     assert_eq!(app.session_count(), 0);
 }

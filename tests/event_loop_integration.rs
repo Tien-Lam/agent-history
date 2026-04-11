@@ -147,21 +147,28 @@ fn toggle_tool_calls_changes_rendered_output() {
         .assistant("Here is the file content.")
         .done()
         .build();
-    let mut app = make_app(claude_providers(&fixture));
-    let mut terminal = make_terminal();
 
-    // Enter session view, capture output without tool calls
+    // Run 1: enter session view without toggling tool calls
+    let mut app1 = make_app(claude_providers(&fixture));
+    let mut terminal1 = make_terminal();
     let events = ScriptedEventSource::from_keys(vec![KeyCode::Enter]);
-    app.run_with_event_source(&mut terminal, events).unwrap();
-    let before = render_to_text(&terminal);
+    app1.run_with_event_source(&mut terminal1, events).unwrap();
+    let without_tools = render_to_text(&terminal1);
 
-    // Toggle tool calls on, render again
-    app.dispatch(aghist::action::Action::ToggleToolCalls);
-    terminal.draw(|f| app.render(f)).unwrap();
-    let after = render_to_text(&terminal);
+    // Run 2: enter session view, then toggle tool calls on
+    let mut app2 = make_app(claude_providers(&fixture));
+    let mut terminal2 = make_terminal();
+    let events = ScriptedEventSource::from_keys(vec![
+        KeyCode::Enter,     // select session
+        KeyCode::Char('t'), // toggle tool calls
+    ]);
+    app2.run_with_event_source(&mut terminal2, events).unwrap();
+    let with_tools = render_to_text(&terminal2);
 
-    // The rendered output should change when tool calls are toggled
-    assert_ne!(before, after, "toggling tool calls should change the rendered output");
+    assert_ne!(
+        without_tools, with_tools,
+        "toggling tool calls should change the rendered output"
+    );
 }
 
 #[test]
@@ -219,21 +226,19 @@ fn filter_mode_shows_provider_list() {
 
 #[test]
 fn filter_toggle_changes_rendered_output() {
-    let (dirs, providers) = fixtures::all_generated_providers(1, 2);
-    let mut app = make_app(providers);
-    let mut terminal = make_terminal();
-
-    // First, run to get a rendered view with all providers
+    // Run 1: no filter applied
+    let (dirs1, providers1) = fixtures::all_generated_providers(1, 2);
+    let mut app1 = make_app(providers1);
+    let mut terminal1 = make_terminal();
     let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('q')]);
-    app.run_with_event_source(&mut terminal, events).unwrap();
-    let before = render_to_text(&terminal);
-    let total = app.session_count();
+    app1.run_with_event_source(&mut terminal1, events).unwrap();
+    let before = render_to_text(&terminal1);
+    let total = app1.session_count();
+    drop(dirs1);
 
-    // Now open filter, toggle first provider off, close filter
-    let mut app2 = make_app({
-        let (_, p) = fixtures::all_generated_providers(1, 2);
-        p
-    });
+    // Run 2: toggle a provider off via filter
+    let (dirs2, providers2) = fixtures::all_generated_providers(1, 2);
+    let mut app2 = make_app(providers2);
     let mut terminal2 = make_terminal();
     let events = ScriptedEventSource::from_keys(vec![
         KeyCode::Char('f'), // open filter
@@ -243,11 +248,10 @@ fn filter_toggle_changes_rendered_output() {
     ]);
     app2.run_with_event_source(&mut terminal2, events).unwrap();
     let after = render_to_text(&terminal2);
-    drop(dirs);
+    drop(dirs2);
 
     assert!(total > 0, "should have sessions");
     assert_eq!(app2.mode(), AppMode::Browse);
-    // After filtering out a provider, rendered output should differ
     assert_ne!(before, after, "filtering a provider should change the displayed sessions");
 }
 
@@ -535,16 +539,14 @@ fn export_confirm_writes_file_and_returns() {
 
     assert_eq!(app.mode(), AppMode::ViewSession);
 
-    // Check that status_message indicates export happened
-    let status = app.status_message.as_deref().unwrap_or("");
+    // The status bar should show the export message in rendered output
+    let text = render_to_text(&terminal);
     assert!(
-        status.contains("Exported") || status.contains("Export"),
-        "should have export status message, got: '{status}'"
+        text.contains("Exported") || text.contains("Export"),
+        "rendered output should show export status, got:\n{text}"
     );
 
     // Clean up the exported file
-    let _ = std::fs::remove_file(format!("aghist-session-.md"));
-    // Try common patterns since the ID might be truncated
     for entry in std::fs::read_dir(".").unwrap().flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with("aghist-") && name.ends_with(".md") {
