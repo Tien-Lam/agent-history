@@ -74,7 +74,7 @@ fn lru_cache_under_pressure() {
     }
     let elapsed = start.elapsed();
 
-    println!("1000 cache put operations in {:?}", elapsed);
+    println!("1000 cache put operations in {elapsed:?}");
     assert_eq!(cache.len(), 10);
     assert!(
         elapsed.as_millis() < 500,
@@ -141,7 +141,7 @@ fn full_app_render_cycle() {
     app.run_with_event_source(&mut terminal, events).unwrap();
     let elapsed = start.elapsed();
 
-    println!("Full app render cycle in {:?}", elapsed);
+    println!("Full app render cycle in {elapsed:?}");
     drop(dirs);
 
     assert!(app.should_quit());

@@ -397,7 +397,7 @@ fn search_enter_and_cancel_preserves_sessions() {
 
     let text = render_to_text(&terminal);
     assert!(
-        text.contains("Search") || text.contains("/"),
+        text.contains("Search") || text.contains('/'),
         "search mode should show search indicator, got:\n{text}"
     );
 }
@@ -549,7 +549,7 @@ fn export_confirm_writes_file_and_returns() {
     // Clean up the exported file
     for entry in std::fs::read_dir(".").unwrap().flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with("aghist-") && name.ends_with(".md") {
+        if name.starts_with("aghist-") && std::path::Path::new(&name).extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
