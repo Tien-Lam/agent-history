@@ -57,7 +57,8 @@ fn export_nonexistent_session_fails() {
         .args(["export", "--format", "md", "--session", "nonexistent"])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("Session not found"));
 }
 
 #[test]
@@ -139,7 +140,8 @@ fn invalid_export_format_fails() {
         .args(["export", "--format", "xml", "--session", "any"])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("invalid value 'xml'"));
 }
 
 #[test]

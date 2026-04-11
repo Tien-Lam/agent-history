@@ -98,6 +98,15 @@ impl ScriptedEventSource {
 
 impl EventSource for ScriptedEventSource {
     fn poll_event(&mut self, _timeout: Duration) -> std::io::Result<Option<Event>> {
-        Ok(self.events.pop_front().flatten())
+        if let Some(evt) = self.events.pop_front() {
+            Ok(evt)
+        } else {
+            // Auto-quit when events are exhausted to prevent infinite loop
+            Ok(Some(Event::Key(KeyEvent::new_with_kind(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+                KeyEventKind::Press,
+            ))))
+        }
     }
 }

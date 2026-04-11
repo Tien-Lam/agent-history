@@ -163,6 +163,8 @@ fn generated_copilot_fixtures_discoverable() {
     let sessions = provider.discover_sessions().unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, Provider::CopilotCli);
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+    assert_eq!(messages.len(), 4);
 }
 
 #[test]
@@ -172,6 +174,8 @@ fn generated_gemini_fixtures_discoverable() {
     let sessions = provider.discover_sessions().unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, Provider::GeminiCli);
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+    assert_eq!(messages.len(), 4);
 }
 
 #[test]
@@ -181,6 +185,8 @@ fn generated_codex_fixtures_discoverable() {
     let sessions = provider.discover_sessions().unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, Provider::CodexCli);
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+    assert_eq!(messages.len(), 4);
 }
 
 #[test]
@@ -190,6 +196,8 @@ fn generated_opencode_fixtures_discoverable() {
     let sessions = provider.discover_sessions().unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, Provider::OpenCode);
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+    assert_eq!(messages.len(), 4);
 }
 
 #[test]
