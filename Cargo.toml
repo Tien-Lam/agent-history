@@ -3,6 +3,7 @@ name = "aghist"
 version = "0.1.3"
 edition = "2021"
 description = "Cross-platform TUI for viewing and searching AI agent conversation history"
+license = "MIT"
 
 [dependencies]
 anyhow = "1"
