@@ -42,6 +42,10 @@ enum Command {
         #[arg(long, short)]
         output: Option<PathBuf>,
     },
+    /// Update aghist to the latest release
+    Update,
+    /// Remove aghist binary and data
+    Uninstall,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -64,13 +68,15 @@ fn main() -> anyhow::Result<()> {
         .filter(|p| enabled.contains(&p.provider()))
         .collect();
 
-    if let Some(Command::Export {
-        format,
-        session,
-        output,
-    }) = cli.command
-    {
-        return export_session(&providers, format, &session, output.as_deref());
+    match cli.command {
+        Some(Command::Update) => return self_update(),
+        Some(Command::Uninstall) => return uninstall(),
+        Some(Command::Export {
+            format,
+            session,
+            output,
+        }) => return export_session(&providers, format, &session, output.as_deref()),
+        None => {}
     }
 
     if cli.list {
@@ -129,6 +135,82 @@ fn export_session(
         print!("{content}");
     }
 
+    Ok(())
+}
+
+fn uninstall() -> anyhow::Result<()> {
+    let exe = std::env::current_exe()?;
+    let index_dir = search::SearchIndex::default_index_dir();
+    let config_path = config::Config::config_path();
+    let config_dir = config_path.as_deref().and_then(|p| p.parent());
+
+    eprintln!("This will remove:");
+    eprintln!("  binary:       {}", exe.display());
+    if index_dir.exists() {
+        eprintln!("  search index: {}", index_dir.display());
+    }
+    if let Some(dir) = config_dir {
+        if dir.exists() {
+            eprintln!("  config:       {}", dir.display());
+        }
+    }
+
+    eprint!("\nContinue? [y/N] ");
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    if !input.trim().eq_ignore_ascii_case("y") {
+        eprintln!("Aborted.");
+        return Ok(());
+    }
+
+    if index_dir.exists() {
+        std::fs::remove_dir_all(&index_dir)?;
+        eprintln!("Removed {}", index_dir.display());
+    }
+    if let Some(dir) = config_dir {
+        if dir.exists() {
+            std::fs::remove_dir_all(dir)?;
+            eprintln!("Removed {}", dir.display());
+        }
+    }
+
+    // On Windows, self-delete requires renaming first
+    #[cfg(windows)]
+    {
+        let tmp = exe.with_extension("old");
+        std::fs::rename(&exe, &tmp)?;
+        // Best-effort: the OS may lock the renamed file until this process exits.
+        // Spawn a background cmd to clean it up after a short delay.
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "timeout", "/t", "2", "/nobreak", ">nul", "&", "del"])
+            .arg(&tmp)
+            .spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::remove_file(&exe)?;
+    }
+
+    eprintln!("aghist has been uninstalled.");
+    Ok(())
+}
+
+fn self_update() -> anyhow::Result<()> {
+    let status = self_update::backends::github::Update::configure()
+        .repo_owner("Tien-Lam")
+        .repo_name("agent-history")
+        .bin_name("aghist")
+        .show_download_progress(true)
+        .no_confirm(true)
+        .current_version(self_update::cargo_crate_version!())
+        .build()?
+        .update()?;
+
+    if status.updated() {
+        println!("Updated to v{}", status.version());
+    } else {
+        println!("Already up to date (v{})", status.version());
+    }
     Ok(())
 }
 

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-04-12
+
+### Added
+
+- Install script (`install.sh`) for one-line installation on Linux and macOS
+- `aghist update` subcommand for self-updating from GitHub releases
+- `aghist uninstall` subcommand to remove binary, search index, and config
+- `cargo binstall` support via package metadata
+- Architecture documentation (`docs/ARCHITECTURE.md`)
+- LICENSE file (MIT)
+- CHANGELOG.md
+
 ## [0.1.3] - 2026-04-11
 
 ### Changed
@@ -39,6 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - GitHub Actions CI (clippy, tests, build)
 - Snapshot tests with insta
 
+[0.2.0]: https://github.com/Tien-Lam/agent-history/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/Tien-Lam/agent-history/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Tien-Lam/agent-history/compare/v0.1.0...v0.1.2
 [0.1.0]: https://github.com/Tien-Lam/agent-history/releases/tag/v0.1.0

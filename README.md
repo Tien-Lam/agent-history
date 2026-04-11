@@ -28,7 +28,27 @@ Providers are auto-detected based on platform-specific default paths.
 
 ## Installation
 
-### Prebuilt binaries
+### Shell (Linux / macOS)
+
+```sh
+curl -sSfL https://raw.githubusercontent.com/Tien-Lam/agent-history/main/install.sh | bash
+```
+
+Installs to `~/.local/bin` by default. Override with `| bash -s -- --to /usr/local/bin`.
+
+### cargo-binstall
+
+```sh
+cargo binstall aghist
+```
+
+### From source
+
+```sh
+cargo install --git https://github.com/Tien-Lam/agent-history.git
+```
+
+### Manual download
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/Tien-Lam/agent-history/releases).
 
@@ -38,20 +58,19 @@ Download the latest release for your platform from [GitHub Releases](https://git
 | Windows x86_64 | `aghist-v*-x86_64-pc-windows-msvc.zip` |
 | macOS Apple Silicon | `aghist-v*-aarch64-apple-darwin.tar.gz` |
 
-### From source
+### Updating
 
 ```sh
-cargo install --path .
+aghist update
 ```
 
-### Build from Git
+### Uninstalling
 
 ```sh
-git clone https://github.com/Tien-Lam/agent-history.git
-cd agent-history
-cargo build --release
-# Binary at target/release/aghist (.exe on Windows)
+aghist uninstall
 ```
+
+Removes the binary, search index, and configuration.
 
 ## Usage
 

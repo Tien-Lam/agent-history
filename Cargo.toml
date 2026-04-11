@@ -1,9 +1,10 @@
 [package]
 name = "aghist"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 description = "Cross-platform TUI for viewing and searching AI agent conversation history"
 license = "MIT"
+repository = "https://github.com/Tien-Lam/agent-history"
 
 [dependencies]
 anyhow = "1"
@@ -23,11 +24,28 @@ thiserror = "2"
 toml = "0.8"
 tantivy = "0.22"
 
+[target.'cfg(not(windows))'.dependencies]
+self_update = { version = "0.42", default-features = false, features = [
+    "archive-tar", "compression-flate2", "rustls",
+] }
+
+[target.'cfg(windows)'.dependencies]
+self_update = { version = "0.42", default-features = false, features = [
+    "archive-zip", "compression-zip-deflate", "rustls",
+] }
+
 [dev-dependencies]
 assert_cmd = "2"
 insta = "1"
 predicates = "3"
 tempfile = "3"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }{ archive-suffix }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
 
 [lints.rust]
 unsafe_code = "forbid"
