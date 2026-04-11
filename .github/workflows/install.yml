@@ -1,0 +1,33 @@
+name: Install Script
+
+on:
+  push:
+    branches: [main]
+    paths: [install.sh]
+  pull_request:
+    branches: [main]
+    paths: [install.sh]
+
+jobs:
+  test-install:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck
+        if: runner.os == 'Linux'
+        run: shellcheck install.sh
+
+      - name: Run install script
+        run: |
+          bash install.sh --to "$RUNNER_TEMP/bin" --tag v0.2.0
+
+      - name: Verify binary
+        run: |
+          "$RUNNER_TEMP/bin/aghist" --version

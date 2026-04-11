@@ -177,3 +177,21 @@ fn reindex_flag_exits_zero() {
         .assert()
         .success();
 }
+
+#[test]
+fn update_help_exits_zero() {
+    aghist()
+        .args(["update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Update aghist to the latest release"));
+}
+
+#[test]
+fn uninstall_help_exits_zero() {
+    aghist()
+        .args(["uninstall", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Remove aghist binary and data"));
+}
