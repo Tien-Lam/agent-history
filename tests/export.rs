@@ -228,6 +228,102 @@ fn html_escapes_special_characters() {
     );
 }
 
+// ─── HTML language attribute injection ──────────────────────────────────────────
+
+#[test]
+fn html_escapes_language_attribute() {
+    use aghist::model::*;
+    use chrono::Utc;
+
+    let session = Session {
+        id: SessionId("test".into()),
+        provider: Provider::ClaudeCode,
+        project_path: None,
+        project_name: Some("test".into()),
+        git_branch: None,
+        started_at: Utc::now(),
+        ended_at: None,
+        summary: None,
+        model: None,
+        token_usage: None,
+        message_count: 1,
+        source_path: PathBuf::from("/tmp/test"),
+    };
+    let messages = vec![Message {
+        id: MessageId("m1".into()),
+        role: Role::Assistant,
+        timestamp: Utc::now(),
+        content: vec![ContentBlock::CodeBlock {
+            language: Some("rust\" onclick=\"alert(1)".into()),
+            code: "fn main() {}".into(),
+        }],
+        model: None,
+        token_usage: None,
+    }];
+
+    let html = export::to_html(&session, &messages);
+
+    // The quote in the language is escaped, so it can't break out of the attribute
+    assert!(
+        !html.contains(r#"" onclick="#),
+        "should escape quotes in language attribute to prevent attribute breakout"
+    );
+    assert!(
+        html.contains("&quot;"),
+        "should HTML-escape quotes in language attribute"
+    );
+}
+
+// ─── UTF-8 export ──────────────────────────────────────────────────────────────
+
+#[test]
+fn export_handles_unicode_content() {
+    use aghist::model::*;
+    use chrono::Utc;
+
+    let session = Session {
+        id: SessionId("unicode-test".into()),
+        provider: Provider::ClaudeCode,
+        project_path: None,
+        project_name: Some("プロジェクト".into()),
+        git_branch: Some("feature/日本語".into()),
+        started_at: Utc::now(),
+        ended_at: None,
+        summary: None,
+        model: None,
+        token_usage: None,
+        message_count: 1,
+        source_path: PathBuf::from("/tmp/test"),
+    };
+    let messages = vec![Message {
+        id: MessageId("m1".into()),
+        role: Role::User,
+        timestamp: Utc::now(),
+        content: vec![
+            ContentBlock::Text("你好世界 🌍 مرحبا".into()),
+            ContentBlock::CodeBlock {
+                language: Some("python".into()),
+                code: "print('café ☕')".into(),
+            },
+        ],
+        model: None,
+        token_usage: None,
+    }];
+
+    let md = export::to_markdown(&session, &messages);
+    assert!(md.contains("プロジェクト"), "markdown should preserve CJK project name");
+    assert!(md.contains("你好世界"), "markdown should preserve CJK content");
+    assert!(md.contains("🌍"), "markdown should preserve emoji");
+
+    let json = export::to_json(&session, &messages);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON should be valid with unicode");
+    assert_eq!(parsed["session"]["project_name"], "プロジェクト");
+
+    let html = export::to_html(&session, &messages);
+    assert!(html.contains("プロジェクト"), "HTML should preserve CJK");
+    assert!(html.contains("مرحبا"), "HTML should preserve RTL text");
+}
+
 // ─── ExportFormat ──────────────────────────────────────────────────────────────
 
 #[test]

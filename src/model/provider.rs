@@ -30,18 +30,31 @@ impl Provider {
     }
 
     /// Returns a CLI command to resume the given session.
+    ///
+    /// The session ID is single-quoted to prevent shell injection.
     pub fn resume_command(self, session_id: &str) -> String {
+        let safe_id = shell_escape(session_id);
         match self {
-            Self::ClaudeCode => format!("claude --resume {session_id}"),
-            Self::CopilotCli => format!("copilot --resume={session_id}"),
-            Self::GeminiCli => format!("gemini --resume {session_id}"),
+            Self::ClaudeCode => format!("claude --resume {safe_id}"),
+            Self::CopilotCli => format!("copilot --resume={safe_id}"),
+            Self::GeminiCli => format!("gemini --resume {safe_id}"),
             Self::CodexCli => {
                 let id = codex_resume_id(session_id);
-                format!("codex resume {id}")
+                let safe = shell_escape(id);
+                format!("codex resume {safe}")
             }
-            Self::OpenCode => format!("opencode --session {session_id}"),
+            Self::OpenCode => format!("opencode --session {safe_id}"),
         }
     }
+}
+
+/// Wraps a value in single quotes for safe shell interpolation.
+/// Single quotes inside the value are escaped as `'\''`.
+fn shell_escape(s: &str) -> String {
+    if s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.') {
+        return s.to_string();
+    }
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// Extracts the UUID from a Codex rollout filename stem.
@@ -51,11 +64,12 @@ impl Provider {
 /// the full filename stem. If a trailing UUID is found, return it;
 /// otherwise strip the `rollout-` prefix as a best-effort fallback.
 fn codex_resume_id(session_id: &str) -> &str {
-    if session_id.len() >= 36 {
-        let tail = &session_id[session_id.len() - 36..];
-        let b = tail.as_bytes();
-        if b[8] == b'-' && b[13] == b'-' && b[18] == b'-' && b[23] == b'-' {
-            return tail;
+    if let Some(tail) = session_id.get(session_id.len().saturating_sub(36)..) {
+        if tail.len() == 36 {
+            let b = tail.as_bytes();
+            if b[8] == b'-' && b[13] == b'-' && b[18] == b'-' && b[23] == b'-' {
+                return tail;
+            }
         }
     }
     session_id.strip_prefix("rollout-").unwrap_or(session_id)
@@ -112,5 +126,21 @@ mod tests {
     fn resume_command_codex_plain_id() {
         let cmd = Provider::CodexCli.resume_command("my-thread");
         assert_eq!(cmd, "codex resume my-thread");
+    }
+
+    #[test]
+    fn resume_command_escapes_shell_metacharacters() {
+        let cmd = Provider::ClaudeCode.resume_command("abc; rm -rf /");
+        assert_eq!(cmd, "claude --resume 'abc; rm -rf /'");
+    }
+
+    #[test]
+    fn shell_escape_safe_id_unquoted() {
+        assert_eq!(shell_escape("abc-123_def.txt"), "abc-123_def.txt");
+    }
+
+    #[test]
+    fn shell_escape_single_quotes() {
+        assert_eq!(shell_escape("it's"), "'it'\\''s'");
     }
 }

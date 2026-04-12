@@ -1063,6 +1063,25 @@ pub fn claude_single_session(n_messages: usize) -> FixtureDir {
     builder.done().build()
 }
 
+pub fn claude_multi_session(n_sessions: usize, msgs_per_session: usize) -> FixtureDir {
+    let mut builder = ClaudeFixtureBuilder::new();
+    for s in 0..n_sessions {
+        let mut sb = builder
+            .add_session(&format!("session-multi-{s:03}"))
+            .project(&format!("project-{s}"))
+            .display(&format!("Multi session {s}"));
+        for m in 0..msgs_per_session {
+            if m % 2 == 0 {
+                sb = sb.user(&format!("User msg {m} in session {s}"));
+            } else {
+                sb = sb.assistant(&format!("Assistant msg {m} in session {s}"));
+            }
+        }
+        builder = sb.done();
+    }
+    builder.build()
+}
+
 pub fn copilot_single_session(n_messages: usize) -> FixtureDir {
     let mut builder = CopilotFixtureBuilder::new()
         .add_session("copilot-gen-001");

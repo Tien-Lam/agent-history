@@ -83,6 +83,14 @@ fn main() -> anyhow::Result<()> {
         return list_sessions(&providers);
     }
 
+    // Install panic hook that restores the terminal before printing the panic
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        default_hook(info);
+    }));
+
     // Set up terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -181,10 +189,13 @@ fn uninstall() -> anyhow::Result<()> {
         std::fs::rename(&exe, &tmp)?;
         // Best-effort: the OS may lock the renamed file until this process exits.
         // Spawn a background cmd to clean it up after a short delay.
-        let _ = std::process::Command::new("cmd")
+        if let Err(e) = std::process::Command::new("cmd")
             .args(["/C", "timeout", "/t", "2", "/nobreak", ">nul", "&", "del"])
             .arg(&tmp)
-            .spawn();
+            .spawn()
+        {
+            eprintln!("warning: could not schedule cleanup of {}: {e}", tmp.display());
+        }
     }
     #[cfg(not(windows))]
     {

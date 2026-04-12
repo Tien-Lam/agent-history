@@ -137,13 +137,15 @@ pub struct App {
 
     filter: FilterState,
     export_cursor: usize,
+    pre_help_mode: AppMode,
     pub status_message: Option<String>,
 }
 
 impl App {
     pub fn new(providers: Vec<Box<dyn HistoryProvider>>, config: Config) -> Self {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
-        let cache_size = NonZeroUsize::new(config.cache_size).unwrap_or(NonZeroUsize::new(20).unwrap());
+        let cache_size = NonZeroUsize::new(config.cache_size)
+            .unwrap_or(NonZeroUsize::MIN);
 
         let mut message_view = MessageViewComponent::new();
         message_view.show_tool_calls = config.show_tool_calls;
@@ -174,6 +176,7 @@ impl App {
 
             filter: FilterState::new(),
             export_cursor: 0,
+            pre_help_mode: AppMode::Browse,
             status_message: None,
         }
     }
@@ -423,11 +426,12 @@ impl App {
             }
 
             Action::ToggleHelp => {
-                self.mode = if self.mode == AppMode::Help {
-                    AppMode::Browse
+                if self.mode == AppMode::Help {
+                    self.mode = self.pre_help_mode;
                 } else {
-                    AppMode::Help
-                };
+                    self.pre_help_mode = self.mode;
+                    self.mode = AppMode::Help;
+                }
             }
 
             // Search
@@ -580,6 +584,8 @@ impl App {
             Action::SessionsLoaded(sessions) => {
                 self.sessions = sessions;
                 self.loading = false;
+                self.search_results.clear();
+                self.filtered_session_ids = None;
                 if !self.sessions.is_empty() {
                     self.session_list.state.select(Some(0));
                 }
@@ -662,8 +668,12 @@ impl App {
         };
 
         let content = crate::export::export(format, &session, &messages);
-        let id_short = &session.id.0[..session.id.0.len().min(8)];
-        let filename = format!("aghist-{id_short}.{}", format.extension());
+        let id_short = session.id.0.get(..8).unwrap_or(&session.id.0);
+        let sanitized: String = id_short
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect();
+        let filename = format!("aghist-{sanitized}.{}", format.extension());
 
         match std::fs::write(&filename, &content) {
             Ok(()) => {

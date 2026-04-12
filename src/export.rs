@@ -219,7 +219,7 @@ fn render_content_html(out: &mut String, blocks: &[ContentBlock]) {
             ContentBlock::CodeBlock { language, code } => {
                 let lang_attr = language
                     .as_deref()
-                    .map_or(String::new(), |l| format!(" class=\"language-{l}\""));
+                    .map_or(String::new(), |l| format!(" class=\"language-{}\"", html_escape(l)));
                 let _ = writeln!(
                     out,
                     "<pre><code{lang_attr}>{}</code></pre>",

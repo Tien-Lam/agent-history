@@ -60,7 +60,16 @@ impl Config {
 
     pub fn load_from(path: &std::path::Path) -> Self {
         let mut config: Self = match std::fs::read_to_string(path) {
-            Ok(contents) => toml::from_str(&contents).unwrap_or_default(),
+            Ok(contents) => match toml::from_str(&contents) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to parse {}: {e}; using defaults",
+                        path.display()
+                    );
+                    Self::default()
+                }
+            },
             Err(_) => Self::default(),
         };
         if config.cache_size == 0 {
