@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] - 2026-04-12
+
+### Fixed
+
+- **Security**: Escape HTML language attribute in code block export to prevent XSS injection
+- **Security**: Shell-escape session IDs in resume commands to prevent command injection via clipboard
+- **Security**: Sanitize export filenames to prevent path traversal via crafted session IDs
+- **Safety**: Install panic hook to restore terminal on crash (raw mode + alternate screen)
+- **Safety**: Use UTF-8-safe string slicing for session ID truncation and Codex UUID extraction
+- Help toggle now preserves previous mode (was always returning to Browse from ViewSession)
+- Clear stale search results when session list is reloaded
+- Warn on malformed `config.toml` instead of silently falling back to defaults
+- Log warning on Windows uninstall cleanup failure instead of ignoring
+
+### Changed
+
+- Migrated from deprecated `serde_yaml` 0.9 to `serde_yml` 0.0.12
+- Bumped `lru` to 0.16.3 to fix Stacked Borrows soundness issue
+
+### Added
+
+- Tests for HTML attribute injection, Unicode/CJK/RTL export, IO error paths, help mode preservation, and export-while-filtered workflow
+
 ## [0.2.0] - 2026-04-12
 
 ### Added
