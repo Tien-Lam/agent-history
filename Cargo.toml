@@ -19,7 +19,7 @@ lru = "0.16.3"
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yml = "0.0.12"
+serde_yaml_ng = "0.10"
 thiserror = "2"
 toml = "0.8"
 tantivy = "0.26"

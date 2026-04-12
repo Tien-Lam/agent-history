@@ -20,8 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Migrated from deprecated `serde_yaml` 0.9 to `serde_yml` 0.0.12
-- Bumped `lru` to 0.16.3 to fix Stacked Borrows soundness issue
+- Migrated from deprecated `serde_yaml` to `serde_yaml_ng` 0.10
+- Upgraded `ratatui` 0.29 → 0.30 and `tantivy` 0.22 → 0.26
+- Bumped `lru` to 0.16.3, eliminating vulnerable transitive 0.12.5
 
 ### Added
 

@@ -108,7 +108,7 @@ struct WorkspaceYaml {
 
 fn build_session(session_dir: &Path, workspace_path: &Path) -> Option<Session> {
     let yaml_content = std::fs::read_to_string(workspace_path).ok()?;
-    let workspace: WorkspaceYaml = serde_yml::from_str(&yaml_content).ok()?;
+    let workspace: WorkspaceYaml = serde_yaml_ng::from_str(&yaml_content).ok()?;
 
     let session_id = workspace.id.or_else(|| {
         session_dir
