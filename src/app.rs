@@ -201,13 +201,16 @@ impl App {
         self.should_quit
     }
 
-    pub fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> anyhow::Result<()> {
+    pub fn run<B: Backend<Error: Send + Sync + 'static>>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+    ) -> anyhow::Result<()> {
         self.run_with_event_source(terminal, CrosstermEventSource)
     }
 
-    pub fn run_with_event_source(
+    pub fn run_with_event_source<B: Backend<Error: Send + Sync + 'static>>(
         &mut self,
-        terminal: &mut Terminal<impl Backend>,
+        terminal: &mut Terminal<B>,
         mut events: impl EventSource,
     ) -> anyhow::Result<()> {
         self.search_index = SearchIndex::open_or_create(&SearchIndex::default_index_dir())

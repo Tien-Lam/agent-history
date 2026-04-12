@@ -173,7 +173,7 @@ impl SearchIndex {
         let parser = QueryParser::for_index(&self.index, vec![self.f_content, self.f_project]);
         let query = parser.parse_query(query_str)?;
 
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(limit))?;
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(limit).order_by_score())?;
 
         let mut hits = Vec::with_capacity(top_docs.len());
         for (score, addr) in top_docs {
