@@ -7,6 +7,7 @@ use serde::Deserialize;
 use super::{HistoryProvider, ProviderError};
 use crate::model::{
     ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
+    ToolResult,
 };
 use crate::provider::claude_code::parse_text_with_code_blocks;
 
@@ -167,6 +168,8 @@ fn count_message_events(path: &Path) -> usize {
         .filter(|l| {
             l.contains("\"user.message\"")
                 || l.contains("\"assistant.message\"")
+                || l.contains("\"tool.execution_start\"")
+                || l.contains("\"tool.execution_complete\"")
         })
         .count()
 }
@@ -203,6 +206,73 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
         let role = match event_type_str {
             t if t.contains("user") => Role::User,
             t if t.contains("assistant.message") => Role::Assistant,
+            "tool.execution_start" => {
+                // Tool invocation: data.toolName + data.arguments
+                if let Some(ref data) = event.data {
+                    let tool_name = data.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
+                    let call_id = data.tool_call_id.clone().unwrap_or_default();
+                    let arguments = data
+                        .arguments
+                        .as_ref()
+                        .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
+                        .unwrap_or_default();
+                    let timestamp = event
+                        .timestamp
+                        .as_deref()
+                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+                        .unwrap_or_else(Utc::now);
+                    messages.push(Message {
+                        id: MessageId(event.id.unwrap_or_default()),
+                        role: Role::Tool,
+                        timestamp,
+                        content: vec![ContentBlock::ToolUse(ToolCall {
+                            id: call_id,
+                            name: tool_name,
+                            arguments,
+                        })],
+                        model: None,
+                        token_usage: None,
+                    });
+                }
+                continue;
+            }
+            "tool.execution_complete" => {
+                // Tool result: data.toolCallId + data.result + data.success
+                if let Some(ref data) = event.data {
+                    let call_id = data.tool_call_id.clone().unwrap_or_default();
+                    let success = data.success.unwrap_or(true);
+                    let output = data
+                        .result
+                        .as_ref()
+                        .and_then(|r| {
+                            r.detailed_content
+                                .as_deref()
+                                .or(r.content.as_deref())
+                        })
+                        .unwrap_or("")
+                        .to_string();
+                    if !output.is_empty() {
+                        let timestamp = event
+                            .timestamp
+                            .as_deref()
+                            .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+                            .unwrap_or_else(Utc::now);
+                        messages.push(Message {
+                            id: MessageId(event.id.unwrap_or_default()),
+                            role: Role::Tool,
+                            timestamp,
+                            content: vec![ContentBlock::ToolResult(ToolResult {
+                                tool_call_id: call_id,
+                                success,
+                                output,
+                            })],
+                            model: None,
+                            token_usage: None,
+                        });
+                    }
+                }
+                continue;
+            }
             t if t.contains("tool") => Role::Tool,
             _ => {
                 skipped_types += 1;
@@ -338,6 +408,22 @@ struct RawEventData {
     content: Option<String>,
     #[serde(rename = "toolRequests")]
     tool_requests: Option<Vec<RawToolRequest>>,
+    /// `tool.execution_start` fields
+    #[serde(rename = "toolName")]
+    tool_name: Option<String>,
+    #[serde(rename = "toolCallId")]
+    tool_call_id: Option<String>,
+    arguments: Option<serde_json::Value>,
+    /// `tool.execution_complete` fields
+    success: Option<bool>,
+    result: Option<RawToolResult>,
+}
+
+#[derive(Deserialize)]
+struct RawToolResult {
+    content: Option<String>,
+    #[serde(rename = "detailedContent")]
+    detailed_content: Option<String>,
 }
 
 #[derive(Deserialize)]

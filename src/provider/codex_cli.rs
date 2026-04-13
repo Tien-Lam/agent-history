@@ -263,15 +263,15 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
                 // Newer Codex format: type="event_msg" with payload.type
                 if let Some(ref payload) = entry.payload {
                     let payload_type = payload.entry_type.as_deref().unwrap_or("");
+                    let timestamp = entry
+                        .timestamp
+                        .as_deref()
+                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+                        .unwrap_or_else(Utc::now);
                     match payload_type {
                         "user_message" => {
                             if let Some(ref msg_text) = payload.message {
                                 if !msg_text.is_empty() {
-                                    let timestamp = entry
-                                        .timestamp
-                                        .as_deref()
-                                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-                                        .unwrap_or_else(Utc::now);
                                     messages.push(Message {
                                         id: MessageId(String::new()),
                                         role: Role::User,
@@ -286,11 +286,6 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
                         "agent_message" => {
                             if let Some(ref msg_text) = payload.message {
                                 if !msg_text.is_empty() {
-                                    let timestamp = entry
-                                        .timestamp
-                                        .as_deref()
-                                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-                                        .unwrap_or_else(Utc::now);
                                     messages.push(Message {
                                         id: MessageId(String::new()),
                                         role: Role::Assistant,
@@ -304,6 +299,60 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
                         }
                         _ => {
                             tracing::trace!(payload_type, "skipping event_msg");
+                        }
+                    }
+                }
+                continue;
+            }
+            "response_item" => {
+                // Newer Codex format: type="response_item" with payload.type
+                if let Some(ref payload) = entry.payload {
+                    let payload_type = payload.entry_type.as_deref().unwrap_or("");
+                    let timestamp = entry
+                        .timestamp
+                        .as_deref()
+                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+                        .unwrap_or_else(Utc::now);
+                    match payload_type {
+                        "function_call" => {
+                            let name = payload.name.clone().unwrap_or_else(|| "unknown".to_string());
+                            let call_id = payload.call_id.clone().unwrap_or_default();
+                            let arguments = payload.arguments.clone().unwrap_or_default();
+                            messages.push(Message {
+                                id: MessageId(String::new()),
+                                role: Role::Tool,
+                                timestamp,
+                                content: vec![ContentBlock::ToolUse(ToolCall {
+                                    id: call_id,
+                                    name,
+                                    arguments,
+                                })],
+                                model: None,
+                                token_usage: None,
+                            });
+                        }
+                        "function_call_output" => {
+                            let call_id = payload.call_id.clone().unwrap_or_default();
+                            let output = payload.output.clone().unwrap_or_default();
+                            if !output.is_empty() {
+                                messages.push(Message {
+                                    id: MessageId(String::new()),
+                                    role: Role::Tool,
+                                    timestamp,
+                                    content: vec![ContentBlock::ToolResult(
+                                        crate::model::ToolResult {
+                                            tool_call_id: call_id,
+                                            success: true,
+                                            output,
+                                        },
+                                    )],
+                                    model: None,
+                                    token_usage: None,
+                                });
+                            }
+                        }
+                        _ => {
+                            tracing::trace!(payload_type, "skipping response_item");
                         }
                     }
                 }
@@ -387,5 +436,14 @@ struct RawEntry {
 struct RawPayload {
     #[serde(rename = "type")]
     entry_type: Option<String>,
+    /// `event_msg`: user/agent message text
     message: Option<String>,
+    /// `response_item` `function_call`: tool name
+    name: Option<String>,
+    /// `response_item` `function_call`: call ID
+    call_id: Option<String>,
+    /// `response_item` `function_call`: arguments as JSON string
+    arguments: Option<String>,
+    /// `response_item` `function_call_output`: output text
+    output: Option<String>,
 }
