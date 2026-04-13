@@ -23,6 +23,9 @@ serde_yaml_ng = "0.10"
 thiserror = "2"
 toml = "0.8"
 tantivy = "0.26"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(not(windows))'.dependencies]
 self_update = { version = "0.42", default-features = false, features = [

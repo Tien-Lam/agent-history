@@ -611,8 +611,16 @@ impl App {
         provider_type: Provider,
     ) {
         if self.message_cache.contains(session_id) {
+            tracing::debug!(session_id, "message cache hit");
             return;
         }
+
+        tracing::debug!(
+            session_id,
+            source_path = %source_path.display(),
+            provider = ?provider_type,
+            "loading messages (cache miss)"
+        );
 
         let tmp_session = Session {
             id: SessionId(session_id.to_string()),
@@ -634,6 +642,12 @@ impl App {
         if let Some(provider) = provider {
             match provider.load_messages(&tmp_session) {
                 Ok(mut messages) => {
+                    tracing::info!(
+                        session_id,
+                        provider = ?provider_type,
+                        message_count = messages.len(),
+                        "messages loaded successfully"
+                    );
                     let max = self.config.max_messages_per_session;
                     if messages.len() > max {
                         let total = messages.len();
@@ -642,14 +656,33 @@ impl App {
                             "Session truncated: showing {max} of {total} messages"
                         ));
                     }
+                    if messages.is_empty() {
+                        tracing::warn!(
+                            session_id,
+                            source_path = %source_path.display(),
+                            "provider returned 0 messages — possible format mismatch"
+                        );
+                    }
                     self.message_cache.put(session_id.to_string(), messages);
                 }
                 Err(e) => {
+                    tracing::error!(
+                        session_id,
+                        source_path = %source_path.display(),
+                        error = %e,
+                        "failed to load messages"
+                    );
                     let _ = self
                         .action_tx
                         .send(Action::LoadError(format!("Failed to load messages: {e}")));
                 }
             }
+        } else {
+            tracing::error!(
+                session_id,
+                provider = ?provider_type,
+                "no matching provider found for session"
+            );
         }
     }
 

@@ -171,27 +171,44 @@ fn count_message_events(path: &Path) -> usize {
         .count()
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
+    tracing::debug!(path = %path.display(), "loading Copilot CLI messages");
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
     let mut messages = Vec::new();
+    let mut line_count: usize = 0;
+    let mut parse_errors: usize = 0;
+    let mut skipped_types: usize = 0;
+    let mut empty_content: usize = 0;
 
     for line in reader.lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
+        line_count += 1;
 
         let event: RawEvent = match serde_json::from_str(&line) {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                parse_errors += 1;
+                tracing::warn!(line_num = line_count, error = %e, "failed to parse JSONL line");
+                continue;
+            }
         };
 
-        let role = match event.event_type.as_deref() {
-            Some(t) if t.contains("user") => Role::User,
-            Some(t) if t.contains("assistant.message") => Role::Assistant,
-            Some(t) if t.contains("tool") => Role::Tool,
-            _ => continue,
+        let event_type_str = event.event_type.as_deref().unwrap_or("");
+
+        let role = match event_type_str {
+            t if t.contains("user") => Role::User,
+            t if t.contains("assistant.message") => Role::Assistant,
+            t if t.contains("tool") => Role::Tool,
+            _ => {
+                skipped_types += 1;
+                tracing::trace!(event_type = event_type_str, "skipping non-message event");
+                continue;
+            }
         };
 
         let timestamp = event
@@ -202,12 +219,16 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
 
         let mut content = Vec::new();
 
-        if let Some(text) = &event.content {
+        // Try top-level content first, then data.content (newer format)
+        let text = event.content.as_deref()
+            .or_else(|| event.data.as_ref().and_then(|d| d.content.as_deref()));
+        if let Some(text) = text {
             if !text.is_empty() {
                 content.extend(parse_text_with_code_blocks(text));
             }
         }
 
+        // Try top-level tool fields first, then data.toolRequests (newer format)
         if let Some(tool_name) = &event.tool_name {
             content.push(ContentBlock::ToolUse(ToolCall {
                 id: event.tool_call_id.clone().unwrap_or_default(),
@@ -218,9 +239,30 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
                     .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
                     .unwrap_or_default(),
             }));
+        } else if let Some(ref data) = event.data {
+            if let Some(ref tool_requests) = data.tool_requests {
+                for tr in tool_requests {
+                    content.push(ContentBlock::ToolUse(ToolCall {
+                        id: tr.tool_call_id.clone().unwrap_or_default(),
+                        name: tr.name.clone().unwrap_or_else(|| "unknown".to_string()),
+                        arguments: tr
+                            .arguments
+                            .as_ref()
+                            .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
+                            .unwrap_or_default(),
+                    }));
+                }
+            }
         }
 
         if content.is_empty() {
+            empty_content += 1;
+            tracing::debug!(
+                event_type = event_type_str,
+                has_data = event.data.is_some(),
+                data_has_content = event.data.as_ref().is_some_and(|d| d.content.is_some()),
+                "skipping event with empty content"
+            );
             continue;
         }
 
@@ -240,6 +282,16 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
             token_usage,
         });
     }
+
+    tracing::info!(
+        path = %path.display(),
+        lines = line_count,
+        parse_errors,
+        skipped_types,
+        empty_content,
+        messages = messages.len(),
+        "Copilot CLI message loading complete"
+    );
 
     Ok(messages)
 }
@@ -277,6 +329,23 @@ struct RawEvent {
     #[serde(rename = "toolArgs")]
     tool_args: Option<serde_json::Value>,
     usage: Option<RawUsage>,
+    /// Newer Copilot format nests content inside a `data` object
+    data: Option<RawEventData>,
+}
+
+#[derive(Deserialize)]
+struct RawEventData {
+    content: Option<String>,
+    #[serde(rename = "toolRequests")]
+    tool_requests: Option<Vec<RawToolRequest>>,
+}
+
+#[derive(Deserialize)]
+struct RawToolRequest {
+    #[serde(rename = "toolCallId")]
+    tool_call_id: Option<String>,
+    name: Option<String>,
+    arguments: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]

@@ -151,14 +151,33 @@ fn build_session_from_rollout(path: &Path) -> Option<Session> {
             }
         }
 
-        if let Some("user" | "assistant") = entry.entry_type.as_deref() {
-            message_count += 1;
-            if entry.entry_type.as_deref() == Some("user")
-                && first_user_message.is_none()
-            {
-                first_user_message =
-                    entry.content.map(|c| c.chars().take(80).collect());
+        match entry.entry_type.as_deref() {
+            Some("user" | "assistant") => {
+                message_count += 1;
+                if entry.entry_type.as_deref() == Some("user")
+                    && first_user_message.is_none()
+                {
+                    first_user_message =
+                        entry.content.map(|c| c.chars().take(80).collect());
+                }
             }
+            Some("event_msg") => {
+                // Newer Codex format
+                if let Some(ref payload) = entry.payload {
+                    if let Some("user_message" | "agent_message") = payload.entry_type.as_deref() {
+                        message_count += 1;
+                        if payload.entry_type.as_deref() == Some("user_message")
+                            && first_user_message.is_none()
+                        {
+                            first_user_message = payload
+                                .message
+                                .as_ref()
+                                .map(|m| m.chars().take(80).collect());
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -188,27 +207,42 @@ fn build_session_from_rollout(path: &Path) -> Option<Session> {
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
+    tracing::debug!(path = %path.display(), "loading Codex CLI messages");
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
     let mut messages = Vec::new();
+    let mut line_count: usize = 0;
+    let mut parse_errors: usize = 0;
+    let mut skipped_types: usize = 0;
+    let mut empty_content: usize = 0;
 
     for line in reader.lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
+        line_count += 1;
 
         let entry: RawEntry = match serde_json::from_str(&line) {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                parse_errors += 1;
+                tracing::warn!(line_num = line_count, error = %e, "failed to parse JSONL line");
+                continue;
+            }
         };
 
-        let role = match entry.entry_type.as_deref() {
-            Some("user") => Role::User,
-            Some("assistant") => Role::Assistant,
-            Some("tool_use") => Role::Tool,
-            Some("error") => {
+        let entry_type = entry.entry_type.as_deref().unwrap_or("");
+
+        // Try legacy flat format first (type = "user"/"assistant"/"tool_use"/"error")
+        // then newer event_msg format (type = "event_msg", payload.type = "user_message"/"agent_message")
+        let role = match entry_type {
+            "user" => Role::User,
+            "assistant" => Role::Assistant,
+            "tool_use" => Role::Tool,
+            "error" => {
                 if let Some(error_msg) = entry.error {
                     messages.push(Message {
                         id: MessageId(String::new()),
@@ -225,7 +259,61 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
                 }
                 continue;
             }
-            _ => continue,
+            "event_msg" => {
+                // Newer Codex format: type="event_msg" with payload.type
+                if let Some(ref payload) = entry.payload {
+                    let payload_type = payload.entry_type.as_deref().unwrap_or("");
+                    match payload_type {
+                        "user_message" => {
+                            if let Some(ref msg_text) = payload.message {
+                                if !msg_text.is_empty() {
+                                    let timestamp = entry
+                                        .timestamp
+                                        .as_deref()
+                                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+                                        .unwrap_or_else(Utc::now);
+                                    messages.push(Message {
+                                        id: MessageId(String::new()),
+                                        role: Role::User,
+                                        timestamp,
+                                        content: parse_text_with_code_blocks(msg_text),
+                                        model: None,
+                                        token_usage: None,
+                                    });
+                                }
+                            }
+                        }
+                        "agent_message" => {
+                            if let Some(ref msg_text) = payload.message {
+                                if !msg_text.is_empty() {
+                                    let timestamp = entry
+                                        .timestamp
+                                        .as_deref()
+                                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+                                        .unwrap_or_else(Utc::now);
+                                    messages.push(Message {
+                                        id: MessageId(String::new()),
+                                        role: Role::Assistant,
+                                        timestamp,
+                                        content: parse_text_with_code_blocks(msg_text),
+                                        model: None,
+                                        token_usage: None,
+                                    });
+                                }
+                            }
+                        }
+                        _ => {
+                            tracing::trace!(payload_type, "skipping event_msg");
+                        }
+                    }
+                }
+                continue;
+            }
+            _ => {
+                skipped_types += 1;
+                tracing::trace!(entry_type, "skipping non-message entry");
+                continue;
+            }
         };
 
         let timestamp = entry
@@ -255,6 +343,8 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
         }
 
         if content.is_empty() {
+            empty_content += 1;
+            tracing::trace!(entry_type, "skipping entry with empty content");
             continue;
         }
 
@@ -268,6 +358,16 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
         });
     }
 
+    tracing::info!(
+        path = %path.display(),
+        lines = line_count,
+        parse_errors,
+        skipped_types,
+        empty_content,
+        messages = messages.len(),
+        "Codex CLI message loading complete"
+    );
+
     Ok(messages)
 }
 
@@ -279,4 +379,13 @@ struct RawEntry {
     timestamp: Option<String>,
     tool_calls: Option<serde_json::Value>,
     error: Option<String>,
+    /// Newer Codex format wraps messages in a payload object
+    payload: Option<RawPayload>,
+}
+
+#[derive(Deserialize)]
+struct RawPayload {
+    #[serde(rename = "type")]
+    entry_type: Option<String>,
+    message: Option<String>,
 }

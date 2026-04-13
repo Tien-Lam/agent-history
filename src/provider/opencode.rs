@@ -118,11 +118,15 @@ impl HistoryProvider for OpenCodeProvider {
         // source_path points to the storage base dir, session id is in session.id
         // Messages are in message/{sessionID}/msg_*.json
         let message_dir = session.source_path.join("message").join(&session.id.0);
+        tracing::debug!(message_dir = %message_dir.display(), "loading OpenCode messages");
         if !message_dir.exists() {
+            tracing::warn!(message_dir = %message_dir.display(), "message directory does not exist");
             return Ok(Vec::new());
         }
 
         let mut messages = Vec::new();
+        let mut file_count: usize = 0;
+        let mut parse_failures: usize = 0;
         let files = std::fs::read_dir(&message_dir)?;
 
         for file_entry in files.flatten() {
@@ -130,13 +134,24 @@ impl HistoryProvider for OpenCodeProvider {
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
+            file_count += 1;
 
             if let Some(msg) = parse_message_file(&path) {
                 messages.push(msg);
+            } else {
+                parse_failures += 1;
+                tracing::warn!(path = %path.display(), "failed to parse message file");
             }
         }
 
         messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        tracing::info!(
+            message_dir = %message_dir.display(),
+            files = file_count,
+            parse_failures,
+            messages = messages.len(),
+            "OpenCode message loading complete"
+        );
         Ok(messages)
     }
 }

@@ -313,28 +313,49 @@ struct RawUsage {
 }
 
 fn parse_session_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
+    tracing::debug!(path = %path.display(), "loading Claude Code messages");
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
     let mut messages = Vec::new();
+    let mut line_count: usize = 0;
+    let mut parse_errors: usize = 0;
+    let mut skipped_types: usize = 0;
+    let mut empty_content: usize = 0;
 
     for line in reader.lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
+        line_count += 1;
 
         let entry: RawSessionEntry = match serde_json::from_str(&line) {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                parse_errors += 1;
+                tracing::warn!(line_num = line_count, error = %e, "failed to parse JSONL line");
+                continue;
+            }
         };
 
         let role = match entry.entry_type.as_deref() {
             Some("user") => Role::User,
             Some("assistant") => Role::Assistant,
-            _ => continue,
+            Some(other) => {
+                skipped_types += 1;
+                tracing::trace!(entry_type = other, "skipping non-message entry");
+                continue;
+            }
+            None => {
+                skipped_types += 1;
+                continue;
+            }
         };
 
-        let Some(ref msg) = entry.message else { continue };
+        let Some(ref msg) = entry.message else {
+            tracing::warn!(role = ?role, uuid = ?entry.uuid, "entry has no message field");
+            continue;
+        };
 
         let timestamp = entry
             .timestamp
@@ -346,6 +367,8 @@ fn parse_session_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
 
         let content = parse_message_content(msg, role);
         if content.is_empty() {
+            empty_content += 1;
+            tracing::trace!(msg_id = %id, role = ?role, "skipping message with empty content");
             continue;
         }
 
@@ -365,6 +388,16 @@ fn parse_session_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
             token_usage,
         });
     }
+
+    tracing::info!(
+        path = %path.display(),
+        lines = line_count,
+        parse_errors,
+        skipped_types,
+        empty_content,
+        messages = messages.len(),
+        "Claude Code message loading complete"
+    );
 
     Ok(messages)
 }

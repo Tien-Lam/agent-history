@@ -10,6 +10,7 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
 #[command(name = "aghist", version, about = "Browse and search AI agent conversation history")]
@@ -48,7 +49,24 @@ enum Command {
     Uninstall,
 }
 
+fn init_tracing() {
+    // Log to ~/.aghist/aghist.log — safe for TUI since it doesn't touch stdout/stderr
+    let log_dir = directories::BaseDirs::new()
+        .map_or_else(|| PathBuf::from("."), |d| d.home_dir().join(".aghist"));
+    let _ = std::fs::create_dir_all(&log_dir);
+
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "aghist.log");
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("aghist=debug"));
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer().with_writer(file_appender).with_ansi(false))
+        .init();
+}
+
 fn main() -> anyhow::Result<()> {
+    init_tracing();
     color_eyre::install().ok();
 
     let cli = Cli::parse();

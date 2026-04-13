@@ -119,9 +119,17 @@ impl HistoryProvider for GeminiCliProvider {
     }
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
+        tracing::debug!(path = %session.source_path.display(), "loading Gemini CLI messages");
         let data = std::fs::read_to_string(&session.source_path)?;
         let raw: RawSession = serde_json::from_str(&data)?;
-        Ok(convert_messages(&raw.messages))
+        let messages = convert_messages(&raw.messages);
+        tracing::info!(
+            path = %session.source_path.display(),
+            raw_messages = raw.messages.len(),
+            parsed_messages = messages.len(),
+            "Gemini CLI message loading complete"
+        );
+        Ok(messages)
     }
 }
 
