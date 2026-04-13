@@ -1,0 +1,16 @@
+{
+  "id": "ses-v2-001",
+  "slug": "test-session",
+  "version": "1.1.49",
+  "projectID": "proj-hash-1",
+  "directory": "C:\\Users\\test\\myproject",
+  "title": "Add error handling to API",
+  "time": {
+    "created": 1712700000000,
+    "updated": 1712703600000
+  },
+  "model": {
+    "providerID": "github-copilot",
+    "modelID": "claude-sonnet-4"
+  }
+}

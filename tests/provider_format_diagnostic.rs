@@ -9,6 +9,7 @@ use aghist::model::{ContentBlock, Provider, Role};
 use aghist::provider::claude_code::ClaudeCodeProvider;
 use aghist::provider::codex_cli::CodexCliProvider;
 use aghist::provider::copilot_cli::CopilotCliProvider;
+use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
 
 use common::helpers::fixtures_dir;
@@ -172,6 +173,84 @@ fn codex_v2_summary_from_first_user_message() {
     );
 }
 
+// ─── OpenCode v2 format (time millis + parts) ──────────────────────────────
+
+#[test]
+fn opencode_v2_discover_sessions() {
+    let provider = OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")]);
+    let sessions = provider.discover_sessions().unwrap();
+
+    assert_eq!(sessions.len(), 1, "should discover 1 session");
+    let s = &sessions[0];
+    assert_eq!(s.id.0, "ses-v2-001");
+    assert_eq!(s.provider, Provider::OpenCode);
+    assert_eq!(s.project_name.as_deref(), Some("myproject"));
+    assert_eq!(s.summary.as_deref(), Some("Add error handling to API"));
+    assert_eq!(s.model.as_deref(), Some("claude-sonnet-4"));
+    assert_eq!(s.message_count, 2);
+}
+
+#[test]
+fn opencode_v2_load_messages() {
+    let provider = OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert!(!sessions.is_empty(), "should discover sessions");
+
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+
+    assert!(
+        !messages.is_empty(),
+        "FAIL: 0 messages loaded from OpenCode v2 format — \
+         time is millis not ISO, content is in part/ directory, not message content field"
+    );
+
+    // Verify user message loaded from parts
+    let user_msgs: Vec<_> = messages.iter().filter(|m| m.role == Role::User).collect();
+    assert_eq!(user_msgs.len(), 1, "should have 1 user message");
+    assert!(
+        matches!(&user_msgs[0].content[0], ContentBlock::Text(t) if t.contains("error handling")),
+        "user message text should come from part file"
+    );
+
+    // Verify assistant message loaded from parts
+    let asst_msgs: Vec<_> = messages.iter().filter(|m| m.role == Role::Assistant).collect();
+    assert_eq!(asst_msgs.len(), 1, "should have 1 assistant message");
+
+    // Check for text from parts
+    let has_text = asst_msgs[0].content.iter().any(|c| {
+        matches!(c, ContentBlock::Text(t) if t.contains("error handling"))
+    });
+    assert!(has_text, "assistant should have text from part files");
+
+    // Check for tool use from parts
+    let has_tool = asst_msgs[0].content.iter().any(|c| {
+        matches!(c, ContentBlock::ToolUse(tc) if tc.name == "read")
+    });
+    assert!(has_tool, "assistant should have tool calls from part files");
+
+    // Check model and tokens
+    assert_eq!(asst_msgs[0].model.as_deref(), Some("claude-sonnet-4"));
+    let usage = asst_msgs[0].token_usage.as_ref().unwrap();
+    assert_eq!(usage.input_tokens, 500);
+    assert_eq!(usage.output_tokens, 200);
+}
+
+#[test]
+fn opencode_v2_timestamps_from_millis() {
+    let provider = OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")]);
+    let sessions = provider.discover_sessions().unwrap();
+
+    // Session started_at should be parsed from time.created millis
+    assert!(
+        sessions[0].started_at.timestamp() > 0,
+        "started_at should be parsed from time.created millis"
+    );
+    assert!(
+        sessions[0].ended_at.is_some(),
+        "ended_at should be parsed from time.updated millis"
+    );
+}
+
 // ─── Claude Code format (current real format) ───────────────────────────────
 
 #[test]
@@ -215,6 +294,14 @@ fn all_fixture_providers_roundtrip() {
         (
             "codex_v2",
             Box::new(CodexCliProvider::new(vec![fixtures_dir().join("codex_v2")])),
+        ),
+        (
+            "opencode",
+            Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode")])),
+        ),
+        (
+            "opencode_v2",
+            Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")])),
         ),
     ];
 

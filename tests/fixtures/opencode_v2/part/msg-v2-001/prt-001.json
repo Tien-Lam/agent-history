@@ -1,0 +1,7 @@
+{
+  "id": "prt-001",
+  "sessionID": "ses-v2-001",
+  "messageID": "msg-v2-001",
+  "type": "text",
+  "text": "Add error handling to the API endpoints with proper try-catch blocks"
+}

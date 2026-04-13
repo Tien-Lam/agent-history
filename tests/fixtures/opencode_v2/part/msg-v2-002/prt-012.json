@@ -1,0 +1,16 @@
+{
+  "id": "prt-012",
+  "sessionID": "ses-v2-001",
+  "messageID": "msg-v2-002",
+  "type": "tool",
+  "callID": "toolu_01abc",
+  "tool": "read",
+  "state": {
+    "status": "completed",
+    "input": {
+      "filePath": "src/api.ts"
+    },
+    "output": "export function handler(req) {\n  return { ok: true };\n}",
+    "title": "src/api.ts"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "msg-v2-002",
+  "sessionID": "ses-v2-001",
+  "role": "assistant",
+  "time": {
+    "created": 1712700005000,
+    "completed": 1712700030000
+  },
+  "modelID": "claude-sonnet-4",
+  "providerID": "github-copilot",
+  "tokens": {
+    "input": 500,
+    "output": 200,
+    "reasoning": 0,
+    "cache": {
+      "read": 100,
+      "write": 50
+    }
+  },
+  "model": {
+    "providerID": "github-copilot",
+    "modelID": "claude-sonnet-4"
+  }
+}

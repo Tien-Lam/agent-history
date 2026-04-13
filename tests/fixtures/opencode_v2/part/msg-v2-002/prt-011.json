@@ -1,0 +1,11 @@
+{
+  "id": "prt-011",
+  "sessionID": "ses-v2-001",
+  "messageID": "msg-v2-002",
+  "type": "text",
+  "text": "I'll add proper error handling to your API endpoints.",
+  "time": {
+    "start": 1712700006000,
+    "end": 1712700006000
+  }
+}

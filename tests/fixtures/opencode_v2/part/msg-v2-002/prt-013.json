@@ -1,0 +1,7 @@
+{
+  "id": "prt-013",
+  "sessionID": "ses-v2-001",
+  "messageID": "msg-v2-002",
+  "type": "step-finish",
+  "snapshot": "def456"
+}
