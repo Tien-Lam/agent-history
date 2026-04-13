@@ -3,20 +3,20 @@ source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
 ╭ Sessions (5) ────────────────────╮╭ test-project • gemini-2.5-pro • 0k tok ──────────────────────────────────────────╮
-│  Claude Code  Apr 08             ││Select a session to view the conversation                                         │
-│    test-project                  ││                                                                                  │
-│     main                        ││                                                                                  │
+│  Claude Code  Apr 08             ││ You   08:00:00                                                                   │
+│    test-project                  ││────────────────────────────────────────                                          │
+│     main                        ││ Explain how async/await works in JavaScript                                      │
 │    Fix the build error           ││                                                                                  │
-│                                  ││                                                                                  │
-│  Copilot CLI  Apr 08             ││                                                                                  │
-│    myapp                         ││                                                                                  │
-│                                  ││                                                                                  │
-│  Gemini CLI  Apr 08              ││                                                                                  │
-│    test-project                  ││                                                                                  │
-│    Explain how async/await works ││                                                                                  │
-│                                  ││                                                                                  │
-│  Codex CLI  Apr 08               ││                                                                                  │
-│    (unknown project)             ││                                                                                  │
+│                                  ││ Assistant   08:00:05                                                             │
+│  Copilot CLI  Apr 08             ││────────────────────────────────────────                                          │
+│    myapp                         ││ Async/await is syntactic sugar over Promises.                                    │
+│                                  ││ ╭─ javascript ───                                                                │
+│  Gemini CLI  Apr 08              ││ │ async function fetchData() {                                                   │
+│    test-project                  ││ │   const resp = await fetch('/api');                                            │
+│    Explain how async/await works ││ │   return resp.json();                                                          │
+│                                  ││ │ }                                                                              │
+│  Codex CLI  Apr 08               ││ ╰─────                                                                           │
+│    (unknown project)             ││ ▶ search_docs                                                                    │
 │    Add error handling to the API ││                                                                                  │
 │                                  ││                                                                                  │
 │  OpenCode  Apr 08                ││                                                                                  │

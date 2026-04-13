@@ -3,24 +3,24 @@ source: tests/snapshots.rs
 expression: render_to_text(&terminal)
 ---
 ╭ Sessions (5) ────────────────────╮╭ test-project • claude-sonnet-4-20250514 • 0k tok ────────────────────────────────╮
-│  Claude Code  Apr 08             ││Select a session to view the conversation                                         │
-│    test-project                  ││                                                                                  │
-│     main                        ││                                                                                  │
+│  Claude Code  Apr 08             ││ You   10:00:00                                                                   │
+│    test-project                  ││────────────────────────────────────────                                          │
+│     main                        ││ Fix the build error in main.rs                                                   │
 │    Fix the build error           ││                                                                                  │
-│                                  ││                                                                                  │
-│  Copilot CLI  Apr 08             ││                                                                                  │
-│    myapp                         ││                                                                                  │
-│                                  ││                                                                                  │
+│                                  ││ Assistant   10:00:05                                                             │
+│  Copilot CLI  Apr 08             ││────────────────────────────────────────                                          │
+│    myapp                         ││ I'll fix the build error.                                                        │
+│                                  ││ ▶ Read                                                                           │
 │  Gemini CLI  Apr 08              ││                                                                                  │
-│    test-project                  ││                                                                                  │
-│    Explain how async/await works ││                                                                                  │
-│                                  ││                                                                                  │
-│  Codex CLI  Apr 08               ││                                                                                  │
-│    (unknown project)             ││                                                                                  │
-│    Add error handling to the API ││                                                                                  │
-│                                  ││                                                                                  │
-│  OpenCode  Apr 08                ││                                                                                  │
-│    dbproject                     ││                                                                                  │
+│    test-project                  ││ Assistant   10:00:15                                                             │
+│    Explain how async/await works ││────────────────────────────────────────                                          │
+│                                  ││ Here's the fix:                                                                  │
+│  Codex CLI  Apr 08               ││ ╭─ rust ───                                                                      │
+│    (unknown project)             ││ │ fn main() {                                                                    │
+│    Add error handling to the API ││ │     println!("hello");                                                         │
+│                                  ││ │ }                                                                              │
+│  OpenCode  Apr 08                ││ ╰─────                                                                           │
+│    dbproject                     ││ The issue was a missing semicolon.                                               │
 │    Refactor database layer       ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │

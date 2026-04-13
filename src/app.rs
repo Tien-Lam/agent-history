@@ -317,6 +317,7 @@ impl App {
         self.session_list
             .state
             .select(if count > 0 { Some(0) } else { None });
+        self.preload_focused_session();
     }
 
     fn execute_search(&mut self) {
@@ -365,6 +366,7 @@ impl App {
                     let count = self.display_count();
                     if selected + 1 < count {
                         self.session_list.state.select(Some(selected + 1));
+                        self.preload_focused_session();
                     }
                 }
             }
@@ -372,6 +374,7 @@ impl App {
                 if let Some(selected) = self.session_list.selected_index() {
                     if selected > 0 {
                         self.session_list.state.select(Some(selected - 1));
+                        self.preload_focused_session();
                     }
                 }
             }
@@ -392,6 +395,7 @@ impl App {
                     let count = self.display_count();
                     if count > 0 {
                         self.session_list.state.select(Some(0));
+                        self.preload_focused_session();
                     }
                 }
                 AppMode::ViewSession => {
@@ -404,6 +408,7 @@ impl App {
                     let count = self.display_count();
                     if count > 0 {
                         self.session_list.state.select(Some(count - 1));
+                        self.preload_focused_session();
                     }
                 }
                 AppMode::ViewSession => {
@@ -591,6 +596,7 @@ impl App {
                 self.filtered_session_ids = None;
                 if !self.sessions.is_empty() {
                     self.session_list.state.select(Some(0));
+                    self.preload_focused_session();
                 }
             }
             Action::MessagesLoaded(session_id, messages) => {
@@ -683,6 +689,15 @@ impl App {
                 provider = ?provider_type,
                 "no matching provider found for session"
             );
+        }
+    }
+
+    /// Load messages for whichever session is currently focused in the list,
+    /// so the message panel always shows content alongside the session list.
+    fn preload_focused_session(&mut self) {
+        if let Some((session_id, source_path, provider)) = self.resolve_selected_session() {
+            self.load_messages_cached(&session_id, &source_path, provider);
+            self.message_view.reset_scroll();
         }
     }
 
