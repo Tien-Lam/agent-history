@@ -1,84 +1,123 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This project is **bd + gt driven**. All task tracking lives in beads (`bd`); Gas Town (`gt`) dispatches polecat agents to work tasks.
+
+- **HQ:** `~/gt/` (shared with other rigs)
+- **Rig:** `aghist` (this project registered under HQ)
+- **Issue prefix:** `ahist-` (lowercase — uppercase prefixes break gt routing)
+- **bd db:** dolt server at port pinned in `.beads/config.yaml`, db name `ahist`
 
 ## Quick Reference
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
+bd ready                     # Available work in this rig
+bd show <id>                 # View an issue
+bd update <id> --claim       # Claim work atomically
+bd create -t task -p 2 --title "..."   # File new work
+gt ready                     # Ready work across all rigs
+gt bead show ahist-<id>      # Resolve a bead via routes (works from anywhere)
+gt sling ahist-<id> aghist --merge=direct   # Dispatch a polecat to work it
 ```
+
+## Rules
+
+- **Use `bd` for ALL task tracking.** Do NOT use TodoWrite, TaskCreate, or markdown TODO lists.
+- **Bead IDs must stay lowercase.** `ahist-abc` is valid, `AHIST-ABC` will break gt routing.
+- **Use `bd remember` for persistent agent knowledge** — do NOT use MEMORY.md files.
+- **Run `bd prime`** for the full bd command reference.
 
 ## Non-Interactive Shell Commands
 
-**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
-
-Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
-
-**Use these forms instead:**
-```bash
-# Force overwrite without prompting
-cp -f source dest           # NOT: cp source dest
-mv -f source dest           # NOT: mv source dest
-rm -f file                  # NOT: rm file
-
-# For recursive operations
-rm -rf directory            # NOT: rm -r directory
-cp -rf source dest          # NOT: cp -r source dest
-```
-
-**Other commands that may prompt:**
-- `scp` - use `-o BatchMode=yes` for non-interactive
-- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
-- `apt-get` - use `-y` flag
-- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
+Polecat sessions and CI cannot answer interactive prompts. Always use non-interactive flags:
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
+cp -f / mv -f / rm -f         # NOT cp/mv/rm (may be aliased to -i)
+rm -rf / cp -rf               # recursive forms
+scp -o BatchMode=yes
+ssh -o BatchMode=yes
+apt-get -y
+HOMEBREW_NO_AUTO_UPDATE=1 brew ...
 ```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+The exit path differs depending on whether you are a gt polecat or a standalone session. Pick the right one — getting this wrong leaves work stranded.
 
-**MANDATORY WORKFLOW:**
+### If you are a gt polecat session
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+Check first: does `gt hook` show work assigned to you? If yes, you are a polecat — follow this path.
+
+1. **Commit all changes locally:** `git add <files> && git commit -m "type: desc (ahist-<id>)"`
+2. **Do NOT run `bd close`** — the Refinery closes issues after merge. Closing early causes the witness to respawn you in a loop.
+3. **Do NOT run `git push`** — `gt done` handles push + MR creation.
+4. **Run `gt done`** as your only exit:
    ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
+   gt done --pre-verified --target main
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+5. **If `gt done` fails on uncommitted `.beads/metadata.json`** — that's a known drift issue:
+   ```bash
+   git restore .beads/metadata.json && gt done --pre-verified --target main
+   ```
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
+### If you are a standalone session (no gt)
+
+```bash
+# 1. Quality gates — run if code changed
+cargo test
+cargo clippy
+
+# 2. Update bd state
+bd close <id> --reason "..."   # for finished work
+bd update <id> ...             # for in-progress work
+
+# 3. Push everything
+git pull --rebase
+bd dolt push                   # push beads data (if remote configured)
+git push
+git status                     # MUST show "up to date with origin"
+```
+
+**Standalone rules:**
+- Work is NOT complete until `git push` succeeds.
+- Never say "ready to push when you are" — YOU push.
+- If push fails, resolve and retry until it succeeds.
+
+## bd ↔ gt Architecture (this project)
+
+```
+~/gt/                                  # Gas Town HQ
+  .beads/                              # HQ beads (prefix: hq-, port 3307)
+    routes.jsonl                       # ahist- → aghist/mayor/rig
+  aghist/                              # This project's rig
+    .beads/redirect → mayor/rig/.beads
+    mayor/rig/.beads/                  # Rig beads — points at project dolt
+      metadata.json                    #   dolt_database: ahist
+      dolt-server.port                 #   matches project's port
+    mayor/rig/, refinery/rig/          # gt's working clones of this repo
+    polecats/                          # Spawned worker dirs
+    crew/<name>/                       # Human workspace(s)
+
+/home/tien/projects/agent-history/     # The project repo (this dir)
+  .beads/                              # Project beads (prefix: ahist, db: ahist)
+    dolt/ahist/.dolt/                  # Dolt data
+    dolt-server.port                   # Source of truth for the port
+    metadata.json                      # dolt_mode: server
+```
+
+If `gt` can't find beads (`database "ahist" not found`), the rig's `dolt-server.port` has drifted from the project's. Re-sync:
+
+```bash
+cp /home/tien/projects/agent-history/.beads/dolt-server.port \
+   ~/gt/aghist/mayor/rig/.beads/dolt-server.port
+```
+
+Pinning the port in `/home/tien/projects/agent-history/.beads/config.yaml` (`dolt.port: <N>`) avoids this drift on restarts.
+
+## Recovery references
+
+When polecats get stuck, agent beads conflict, or Dolt complains about case-twin dirs (`AHIST/` + `ahist/`), see the runbooks in `~/projects/runbooks/gastown/`:
+
+- `gt-bd-setup.md` — full setup + troubleshooting matrix
+- `polecat-recovery.md` — recovery procedures
+- `polecat-monitoring.md` — live tmux monitoring from a parent Claude session
+- `prefix-case-migration.md` — fixing uppercase prefixes

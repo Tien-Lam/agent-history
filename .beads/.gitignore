@@ -47,6 +47,7 @@ ephemeral.sqlite3-shm
 dolt-server.pid
 dolt-server.log
 dolt-server.lock
+dolt-config.log
 dolt-server.port
 dolt-server.activity
 

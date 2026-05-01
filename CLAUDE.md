@@ -1,6 +1,8 @@
 # aghist
 
-Cross-platform TUI for viewing and searching AI agent conversation history (Claude Code, Copilot CLI, Gemini CLI, Codex CLI, OpenCode). See [`AGENTS.md`](AGENTS.md) for agent-specific workflow rules.
+Cross-platform TUI for viewing and searching AI agent conversation history (Claude Code, Copilot CLI, Gemini CLI, Codex CLI, OpenCode).
+
+This project is **bd + gt driven**: tasks live in beads (`bd`), and Gas Town (`gt`) dispatches polecat agents to work them. The full workflow rules are in [`AGENTS.md`](AGENTS.md) — read that before doing any work.
 
 ## Build & Test
 
@@ -38,54 +40,8 @@ For detailed architecture, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - `thiserror` for library errors, `anyhow` only at binary boundary
 - Corrupt/missing session files are skipped, never crash
 
-## Issue Tracking
+## Tooling
 
-Uses **beads** (`bd`). Run `bd ready` for available work, `bd prime` for full workflow context.
-
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-## Session Completion
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
+- **bd** (beads) — issue tracker. Prefix: `ahist`. Database mode: dolt server, port pinned via `.beads/config.yaml`.
+- **gt** (Gas Town) — multi-agent orchestrator. HQ at `~/gt/`, this project registered as rig `aghist`.
+- **TodoWrite / TaskCreate are forbidden** — use `bd` for all task tracking. See `AGENTS.md`.
