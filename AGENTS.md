@@ -124,6 +124,18 @@ cp /home/tien/projects/agent-history/.beads/dolt-server.port \
 
 Pinning the port in `/home/tien/projects/agent-history/.beads/config.yaml` (`dolt.port: <N>`) avoids this drift on restarts.
 
+### Polecats: bd can't find the database
+
+**If you are a polecat** and `bd <anything>` fails with `database "ahist" not found on Dolt server`, you are hitting a known issue (ahist-9vx). Polecat worktrees don't have `.beads/dolt-server.port` (it's a runtime file, gitignored), and bd's port resolution doesn't honor the `dolt.port` pin in `config.yaml` for clones. Workaround:
+
+```bash
+export BEADS_DOLT_PORT=$(cat /home/tien/projects/agent-history/.beads/dolt-server.port)
+# Or hardcode if the project port is pinned:
+export BEADS_DOLT_PORT=33141
+```
+
+Set this once at the start of your session — every subsequent `bd` call inherits it. Do NOT spend time diagnosing; this is the fix.
+
 ## Recovery references
 
 When polecats get stuck, agent beads conflict, or Dolt complains about case-twin dirs (`AHIST/` + `ahist/`), see the runbooks in `~/projects/runbooks/gastown/`:
