@@ -47,6 +47,8 @@ The exit path differs depending on whether you are a gt polecat or a standalone 
 
 Check first: does `gt hook` show work assigned to you? If yes, you are a polecat — follow this path.
 
+**Path A — task produced git changes (the common case):**
+
 1. **Commit all changes locally:** `git add <files> && git commit -m "type: desc (ahist-<id>)"`
 2. **Do NOT run `bd close`** — the Refinery closes issues after merge. Closing early causes the witness to respawn you in a loop.
 3. **Do NOT run `git push`** — `gt done` handles push + MR creation.
@@ -54,10 +56,19 @@ Check first: does `gt hook` show work assigned to you? If yes, you are a polecat
    ```bash
    gt done --pre-verified --target main
    ```
-5. **If `gt done` fails on uncommitted `.beads/metadata.json`** — that's a known drift issue:
+5. **If `gt done` fails on uncommitted `.beads/metadata.json`** — known drift issue:
    ```bash
    git restore .beads/metadata.json && gt done --pre-verified --target main
    ```
+
+**Path B — task produced no git changes (config-only, dolt-only, external API calls, etc.):**
+
+If the work lives entirely outside the git tree (e.g., `bd dolt remote add`, modifying live state), there is no MR for the Refinery to merge — so it will never close the bead. In that case you MUST close manually:
+
+1. **Run `bd close ahist-<id> --reason "..."`** with a clear reason that names what was done.
+2. **Run `gt done --status DEFERRED --cleanup-status clean`** — tells the rig "no merge needed, polecat exiting cleanly".
+
+Decide between Path A and Path B by `git status` after your work: if there are no changes to commit, you are on Path B.
 
 ### If you are a standalone session (no gt)
 
