@@ -4,7 +4,7 @@ use aghist::cli_error::{
 use aghist::model::{Provider, Session};
 use aghist::{app, config, export, provider, search};
 
-use std::io;
+use std::io::{self, IsTerminal};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -63,6 +63,19 @@ enum Command {
         /// Force a full rebuild by clearing the index first.
         #[arg(long)]
         force: bool,
+    },
+    /// Search indexed sessions for a query
+    Search {
+        /// Tantivy query string (matches content + project fields)
+        query: String,
+
+        /// Maximum number of hits to return
+        #[arg(long, short = 'n', default_value_t = 20)]
+        limit: usize,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY)
+        #[arg(long)]
+        json: bool,
     },
     /// Update aghist to the latest release
     Update,
@@ -163,6 +176,11 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         Some(Command::Index { provider, force }) => {
             return run_index(&providers, provider, force);
         }
+        Some(Command::Search {
+            query,
+            limit,
+            json,
+        }) => return search_command(&providers, &query, limit, json),
         None => {}
     }
 
@@ -450,6 +468,153 @@ fn self_update() -> Result<i32, ErrorEnvelope> {
         println!("Already up to date (v{})", status.version());
     }
     Ok(EXIT_OK)
+}
+
+fn search_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    query: &str,
+    limit: usize,
+    force_json: bool,
+) -> Result<i32, ErrorEnvelope> {
+    use aghist::model::Session;
+
+    if query.trim().is_empty() {
+        ErrorEnvelope::new("usage", "search query is empty")
+            .with_hint("Run `aghist search --help` for usage.")
+            .emit();
+        return Ok(EXIT_USAGE);
+    }
+
+    let mut sessions: Vec<Session> = Vec::new();
+    for p in providers {
+        if let Ok(found) = p.discover_sessions() {
+            sessions.extend(found);
+        }
+    }
+
+    let index_dir = search::SearchIndex::default_index_dir();
+    let index = search::SearchIndex::open_or_create(&index_dir).map_err(|e| {
+        ErrorEnvelope::new("index-error", format!("failed to open search index: {e}"))
+    })?;
+
+    // Incremental index update — fast on subsequent calls (manifest tracks mtimes).
+    // We don't surface progress for the CLI, so drain into a sender we discard.
+    let (tx, _rx) = crossbeam_channel::unbounded::<aghist::action::Action>();
+    index.build_index(&sessions, providers, &tx).map_err(|e| {
+        ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
+    })?;
+
+    let hits = index
+        .search(query, limit)
+        .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?;
+
+    if hits.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    // Tie-break by (started_at DESC, session_id ASC) for deterministic ordering.
+    // Tantivy already returns score-DESC; we use a stable sort to preserve that
+    // and only reorder ties.
+    let session_meta: std::collections::HashMap<&str, &Session> =
+        sessions.iter().map(|s| (s.id.0.as_str(), s)).collect();
+
+    let mut ordered: Vec<search::SearchHit> = hits;
+    ordered.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                let a_started = session_meta.get(a.session_id.as_str()).map(|s| s.started_at);
+                let b_started = session_meta.get(b.session_id.as_str()).map(|s| s.started_at);
+                b_started.cmp(&a_started)
+            })
+            .then_with(|| a.session_id.cmp(&b.session_id))
+    });
+
+    let want_json = force_json || !io::stdout().is_terminal();
+
+    if want_json {
+        print_search_json(&ordered, &session_meta).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
+        })?;
+    } else {
+        print_search_table(&ordered, &session_meta);
+    }
+
+    Ok(EXIT_OK)
+}
+
+fn print_search_json(
+    hits: &[search::SearchHit],
+    sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
+) -> std::io::Result<()> {
+    #[derive(serde::Serialize)]
+    struct JsonHit<'a> {
+        session_id: &'a str,
+        message_id: &'a str,
+        score: f32,
+        snippet: &'a str,
+        provider: Option<aghist::model::Provider>,
+        project: Option<&'a str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+    }
+
+    let rows: Vec<JsonHit> = hits
+        .iter()
+        .map(|h| {
+            let session = sessions.get(h.session_id.as_str()).copied();
+            JsonHit {
+                session_id: &h.session_id,
+                message_id: &h.message_id,
+                score: h.score,
+                snippet: &h.snippet,
+                provider: session.map(|s| s.provider),
+                project: session.and_then(|s| s.project_name.as_deref()),
+                started_at: session.map(|s| s.started_at),
+            }
+        })
+        .collect();
+
+    serde_json::to_writer(io::stdout().lock(), &rows)?;
+    println!();
+    Ok(())
+}
+
+fn print_search_table(
+    hits: &[search::SearchHit],
+    sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
+) {
+    println!(
+        "{:<6}  {:<16}  {:<12}  {:<20}  {:<14}  SNIPPET",
+        "SCORE", "STARTED", "PROVIDER", "PROJECT", "SESSION"
+    );
+    for h in hits {
+        let session = sessions.get(h.session_id.as_str()).copied();
+        let started = session
+            .map(|s| s.started_at.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_default();
+        let provider = session.map_or("", |s| s.provider.as_str());
+        let project = session
+            .and_then(|s| s.project_name.as_deref())
+            .unwrap_or("");
+        let project = truncate(project, 20);
+        let session_short = truncate(&h.session_id, 14);
+        let snippet = truncate(&h.snippet, 80);
+        println!(
+            "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<14}  {}",
+            h.score, started, provider, project, session_short, snippet
+        );
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+        out.push('…');
+        out
+    }
 }
 
 #[allow(clippy::unnecessary_wraps)]

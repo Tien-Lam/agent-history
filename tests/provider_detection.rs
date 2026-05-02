@@ -27,7 +27,7 @@ fn empty_home_detects_nothing() {
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .success()
+        .code(3)
         .stdout(predicate::str::contains("Total: 0 sessions"));
 }
 
@@ -42,7 +42,7 @@ fn detects_claude_when_dir_exists() {
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .success()
+        .code(3)
         .stdout(predicate::str::contains("Claude Code: 0 sessions"));
 }
 
@@ -55,7 +55,7 @@ fn detects_copilot_when_dir_exists() {
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .success()
+        .code(3)
         .stdout(predicate::str::contains("Copilot CLI: 0 sessions"));
 }
 
@@ -68,7 +68,7 @@ fn detects_gemini_when_dir_exists() {
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .success()
+        .code(3)
         .stdout(predicate::str::contains("Gemini CLI: 0 sessions"));
 }
 
@@ -81,7 +81,7 @@ fn detects_codex_when_dir_exists() {
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .success()
+        .code(3)
         .stdout(predicate::str::contains("Codex CLI: 0 sessions"));
 }
 
@@ -98,7 +98,7 @@ fn detects_multiple_providers() {
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .success()
+        .code(3)
         .stdout(predicate::str::contains("Claude Code"))
         .stdout(predicate::str::contains("Gemini CLI"))
         .stdout(predicate::str::contains("Codex CLI"));

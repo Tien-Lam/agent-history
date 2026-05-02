@@ -363,6 +363,24 @@ fn update_help_exits_zero() {
 }
 
 #[test]
+fn search_help_exits_zero() {
+    aghist()
+        .args(["search", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Search indexed sessions"));
+}
+
+#[test]
+fn search_requires_query_argument() {
+    aghist()
+        .arg("search")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
+}
+
+#[test]
 fn uninstall_help_exits_zero() {
     aghist()
         .args(["uninstall", "--help"])
