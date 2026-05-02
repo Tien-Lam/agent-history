@@ -367,10 +367,16 @@ fn search_index_incremental_rebuild() {
     // First build indexes everything
     let stats1 = index.build_index(&sessions, &providers, &tx).unwrap();
     assert!(stats1.sessions_indexed > 0);
+    assert_eq!(stats1.added, stats1.sessions_indexed, "first run is all 'added'");
+    assert_eq!(stats1.updated, 0);
+    assert_eq!(stats1.unchanged, 0);
 
     // Second build should skip (mtime unchanged)
     let stats2 = index.build_index(&sessions, &providers, &tx).unwrap();
     assert_eq!(stats2.sessions_indexed, 0, "no sessions should need re-indexing");
+    assert_eq!(stats2.added, 0);
+    assert_eq!(stats2.updated, 0);
+    assert_eq!(stats2.unchanged, sessions.len(), "all sessions reported as unchanged");
 
     // Search still works after incremental rebuild
     let hits = index.search("build error", 10).unwrap();
@@ -565,6 +571,8 @@ fn search_incremental_reindex_after_file_change() {
         stats2.sessions_indexed > 0,
         "changed file should be re-indexed"
     );
+    assert!(stats2.updated >= 1, "modified session must be classified as 'updated'");
+    assert_eq!(stats2.added, 0, "no new sessions, none should be 'added'");
 
     // New content should now be searchable
     let hits = index.search("quantum entanglement refactor", 10).unwrap();

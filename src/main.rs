@@ -1,6 +1,7 @@
 use aghist::cli_error::{
     ErrorEnvelope, EXIT_EMPTY, EXIT_ERROR, EXIT_OK, EXIT_USAGE,
 };
+use aghist::model::{Provider, Session};
 use aghist::{app, config, export, provider, search};
 
 use std::io;
@@ -47,10 +48,34 @@ enum Command {
         #[arg(long, short)]
         output: Option<PathBuf>,
     },
+    /// Build or refresh the search index. Idempotent and delta-aware.
+    ///
+    /// Skips sessions whose source files are unchanged since the last run,
+    /// re-indexes those that have changed, and indexes any new sessions.
+    /// Always exits with status 0 on success and prints a JSON summary
+    /// of `added` / `updated` / `unchanged` counts to stdout.
+    Index {
+        /// Reindex only sessions from this provider
+        /// (`claude-code`, `copilot-cli`, `gemini-cli`, `codex-cli`, `opencode`).
+        #[arg(long, value_parser = parse_provider_slug)]
+        provider: Option<Provider>,
+
+        /// Force a full rebuild by clearing the index first.
+        #[arg(long)]
+        force: bool,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
     Uninstall,
+}
+
+fn parse_provider_slug(raw: &str) -> Result<Provider, String> {
+    Provider::from_slug(raw).ok_or_else(|| {
+        format!(
+            "unknown provider slug '{raw}'. Valid: claude-code, copilot-cli, gemini-cli, codex-cli, opencode"
+        )
+    })
 }
 
 fn init_tracing() {
@@ -135,6 +160,9 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             session,
             output,
         }) => return export_session(&providers, format, &session, output.as_deref()),
+        Some(Command::Index { provider, force }) => {
+            return run_index(&providers, provider, force);
+        }
         None => {}
     }
 
@@ -179,6 +207,81 @@ fn run_tui(
     result
         .map(|()| EXIT_OK)
         .map_err(|e| ErrorEnvelope::new("internal-error", format!("{e:#}")))
+}
+
+fn run_index(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filter: Option<Provider>,
+    force: bool,
+) -> Result<i32, ErrorEnvelope> {
+    let started = std::time::Instant::now();
+
+    let active: Vec<&Box<dyn provider::HistoryProvider>> = providers
+        .iter()
+        .filter(|p| filter.is_none_or(|want| p.provider() == want))
+        .collect();
+
+    if let Some(want) = filter {
+        if active.is_empty() {
+            return Err(ErrorEnvelope::new(
+                "provider-unavailable",
+                format!(
+                    "provider '{}' is not enabled or not detected on this system",
+                    want.slug()
+                ),
+            )
+            .with_hint("Enable the provider in your config (`providers` table)."));
+        }
+    }
+
+    let mut sessions: Vec<Session> = Vec::new();
+    let mut errors: Vec<(Provider, String)> = Vec::new();
+    for p in &active {
+        match p.discover_sessions() {
+            Ok(s) => sessions.extend(s),
+            Err(e) => errors.push((p.provider(), e.to_string())),
+        }
+    }
+
+    let index_dir = search::SearchIndex::default_index_dir();
+    let index = search::SearchIndex::open_or_create(&index_dir).map_err(|e| {
+        ErrorEnvelope::new(
+            "index-error",
+            format!("failed to open index at {}: {e}", index_dir.display()),
+        )
+    })?;
+    if force {
+        index.clear().map_err(|e| {
+            ErrorEnvelope::new("index-error", format!("failed to clear index: {e}"))
+        })?;
+    }
+
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    // build_index needs the full provider list for load_messages dispatch;
+    // provider filtering is enforced by only feeding it sessions from `active`.
+    let stats = index.build_index(&sessions, providers, &tx).map_err(|e| {
+        ErrorEnvelope::new("index-error", format!("failed to build index: {e}"))
+    })?;
+
+    let provider_slugs: Vec<&'static str> = active.iter().map(|p| p.provider().slug()).collect();
+    let summary = serde_json::json!({
+        "providers": provider_slugs,
+        "sessions_total": sessions.len(),
+        "added": stats.added,
+        "updated": stats.updated,
+        "unchanged": stats.unchanged,
+        "messages_indexed": stats.messages_indexed,
+        "force": force,
+        "index_dir": index_dir.display().to_string(),
+        "duration_ms": u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        "errors": errors
+            .iter()
+            .map(|(p, msg)| serde_json::json!({ "provider": p.slug(), "error": msg }))
+            .collect::<Vec<_>>(),
+    });
+
+    println!("{summary}");
+    Ok(EXIT_OK)
 }
 
 fn export_session(

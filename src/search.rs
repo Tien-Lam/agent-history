@@ -33,9 +33,18 @@ pub struct SearchHit {
     pub score: f32,
 }
 
+#[derive(Debug, Default, Clone)]
 pub struct IndexStats {
+    /// Sessions written this pass (added + updated).
     pub sessions_indexed: usize,
+    /// Messages written this pass.
     pub messages_indexed: usize,
+    /// Sessions never seen by the manifest before.
+    pub added: usize,
+    /// Sessions that existed in the manifest but had a newer source mtime.
+    pub updated: usize,
+    /// Sessions that the manifest already had at the current mtime — skipped.
+    pub unchanged: usize,
 }
 
 pub struct SearchIndex {
@@ -105,18 +114,21 @@ impl SearchIndex {
         let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
 
         let total = sessions.len();
-        let mut sessions_indexed = 0;
-        let mut messages_indexed = 0;
+        let mut stats = IndexStats::default();
 
         for (i, session) in sessions.iter().enumerate() {
             let path_key = session.source_path.to_string_lossy().into_owned();
             let current_mtime = file_mtime(&session.source_path);
 
-            if let Some(&cached_mtime) = manifest.sessions.get(&path_key) {
-                if cached_mtime == current_mtime {
+            let existing_mtime = manifest.sessions.get(&path_key).copied();
+            match existing_mtime {
+                Some(cached) if cached == current_mtime => {
+                    stats.unchanged += 1;
                     let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
                     continue;
                 }
+                Some(_) => stats.updated += 1,
+                None => stats.added += 1,
             }
 
             writer.delete_term(tantivy::Term::from_field_text(
@@ -143,23 +155,20 @@ impl SearchIndex {
                         doc.add_text(self.f_content, &text);
                         doc.add_i64(self.f_timestamp, msg.timestamp.timestamp());
                         writer.add_document(doc)?;
-                        messages_indexed += 1;
+                        stats.messages_indexed += 1;
                     }
                 }
             }
 
             manifest.sessions.insert(path_key, current_mtime);
-            sessions_indexed += 1;
+            stats.sessions_indexed += 1;
             let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
         }
 
         writer.commit()?;
         self.save_manifest(&manifest)?;
 
-        Ok(IndexStats {
-            sessions_indexed,
-            messages_indexed,
-        })
+        Ok(stats)
     }
 
     pub fn search(&self, query_str: &str, limit: usize) -> Result<Vec<SearchHit>, SearchError> {
@@ -203,6 +212,9 @@ impl SearchIndex {
     }
 
     pub fn default_index_dir() -> PathBuf {
+        if let Ok(dir) = std::env::var("AGHIST_INDEX_DIR") {
+            return PathBuf::from(dir);
+        }
         directories::ProjectDirs::from("", "", "aghist")
             .map_or_else(|| PathBuf::from(".aghist-index"), |d| d.cache_dir().join("search-index"))
     }
