@@ -26,6 +26,29 @@ gt sling ahist-<id> aghist --merge=direct   # Dispatch a polecat to work it
 - **Use `bd remember` for persistent agent knowledge** — do NOT use MEMORY.md files.
 - **Run `bd prime`** for the full bd command reference.
 
+## Citation Refs
+
+Every message in a session has a stable, human-quotable reference of the form:
+
+```
+<provider-slug>/<session-id>#<turn>
+```
+
+Examples:
+
+- `claude-code/abc-123-def#7` — turn 7 of a Claude Code session
+- `codex-cli/rollout-2024-03-15T10-30-00-a1b2c3d4-...#1` — first turn of a Codex CLI rollout
+- `opencode/ses_abc123#42` — turn 42 of an OpenCode session
+
+Rules:
+
+- **Provider slug** is the kebab-case name from `Provider::slug()` — exactly one of `claude-code`, `copilot-cli`, `gemini-cli`, `codex-cli`, `opencode`. These slugs are stable contract; do not rename without a migration plan.
+- **Session id** is whatever the provider returns as `Session.id`, used verbatim. It may contain dashes, underscores, dots, etc.
+- **Turn** is the 1-based index of the message within the session in the order the provider yields it from `load_messages`. Turn `0` is invalid.
+- **Refs are opaque-stable across reindex.** Rebuilding the search index does not change a ref. As long as the source files are unchanged, the same `(provider, session-id, turn)` always points at the same message.
+
+In code: parse with `CitationRef::from_str` (returns `CitationParseError` on malformed input), build with `CitationRef::new` (validates non-zero turn, non-empty session id), render with `Display`. See `src/model/citation.rs`.
+
 ## Non-Interactive Shell Commands
 
 Polecat sessions and CI cannot answer interactive prompts. Always use non-interactive flags:

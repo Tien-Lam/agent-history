@@ -19,6 +19,31 @@ impl Provider {
         }
     }
 
+    /// Stable kebab-case slug used in citation refs, config, and any
+    /// other machine-readable context. Must remain stable across releases —
+    /// citation refs depend on it for round-tripping.
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude-code",
+            Self::CopilotCli => "copilot-cli",
+            Self::GeminiCli => "gemini-cli",
+            Self::CodexCli => "codex-cli",
+            Self::OpenCode => "opencode",
+        }
+    }
+
+    /// Inverse of [`Provider::slug`]. Returns `None` for unknown slugs.
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        match slug {
+            "claude-code" => Some(Self::ClaudeCode),
+            "copilot-cli" => Some(Self::CopilotCli),
+            "gemini-cli" => Some(Self::GeminiCli),
+            "codex-cli" => Some(Self::CodexCli),
+            "opencode" => Some(Self::OpenCode),
+            _ => None,
+        }
+    }
+
     pub fn all() -> &'static [Self] {
         &[
             Self::ClaudeCode,
@@ -132,6 +157,30 @@ mod tests {
     fn resume_command_escapes_shell_metacharacters() {
         let cmd = Provider::ClaudeCode.resume_command("abc; rm -rf /");
         assert_eq!(cmd, "claude --resume 'abc; rm -rf /'");
+    }
+
+    #[test]
+    fn slug_round_trip_for_all_providers() {
+        for &p in Provider::all() {
+            assert_eq!(Provider::from_slug(p.slug()), Some(p), "slug round-trip for {p:?}");
+        }
+    }
+
+    #[test]
+    fn slug_values_are_stable_kebab_case() {
+        assert_eq!(Provider::ClaudeCode.slug(), "claude-code");
+        assert_eq!(Provider::CopilotCli.slug(), "copilot-cli");
+        assert_eq!(Provider::GeminiCli.slug(), "gemini-cli");
+        assert_eq!(Provider::CodexCli.slug(), "codex-cli");
+        assert_eq!(Provider::OpenCode.slug(), "opencode");
+    }
+
+    #[test]
+    fn from_slug_rejects_unknown() {
+        assert_eq!(Provider::from_slug(""), None);
+        assert_eq!(Provider::from_slug("Claude Code"), None);
+        assert_eq!(Provider::from_slug("CLAUDE-CODE"), None);
+        assert_eq!(Provider::from_slug("not-a-provider"), None);
     }
 
     #[test]

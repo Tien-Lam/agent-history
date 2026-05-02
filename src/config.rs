@@ -34,13 +34,7 @@ impl Default for Config {
 impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
-            enabled: vec![
-                "claude-code".into(),
-                "copilot-cli".into(),
-                "gemini-cli".into(),
-                "codex-cli".into(),
-                "opencode".into(),
-            ],
+            enabled: Provider::all().iter().map(|p| p.slug().to_string()).collect(),
         }
     }
 }
@@ -82,14 +76,7 @@ impl Config {
         self.providers
             .enabled
             .iter()
-            .filter_map(|s| match s.as_str() {
-                "claude-code" => Some(Provider::ClaudeCode),
-                "copilot-cli" => Some(Provider::CopilotCli),
-                "gemini-cli" => Some(Provider::GeminiCli),
-                "codex-cli" => Some(Provider::CodexCli),
-                "opencode" => Some(Provider::OpenCode),
-                _ => None,
-            })
+            .filter_map(|s| Provider::from_slug(s))
             .collect()
     }
 }
