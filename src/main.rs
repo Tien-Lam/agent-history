@@ -2,6 +2,7 @@ use aghist::cli_error::{
     ErrorEnvelope, EXIT_EMPTY, EXIT_ERROR, EXIT_OK, EXIT_USAGE,
 };
 use aghist::model::{Provider, Session};
+use aghist::output::{CommandKind, OutputMode};
 use aghist::{app, config, export, provider, search};
 
 use std::io::{self, IsTerminal};
@@ -27,6 +28,16 @@ struct Cli {
     /// Force rebuild the search index
     #[arg(long)]
     reindex: bool,
+
+    /// Force JSON output (for one-shot commands like --list, export).
+    /// Mutually exclusive with --ndjson.
+    #[arg(long, global = true)]
+    json: bool,
+
+    /// Force newline-delimited JSON output (for streaming commands).
+    /// Mutually exclusive with --json.
+    #[arg(long, global = true)]
+    ndjson: bool,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -184,8 +195,16 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         None => {}
     }
 
+    if cli.json && cli.ndjson {
+        ErrorEnvelope::new("usage", "--json and --ndjson are mutually exclusive")
+            .with_hint("Pick one. Without either, output auto-detects: JSON/NDJSON on a pipe, human format on a TTY.")
+            .emit();
+        return Ok(EXIT_USAGE);
+    }
+
     if cli.list {
-        return list_sessions(&providers);
+        let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::Streaming);
+        return list_sessions(&providers, mode);
     }
 
     run_tui(providers, config)
@@ -620,13 +639,16 @@ fn truncate(s: &str, max: usize) -> String {
 #[allow(clippy::unnecessary_wraps)]
 fn list_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
+    mode: OutputMode,
 ) -> Result<i32, ErrorEnvelope> {
     let mut all_sessions = Vec::new();
 
     for p in providers {
         match p.discover_sessions() {
             Ok(sessions) => {
-                println!("{}: {} sessions", p.provider(), sessions.len());
+                if !mode.is_machine() {
+                    println!("{}: {} sessions", p.provider(), sessions.len());
+                }
                 all_sessions.extend(sessions);
             }
             Err(e) => {
@@ -637,9 +659,26 @@ fn list_sessions(
 
     all_sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
 
-    println!("\nTotal: {} sessions\n", all_sessions.len());
+    match mode {
+        OutputMode::Human => render_list_human(&all_sessions),
+        OutputMode::Json => render_list_json(&all_sessions).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
+        })?,
+        OutputMode::Ndjson => render_list_ndjson(&all_sessions).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write NDJSON output: {e}"))
+        })?,
+    }
 
-    for s in all_sessions.iter().take(20) {
+    if all_sessions.is_empty() {
+        Ok(EXIT_EMPTY)
+    } else {
+        Ok(EXIT_OK)
+    }
+}
+
+fn render_list_human(sessions: &[Session]) {
+    println!("\nTotal: {} sessions\n", sessions.len());
+    for s in sessions.iter().take(20) {
         let project = s.project_name.as_deref().unwrap_or("(unknown)");
         let branch = s.git_branch.as_deref().unwrap_or("");
         let summary = match s.summary.as_deref() {
@@ -660,10 +699,50 @@ fn list_sessions(
             summary
         );
     }
+}
 
-    if all_sessions.is_empty() {
-        Ok(EXIT_EMPTY)
-    } else {
-        Ok(EXIT_OK)
+#[derive(serde::Serialize)]
+struct SessionRow<'a> {
+    id: &'a str,
+    provider: aghist::model::Provider,
+    project: Option<&'a str>,
+    branch: Option<&'a str>,
+    summary: Option<&'a str>,
+    started_at: chrono::DateTime<chrono::Utc>,
+    message_count: usize,
+}
+
+impl<'a> SessionRow<'a> {
+    fn from_session(s: &'a Session) -> Self {
+        Self {
+            id: s.id.0.as_str(),
+            provider: s.provider,
+            project: s.project_name.as_deref(),
+            branch: s.git_branch.as_deref(),
+            summary: s.summary.as_deref(),
+            started_at: s.started_at,
+            message_count: s.message_count,
+        }
     }
+}
+
+fn render_list_json(sessions: &[Session]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let rows: Vec<SessionRow<'_>> = sessions.iter().map(SessionRow::from_session).collect();
+    let doc = serde_json::json!({ "sessions": rows });
+    let mut out = std::io::stdout().lock();
+    serde_json::to_writer(&mut out, &doc).map_err(std::io::Error::other)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn render_list_ndjson(sessions: &[Session]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut out = std::io::stdout().lock();
+    for s in sessions {
+        let row = SessionRow::from_session(s);
+        serde_json::to_writer(&mut out, &row).map_err(std::io::Error::other)?;
+        writeln!(out)?;
+    }
+    Ok(())
 }

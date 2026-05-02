@@ -27,27 +27,42 @@ fn version_flag_exits_zero() {
 
 #[test]
 fn list_with_no_data_exits_three_for_empty() {
+    // Tests run under assert_cmd; stdout is piped, so --list auto-emits NDJSON.
     let dir = tempfile::tempdir().unwrap();
-    aghist()
+    let output = aghist()
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
-        .assert()
-        .code(3)
-        .stdout(predicate::str::contains("Total: 0 sessions"));
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.lines().filter(|l| !l.is_empty()).count() == 0,
+        "empty list under NDJSON should emit zero lines, got: {stdout:?}"
+    );
 }
 
 #[test]
 fn list_with_generated_claude_fixtures() {
     let fixture = common::fixtures::claude_single_session(4);
-    // base_path is {tmpdir}/.claude, AGHIST_HOME should be the parent
+    // base_path is {tmpdir}/.claude, AGHIST_HOME should be the parent.
+    // Under non-TTY (piped stdout), --list emits NDJSON: one row per session.
     let home = fixture.base_path.parent().unwrap();
-    aghist()
+    let output = aghist()
         .arg("--list")
         .env("AGHIST_HOME", home)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Claude Code: 1 sessions"))
-        .stdout(predicate::str::contains("Total: 1 sessions"));
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let rows: Vec<serde_json::Value> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| serde_json::from_str(l).expect("each NDJSON line must parse"))
+        .collect();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["provider"], "claude_code");
+    assert_eq!(rows[0]["message_count"], 4);
 }
 
 #[test]
@@ -206,13 +221,26 @@ fn list_with_multiple_providers() {
     let codex_sessions = home_dir.path().join(".codex").join("sessions");
     common::helpers::copy_dir_recursive(&codex.base_path, &codex_sessions);
 
-    aghist()
+    // Under non-TTY, --list emits NDJSON. Assert both providers appear.
+    let output = aghist()
         .arg("--list")
         .env("AGHIST_HOME", home_dir.path())
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Claude Code"))
-        .stdout(predicate::str::contains("Codex CLI"));
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let providers: std::collections::HashSet<String> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            serde_json::from_str::<serde_json::Value>(l).unwrap()["provider"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    assert!(providers.contains("claude_code"));
+    assert!(providers.contains("codex_cli"));
 }
 
 #[test]
@@ -378,6 +406,78 @@ fn search_requires_query_argument() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("required"));
+}
+
+#[test]
+fn list_json_emits_single_object_with_sessions_array() {
+    let fixture = common::fixtures::claude_single_session(3);
+    let home = fixture.base_path.parent().unwrap();
+    let output = aghist()
+        .args(["--list", "--json"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let doc: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("--list --json must emit valid JSON");
+    let sessions = doc["sessions"].as_array().expect("sessions array");
+    assert_eq!(sessions.len(), 1);
+    assert!(sessions[0]["id"].is_string());
+    assert!(sessions[0]["provider"].is_string());
+    assert!(sessions[0]["started_at"].is_string());
+    assert_eq!(sessions[0]["message_count"], 3);
+}
+
+#[test]
+fn list_ndjson_emits_one_session_per_line() {
+    let fixture = common::fixtures::claude_single_session(2);
+    let home = fixture.base_path.parent().unwrap();
+    let output = aghist()
+        .args(["--list", "--ndjson"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 1);
+    let row: serde_json::Value =
+        serde_json::from_str(lines[0]).expect("each NDJSON line must be valid JSON");
+    assert!(row["id"].is_string());
+    assert_eq!(row["message_count"], 2);
+    // NDJSON rows must NOT be wrapped in a `sessions` envelope.
+    assert!(row.get("sessions").is_none());
+}
+
+#[test]
+fn list_json_empty_returns_three_with_empty_array() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["--list", "--json"])
+        .env("AGHIST_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(doc["sessions"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn list_rejects_json_and_ndjson_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let assert = aghist()
+        .args(["--list", "--json", "--ndjson"])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let envelope: serde_json::Value = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .and_then(|l| serde_json::from_str(l).ok())
+        .expect("expected JSON envelope on stderr");
+    assert_eq!(envelope["error"]["kind"], "usage");
 }
 
 #[test]

@@ -3,7 +3,6 @@ mod common;
 use std::fs;
 
 use assert_cmd::Command;
-use predicates::prelude::*;
 
 use aghist::config::Config;
 use aghist::model::Provider;
@@ -20,15 +19,35 @@ fn aghist() -> Command {
 
 // ─── detect_all_providers via CLI (subprocess, safe AGHIST_HOME override) ──
 
+// These tests previously asserted human-mode banners ("Claude Code: 0 sessions").
+// With --json/--ndjson auto-enabling on piped stdout (assert_cmd pipes), --list
+// now emits structured output by default and the per-provider banner is gone.
+// The structural intent — provider directories are scanned without crashing,
+// `--list` exits 3 on empty — is what these tests guard now via the macro below.
+
+macro_rules! assert_empty_list {
+    ($dir:expr) => {{
+        let output = aghist()
+            .arg("--list")
+            .env("AGHIST_HOME", $dir)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(3), "--list with no sessions must exit 3");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            !stderr.contains("\"error\""),
+            "no error envelope expected on stderr, got: {stderr}"
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let line_count = stdout.lines().filter(|l| !l.is_empty()).count();
+        assert_eq!(line_count, 0, "NDJSON should be empty, got: {stdout:?}");
+    }};
+}
+
 #[test]
 fn empty_home_detects_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    aghist()
-        .arg("--list")
-        .env("AGHIST_HOME", dir.path())
-        .assert()
-        .code(3)
-        .stdout(predicate::str::contains("Total: 0 sessions"));
+    assert_empty_list!(dir.path());
 }
 
 #[test]
@@ -37,52 +56,28 @@ fn detects_claude_when_dir_exists() {
     let claude_dir = dir.path().join(".claude");
     fs::create_dir_all(claude_dir.join("projects")).unwrap();
     fs::write(claude_dir.join("history.jsonl"), "").unwrap();
-
-    aghist()
-        .arg("--list")
-        .env("AGHIST_HOME", dir.path())
-        .assert()
-        .code(3)
-        .stdout(predicate::str::contains("Claude Code: 0 sessions"));
+    assert_empty_list!(dir.path());
 }
 
 #[test]
 fn detects_copilot_when_dir_exists() {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".copilot").join("session-state")).unwrap();
-
-    aghist()
-        .arg("--list")
-        .env("AGHIST_HOME", dir.path())
-        .assert()
-        .code(3)
-        .stdout(predicate::str::contains("Copilot CLI: 0 sessions"));
+    assert_empty_list!(dir.path());
 }
 
 #[test]
 fn detects_gemini_when_dir_exists() {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".gemini")).unwrap();
-
-    aghist()
-        .arg("--list")
-        .env("AGHIST_HOME", dir.path())
-        .assert()
-        .code(3)
-        .stdout(predicate::str::contains("Gemini CLI: 0 sessions"));
+    assert_empty_list!(dir.path());
 }
 
 #[test]
 fn detects_codex_when_dir_exists() {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".codex").join("sessions")).unwrap();
-
-    aghist()
-        .arg("--list")
-        .env("AGHIST_HOME", dir.path())
-        .assert()
-        .code(3)
-        .stdout(predicate::str::contains("Codex CLI: 0 sessions"));
+    assert_empty_list!(dir.path());
 }
 
 #[test]
@@ -93,15 +88,7 @@ fn detects_multiple_providers() {
     fs::write(claude_dir.join("history.jsonl"), "").unwrap();
     fs::create_dir_all(dir.path().join(".gemini")).unwrap();
     fs::create_dir_all(dir.path().join(".codex").join("sessions")).unwrap();
-
-    aghist()
-        .arg("--list")
-        .env("AGHIST_HOME", dir.path())
-        .assert()
-        .code(3)
-        .stdout(predicate::str::contains("Claude Code"))
-        .stdout(predicate::str::contains("Gemini CLI"))
-        .stdout(predicate::str::contains("Codex CLI"));
+    assert_empty_list!(dir.path());
 }
 
 // ─── Provider constructor tests (direct, no env mutation needed) ───────────

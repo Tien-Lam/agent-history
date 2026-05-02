@@ -5,6 +5,7 @@ pub mod config;
 pub mod event;
 pub mod export;
 pub mod model;
+pub mod output;
 pub mod provider;
 pub mod search;
 pub mod ui;
