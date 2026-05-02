@@ -26,13 +26,13 @@ fn version_flag_exits_zero() {
 }
 
 #[test]
-fn list_with_no_data_exits_zero() {
+fn list_with_no_data_exits_three_for_empty() {
     let dir = tempfile::tempdir().unwrap();
     aghist()
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .success()
+        .code(3)
         .stdout(predicate::str::contains("Total: 0 sessions"));
 }
 
@@ -51,14 +51,27 @@ fn list_with_generated_claude_fixtures() {
 }
 
 #[test]
-fn export_nonexistent_session_fails() {
+fn export_nonexistent_session_emits_envelope_and_exits_one() {
     let dir = tempfile::tempdir().unwrap();
-    aghist()
+    let assert = aghist()
         .args(["export", "--format", "md", "--session", "nonexistent"])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("Session not found"));
+        .code(1);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON envelope on stderr");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "session-not-found");
+    assert!(
+        parsed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("nonexistent")
+    );
+    assert!(parsed["error"]["hint"].is_string());
 }
 
 #[test]
@@ -134,14 +147,49 @@ fn export_to_file() {
 }
 
 #[test]
-fn invalid_export_format_fails() {
+fn invalid_export_format_emits_usage_envelope_and_exits_two() {
     let dir = tempfile::tempdir().unwrap();
-    aghist()
+    let assert = aghist()
         .args(["export", "--format", "xml", "--session", "any"])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("invalid value 'xml'"));
+        .code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON envelope on stderr");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+    assert!(
+        parsed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("xml")
+    );
+}
+
+#[test]
+fn unknown_subcommand_exits_two_with_usage_envelope() {
+    let assert = aghist().arg("totally-unknown").assert().code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON envelope on stderr");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+}
+
+#[test]
+fn list_with_data_exits_zero() {
+    let fixture = common::fixtures::claude_single_session(2);
+    let home = fixture.base_path.parent().unwrap();
+    aghist()
+        .arg("--list")
+        .env("AGHIST_HOME", home)
+        .assert()
+        .code(0);
 }
 
 #[test]

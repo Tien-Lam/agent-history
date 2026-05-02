@@ -93,6 +93,48 @@ git status                     # MUST show "up to date with origin"
 - Never say "ready to push when you are" — YOU push.
 - If push fails, resolve and retry until it succeeds.
 
+## CLI error envelope and exit codes
+
+All `aghist` subcommands emit errors as a single line of JSON to **stderr** in
+this shape (see `src/cli_error.rs`):
+
+```json
+{"error":{"kind":"<kebab>","message":"...","hint":"..."}}
+```
+
+`hint` is omitted when there is no actionable suggestion. Successful command
+output goes to stdout and is never wrapped in this envelope.
+
+### Semantic exit codes
+
+| Code | Meaning                               | Examples |
+|------|---------------------------------------|----------|
+| 0    | success with results                  | `--list` returned ≥1 session, `export` wrote a session |
+| 1    | runtime error (envelope on stderr)    | session not found, provider failure, IO error |
+| 2    | usage error (envelope on stderr)      | unknown flag, invalid `--format` value, missing required arg |
+| 3    | success but empty (no envelope)       | `--list` found zero sessions, future: search with zero hits |
+
+Exit-code 3 is a **success** signal — agents should treat it as "the query ran
+fine and the answer is the empty set," not as failure.
+
+### Stable `kind` values
+
+New code MUST reuse one of these kinds when it fits; if a genuinely new
+condition needs its own kind, add it here in the same PR. Kinds are
+kebab-case, lowercase, no underscores.
+
+| Kind                  | When to use |
+|-----------------------|-------------|
+| `usage`               | Argument parsing failed (clap error). Always paired with exit 2. |
+| `session-not-found`   | Caller named a session ID/prefix that didn't match any session. |
+| `provider-unavailable`| Session refers to a provider that isn't enabled in config. |
+| `provider-error`      | A provider failed while loading messages or discovering sessions. |
+| `io-error`            | Filesystem or terminal IO failure (read/write/permissions). |
+| `index-error`         | Tantivy search index could not be opened, written, or queried. |
+| `update-failed`       | `aghist update` self-update flow failed. |
+| `aborted`             | User declined a confirmation prompt (e.g. `uninstall`). |
+| `internal-error`      | Unexpected error from the TUI or another component. Treat as a bug. |
+
 ## bd ↔ gt Architecture (this project)
 
 ```

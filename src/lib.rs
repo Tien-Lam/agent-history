@@ -1,5 +1,6 @@
 pub mod action;
 pub mod app;
+pub mod cli_error;
 pub mod config;
 pub mod event;
 pub mod export;
