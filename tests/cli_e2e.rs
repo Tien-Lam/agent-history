@@ -162,6 +162,145 @@ fn export_to_file() {
 }
 
 #[test]
+fn show_resolves_ref_md_default() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-show-test")
+        .project("show-project")
+        .user("first-message-payload")
+        .assistant("second-message-payload")
+        .user("third-message-payload")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let reference = "claude-code/session-show-test#2";
+    let assert = aghist()
+        .args(["show", reference])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    // Title is the ref; only turn 2 should appear (no context).
+    assert!(stdout.contains(reference), "stdout missing ref header: {stdout}");
+    assert!(stdout.contains("Turn 2"), "stdout missing 'Turn 2': {stdout}");
+    assert!(!stdout.contains("Turn 1"), "should not include turn 1 without context");
+    assert!(stdout.contains("second-message-payload"));
+}
+
+#[test]
+fn show_includes_context_window() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-show-ctx")
+        .user("alpha")
+        .assistant("beta")
+        .user("gamma")
+        .assistant("delta")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let assert = aghist()
+        .args(["show", "claude-code/session-show-ctx#3", "--include-context", "1"])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    // turn 3 ± 1 → turns 2,3,4
+    assert!(stdout.contains("Turn 2"));
+    assert!(stdout.contains("Turn 3"));
+    assert!(stdout.contains("Turn 4"));
+    assert!(!stdout.contains("Turn 1"));
+}
+
+#[test]
+fn show_json_format_emits_machine_readable() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-show-json")
+        .project("json-proj")
+        .user("alpha")
+        .assistant("beta")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let assert = aghist()
+        .args([
+            "show",
+            "claude-code/session-show-json#1",
+            "--format", "json",
+        ])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(parsed["ref"], "claude-code/session-show-json#1");
+    assert_eq!(parsed["target_turn"], 1);
+    assert_eq!(parsed["session_id"], "session-show-json");
+    assert_eq!(parsed["project"], "json-proj");
+    let msgs = parsed["messages"].as_array().expect("messages array");
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0]["turn"], 1);
+    assert_eq!(msgs[0]["is_target"], true);
+}
+
+#[test]
+fn show_invalid_ref_emits_usage_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let assert = aghist()
+        .args(["show", "not-a-ref"])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(1);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+}
+
+#[test]
+fn show_unknown_session_emits_session_not_found() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("real-session")
+        .user("a")
+        .assistant("b")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let assert = aghist()
+        .args(["show", "claude-code/does-not-exist#1"])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .code(1);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "session-not-found");
+}
+
+#[test]
+fn show_turn_out_of_range_emits_session_not_found() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-show-oor")
+        .user("a")
+        .assistant("b")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let assert = aghist()
+        .args(["show", "claude-code/session-show-oor#999"])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .code(1);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "session-not-found");
+}
+
+#[test]
 fn export_turn_range_slices_messages() {
     let fixture = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("session-tr-test")
