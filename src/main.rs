@@ -93,6 +93,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Machine-readable doctor: validates index, manifest, and provider state.
+    ///
+    /// Exits 0 if all checks pass (or only warn), 1 if any check fails. The
+    /// JSON envelope is `{ok, checks:[{name, status, hint?}], summary}` so
+    /// agents can branch on individual check kinds.
+    Health,
     /// List detected provider sources: paths, session counts, sizes, last-indexed-at.
     ///
     /// Helps diagnose "why isn't my session showing up?" — agents (and humans)
@@ -369,6 +375,10 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         Some(Command::Sources) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
             return sources_command(&providers, mode);
+        }
+        Some(Command::Health) => {
+            let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
+            return health_command(&providers, mode);
         }
         None => {}
     }
@@ -933,6 +943,189 @@ fn render_list_ndjson(sessions: &[Session]) -> std::io::Result<()> {
     Ok(())
 }
 
+fn health_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    mode: OutputMode,
+) -> Result<i32, ErrorEnvelope> {
+    let checks = run_health_checks(providers);
+    let any_failed = checks.iter().any(|c| c.status == HealthStatus::Fail);
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    match mode {
+        OutputMode::Human => render_health_human(&mut out, &checks),
+        OutputMode::Json | OutputMode::Ndjson => render_health_json(&mut out, &checks, !any_failed),
+    }
+    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write health output: {e}")))?;
+
+    Ok(if any_failed { EXIT_ERROR } else { EXIT_OK })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum HealthStatus {
+    Ok,
+    Warn,
+    Fail,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct HealthCheck {
+    name: &'static str,
+    status: HealthStatus,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hint: Option<String>,
+}
+
+fn run_health_checks(providers: &[Box<dyn provider::HistoryProvider>]) -> Vec<HealthCheck> {
+    let mut checks = Vec::new();
+
+    // 1. providers-detected
+    if providers.is_empty() {
+        checks.push(HealthCheck {
+            name: "providers-detected",
+            status: HealthStatus::Warn,
+            message: "no providers detected on this system".to_string(),
+            hint: Some("Use one of the supported agents (claude-code, copilot-cli, gemini-cli, codex-cli, opencode), or check `aghist sources`.".to_string()),
+        });
+    } else {
+        let slugs: Vec<&str> = providers.iter().map(|p| p.provider().slug()).collect();
+        checks.push(HealthCheck {
+            name: "providers-detected",
+            status: HealthStatus::Ok,
+            message: format!("{} provider(s) detected: {}", providers.len(), slugs.join(", ")),
+            hint: None,
+        });
+    }
+
+    // 2. index-dir-writable
+    let index_dir = search::SearchIndex::default_index_dir();
+    match check_dir_writable(&index_dir) {
+        Ok(()) => checks.push(HealthCheck {
+            name: "index-dir-writable",
+            status: HealthStatus::Ok,
+            message: format!("index dir writable: {}", index_dir.display()),
+            hint: None,
+        }),
+        Err(e) => checks.push(HealthCheck {
+            name: "index-dir-writable",
+            status: HealthStatus::Fail,
+            message: format!("index dir not writable ({}): {e}", index_dir.display()),
+            hint: Some("Set $AGHIST_INDEX_DIR to a writable path, or fix permissions.".to_string()),
+        }),
+    }
+
+    // 3. manifest-sane
+    let manifest_path = index_dir.join("manifest.json");
+    if manifest_path.exists() {
+        match std::fs::read_to_string(&manifest_path)
+            .map_err(|e| e.to_string())
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()))
+        {
+            Ok(v) if v.get("sessions").is_some() => checks.push(HealthCheck {
+                name: "manifest-sane",
+                status: HealthStatus::Ok,
+                message: "manifest.json parses and has 'sessions' field".to_string(),
+                hint: None,
+            }),
+            Ok(_) => checks.push(HealthCheck {
+                name: "manifest-sane",
+                status: HealthStatus::Warn,
+                message: "manifest.json parses but is missing 'sessions' field".to_string(),
+                hint: Some("Run `aghist index --force` to rebuild the manifest.".to_string()),
+            }),
+            Err(e) => checks.push(HealthCheck {
+                name: "manifest-sane",
+                status: HealthStatus::Fail,
+                message: format!("manifest.json failed to parse: {e}"),
+                hint: Some("Run `aghist index --force` to rebuild the manifest.".to_string()),
+            }),
+        }
+    } else {
+        checks.push(HealthCheck {
+            name: "manifest-sane",
+            status: HealthStatus::Warn,
+            message: "no manifest.json — index has not been built".to_string(),
+            hint: Some("Run `aghist index` to populate the search index.".to_string()),
+        });
+    }
+
+    // 4. index-schema-present (meta.json indicates Tantivy created the index)
+    let meta_path = index_dir.join("meta.json");
+    if meta_path.exists() {
+        checks.push(HealthCheck {
+            name: "index-schema-present",
+            status: HealthStatus::Ok,
+            message: "Tantivy meta.json present".to_string(),
+            hint: None,
+        });
+    } else {
+        checks.push(HealthCheck {
+            name: "index-schema-present",
+            status: HealthStatus::Warn,
+            message: "Tantivy meta.json missing — index has not been initialised".to_string(),
+            hint: Some("Run `aghist index` to create the index.".to_string()),
+        });
+    }
+
+    checks
+}
+
+fn check_dir_writable(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let probe = dir.join(".aghist-health-probe");
+    std::fs::write(&probe, b"ok")?;
+    std::fs::remove_file(&probe)?;
+    Ok(())
+}
+
+fn render_health_human<W: io::Write>(out: &mut W, checks: &[HealthCheck]) -> io::Result<()> {
+    let any_failed = checks.iter().any(|c| c.status == HealthStatus::Fail);
+    let any_warn = checks.iter().any(|c| c.status == HealthStatus::Warn);
+    let summary = if any_failed {
+        "FAIL"
+    } else if any_warn {
+        "WARN"
+    } else {
+        "OK"
+    };
+    writeln!(out, "Overall: {summary}")?;
+    writeln!(out)?;
+    for c in checks {
+        let tag = match c.status {
+            HealthStatus::Ok => "OK  ",
+            HealthStatus::Warn => "WARN",
+            HealthStatus::Fail => "FAIL",
+        };
+        writeln!(out, "  [{tag}] {} — {}", c.name, c.message)?;
+        if let Some(hint) = &c.hint {
+            writeln!(out, "         hint: {hint}")?;
+        }
+    }
+    Ok(())
+}
+
+fn render_health_json<W: io::Write>(
+    out: &mut W,
+    checks: &[HealthCheck],
+    ok: bool,
+) -> io::Result<()> {
+    let summary = serde_json::json!({
+        "ok_count": checks.iter().filter(|c| c.status == HealthStatus::Ok).count(),
+        "warn_count": checks.iter().filter(|c| c.status == HealthStatus::Warn).count(),
+        "fail_count": checks.iter().filter(|c| c.status == HealthStatus::Fail).count(),
+    });
+    let payload = serde_json::json!({
+        "ok": ok,
+        "checks": checks,
+        "summary": summary,
+    });
+    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
+    writeln!(out)?;
+    Ok(())
+}
+
 fn sources_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     mode: OutputMode,
@@ -1106,6 +1299,7 @@ fn render_sources_ndjson<W: io::Write>(out: &mut W, rows: &[SourceRow]) -> io::R
     Ok(())
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn format_bytes(b: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
