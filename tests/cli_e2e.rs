@@ -162,6 +162,93 @@ fn export_to_file() {
 }
 
 #[test]
+fn export_turn_range_slices_messages() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-tr-test")
+        .project("tr-project")
+        .user("turn-1-user")
+        .assistant("turn-2-assistant")
+        .user("turn-3-user")
+        .assistant("turn-4-assistant")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    // Slice turns 2:3 — should keep only the middle two messages.
+    let output = aghist()
+        .args([
+            "export",
+            "--format", "json",
+            "--session", "session-tr-test",
+            "--turn-range", "2:3",
+        ])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let msgs = parsed["messages"].as_array().expect("messages array");
+    assert_eq!(msgs.len(), 2, "expected 2 messages from --turn-range 2:3");
+}
+
+#[test]
+fn export_turn_range_open_end_clamps_to_total() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-tr-clamp")
+        .project("tr-clamp")
+        .user("a")
+        .assistant("b")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    // 1:999 should clamp to (1,2) — both messages returned.
+    let output = aghist()
+        .args([
+            "export",
+            "--format", "json",
+            "--session", "session-tr-clamp",
+            "--turn-range", "1:999",
+        ])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(parsed["messages"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn export_turn_range_invalid_emits_usage_envelope() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-tr-bad")
+        .project("tr-bad")
+        .user("a")
+        .assistant("b")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let assert = aghist()
+        .args([
+            "export",
+            "--format", "md",
+            "--session", "session-tr-bad",
+            "--turn-range", "5:2",
+        ])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .code(1); // ErrorEnvelope without explicit EXIT_USAGE return → exit 1
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON envelope on stderr");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+}
+
+#[test]
 fn invalid_export_format_emits_usage_envelope_and_exits_two() {
     let dir = tempfile::tempdir().unwrap();
     let assert = aghist()
