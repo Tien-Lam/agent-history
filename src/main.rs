@@ -6,7 +6,7 @@ use aghist::output::{CommandKind, OutputMode};
 use aghist::health::{self, HealthCheck, HealthStatus};
 #[cfg(feature = "embeddings")]
 use aghist::embed;
-use aghist::{app, config, export, mcp, provider, search};
+use aghist::{app, config, export, mcp, provider, schema, search};
 
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
@@ -172,6 +172,24 @@ enum Command {
     /// per the MCP stdio transport. Tools: `search_sessions`, `list_sessions`,
     /// `get_session`, `get_message`, `reindex`, `health`.
     Mcp,
+    /// Emit JSON-Schema (draft-2020-12) for an aghist subcommand.
+    ///
+    /// Lets agents discover params, response shapes, and exit codes without
+    /// scraping `--help`. Use `--list` to enumerate available subcommands or
+    /// `--all` to dump every schema in one document.
+    Schema {
+        /// Subcommand name (e.g. `search`, `list`, `health`). Omit with `--list` or `--all`.
+        #[arg(value_name = "SUBCMD")]
+        subcommand: Option<String>,
+
+        /// List available schema subcommand names as JSON.
+        #[arg(long, conflicts_with_all = ["all", "subcommand"])]
+        list: bool,
+
+        /// Emit every schema as one object keyed by subcommand name.
+        #[arg(long, conflicts_with_all = ["list", "subcommand"])]
+        all: bool,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -405,6 +423,9 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
 
     match cli.command {
         Some(Command::Mcp) => return run_mcp(providers),
+        Some(Command::Schema { subcommand, list, all }) => {
+            return schema_command(subcommand.as_deref(), list, all);
+        }
         Some(Command::Update) => return self_update(),
         Some(Command::Uninstall) => return uninstall(),
         Some(Command::Export {
@@ -508,6 +529,43 @@ fn run_tui(
     result
         .map(|()| EXIT_OK)
         .map_err(|e| ErrorEnvelope::new("internal-error", format!("{e:#}")))
+}
+
+fn schema_command(
+    subcommand: Option<&str>,
+    list: bool,
+    all: bool,
+) -> Result<i32, ErrorEnvelope> {
+    let payload = if list {
+        schema::subcommand_index()
+    } else if all {
+        schema::all_schemas()
+    } else if let Some(name) = subcommand {
+        if let Some(value) = schema::schema_for(name) {
+            value
+        } else {
+            let valid = schema::SUBCOMMANDS.join(", ");
+            return Err(ErrorEnvelope::new(
+                "usage",
+                format!("unknown schema subcommand '{name}'"),
+            )
+            .with_hint(format!("Valid subcommands: {valid}")));
+        }
+    } else {
+        ErrorEnvelope::new(
+            "usage",
+            "schema requires <SUBCMD>, --list, or --all",
+        )
+        .with_hint("Run `aghist schema --list` to see available subcommands.")
+        .emit();
+        return Ok(EXIT_USAGE);
+    };
+
+    serde_json::to_writer(io::stdout().lock(), &payload).map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write schema output: {e}"))
+    })?;
+    println!();
+    Ok(EXIT_OK)
 }
 
 fn run_mcp(

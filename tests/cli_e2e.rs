@@ -1085,3 +1085,56 @@ fn index_summary_includes_embeddings_block() {
         "unexpected embeddings status: {status:?}"
     );
 }
+
+#[test]
+fn schema_list_emits_subcommand_index() {
+    let assert = aghist().args(["schema", "--list"]).assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let names = parsed["subcommands"].as_array().expect("subcommands array");
+    assert!(names.iter().any(|n| n == "search"));
+    assert!(names.iter().any(|n| n == "schema"));
+}
+
+#[test]
+fn schema_for_search_is_valid_json_schema() {
+    let assert = aghist().args(["schema", "search"]).assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(
+        parsed["$schema"],
+        "https://json-schema.org/draft/2020-12/schema"
+    );
+    assert_eq!(parsed["command"], "search");
+    assert!(parsed["params"]["properties"]["query"].is_object());
+    assert!(parsed["response"].is_object());
+    assert!(parsed["exit_codes"]["0"].is_string());
+}
+
+#[test]
+fn schema_all_dumps_every_subcommand() {
+    let assert = aghist().args(["schema", "--all"]).assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let map = parsed.as_object().expect("top-level object");
+    for name in ["list", "search", "show", "export", "index", "sources", "health", "mcp", "schema"] {
+        assert!(map.contains_key(name), "missing schema for {name}");
+        assert_eq!(map[name]["$id"], format!("aghist:schema/{name}"));
+    }
+}
+
+#[test]
+fn schema_unknown_subcommand_exits_one_with_envelope() {
+    let output = aghist().args(["schema", "nonsense"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stderr.trim().lines().last().unwrap()).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+    assert!(parsed["error"]["message"].as_str().unwrap().contains("nonsense"));
+}
+
+#[test]
+fn schema_without_args_exits_two_usage() {
+    let output = aghist().arg("schema").output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+}
