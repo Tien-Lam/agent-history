@@ -210,6 +210,11 @@ enum Command {
         /// Mostly useful for tests and one-shot snapshots.
         #[arg(long, default_value_t = 0, value_name = "N")]
         watch_iterations: u32,
+
+        /// Show BM25 score breakdown per result (Tantivy explanation tree).
+        /// Useful for tuning relevance and surfacing ranking surprises.
+        #[arg(long)]
+        debug_search: bool,
     },
     /// Machine-readable doctor: validates index, manifest, and provider state.
     ///
@@ -521,6 +526,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             watch,
             watch_interval_ms,
             watch_iterations,
+            debug_search,
         }) => {
             let filters = cli.filters.to_search_filters();
             if watch {
@@ -543,6 +549,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 limit,
                 json,
                 &filters,
+                debug_search,
             );
         }
         Some(Command::Show {
@@ -1121,6 +1128,7 @@ fn resolve_search_query(
     Ok(buf.trim_end().to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn search_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     query: Option<&str>,
@@ -1129,6 +1137,7 @@ fn search_command(
     limit: usize,
     force_json: bool,
     filters: &SearchFilters,
+    debug_search: bool,
 ) -> Result<i32, ErrorEnvelope> {
     use aghist::model::Session;
 
@@ -1167,11 +1176,23 @@ fn search_command(
         ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
     })?;
 
-    let hits = index
-        .search_with_filters(query, limit, filters)
-        .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?;
+    let raw_hits: Vec<(search::SearchHit, Option<search::Explanation>)> = if debug_search {
+        index
+            .search_with_filters_and_explain(query, limit, filters)
+            .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?
+            .into_iter()
+            .map(|(h, e)| (h, Some(e)))
+            .collect()
+    } else {
+        index
+            .search_with_filters(query, limit, filters)
+            .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?
+            .into_iter()
+            .map(|h| (h, None))
+            .collect()
+    };
 
-    if hits.is_empty() {
+    if raw_hits.is_empty() {
         return Ok(EXIT_EMPTY);
     }
 
@@ -1181,17 +1202,21 @@ fn search_command(
     let session_meta: std::collections::HashMap<&str, &Session> =
         sessions.iter().map(|s| (s.id.0.as_str(), s)).collect();
 
-    let mut ordered: Vec<search::SearchHit> = hits;
+    let mut ordered = raw_hits;
     ordered.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
+        b.0.score
+            .partial_cmp(&a.0.score)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| {
-                let a_started = session_meta.get(a.session_id.as_str()).map(|s| s.started_at);
-                let b_started = session_meta.get(b.session_id.as_str()).map(|s| s.started_at);
+                let a_started = session_meta
+                    .get(a.0.session_id.as_str())
+                    .map(|s| s.started_at);
+                let b_started = session_meta
+                    .get(b.0.session_id.as_str())
+                    .map(|s| s.started_at);
                 b_started.cmp(&a_started)
             })
-            .then_with(|| a.session_id.cmp(&b.session_id))
+            .then_with(|| a.0.session_id.cmp(&b.0.session_id))
     });
 
     let want_json = force_json || !io::stdout().is_terminal();
@@ -1208,7 +1233,7 @@ fn search_command(
 }
 
 fn print_search_json(
-    hits: &[search::SearchHit],
+    hits: &[(search::SearchHit, Option<search::Explanation>)],
     sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
 ) -> std::io::Result<()> {
     #[derive(serde::Serialize)]
@@ -1220,11 +1245,13 @@ fn print_search_json(
         provider: Option<aghist::model::Provider>,
         project: Option<&'a str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        explanation: Option<&'a search::Explanation>,
     }
 
     let rows: Vec<JsonHit> = hits
         .iter()
-        .map(|h| {
+        .map(|(h, explain)| {
             let session = sessions.get(h.session_id.as_str()).copied();
             JsonHit {
                 session_id: &h.session_id,
@@ -1234,6 +1261,7 @@ fn print_search_json(
                 provider: session.map(|s| s.provider),
                 project: session.and_then(|s| s.project_name.as_deref()),
                 started_at: session.map(|s| s.started_at),
+                explanation: explain.as_ref(),
             }
         })
         .collect();
@@ -1244,14 +1272,14 @@ fn print_search_json(
 }
 
 fn print_search_table(
-    hits: &[search::SearchHit],
+    hits: &[(search::SearchHit, Option<search::Explanation>)],
     sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
 ) {
     println!(
         "{:<6}  {:<16}  {:<12}  {:<20}  {:<14}  SNIPPET",
         "SCORE", "STARTED", "PROVIDER", "PROJECT", "SESSION"
     );
-    for h in hits {
+    for (h, explain) in hits {
         let session = sessions.get(h.session_id.as_str()).copied();
         let started = session
             .map(|s| s.started_at.format("%Y-%m-%d %H:%M").to_string())
@@ -1267,6 +1295,11 @@ fn print_search_table(
             "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<14}  {}",
             h.score, started, provider, project, session_short, snippet
         );
+        if let Some(explanation) = explain {
+            for line in explanation.to_pretty_json().lines() {
+                println!("    {line}");
+            }
+        }
     }
 }
 

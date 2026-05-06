@@ -11,6 +11,8 @@ use tantivy::query::{BooleanQuery, Occur, Query, QueryParser, RangeQuery, TermQu
 use tantivy::schema::{Field, IndexRecordOption, Schema, Value, INDEXED, STORED, STRING, TEXT};
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
+pub use tantivy::query::Explanation;
+
 use crate::action::Action;
 use crate::model::{ContentBlock, Message, Provider, Role, Session};
 use crate::provider::HistoryProvider;
@@ -234,6 +236,43 @@ impl SearchIndex {
         limit: usize,
         filters: &SearchFilters,
     ) -> Result<Vec<SearchHit>, SearchError> {
+        Ok(self
+            .search_inner(query_str, limit, filters, false)?
+            .into_iter()
+            .map(|(hit, _)| hit)
+            .collect())
+    }
+
+    /// Like [`Self::search_with_filters`] but also returns Tantivy's BM25
+    /// [`Explanation`] tree for each hit, so callers can surface a score
+    /// breakdown (the `--debug-search` flag).
+    pub fn search_with_filters_and_explain(
+        &self,
+        query_str: &str,
+        limit: usize,
+        filters: &SearchFilters,
+    ) -> Result<Vec<(SearchHit, Explanation)>, SearchError> {
+        let raw = self.search_inner(query_str, limit, filters, true)?;
+        Ok(raw
+            .into_iter()
+            .map(|(hit, explain)| {
+                // explain=true guarantees Some; fall back to a stub if Tantivy
+                // ever returns a hit without an explainable scorer.
+                let explanation = explain.unwrap_or_else(|| {
+                    Explanation::new_with_string("no explanation available".into(), hit.score)
+                });
+                (hit, explanation)
+            })
+            .collect())
+    }
+
+    fn search_inner(
+        &self,
+        query_str: &str,
+        limit: usize,
+        filters: &SearchFilters,
+        explain: bool,
+    ) -> Result<Vec<(SearchHit, Option<Explanation>)>, SearchError> {
         if query_str.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -321,12 +360,21 @@ impl SearchIndex {
             let tool_output = field_text(&doc, self.f_tool_output);
             let snippet = best_snippet(&content, &tool_output, query_str, 120);
 
-            hits.push(SearchHit {
-                session_id,
-                message_id,
-                snippet,
-                score,
-            });
+            let explanation = if explain {
+                Some(combined.explain(&searcher, addr)?)
+            } else {
+                None
+            };
+
+            hits.push((
+                SearchHit {
+                    session_id,
+                    message_id,
+                    snippet,
+                    score,
+                },
+                explanation,
+            ));
         }
 
         Ok(hits)
