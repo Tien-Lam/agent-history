@@ -14,6 +14,7 @@ use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
 use aghist::search::SearchIndex;
 
+use common::fixtures;
 use common::helpers::{copy_dir_recursive, fixtures_dir};
 
 // ─── Full parse pipeline: JSONL → RawEntry → Message → ContentBlock ─────────
@@ -459,6 +460,78 @@ fn search_roundtrip_verifies_message_ids() {
         .find(|h| h.session_id == "session-abc123")
         .expect("should have a hit from session-abc123");
     assert_eq!(claude_hit.message_id, "msg-004");
+}
+
+#[test]
+fn search_index_finds_tool_output() {
+    // Token only appears inside a tool_result block — proves we index the
+    // tool output field and that queries hit it.
+    let token = "zorpglyph42";
+    let fixture = fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-tool-out")
+        .project("tooloutput-project")
+        .user("Run the test")
+        .assistant_with_tool("running", "Bash", r#"{"command":"cargo test"}"#)
+        .tool_result("tool-002", &format!("error[E0001]: {token} expected here"))
+        .done()
+        .build();
+
+    let providers: Vec<Box<dyn HistoryProvider>> = vec![Box::new(ClaudeCodeProvider::new(vec![
+        fixture.base_path.clone(),
+    ]))];
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    index.build_index(&sessions, &providers, &tx).unwrap();
+
+    let hits = index.search(token, 10).unwrap();
+    assert!(
+        !hits.is_empty(),
+        "search for tool-output-only token '{token}' should return a hit"
+    );
+    assert_eq!(hits[0].session_id, "session-tool-out");
+    assert!(
+        hits[0].snippet.contains(token),
+        "snippet should reflect the matching tool output, got: {:?}",
+        hits[0].snippet
+    );
+}
+
+#[test]
+fn search_index_rebuilds_when_schema_changes() {
+    use tantivy::schema::{Schema, STORED, STRING};
+    use tantivy::Index;
+
+    // Simulate an index built before tool_output existed by writing a
+    // dummy index with an older schema, then re-opening through SearchIndex.
+    let index_dir = tempfile::tempdir().unwrap();
+    {
+        let mut builder = Schema::builder();
+        builder.add_text_field("session_id", STRING | STORED);
+        let schema = builder.build();
+        Index::create_in_dir(index_dir.path(), schema).unwrap();
+    }
+
+    // open_or_create must detect the schema mismatch and recreate the index
+    // rather than panicking or returning a SearchIndex with stale fields.
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+
+    // The newly recreated index should be functional: build + search.
+    let providers = all_providers();
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    index.build_index(&sessions, &providers, &tx).unwrap();
+
+    let hits = index.search("build error", 10).unwrap();
+    assert!(!hits.is_empty(), "rebuilt index should be queryable");
 }
 
 #[test]

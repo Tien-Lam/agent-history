@@ -56,6 +56,7 @@ pub struct SearchIndex {
     f_project: Field,
     f_role: Field,
     f_content: Field,
+    f_tool_output: Field,
     f_timestamp: Field,
     index_dir: PathBuf,
 }
@@ -76,10 +77,19 @@ impl SearchIndex {
         let f_project = builder.add_text_field("project", TEXT | STORED);
         let f_role = builder.add_text_field("role", STRING | STORED);
         let f_content = builder.add_text_field("content", TEXT | STORED);
+        let f_tool_output = builder.add_text_field("tool_output", TEXT | STORED);
         let f_timestamp = builder.add_i64_field("timestamp", INDEXED | STORED);
         let schema = builder.build();
 
-        let index = if index_dir.join("meta.json").exists() {
+        let meta_path = index_dir.join("meta.json");
+        // The on-disk index is a cache; if its schema predates a field we now
+        // need (e.g. tool_output was added), rebuild from scratch instead of
+        // failing to open.
+        if meta_path.exists() && !schema_matches(index_dir, &schema) {
+            wipe_index_dir(index_dir)?;
+        }
+
+        let index = if meta_path.exists() {
             Index::open_in_dir(index_dir)?
         } else {
             Index::create_in_dir(index_dir, schema)?
@@ -99,6 +109,7 @@ impl SearchIndex {
             f_project,
             f_role,
             f_content,
+            f_tool_output,
             f_timestamp,
             index_dir: index_dir.to_path_buf(),
         })
@@ -139,8 +150,9 @@ impl SearchIndex {
             if let Some(provider) = providers.iter().find(|p| p.provider() == session.provider) {
                 if let Ok(messages) = provider.load_messages(session) {
                     for msg in &messages {
-                        let text = extract_text(msg);
-                        if text.is_empty() {
+                        let content = extract_content(msg);
+                        let tool_output = extract_tool_output(msg);
+                        if content.is_empty() && tool_output.is_empty() {
                             continue;
                         }
                         let mut doc = TantivyDocument::default();
@@ -152,7 +164,8 @@ impl SearchIndex {
                             session.project_name.as_deref().unwrap_or(""),
                         );
                         doc.add_text(self.f_role, msg.role.as_str());
-                        doc.add_text(self.f_content, &text);
+                        doc.add_text(self.f_content, &content);
+                        doc.add_text(self.f_tool_output, &tool_output);
                         doc.add_i64(self.f_timestamp, msg.timestamp.timestamp());
                         writer.add_document(doc)?;
                         stats.messages_indexed += 1;
@@ -179,7 +192,10 @@ impl SearchIndex {
         self.reader.reload()?;
         let searcher = self.reader.searcher();
 
-        let parser = QueryParser::for_index(&self.index, vec![self.f_content, self.f_project]);
+        let parser = QueryParser::for_index(
+            &self.index,
+            vec![self.f_content, self.f_project, self.f_tool_output],
+        );
         let query = parser.parse_query(query_str)?;
 
         let top_docs = searcher.search(&query, &TopDocs::with_limit(limit).order_by_score())?;
@@ -190,7 +206,8 @@ impl SearchIndex {
             let session_id = field_text(&doc, self.f_session_id);
             let message_id = field_text(&doc, self.f_message_id);
             let content = field_text(&doc, self.f_content);
-            let snippet = make_snippet(&content, query_str, 120);
+            let tool_output = field_text(&doc, self.f_tool_output);
+            let snippet = best_snippet(&content, &tool_output, query_str, 120);
 
             hits.push(SearchHit {
                 session_id,
@@ -234,20 +251,59 @@ impl SearchIndex {
     }
 }
 
-fn extract_text(message: &Message) -> String {
-    message
-        .content
-        .iter()
-        .map(|block| match block {
+fn extract_content(message: &Message) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for block in &message.content {
+        match block {
             ContentBlock::Text(t) | ContentBlock::Thinking(t) | ContentBlock::Error(t) => {
-                t.as_str()
+                parts.push(t.as_str());
             }
-            ContentBlock::CodeBlock { code, .. } => code.as_str(),
-            ContentBlock::ToolUse(tc) => tc.arguments.as_str(),
-            ContentBlock::ToolResult(tr) => tr.output.as_str(),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+            ContentBlock::CodeBlock { code, .. } => parts.push(code.as_str()),
+            ContentBlock::ToolUse(tc) => parts.push(tc.arguments.as_str()),
+            ContentBlock::ToolResult(_) => {}
+        }
+    }
+    parts.join("\n")
+}
+
+fn extract_tool_output(message: &Message) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for block in &message.content {
+        if let ContentBlock::ToolResult(tr) = block {
+            parts.push(tr.output.as_str());
+        }
+    }
+    parts.join("\n")
+}
+
+fn schema_matches(index_dir: &Path, expected: &Schema) -> bool {
+    Index::open_in_dir(index_dir).is_ok_and(|idx| &idx.schema() == expected)
+}
+
+fn wipe_index_dir(index_dir: &Path) -> Result<(), SearchError> {
+    for entry in fs::read_dir(index_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            fs::remove_dir_all(&path)?;
+        } else {
+            fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn best_snippet(content: &str, tool_output: &str, query: &str, max_len: usize) -> String {
+    // Prefer whichever stored field actually contains the query, so a hit on
+    // tool_output doesn't return an empty/unrelated snippet from content.
+    let q_lower = query.to_lowercase();
+    if tool_output.to_lowercase().contains(&q_lower) {
+        make_snippet(tool_output, query, max_len)
+    } else if !content.is_empty() {
+        make_snippet(content, query, max_len)
+    } else {
+        make_snippet(tool_output, query, max_len)
+    }
 }
 
 fn field_text(doc: &TantivyDocument, field: Field) -> String {
