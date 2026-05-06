@@ -2,6 +2,7 @@ pub mod action;
 pub mod app;
 pub mod cli_error;
 pub mod config;
+pub mod embed;
 pub mod event;
 pub mod export;
 pub mod health;

@@ -1045,3 +1045,43 @@ fn search_watch_requires_query() {
         "expected usage envelope, got: {stderr}"
     );
 }
+
+#[test]
+fn index_help_documents_accept_download_flag() {
+    aghist()
+        .args(["index", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--accept-download"))
+        .stdout(predicate::str::contains("AllMiniLML6V2"));
+}
+
+#[test]
+fn index_summary_includes_embeddings_block() {
+    // Without the `embeddings` cargo feature compiled in, the summary should
+    // surface that explicitly so callers (and humans) know nothing semantic
+    // happened — even when --accept-download is passed.
+    let home = tempfile::tempdir().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args(["index", "--accept-download"])
+        .env("AGHIST_HOME", home.path())
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("expected JSON on stdout, got {stdout:?}: {e}"));
+    let block = &parsed["embeddings"];
+    assert!(block.is_object(), "expected embeddings object, got {block}");
+    let status = block["status"].as_str().unwrap_or("");
+    // The lean default build reports "disabled"; a feature build reports
+    // "awaiting-consent" or "enabled". Accept any of those — the contract is
+    // that the field exists and tells the caller what happened.
+    assert!(
+        matches!(status, "disabled" | "awaiting-consent" | "enabled"),
+        "unexpected embeddings status: {status:?}"
+    );
+}

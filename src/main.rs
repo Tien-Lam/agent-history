@@ -4,6 +4,8 @@ use aghist::cli_error::{
 use aghist::model::{CitationRef, Message, Provider, Role, Session};
 use aghist::output::{CommandKind, OutputMode};
 use aghist::health::{self, HealthCheck, HealthStatus};
+#[cfg(feature = "embeddings")]
+use aghist::embed;
 use aghist::{app, config, export, mcp, provider, search};
 
 use std::io::{self, IsTerminal};
@@ -80,6 +82,14 @@ enum Command {
         /// Force a full rebuild by clearing the index first.
         #[arg(long)]
         force: bool,
+
+        /// Authorise the one-off download of the embedding model
+        /// (~90 MB `AllMiniLML6V2`). Required the first time semantic indexing
+        /// runs; consent is persisted next to the index, so subsequent runs
+        /// don't need this flag. Without consent (and without this flag),
+        /// indexing stays purely lexical.
+        #[arg(long)]
+        accept_download: bool,
     },
     /// Search indexed sessions for a query
     Search {
@@ -403,8 +413,12 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             output,
             turn_range,
         }) => return export_session(&providers, format, &session, output.as_deref(), turn_range.as_deref()),
-        Some(Command::Index { provider, force }) => {
-            return run_index(&providers, provider, force);
+        Some(Command::Index {
+            provider,
+            force,
+            accept_download,
+        }) => {
+            return run_index(&providers, provider, force, accept_download);
         }
         Some(Command::Search {
             query,
@@ -512,6 +526,7 @@ fn run_index(
     providers: &[Box<dyn provider::HistoryProvider>],
     filter: Option<Provider>,
     force: bool,
+    accept_download: bool,
 ) -> Result<i32, ErrorEnvelope> {
     let started = std::time::Instant::now();
 
@@ -562,6 +577,8 @@ fn run_index(
         ErrorEnvelope::new("index-error", format!("failed to build index: {e}"))
     })?;
 
+    let embed_summary = run_embeddings(&index_dir, &sessions, providers, accept_download)?;
+
     let provider_slugs: Vec<&'static str> = active.iter().map(|p| p.provider().slug()).collect();
     let summary = serde_json::json!({
         "providers": provider_slugs,
@@ -577,10 +594,164 @@ fn run_index(
             .iter()
             .map(|(p, msg)| serde_json::json!({ "provider": p.slug(), "error": msg }))
             .collect::<Vec<_>>(),
+        "embeddings": embed_summary,
     });
 
     println!("{summary}");
     Ok(EXIT_OK)
+}
+
+/// Drive the (opt-in) semantic side of indexing.
+///
+/// Three states feed the JSON summary back to the caller:
+///
+/// - `disabled`: the binary was built without the `embeddings` feature, so we
+///   surface that even when `--accept-download` is passed (users would
+///   otherwise see silent no-ops).
+/// - `awaiting-consent`: feature is compiled in, no consent file exists, and
+///   `--accept-download` was not passed. Lexical indexing still happened.
+/// - `enabled`: consent recorded (just now or in a prior run); embeddings
+///   were generated and persisted.
+// The `embeddings`-disabled variant can't fail, but the `embeddings`-enabled
+// variant can — both signatures need to match so callers don't change shape.
+#[cfg(not(feature = "embeddings"))]
+#[allow(clippy::unnecessary_wraps)]
+fn run_embeddings(
+    _index_dir: &std::path::Path,
+    _sessions: &[Session],
+    _providers: &[Box<dyn provider::HistoryProvider>],
+    accept_download: bool,
+) -> Result<serde_json::Value, ErrorEnvelope> {
+    Ok(serde_json::json!({
+        "status": "disabled",
+        "reason": "binary built without `embeddings` feature",
+        "accept_download_requested": accept_download,
+    }))
+}
+
+#[cfg(feature = "embeddings")]
+fn run_embeddings(
+    index_dir: &std::path::Path,
+    sessions: &[Session],
+    providers: &[Box<dyn provider::HistoryProvider>],
+    accept_download: bool,
+) -> Result<serde_json::Value, ErrorEnvelope> {
+    let consent = embed::Consent::load(index_dir);
+    let consent = match (consent, accept_download) {
+        (Some(c), _) => c,
+        (None, true) => embed::Consent::record(index_dir, embed::DEFAULT_MODEL).map_err(|e| {
+            ErrorEnvelope::new(
+                "embed-error",
+                format!("failed to record embedding-download consent: {e}"),
+            )
+        })?,
+        (None, false) => {
+            return Ok(serde_json::json!({
+                "status": "awaiting-consent",
+                "model": embed::DEFAULT_MODEL,
+                "hint": "re-run with `--accept-download` to enable semantic indexing",
+            }));
+        }
+    };
+
+    let cache_dir = index_dir.join("models");
+    let mut embedder = embed::Embedder::try_new(&cache_dir).map_err(|e| {
+        ErrorEnvelope::new(
+            "embed-error",
+            format!("failed to initialise embedder: {e}"),
+        )
+    })?;
+
+    let mut store = embed::EmbeddingStore::open(index_dir)
+        .map_err(|e| {
+            ErrorEnvelope::new("embed-error", format!("failed to open embedding store: {e}"))
+        })?
+        .unwrap_or_else(|| {
+            embed::EmbeddingStore::create(index_dir, embedder.model_slug(), embedder.dim())
+        });
+
+    let mut errors: Vec<String> = Vec::new();
+    let mut messages_embedded = 0usize;
+
+    for session in sessions {
+        let Some(provider) = providers.iter().find(|p| p.provider() == session.provider) else {
+            continue;
+        };
+        let messages = match provider.load_messages(session) {
+            Ok(m) => m,
+            Err(e) => {
+                errors.push(format!("{}: {e}", session.id.0));
+                continue;
+            }
+        };
+
+        let pending: Vec<(String, String)> = messages
+            .iter()
+            .filter_map(|m| {
+                let text = collect_text(m);
+                if text.trim().is_empty() {
+                    return None;
+                }
+                if store.get(&m.id.0).is_some() {
+                    return None;
+                }
+                Some((m.id.0.clone(), text))
+            })
+            .collect();
+
+        if pending.is_empty() {
+            continue;
+        }
+
+        let texts: Vec<String> = pending.iter().map(|(_, t)| t.clone()).collect();
+        match embedder.embed_batch(&texts) {
+            Ok(vectors) => {
+                for ((id, _), vec) in pending.into_iter().zip(vectors) {
+                    if let Err(e) = store.upsert(&id, vec) {
+                        errors.push(format!("{id}: {e}"));
+                    } else {
+                        messages_embedded += 1;
+                    }
+                }
+            }
+            Err(e) => errors.push(format!("{}: {e}", session.id.0)),
+        }
+    }
+
+    store.flush().map_err(|e| {
+        ErrorEnvelope::new(
+            "embed-error",
+            format!("failed to persist embeddings: {e}"),
+        )
+    })?;
+
+    Ok(serde_json::json!({
+        "status": "enabled",
+        "model": consent.model,
+        "dim": store.dim(),
+        "messages_embedded": messages_embedded,
+        "messages_total_in_store": store.len(),
+        "consent_accepted_at": consent.accepted_at,
+        "errors": errors,
+    }))
+}
+
+#[cfg(feature = "embeddings")]
+fn collect_text(message: &Message) -> String {
+    use aghist::model::ContentBlock;
+    let parts: Vec<&str> = message
+        .content
+        .iter()
+        .map(|block| match block {
+            ContentBlock::Text(t) | ContentBlock::Thinking(t) | ContentBlock::Error(t) => {
+                t.as_str()
+            }
+            ContentBlock::CodeBlock { code, .. } => code.as_str(),
+            ContentBlock::ToolUse(tc) => tc.arguments.as_str(),
+            ContentBlock::ToolResult(tr) => tr.output.as_str(),
+        })
+        .collect();
+    parts.join("\n")
 }
 
 fn export_session(

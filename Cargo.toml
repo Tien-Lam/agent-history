@@ -23,6 +23,7 @@ serde_yaml_ng = "0.10"
 thiserror = "2"
 toml = "0.8"
 tantivy = "0.26"
+fastembed = { version = "5", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -36,6 +37,13 @@ self_update = { version = "0.42", default-features = false, features = [
 self_update = { version = "0.42", default-features = false, features = [
     "archive-zip", "compression-zip-deflate", "rustls",
 ] }
+
+[features]
+default = []
+# Opt-in semantic-search support: pulls in fastembed (~ONNX runtime + tokenizers).
+# Off by default to keep clean builds fast and binaries small. The runtime
+# `--accept-download` flag for `aghist index` only works when this is compiled in.
+embeddings = ["dep:fastembed"]
 
 [dev-dependencies]
 assert_cmd = "2"
