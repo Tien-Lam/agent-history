@@ -82,8 +82,25 @@ enum Command {
     },
     /// Search indexed sessions for a query
     Search {
-        /// Tantivy query string (matches content + project fields)
-        query: String,
+        /// Tantivy query string (matches content + project fields).
+        ///
+        /// Omit when reading the query from `--query-file` or `--stdin`.
+        #[arg(conflicts_with_all = ["query_file", "stdin"])]
+        query: Option<String>,
+
+        /// Read the query from a file (use `-` for stdin).
+        ///
+        /// Useful for queries containing shell metacharacters (quotes, braces, etc.)
+        /// without escaping. Trailing whitespace is stripped.
+        #[arg(long, value_name = "PATH", conflicts_with = "stdin")]
+        query_file: Option<PathBuf>,
+
+        /// Read the query from standard input (read until EOF).
+        ///
+        /// Useful for queries containing shell metacharacters (quotes, braces, etc.)
+        /// without escaping. Trailing whitespace is stripped.
+        #[arg(long)]
+        stdin: bool,
 
         /// Maximum number of hits to return
         #[arg(long, short = 'n', default_value_t = 20)]
@@ -364,9 +381,11 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         }
         Some(Command::Search {
             query,
+            query_file,
+            stdin,
             limit,
             json,
-        }) => return search_command(&providers, &query, limit, json),
+        }) => return search_command(&providers, query.as_deref(), query_file.as_deref(), stdin, limit, json),
         Some(Command::Show {
             reference,
             format,
@@ -685,13 +704,76 @@ fn self_update() -> Result<i32, ErrorEnvelope> {
     Ok(EXIT_OK)
 }
 
+fn resolve_search_query(
+    query: Option<&str>,
+    query_file: Option<&std::path::Path>,
+    stdin: bool,
+) -> Result<String, ErrorEnvelope> {
+    use std::io::Read;
+
+    let mut sources = 0;
+    if query.is_some() {
+        sources += 1;
+    }
+    if query_file.is_some() {
+        sources += 1;
+    }
+    if stdin {
+        sources += 1;
+    }
+    if sources == 0 {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            "search requires a query (positional, --query-file, or --stdin)",
+        )
+        .with_hint("Run `aghist search --help` for usage."));
+    }
+
+    if let Some(q) = query {
+        return Ok(q.to_string());
+    }
+
+    let mut buf = String::new();
+    if stdin {
+        io::stdin().read_to_string(&mut buf).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to read query from stdin: {e}"))
+        })?;
+    } else if let Some(path) = query_file {
+        if path == std::path::Path::new("-") {
+            io::stdin().read_to_string(&mut buf).map_err(|e| {
+                ErrorEnvelope::new("io-error", format!("failed to read query from stdin: {e}"))
+            })?;
+        } else {
+            buf = std::fs::read_to_string(path).map_err(|e| {
+                ErrorEnvelope::new(
+                    "io-error",
+                    format!("failed to read query file {}: {e}", path.display()),
+                )
+            })?;
+        }
+    }
+
+    Ok(buf.trim_end().to_string())
+}
+
 fn search_command(
     providers: &[Box<dyn provider::HistoryProvider>],
-    query: &str,
+    query: Option<&str>,
+    query_file: Option<&std::path::Path>,
+    stdin: bool,
     limit: usize,
     force_json: bool,
 ) -> Result<i32, ErrorEnvelope> {
     use aghist::model::Session;
+
+    let resolved = match resolve_search_query(query, query_file, stdin) {
+        Ok(q) => q,
+        Err(env) => {
+            env.emit();
+            return Ok(EXIT_USAGE);
+        }
+    };
+    let query = resolved.as_str();
 
     if query.trim().is_empty() {
         ErrorEnvelope::new("usage", "search query is empty")
