@@ -132,21 +132,27 @@ enum Command {
     /// Export a session to Markdown, JSON, or HTML
     Export {
         /// Output format: md, json, html
-        #[arg(long, short)]
-        format: export::ExportFormat,
+        #[arg(long, short, conflicts_with = "params", required_unless_present = "params")]
+        format: Option<export::ExportFormat>,
 
         /// Session ID (or prefix) to export
-        #[arg(long, short)]
-        session: String,
+        #[arg(long, short, conflicts_with = "params", required_unless_present = "params")]
+        session: Option<String>,
 
         /// Output file path (defaults to stdout)
-        #[arg(long, short)]
+        #[arg(long, short, conflicts_with = "params")]
         output: Option<PathBuf>,
 
         /// Slice the session by 1-based turn range (e.g. `12:25`, `:10`, `5:`, or `7`).
         /// Bounds are inclusive. Out-of-range bounds clamp to the available messages.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "params")]
         turn_range: Option<String>,
+
+        /// JSON request body containing all params at once. Mutually exclusive
+        /// with other flags. Schema: `{format, session, output?, turn_range?}`.
+        /// Lets agents skip per-flag discovery and submit a single JSON request.
+        #[arg(long, value_name = "JSON")]
+        params: Option<String>,
     },
     /// Build or refresh the search index. Idempotent and delta-aware.
     ///
@@ -157,11 +163,11 @@ enum Command {
     Index {
         /// Reindex only sessions from this provider
         /// (`claude-code`, `copilot-cli`, `gemini-cli`, `codex-cli`, `opencode`).
-        #[arg(long, value_parser = parse_provider_slug)]
+        #[arg(long, value_parser = parse_provider_slug, conflicts_with = "params")]
         provider: Option<Provider>,
 
         /// Force a full rebuild by clearing the index first.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "params")]
         force: bool,
 
         /// Authorise the one-off download of the embedding model
@@ -169,33 +175,38 @@ enum Command {
         /// runs; consent is persisted next to the index, so subsequent runs
         /// don't need this flag. Without consent (and without this flag),
         /// indexing stays purely lexical.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "params")]
         accept_download: bool,
+
+        /// JSON request body containing all params at once. Mutually exclusive
+        /// with other flags. Schema: `{provider?, force?, accept_download?}`.
+        #[arg(long, value_name = "JSON")]
+        params: Option<String>,
     },
     /// Search indexed sessions for a query
     Search {
         /// Tantivy query string (matches content + project fields).
         ///
-        /// Omit when reading the query from `--query-file` or `--stdin`.
-        #[arg(conflicts_with_all = ["query_file", "stdin"])]
+        /// Omit when reading the query from `--query-file`, `--stdin`, or `--params`.
+        #[arg(conflicts_with_all = ["query_file", "stdin", "params"])]
         query: Option<String>,
 
         /// Read the query from a file (use `-` for stdin).
         ///
         /// Useful for queries containing shell metacharacters (quotes, braces, etc.)
         /// without escaping. Trailing whitespace is stripped.
-        #[arg(long, value_name = "PATH", conflicts_with = "stdin")]
+        #[arg(long, value_name = "PATH", conflicts_with_all = ["stdin", "params"])]
         query_file: Option<PathBuf>,
 
         /// Read the query from standard input (read until EOF).
         ///
         /// Useful for queries containing shell metacharacters (quotes, braces, etc.)
         /// without escaping. Trailing whitespace is stripped.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "params")]
         stdin: bool,
 
         /// Maximum number of hits to return
-        #[arg(long, short = 'n', default_value_t = 20)]
+        #[arg(long, short = 'n', default_value_t = 20, conflicts_with = "params")]
         limit: usize,
 
         /// Opaque pagination cursor from a prior `meta.next_cursor`.
@@ -203,7 +214,7 @@ enum Command {
         cursor: Option<String>,
 
         /// Force JSON output (default: JSON on pipe, table on TTY)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "params")]
         json: bool,
 
         /// Long-running stream: emit one NDJSON line per new hit as sessions land.
@@ -212,23 +223,30 @@ enum Command {
         /// subsequent poll emits only previously-unseen `(session_id, message_id)`
         /// hits. Useful for an "agent of agents" watching another agent's progress.
         /// Output is NDJSON regardless of TTY; `--json` is implied.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "params")]
         watch: bool,
 
         /// Poll interval in milliseconds when `--watch` is set (default 2000).
-        #[arg(long, default_value_t = 2000, value_name = "MS")]
+        #[arg(long, default_value_t = 2000, value_name = "MS", conflicts_with = "params")]
         watch_interval_ms: u64,
 
         /// Stop watch mode after N polls (0 = run until interrupted; default 0).
         ///
         /// Mostly useful for tests and one-shot snapshots.
-        #[arg(long, default_value_t = 0, value_name = "N")]
+        #[arg(long, default_value_t = 0, value_name = "N", conflicts_with = "params")]
         watch_iterations: u32,
 
         /// Show BM25 score breakdown per result (Tantivy explanation tree).
         /// Useful for tuning relevance and surfacing ranking surprises.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "params")]
         debug_search: bool,
+
+        /// JSON request body containing all params at once. Mutually exclusive
+        /// with other flags. Schema: `{query, limit?, json?}`. The `query`
+        /// field carries the literal query string; use `--query-file` /
+        /// `--stdin` for file/stdin input.
+        #[arg(long, value_name = "JSON")]
+        params: Option<String>,
     },
     /// Machine-readable doctor: validates index, manifest, and provider state.
     ///
@@ -245,16 +263,21 @@ enum Command {
     /// Resolve a citation ref `<provider>/<session-id>#<turn>` to one message.
     Show {
         /// Citation ref. E.g. `claude-code/abc-123#7`.
-        #[arg(value_name = "REF")]
-        reference: String,
+        #[arg(value_name = "REF", conflicts_with = "params", required_unless_present = "params")]
+        reference: Option<String>,
 
         /// Output format: md (default), json, text.
-        #[arg(long, short, default_value = "md")]
+        #[arg(long, short, default_value = "md", conflicts_with = "params")]
         format: ShowFormat,
 
         /// Include N turns before and after the target for context (default 0).
-        #[arg(long, default_value_t = 0)]
+        #[arg(long, default_value_t = 0, conflicts_with = "params")]
         include_context: u32,
+
+        /// JSON request body containing all params at once. Mutually exclusive
+        /// with other flags. Schema: `{reference, format?, include_context?}`.
+        #[arg(long, value_name = "JSON")]
+        params: Option<String>,
     },
     /// Heuristic-extract candidate architectural decisions from sessions.
     ///
@@ -358,6 +381,92 @@ enum Command {
     Uninstall,
 }
 
+/// JSON `--params` body for `aghist export`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExportParams {
+    format: String,
+    session: String,
+    #[serde(default)]
+    output: Option<PathBuf>,
+    #[serde(default)]
+    turn_range: Option<String>,
+}
+
+/// JSON `--params` body for `aghist index`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IndexParams {
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    force: bool,
+    #[serde(default)]
+    accept_download: bool,
+}
+
+/// JSON `--params` body for `aghist search`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SearchParams {
+    query: String,
+    #[serde(default = "SearchParams::default_limit")]
+    limit: usize,
+    #[serde(default)]
+    cursor: Option<String>,
+    #[serde(default)]
+    json: bool,
+}
+
+impl SearchParams {
+    fn default_limit() -> usize {
+        20
+    }
+}
+
+/// JSON `--params` body for `aghist show`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ShowParams {
+    reference: String,
+    #[serde(default = "ShowParams::default_format")]
+    format: String,
+    #[serde(default)]
+    include_context: u32,
+}
+
+impl ShowParams {
+    fn default_format() -> String {
+        "md".to_string()
+    }
+}
+
+fn parse_params<T: serde::de::DeserializeOwned>(
+    json: &str,
+    cmd: &str,
+) -> Result<T, ErrorEnvelope> {
+    serde_json::from_str(json).map_err(|e| {
+        ErrorEnvelope::new(
+            "usage",
+            format!("--params for `{cmd}` is not valid JSON: {e}"),
+        )
+        .with_hint("Pass a JSON object matching the subcommand schema.")
+    })
+}
+
+fn parse_params_field<T, E: std::fmt::Display>(
+    raw: &str,
+    field: &str,
+    parse: impl FnOnce(&str) -> Result<T, E>,
+) -> Result<T, ErrorEnvelope> {
+    parse(raw).map_err(|e| {
+        ErrorEnvelope::new(
+            "usage",
+            format!("--params field `{field}` is invalid: {e}"),
+        )
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShowFormat {
     Md,
@@ -391,6 +500,105 @@ fn parse_provider_slug(raw: &str) -> Result<Provider, String> {
             "unknown provider slug '{raw}'. Valid: claude-code, copilot-cli, gemini-cli, codex-cli, opencode"
         )
     })
+}
+
+fn resolve_export_args(
+    format: Option<export::ExportFormat>,
+    session: Option<String>,
+    output: Option<PathBuf>,
+    turn_range: Option<String>,
+    params: Option<String>,
+) -> Result<(export::ExportFormat, String, Option<PathBuf>, Option<String>), ErrorEnvelope> {
+    if let Some(json) = params {
+        let p: ExportParams = parse_params(&json, "export")?;
+        let format = parse_params_field(&p.format, "format", str::parse::<export::ExportFormat>)?;
+        Ok((format, p.session, p.output, p.turn_range))
+    } else {
+        // clap enforces these via `required_unless_present = "params"`.
+        Ok((
+            format.expect("clap requires --format unless --params is set"),
+            session.expect("clap requires --session unless --params is set"),
+            output,
+            turn_range,
+        ))
+    }
+}
+
+fn resolve_index_args(
+    provider: Option<Provider>,
+    force: bool,
+    accept_download: bool,
+    params: Option<String>,
+) -> Result<(Option<Provider>, bool, bool), ErrorEnvelope> {
+    if let Some(json) = params {
+        let p: IndexParams = parse_params(&json, "index")?;
+        let provider = match p.provider {
+            Some(slug) => Some(parse_params_field(&slug, "provider", parse_provider_slug)?),
+            None => None,
+        };
+        Ok((provider, p.force, p.accept_download))
+    } else {
+        Ok((provider, force, accept_download))
+    }
+}
+
+struct SearchArgs {
+    query: Option<String>,
+    query_file: Option<PathBuf>,
+    stdin: bool,
+    limit: usize,
+    cursor: Option<String>,
+    json: bool,
+}
+
+fn resolve_search_args(
+    query: Option<String>,
+    query_file: Option<PathBuf>,
+    stdin: bool,
+    limit: usize,
+    cursor: Option<String>,
+    json: bool,
+    params: Option<String>,
+) -> Result<SearchArgs, ErrorEnvelope> {
+    if let Some(raw) = params {
+        let p: SearchParams = parse_params(&raw, "search")?;
+        Ok(SearchArgs {
+            query: Some(p.query),
+            query_file: None,
+            stdin: false,
+            limit: p.limit,
+            cursor: p.cursor,
+            json: p.json,
+        })
+    } else {
+        Ok(SearchArgs {
+            query,
+            query_file,
+            stdin,
+            limit,
+            cursor,
+            json,
+        })
+    }
+}
+
+fn resolve_show_args(
+    reference: Option<String>,
+    format: ShowFormat,
+    include_context: u32,
+    params: Option<String>,
+) -> Result<(String, ShowFormat, u32), ErrorEnvelope> {
+    if let Some(json) = params {
+        let p: ShowParams = parse_params(&json, "show")?;
+        let format = parse_params_field(&p.format, "format", str::parse::<ShowFormat>)?;
+        Ok((p.reference, format, p.include_context))
+    } else {
+        Ok((
+            reference.expect("clap requires REF unless --params is set"),
+            format,
+            include_context,
+        ))
+    }
 }
 
 /// Parse a 1-based inclusive turn range against a session of `total` messages.
@@ -604,12 +812,27 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             session,
             output,
             turn_range,
-        }) => return export_session(&providers, format, &session, output.as_deref(), turn_range.as_deref()),
+            params,
+        }) => {
+            let (format, session, output, turn_range) = resolve_export_args(
+                format, session, output, turn_range, params,
+            )?;
+            return export_session(
+                &providers,
+                format,
+                &session,
+                output.as_deref(),
+                turn_range.as_deref(),
+            );
+        }
         Some(Command::Index {
             provider,
             force,
             accept_download,
+            params,
         }) => {
+            let (provider, force, accept_download) =
+                resolve_index_args(provider, force, accept_download, params)?;
             return run_index(&providers, provider, force, accept_download);
         }
         Some(Command::Search {
@@ -623,6 +846,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             watch_interval_ms,
             watch_iterations,
             debug_search,
+            params,
         }) => {
             let filters = cli.filters.to_search_filters();
             if watch {
@@ -637,14 +861,16 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                     &filters,
                 );
             }
+            let args =
+                resolve_search_args(query, query_file, stdin, limit, cursor, json, params)?;
             return search_command(
                 &providers,
-                query.as_deref(),
-                query_file.as_deref(),
-                stdin,
-                limit,
-                cursor.as_deref(),
-                json,
+                args.query.as_deref(),
+                args.query_file.as_deref(),
+                args.stdin,
+                args.limit,
+                args.cursor.as_deref(),
+                args.json,
                 &filters,
                 debug_search,
             );
@@ -653,7 +879,12 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             reference,
             format,
             include_context,
-        }) => return show_command(&providers, &reference, format, include_context),
+            params,
+        }) => {
+            let (reference, format, include_context) =
+                resolve_show_args(reference, format, include_context, params)?;
+            return show_command(&providers, &reference, format, include_context);
+        }
         Some(Command::Decisions {
             session,
             threshold,
