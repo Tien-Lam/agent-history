@@ -193,15 +193,11 @@ fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> 
         });
 
     // New format uses "directory", legacy uses "cwd"
-    let project_path = raw
-        .directory
-        .or(raw.cwd)
-        .map(PathBuf::from);
-    let project_name = project_path
-        .as_ref()
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .map(String::from);
+    let project_string = raw.directory.or(raw.cwd);
+    let project_name = project_string
+        .as_deref()
+        .and_then(super::project_name_from_path);
+    let project_path = project_string.map(PathBuf::from);
 
     // Extract model from new format
     let model = raw.model.and_then(|m| m.model_id);

@@ -128,12 +128,11 @@ fn build_session(session_dir: &Path, workspace_path: &Path) -> Option<Session> {
         .as_deref()
         .and_then(|ts| ts.parse::<DateTime<Utc>>().ok());
 
+    let project_name = workspace
+        .cwd
+        .as_deref()
+        .and_then(super::project_name_from_path);
     let project_path = workspace.cwd.map(PathBuf::from);
-    let project_name = project_path
-        .as_ref()
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .map(String::from);
 
     // Count events to estimate message count
     let events_path = session_dir.join("events.jsonl");
