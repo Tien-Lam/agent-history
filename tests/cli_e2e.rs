@@ -934,3 +934,114 @@ fn uninstall_help_exits_zero() {
         .success()
         .stdout(predicate::str::contains("Remove aghist binary and data"));
 }
+
+#[test]
+fn search_watch_help_documents_flags() {
+    aghist()
+        .args(["search", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--watch"))
+        .stdout(predicate::str::contains("--watch-interval-ms"))
+        .stdout(predicate::str::contains("--watch-iterations"));
+}
+
+#[test]
+fn search_watch_emits_ndjson_one_per_line_for_existing_matches() {
+    let fixture = common::fixtures::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+    let index = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args([
+            "search",
+            "User",
+            "--watch",
+            "--watch-interval-ms",
+            "10",
+            "--watch-iterations",
+            "1",
+        ])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    assert!(!lines.is_empty(), "expected at least one NDJSON hit, got: {stdout:?}");
+    for line in &lines {
+        let row: serde_json::Value =
+            serde_json::from_str(line).expect("each watch line must be valid JSON");
+        assert!(row["session_id"].is_string());
+        assert!(row["message_id"].is_string());
+        assert!(row["snippet"].is_string());
+        assert!(row.get("score").is_some());
+        // Watch NDJSON must NOT wrap rows in an array envelope.
+        assert!(!line.trim_start().starts_with('['));
+    }
+}
+
+#[test]
+fn search_watch_dedups_hits_across_polls() {
+    // Same fixture across 3 polls — every hit should appear exactly once.
+    let fixture = common::fixtures::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+    let index = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args([
+            "search",
+            "User",
+            "--watch",
+            "--watch-interval-ms",
+            "10",
+            "--watch-iterations",
+            "3",
+        ])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+
+    let keys: Vec<(String, String)> = lines
+        .iter()
+        .map(|l| {
+            let row: serde_json::Value = serde_json::from_str(l).unwrap();
+            (
+                row["session_id"].as_str().unwrap().to_string(),
+                row["message_id"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    let unique: std::collections::HashSet<_> = keys.iter().cloned().collect();
+    assert_eq!(
+        keys.len(),
+        unique.len(),
+        "watch must emit each (session_id, message_id) at most once across polls; got {} lines / {} unique",
+        keys.len(),
+        unique.len()
+    );
+}
+
+#[test]
+fn search_watch_requires_query() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["search", "--watch", "--watch-iterations", "1"])
+        .env("AGHIST_HOME", dir.path())
+        .env("AGHIST_INDEX_DIR", dir.path().join("idx"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("search requires a query"),
+        "expected usage envelope, got: {stderr}"
+    );
+}

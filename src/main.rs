@@ -109,6 +109,25 @@ enum Command {
         /// Force JSON output (default: JSON on pipe, table on TTY)
         #[arg(long)]
         json: bool,
+
+        /// Long-running stream: emit one NDJSON line per new hit as sessions land.
+        ///
+        /// First poll backfills all existing matches up to `--limit`, then each
+        /// subsequent poll emits only previously-unseen `(session_id, message_id)`
+        /// hits. Useful for an "agent of agents" watching another agent's progress.
+        /// Output is NDJSON regardless of TTY; `--json` is implied.
+        #[arg(long)]
+        watch: bool,
+
+        /// Poll interval in milliseconds when `--watch` is set (default 2000).
+        #[arg(long, default_value_t = 2000, value_name = "MS")]
+        watch_interval_ms: u64,
+
+        /// Stop watch mode after N polls (0 = run until interrupted; default 0).
+        ///
+        /// Mostly useful for tests and one-shot snapshots.
+        #[arg(long, default_value_t = 0, value_name = "N")]
+        watch_iterations: u32,
     },
     /// Machine-readable doctor: validates index, manifest, and provider state.
     ///
@@ -385,7 +404,30 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             stdin,
             limit,
             json,
-        }) => return search_command(&providers, query.as_deref(), query_file.as_deref(), stdin, limit, json),
+            watch,
+            watch_interval_ms,
+            watch_iterations,
+        }) => {
+            if watch {
+                return search_watch_command(
+                    &providers,
+                    query.as_deref(),
+                    query_file.as_deref(),
+                    stdin,
+                    limit,
+                    watch_interval_ms,
+                    watch_iterations,
+                );
+            }
+            return search_command(
+                &providers,
+                query.as_deref(),
+                query_file.as_deref(),
+                stdin,
+                limit,
+                json,
+            );
+        }
         Some(Command::Show {
             reference,
             format,
@@ -902,6 +944,129 @@ fn print_search_table(
             h.score, started, provider, project, session_short, snippet
         );
     }
+}
+
+/// Long-running NDJSON stream: poll for newly-indexed sessions and emit
+/// previously-unseen hits matching `query`.
+///
+/// First iteration backfills all current matches (so a fresh subscriber sees
+/// existing state); subsequent iterations only emit `(session_id, message_id)`
+/// pairs that have not been emitted before. Exits cleanly on broken pipe so
+/// `aghist search ... --watch | head -N` works.
+fn search_watch_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    query: Option<&str>,
+    query_file: Option<&std::path::Path>,
+    stdin: bool,
+    limit: usize,
+    interval_ms: u64,
+    max_iterations: u32,
+) -> Result<i32, ErrorEnvelope> {
+    use aghist::model::Session;
+    use std::collections::HashSet;
+    use std::io::Write;
+
+    let resolved = match resolve_search_query(query, query_file, stdin) {
+        Ok(q) => q,
+        Err(env) => {
+            env.emit();
+            return Ok(EXIT_USAGE);
+        }
+    };
+    let query = resolved.as_str();
+    if query.trim().is_empty() {
+        ErrorEnvelope::new("usage", "search query is empty")
+            .with_hint("Run `aghist search --help` for usage.")
+            .emit();
+        return Ok(EXIT_USAGE);
+    }
+
+    let index_dir = search::SearchIndex::default_index_dir();
+    let index = search::SearchIndex::open_or_create(&index_dir).map_err(|e| {
+        ErrorEnvelope::new("index-error", format!("failed to open search index: {e}"))
+    })?;
+
+    let interval = std::time::Duration::from_millis(interval_ms);
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut iteration: u32 = 0;
+    let stdout = io::stdout();
+
+    loop {
+        iteration += 1;
+
+        let mut sessions: Vec<Session> = Vec::new();
+        for p in providers {
+            if let Ok(found) = p.discover_sessions() {
+                sessions.extend(found);
+            }
+        }
+
+        let (tx, _rx) = crossbeam_channel::unbounded::<aghist::action::Action>();
+        index.build_index(&sessions, providers, &tx).map_err(|e| {
+            ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
+        })?;
+
+        let hits = index
+            .search(query, limit)
+            .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?;
+
+        let session_meta: std::collections::HashMap<&str, &Session> =
+            sessions.iter().map(|s| (s.id.0.as_str(), s)).collect();
+
+        let mut handle = stdout.lock();
+        for h in &hits {
+            let key = (h.session_id.clone(), h.message_id.clone());
+            if !seen.insert(key) {
+                continue;
+            }
+            if write_watch_hit(&mut handle, h, &session_meta).is_err() {
+                // Broken pipe (downstream closed) — exit cleanly.
+                return Ok(EXIT_OK);
+            }
+        }
+        // Flush so consumers see lines promptly between sleeps.
+        if handle.flush().is_err() {
+            return Ok(EXIT_OK);
+        }
+        drop(handle);
+
+        if max_iterations > 0 && iteration >= max_iterations {
+            return Ok(EXIT_OK);
+        }
+
+        std::thread::sleep(interval);
+    }
+}
+
+fn write_watch_hit<W: std::io::Write>(
+    out: &mut W,
+    hit: &search::SearchHit,
+    sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
+) -> std::io::Result<()> {
+    #[derive(serde::Serialize)]
+    struct JsonHit<'a> {
+        session_id: &'a str,
+        message_id: &'a str,
+        score: f32,
+        snippet: &'a str,
+        provider: Option<aghist::model::Provider>,
+        project: Option<&'a str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+    }
+
+    let session = sessions.get(hit.session_id.as_str()).copied();
+    let row = JsonHit {
+        session_id: &hit.session_id,
+        message_id: &hit.message_id,
+        score: hit.score,
+        snippet: &hit.snippet,
+        provider: session.map(|s| s.provider),
+        project: session.and_then(|s| s.project_name.as_deref()),
+        started_at: session.map(|s| s.started_at),
+    };
+    serde_json::to_writer(&mut *out, &row)?;
+    out.write_all(b"\n")?;
+    Ok(())
 }
 
 fn truncate(s: &str, max: usize) -> String {
