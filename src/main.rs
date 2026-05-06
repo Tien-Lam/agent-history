@@ -3,7 +3,8 @@ use aghist::cli_error::{
 };
 use aghist::model::{CitationRef, Message, Provider, Role, Session};
 use aghist::output::{CommandKind, OutputMode};
-use aghist::{app, config, export, provider, search};
+use aghist::health::{self, HealthCheck, HealthStatus};
+use aghist::{app, config, export, mcp, provider, search};
 
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
@@ -155,6 +156,12 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         include_context: u32,
     },
+    /// Run a stdio MCP server exposing aghist's read paths to agents.
+    ///
+    /// Speaks JSON-RPC 2.0 over stdin/stdout with newline-delimited messages,
+    /// per the MCP stdio transport. Tools: `search_sessions`, `list_sessions`,
+    /// `get_session`, `get_message`, `reindex`, `health`.
+    Mcp,
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -387,6 +394,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         .collect();
 
     match cli.command {
+        Some(Command::Mcp) => return run_mcp(providers),
         Some(Command::Update) => return self_update(),
         Some(Command::Uninstall) => return uninstall(),
         Some(Command::Export {
@@ -486,6 +494,18 @@ fn run_tui(
     result
         .map(|()| EXIT_OK)
         .map_err(|e| ErrorEnvelope::new("internal-error", format!("{e:#}")))
+}
+
+fn run_mcp(
+    providers: Vec<Box<dyn provider::HistoryProvider>>,
+) -> Result<i32, ErrorEnvelope> {
+    let stdin = io::stdin().lock();
+    let stdout = io::stdout().lock();
+    let server = mcp::McpServer::new(providers);
+    server.serve(stdin, stdout).map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("MCP server stdio error: {e}"))
+    })?;
+    Ok(EXIT_OK)
 }
 
 fn run_index(
@@ -1194,7 +1214,7 @@ fn health_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     mode: OutputMode,
 ) -> Result<i32, ErrorEnvelope> {
-    let checks = run_health_checks(providers);
+    let checks = health::run_health_checks(providers);
     let any_failed = checks.iter().any(|c| c.status == HealthStatus::Fail);
 
     let stdout = io::stdout();
@@ -1206,125 +1226,6 @@ fn health_command(
     .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write health output: {e}")))?;
 
     Ok(if any_failed { EXIT_ERROR } else { EXIT_OK })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-enum HealthStatus {
-    Ok,
-    Warn,
-    Fail,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-struct HealthCheck {
-    name: &'static str,
-    status: HealthStatus,
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    hint: Option<String>,
-}
-
-fn run_health_checks(providers: &[Box<dyn provider::HistoryProvider>]) -> Vec<HealthCheck> {
-    let mut checks = Vec::new();
-
-    // 1. providers-detected
-    if providers.is_empty() {
-        checks.push(HealthCheck {
-            name: "providers-detected",
-            status: HealthStatus::Warn,
-            message: "no providers detected on this system".to_string(),
-            hint: Some("Use one of the supported agents (claude-code, copilot-cli, gemini-cli, codex-cli, opencode), or check `aghist sources`.".to_string()),
-        });
-    } else {
-        let slugs: Vec<&str> = providers.iter().map(|p| p.provider().slug()).collect();
-        checks.push(HealthCheck {
-            name: "providers-detected",
-            status: HealthStatus::Ok,
-            message: format!("{} provider(s) detected: {}", providers.len(), slugs.join(", ")),
-            hint: None,
-        });
-    }
-
-    // 2. index-dir-writable
-    let index_dir = search::SearchIndex::default_index_dir();
-    match check_dir_writable(&index_dir) {
-        Ok(()) => checks.push(HealthCheck {
-            name: "index-dir-writable",
-            status: HealthStatus::Ok,
-            message: format!("index dir writable: {}", index_dir.display()),
-            hint: None,
-        }),
-        Err(e) => checks.push(HealthCheck {
-            name: "index-dir-writable",
-            status: HealthStatus::Fail,
-            message: format!("index dir not writable ({}): {e}", index_dir.display()),
-            hint: Some("Set $AGHIST_INDEX_DIR to a writable path, or fix permissions.".to_string()),
-        }),
-    }
-
-    // 3. manifest-sane
-    let manifest_path = index_dir.join("manifest.json");
-    if manifest_path.exists() {
-        match std::fs::read_to_string(&manifest_path)
-            .map_err(|e| e.to_string())
-            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()))
-        {
-            Ok(v) if v.get("sessions").is_some() => checks.push(HealthCheck {
-                name: "manifest-sane",
-                status: HealthStatus::Ok,
-                message: "manifest.json parses and has 'sessions' field".to_string(),
-                hint: None,
-            }),
-            Ok(_) => checks.push(HealthCheck {
-                name: "manifest-sane",
-                status: HealthStatus::Warn,
-                message: "manifest.json parses but is missing 'sessions' field".to_string(),
-                hint: Some("Run `aghist index --force` to rebuild the manifest.".to_string()),
-            }),
-            Err(e) => checks.push(HealthCheck {
-                name: "manifest-sane",
-                status: HealthStatus::Fail,
-                message: format!("manifest.json failed to parse: {e}"),
-                hint: Some("Run `aghist index --force` to rebuild the manifest.".to_string()),
-            }),
-        }
-    } else {
-        checks.push(HealthCheck {
-            name: "manifest-sane",
-            status: HealthStatus::Warn,
-            message: "no manifest.json — index has not been built".to_string(),
-            hint: Some("Run `aghist index` to populate the search index.".to_string()),
-        });
-    }
-
-    // 4. index-schema-present (meta.json indicates Tantivy created the index)
-    let meta_path = index_dir.join("meta.json");
-    if meta_path.exists() {
-        checks.push(HealthCheck {
-            name: "index-schema-present",
-            status: HealthStatus::Ok,
-            message: "Tantivy meta.json present".to_string(),
-            hint: None,
-        });
-    } else {
-        checks.push(HealthCheck {
-            name: "index-schema-present",
-            status: HealthStatus::Warn,
-            message: "Tantivy meta.json missing — index has not been initialised".to_string(),
-            hint: Some("Run `aghist index` to create the index.".to_string()),
-        });
-    }
-
-    checks
-}
-
-fn check_dir_writable(dir: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    let probe = dir.join(".aghist-health-probe");
-    std::fs::write(&probe, b"ok")?;
-    std::fs::remove_file(&probe)?;
-    Ok(())
 }
 
 fn render_health_human<W: io::Write>(out: &mut W, checks: &[HealthCheck]) -> io::Result<()> {

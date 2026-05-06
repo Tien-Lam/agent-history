@@ -4,6 +4,8 @@ pub mod cli_error;
 pub mod config;
 pub mod event;
 pub mod export;
+pub mod health;
+pub mod mcp;
 pub mod model;
 pub mod output;
 pub mod provider;
