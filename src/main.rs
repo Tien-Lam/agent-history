@@ -1,18 +1,20 @@
 use aghist::cli_error::{
     ErrorEnvelope, EXIT_EMPTY, EXIT_ERROR, EXIT_OK, EXIT_USAGE,
 };
-use aghist::model::{CitationRef, Message, Provider, Role, Session};
+use aghist::model::{CitationRef, ContentBlock, Message, Provider, Role, Session};
 use aghist::output::{CommandKind, OutputMode};
 use aghist::health::{self, HealthCheck, HealthStatus};
 #[cfg(feature = "embeddings")]
 use aghist::embed;
+use aghist::search::SearchFilters;
 use aghist::{app, config, export, mcp, provider, schema, search};
 
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use chrono::{DateTime, Utc};
+use clap::{Args, Parser, Subcommand};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -42,8 +44,77 @@ struct Cli {
     #[arg(long, global = true)]
     ndjson: bool,
 
+    #[command(flatten)]
+    filters: FilterArgs,
+
     #[command(subcommand)]
     command: Option<Command>,
+}
+
+// Common filter flags shared between `--list` and `search`.
+//
+// `--has-tool-call` filters at the message level (drops messages without a
+// tool invocation); other flags filter at the session or message level
+// depending on the subcommand. `--since`/`--until` accept RFC 3339 dates only.
+//
+// Doc comment intentionally suppressed: clap promotes a flattened struct's
+// doc comment to the parent's `about` text, overriding our explicit
+// `about = "Browse and search..."` on `Cli`.
+#[derive(Debug, Clone, Args)]
+struct FilterArgs {
+    /// Restrict to a single provider (`claude-code`, `copilot-cli`,
+    /// `gemini-cli`, `codex-cli`, `opencode`).
+    #[arg(long, global = true, value_parser = parse_provider_slug, value_name = "SLUG")]
+    provider: Option<Provider>,
+
+    /// RFC 3339 lower bound on message/session timestamp (inclusive).
+    /// Example: `--since 2025-01-01T00:00:00Z`.
+    #[arg(long, global = true, value_parser = parse_rfc3339, value_name = "RFC3339")]
+    since: Option<DateTime<Utc>>,
+
+    /// RFC 3339 upper bound on message/session timestamp (inclusive).
+    #[arg(long, global = true, value_parser = parse_rfc3339, value_name = "RFC3339")]
+    until: Option<DateTime<Utc>>,
+
+    /// Substring match against the session's project name (case-insensitive).
+    #[arg(long, global = true, value_name = "NAME")]
+    project: Option<String>,
+
+    /// Restrict to messages with this role: `user`, `assistant`, or `tool`.
+    #[arg(long, global = true, value_parser = parse_role_slug, value_name = "ROLE")]
+    role: Option<Role>,
+
+    /// Keep only messages (or sessions containing messages) that include a
+    /// tool invocation. Has no effect on session-level lookups that do not
+    /// load message content.
+    #[arg(long, global = true)]
+    has_tool_call: bool,
+}
+
+impl FilterArgs {
+    fn to_search_filters(&self) -> SearchFilters {
+        SearchFilters {
+            provider: self.provider,
+            since: self.since,
+            until: self.until,
+            project: self.project.clone(),
+            role: self.role,
+            has_tool_call: self.has_tool_call,
+        }
+    }
+
+}
+
+fn parse_role_slug(raw: &str) -> Result<Role, String> {
+    Role::from_slug(raw).ok_or_else(|| {
+        format!("unknown role '{raw}'. Valid: user, assistant, tool")
+    })
+}
+
+fn parse_rfc3339(raw: &str) -> Result<DateTime<Utc>, String> {
+    DateTime::parse_from_rfc3339(raw)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|e| format!("invalid RFC 3339 timestamp '{raw}': {e}"))
 }
 
 #[derive(Subcommand)]
@@ -451,6 +522,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             watch_interval_ms,
             watch_iterations,
         }) => {
+            let filters = cli.filters.to_search_filters();
             if watch {
                 return search_watch_command(
                     &providers,
@@ -460,6 +532,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                     limit,
                     watch_interval_ms,
                     watch_iterations,
+                    &filters,
                 );
             }
             return search_command(
@@ -469,6 +542,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 stdin,
                 limit,
                 json,
+                &filters,
             );
         }
         Some(Command::Show {
@@ -489,7 +563,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
 
     if cli.list {
         let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::Streaming);
-        return list_sessions(&providers, mode);
+        return list_sessions(&providers, mode, &cli.filters);
     }
 
     run_tui(providers, config)
@@ -1054,6 +1128,7 @@ fn search_command(
     stdin: bool,
     limit: usize,
     force_json: bool,
+    filters: &SearchFilters,
 ) -> Result<i32, ErrorEnvelope> {
     use aghist::model::Session;
 
@@ -1093,7 +1168,7 @@ fn search_command(
     })?;
 
     let hits = index
-        .search(query, limit)
+        .search_with_filters(query, limit, filters)
         .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?;
 
     if hits.is_empty() {
@@ -1202,6 +1277,7 @@ fn print_search_table(
 /// existing state); subsequent iterations only emit `(session_id, message_id)`
 /// pairs that have not been emitted before. Exits cleanly on broken pipe so
 /// `aghist search ... --watch | head -N` works.
+#[allow(clippy::too_many_arguments)]
 fn search_watch_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     query: Option<&str>,
@@ -1210,6 +1286,7 @@ fn search_watch_command(
     limit: usize,
     interval_ms: u64,
     max_iterations: u32,
+    filters: &SearchFilters,
 ) -> Result<i32, ErrorEnvelope> {
     use aghist::model::Session;
     use std::collections::HashSet;
@@ -1256,7 +1333,7 @@ fn search_watch_command(
         })?;
 
         let hits = index
-            .search(query, limit)
+            .search_with_filters(query, limit, filters)
             .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?;
 
         let session_meta: std::collections::HashMap<&str, &Session> =
@@ -1332,16 +1409,38 @@ fn truncate(s: &str, max: usize) -> String {
 fn list_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
     mode: OutputMode,
+    filters: &FilterArgs,
 ) -> Result<i32, ErrorEnvelope> {
     let mut all_sessions = Vec::new();
 
+    let needs_messages = filters.role.is_some() || filters.has_tool_call;
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
     for p in providers {
+        // When --provider is set, skip non-matching providers entirely so we
+        // don't pay discovery cost for sessions we'd just throw away.
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
         match p.discover_sessions() {
             Ok(sessions) => {
+                let kept: Vec<Session> = sessions
+                    .into_iter()
+                    .filter(|s| session_matches(s, filters, project_needle.as_deref()))
+                    .filter(|s| {
+                        !needs_messages || session_has_matching_message(p.as_ref(), s, filters)
+                    })
+                    .collect();
                 if !mode.is_machine() {
-                    println!("{}: {} sessions", p.provider(), sessions.len());
+                    println!("{}: {} sessions", p.provider(), kept.len());
                 }
-                all_sessions.extend(sessions);
+                all_sessions.extend(kept);
             }
             Err(e) => {
                 eprintln!("{}: error: {e}", p.provider());
@@ -1366,6 +1465,75 @@ fn list_sessions(
     } else {
         Ok(EXIT_OK)
     }
+}
+
+/// Apply session-level filters (provider, since/until, project). Provider is
+/// not re-checked here when the caller already filtered by provider, but it's
+/// harmless to do so. `project_needle` is the pre-lowercased substring for
+/// efficiency in the per-session loop.
+fn session_matches(
+    session: &Session,
+    filters: &FilterArgs,
+    project_needle: Option<&str>,
+) -> bool {
+    if let Some(want) = filters.provider {
+        if session.provider != want {
+            return false;
+        }
+    }
+    if let Some(since) = filters.since {
+        if session.started_at < since {
+            return false;
+        }
+    }
+    if let Some(until) = filters.until {
+        if session.started_at > until {
+            return false;
+        }
+    }
+    if let Some(needle) = project_needle {
+        let project = session
+            .project_name
+            .as_deref()
+            .map(str::to_lowercase)
+            .unwrap_or_default();
+        if !project.contains(needle) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Returns true if the session contains at least one message satisfying the
+/// message-level filters (`--role`, `--has-tool-call`). Loads messages on
+/// demand; corrupt/unreadable sessions are silently dropped (consistent with
+/// the rest of the pipeline).
+fn session_has_matching_message(
+    provider: &dyn provider::HistoryProvider,
+    session: &Session,
+    filters: &FilterArgs,
+) -> bool {
+    let Ok(messages) = provider.load_messages(session) else {
+        return false;
+    };
+    messages.iter().any(|m| message_matches(m, filters))
+}
+
+fn message_matches(message: &Message, filters: &FilterArgs) -> bool {
+    if let Some(role) = filters.role {
+        if message.role != role {
+            return false;
+        }
+    }
+    if filters.has_tool_call
+        && !message
+            .content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolUse(_)))
+    {
+        return false;
+    }
+    true
 }
 
 fn render_list_human(sessions: &[Session]) {

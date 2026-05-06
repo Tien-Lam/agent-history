@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 use std::fs;
+use std::ops::Bound;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
-use tantivy::schema::{Field, Schema, Value, INDEXED, STORED, STRING, TEXT};
-use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
+use tantivy::query::{BooleanQuery, Occur, Query, QueryParser, RangeQuery, TermQuery};
+use tantivy::schema::{Field, IndexRecordOption, Schema, Value, INDEXED, STORED, STRING, TEXT};
+use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
 use crate::action::Action;
-use crate::model::{ContentBlock, Message, Session};
+use crate::model::{ContentBlock, Message, Provider, Role, Session};
 use crate::provider::HistoryProvider;
 
 #[derive(Debug, thiserror::Error)]
@@ -54,11 +56,37 @@ pub struct SearchIndex {
     f_message_id: Field,
     f_provider: Field,
     f_project: Field,
+    f_project_raw: Field,
     f_role: Field,
     f_content: Field,
     f_tool_output: Field,
     f_timestamp: Field,
+    f_has_tool_call: Field,
     index_dir: PathBuf,
+}
+
+/// Server-side filters applied alongside a `search` query. Empty fields mean
+/// "do not filter on this dimension". `since`/`until` are inclusive bounds on
+/// the message timestamp; `project` is a case-insensitive substring match.
+#[derive(Debug, Default, Clone)]
+pub struct SearchFilters {
+    pub provider: Option<Provider>,
+    pub since: Option<DateTime<Utc>>,
+    pub until: Option<DateTime<Utc>>,
+    pub project: Option<String>,
+    pub role: Option<Role>,
+    pub has_tool_call: bool,
+}
+
+impl SearchFilters {
+    pub fn is_empty(&self) -> bool {
+        self.provider.is_none()
+            && self.since.is_none()
+            && self.until.is_none()
+            && self.project.is_none()
+            && self.role.is_none()
+            && !self.has_tool_call
+    }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -75,10 +103,12 @@ impl SearchIndex {
         let f_message_id = builder.add_text_field("message_id", STRING | STORED);
         let f_provider = builder.add_text_field("provider", STRING | STORED);
         let f_project = builder.add_text_field("project", TEXT | STORED);
+        let f_project_raw = builder.add_text_field("project_raw", STRING | STORED);
         let f_role = builder.add_text_field("role", STRING | STORED);
         let f_content = builder.add_text_field("content", TEXT | STORED);
         let f_tool_output = builder.add_text_field("tool_output", TEXT | STORED);
         let f_timestamp = builder.add_i64_field("timestamp", INDEXED | STORED);
+        let f_has_tool_call = builder.add_i64_field("has_tool_call", INDEXED | STORED);
         let schema = builder.build();
 
         let meta_path = index_dir.join("meta.json");
@@ -107,10 +137,12 @@ impl SearchIndex {
             f_message_id,
             f_provider,
             f_project,
+            f_project_raw,
             f_role,
             f_content,
             f_tool_output,
             f_timestamp,
+            f_has_tool_call,
             index_dir: index_dir.to_path_buf(),
         })
     }
@@ -155,18 +187,19 @@ impl SearchIndex {
                         if content.is_empty() && tool_output.is_empty() {
                             continue;
                         }
+                        let project = session.project_name.as_deref().unwrap_or("");
+                        let has_tool_call = i64::from(message_has_tool_call(msg));
                         let mut doc = TantivyDocument::default();
                         doc.add_text(self.f_session_id, &session.id.0);
                         doc.add_text(self.f_message_id, &msg.id.0);
-                        doc.add_text(self.f_provider, session.provider.as_str());
-                        doc.add_text(
-                            self.f_project,
-                            session.project_name.as_deref().unwrap_or(""),
-                        );
-                        doc.add_text(self.f_role, msg.role.as_str());
+                        doc.add_text(self.f_provider, session.provider.slug());
+                        doc.add_text(self.f_project, project);
+                        doc.add_text(self.f_project_raw, project);
+                        doc.add_text(self.f_role, msg.role.slug());
                         doc.add_text(self.f_content, &content);
                         doc.add_text(self.f_tool_output, &tool_output);
                         doc.add_i64(self.f_timestamp, msg.timestamp.timestamp());
+                        doc.add_i64(self.f_has_tool_call, has_tool_call);
                         writer.add_document(doc)?;
                         stats.messages_indexed += 1;
                     }
@@ -185,6 +218,22 @@ impl SearchIndex {
     }
 
     pub fn search(&self, query_str: &str, limit: usize) -> Result<Vec<SearchHit>, SearchError> {
+        self.search_with_filters(query_str, limit, &SearchFilters::default())
+    }
+
+    /// Search with structured filters applied alongside the user query.
+    ///
+    /// Provider/role/timestamp/has-tool-call filters are pushed into Tantivy as
+    /// boolean MUST clauses (cheap, scaled by the index). The project filter is
+    /// applied as a post-filter substring match against the stored project
+    /// value, since project names can contain arbitrary characters that don't
+    /// round-trip cleanly through the analyzed `project` text field.
+    pub fn search_with_filters(
+        &self,
+        query_str: &str,
+        limit: usize,
+        filters: &SearchFilters,
+    ) -> Result<Vec<SearchHit>, SearchError> {
         if query_str.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -196,13 +245,76 @@ impl SearchIndex {
             &self.index,
             vec![self.f_content, self.f_project, self.f_tool_output],
         );
-        let query = parser.parse_query(query_str)?;
+        let user_query = parser.parse_query(query_str)?;
 
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(limit).order_by_score())?;
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(6);
+        clauses.push((Occur::Must, user_query));
 
-        let mut hits = Vec::with_capacity(top_docs.len());
+        if let Some(provider) = filters.provider {
+            let term = Term::from_field_text(self.f_provider, provider.slug());
+            clauses.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        if let Some(role) = filters.role {
+            let term = Term::from_field_text(self.f_role, role.slug());
+            clauses.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        if filters.has_tool_call {
+            let term = Term::from_field_i64(self.f_has_tool_call, 1);
+            clauses.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        if filters.since.is_some() || filters.until.is_some() {
+            let lower = filters.since.map_or(Bound::Unbounded, |t| {
+                Bound::Included(Term::from_field_i64(self.f_timestamp, t.timestamp()))
+            });
+            let upper = filters.until.map_or(Bound::Unbounded, |t| {
+                Bound::Included(Term::from_field_i64(self.f_timestamp, t.timestamp()))
+            });
+            clauses.push((Occur::Must, Box::new(RangeQuery::new(lower, upper))));
+        }
+
+        let combined: Box<dyn Query> = if clauses.len() == 1 {
+            clauses.into_iter().next().expect("one clause").1
+        } else {
+            Box::new(BooleanQuery::new(clauses))
+        };
+
+        // Project is post-filtered; over-fetch to keep results stable when a
+        // restrictive project filter would otherwise prune the limit-N window.
+        let project_needle = filters
+            .project
+            .as_deref()
+            .map(str::to_lowercase)
+            .filter(|s| !s.is_empty());
+        let fetch_limit = if project_needle.is_some() {
+            limit.saturating_mul(8).max(limit)
+        } else {
+            limit
+        };
+
+        let top_docs =
+            searcher.search(&combined, &TopDocs::with_limit(fetch_limit).order_by_score())?;
+
+        let mut hits = Vec::with_capacity(top_docs.len().min(limit));
         for (score, addr) in top_docs {
+            if hits.len() >= limit {
+                break;
+            }
             let doc: TantivyDocument = searcher.doc(addr)?;
+            if let Some(needle) = &project_needle {
+                let project = field_text(&doc, self.f_project_raw);
+                if !project.to_lowercase().contains(needle) {
+                    continue;
+                }
+            }
             let session_id = field_text(&doc, self.f_session_id);
             let message_id = field_text(&doc, self.f_message_id);
             let content = field_text(&doc, self.f_content);
@@ -264,6 +376,13 @@ fn extract_content(message: &Message) -> String {
         }
     }
     parts.join("\n")
+}
+
+fn message_has_tool_call(message: &Message) -> bool {
+    message
+        .content
+        .iter()
+        .any(|block| matches!(block, ContentBlock::ToolUse(_)))
 }
 
 fn extract_tool_output(message: &Message) -> String {

@@ -77,6 +77,59 @@ fn exit_codes() -> Value {
     })
 }
 
+/// Filter flags shared by `--list` and `search`. Returned as a fragment so
+/// each subcommand schema can fold these in alongside its own params.
+fn filter_params_fragment() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "provider",
+            json!({
+                "type": "string",
+                "enum": provider_slug_enum(),
+                "description": "Restrict to a single provider."
+            }),
+        ),
+        (
+            "since",
+            json!({
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 lower bound on message/session timestamp (inclusive)."
+            }),
+        ),
+        (
+            "until",
+            json!({
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 upper bound on message/session timestamp (inclusive)."
+            }),
+        ),
+        (
+            "project",
+            json!({
+                "type": "string",
+                "description": "Substring match against the session's project name (case-insensitive)."
+            }),
+        ),
+        (
+            "role",
+            json!({
+                "type": "string",
+                "enum": ["user", "assistant", "tool"],
+                "description": "Restrict to messages with this role."
+            }),
+        ),
+        (
+            "has_tool_call",
+            json!({
+                "type": "boolean",
+                "description": "Keep only messages (or sessions containing messages) with a tool invocation."
+            }),
+        ),
+    ]
+}
+
 fn session_row_schema() -> Value {
     json!({
         "type": "object",
@@ -95,6 +148,62 @@ fn session_row_schema() -> Value {
 
 // ─── per-subcommand schemas ────────────────────────────────────────────────
 
+fn list_params_properties() -> Value {
+    let mut props = serde_json::Map::new();
+    props.insert(
+        "json".to_string(),
+        json!({ "type": "boolean", "description": "Force JSON output (single object with `sessions` array)." }),
+    );
+    props.insert(
+        "ndjson".to_string(),
+        json!({ "type": "boolean", "description": "Force NDJSON output (one session per line)." }),
+    );
+    for (name, schema) in filter_params_fragment() {
+        props.insert(name.to_string(), schema);
+    }
+    Value::Object(props)
+}
+
+fn search_params_properties() -> Value {
+    let mut props = serde_json::Map::new();
+    props.insert(
+        "query".to_string(),
+        json!({ "type": "string", "description": "Tantivy query string. Mutually exclusive with query_file/stdin." }),
+    );
+    props.insert(
+        "query_file".to_string(),
+        json!({ "type": "string", "description": "Read query from file path (use '-' for stdin)." }),
+    );
+    props.insert(
+        "stdin".to_string(),
+        json!({ "type": "boolean", "description": "Read query from standard input." }),
+    );
+    props.insert(
+        "limit".to_string(),
+        json!({ "type": "integer", "minimum": 1, "default": 20 }),
+    );
+    props.insert(
+        "json".to_string(),
+        json!({ "type": "boolean", "description": "Force JSON output (default: JSON on pipe, table on TTY)." }),
+    );
+    props.insert(
+        "watch".to_string(),
+        json!({ "type": "boolean", "description": "Long-running NDJSON stream of new hits." }),
+    );
+    props.insert(
+        "watch_interval_ms".to_string(),
+        json!({ "type": "integer", "minimum": 1, "default": 2000 }),
+    );
+    props.insert(
+        "watch_iterations".to_string(),
+        json!({ "type": "integer", "minimum": 0, "default": 0, "description": "Stop after N polls (0 = run until interrupted)." }),
+    );
+    for (name, schema) in filter_params_fragment() {
+        props.insert(name.to_string(), schema);
+    }
+    Value::Object(props)
+}
+
 fn list_schema() -> Value {
     json!({
         "$schema": SCHEMA_DRAFT,
@@ -104,10 +213,7 @@ fn list_schema() -> Value {
         "description": "List sessions across enabled providers, sorted by start time descending.",
         "params": {
             "type": "object",
-            "properties": {
-                "json": { "type": "boolean", "description": "Force JSON output (single object with `sessions` array)." },
-                "ndjson": { "type": "boolean", "description": "Force NDJSON output (one session per line)." }
-            },
+            "properties": list_params_properties(),
             "additionalProperties": false
         },
         "response": {
@@ -141,16 +247,7 @@ fn search_schema() -> Value {
         "description": "Full-text search across indexed sessions. Returns hits with citation refs.",
         "params": {
             "type": "object",
-            "properties": {
-                "query": { "type": "string", "description": "Tantivy query string. Mutually exclusive with query_file/stdin." },
-                "query_file": { "type": "string", "description": "Read query from file path (use '-' for stdin)." },
-                "stdin": { "type": "boolean", "description": "Read query from standard input." },
-                "limit": { "type": "integer", "minimum": 1, "default": 20 },
-                "json": { "type": "boolean", "description": "Force JSON output (default: JSON on pipe, table on TTY)." },
-                "watch": { "type": "boolean", "description": "Long-running NDJSON stream of new hits." },
-                "watch_interval_ms": { "type": "integer", "minimum": 1, "default": 2000 },
-                "watch_iterations": { "type": "integer", "minimum": 0, "default": 0, "description": "Stop after N polls (0 = run until interrupted)." }
-            },
+            "properties": search_params_properties(),
             "additionalProperties": false
         },
         "response": {
