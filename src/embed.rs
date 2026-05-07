@@ -11,8 +11,11 @@
 //! - **Embedder** (feature `embeddings`): a thin wrapper around `fastembed`'s
 //!   `AllMiniLML6V2` model. Building this triggers the model download on first use.
 //!
-//! Hybrid scoring (RRF) and content-hash cache invalidation live in follow-up
-//! beads (ahist-y3o.4.2 / 4.3) and are intentionally out of scope here.
+//! Hybrid scoring (RRF) lives in a follow-up bead (ahist-y3o.4.2). Cache
+//! invalidation by content hash is handled here: each stored vector is keyed
+//! by `(message_id, sha256(text))` so a message whose content changes gets
+//! re-embedded on the next index pass. A bumped `STORE_VERSION` evicts the
+//! whole sidecar — readers treat older versions as a schema mismatch.
 
 use std::collections::HashMap;
 use std::fs;
@@ -20,6 +23,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Slug for the default text-embedding model. Stable contract — embedding
 /// stores written under this name are only valid for this model.
@@ -32,7 +36,22 @@ pub const DEFAULT_DIM: u32 = 384;
 const CONSENT_FILENAME: &str = "embeddings-consent.json";
 const STORE_FILENAME: &str = "embeddings.bin";
 const STORE_MAGIC: &[u8; 6] = b"AGEMB\0";
-const STORE_VERSION: u32 = 1;
+/// Bumped from 1 to 2 in ahist-y3o.4.3: each record now carries a 32-byte
+/// content hash. Older stores must be evicted (caller deletes the file and
+/// builds a fresh one) — readers surface this as `SchemaMismatch`.
+const STORE_VERSION: u32 = 2;
+
+/// Length of a stored content hash. SHA-256 → 32 bytes.
+pub const HASH_LEN: usize = 32;
+/// Stable, deterministic content hash for an embedding cache entry. Two
+/// messages with identical text produce identical hashes across runs and
+/// machines, which is the whole point — we use it to detect when a previously
+/// embedded message's text has drifted and the cached vector is stale.
+pub fn content_hash(text: &str) -> [u8; HASH_LEN] {
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    hasher.finalize().into()
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmbedError {
@@ -44,6 +63,8 @@ pub enum EmbedError {
     Corrupt { path: PathBuf, reason: String },
     #[error("dimension mismatch: store has {stored}, vector has {got}")]
     DimMismatch { stored: u32, got: usize },
+    #[error("embedding store schema mismatch: file is v{stored}, expected v{expected}")]
+    SchemaMismatch { stored: u32, expected: u32 },
     #[cfg(feature = "embeddings")]
     #[error("fastembed error: {0}")]
     Fastembed(String),
@@ -81,18 +102,28 @@ impl Consent {
     }
 }
 
-/// Packed binary sidecar mapping `message_id -> Vec<f32>`.
+/// One stored entry: the content hash that produced this vector, plus the
+/// vector itself. Splitting these out makes freshness checks a hash compare
+/// without touching the (much larger) `f32` payload.
+#[derive(Debug, Clone)]
+struct Entry {
+    hash: [u8; HASH_LEN],
+    vector: Vec<f32>,
+}
+
+/// Packed binary sidecar mapping `message_id -> (content_hash, Vec<f32>)`.
 ///
 /// Format (all integers little-endian):
 /// ```text
 /// magic[6] = b"AGEMB\0"
-/// version: u32          // current = 1
+/// version: u32          // current = 2
 /// dim:     u32
 /// model_len: u32
 /// model: utf8 bytes
 /// records (until EOF):
 ///   id_len: u32
 ///   id:    utf8 bytes
+///   hash:  32 bytes (sha256 of message text at embed time)
 ///   vec:   dim * f32
 /// ```
 ///
@@ -103,7 +134,7 @@ pub struct EmbeddingStore {
     path: PathBuf,
     dim: u32,
     model: String,
-    vectors: HashMap<String, Vec<f32>>,
+    entries: HashMap<String, Entry>,
 }
 
 impl EmbeddingStore {
@@ -126,7 +157,19 @@ impl EmbeddingStore {
             path: index_dir.join(STORE_FILENAME),
             dim,
             model: model.to_string(),
-            vectors: HashMap::new(),
+            entries: HashMap::new(),
+        }
+    }
+
+    /// Delete the on-disk sidecar (if any). Used by callers when an open
+    /// returned [`EmbedError::SchemaMismatch`] and they want to start fresh
+    /// rather than refuse to reindex.
+    pub fn evict(index_dir: &Path) -> Result<(), EmbedError> {
+        let path = index_dir.join(STORE_FILENAME);
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(EmbedError::Io(e)),
         }
     }
 
@@ -139,20 +182,45 @@ impl EmbeddingStore {
     }
 
     pub fn len(&self) -> usize {
-        self.vectors.len()
+        self.entries.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.vectors.is_empty()
+        self.entries.is_empty()
     }
 
+    /// Diagnostic accessor — returns the stored vector regardless of whether
+    /// its hash still matches current text. Prefer
+    /// [`get_if_fresh`](Self::get_if_fresh) for cache-hit checks.
     pub fn get(&self, message_id: &str) -> Option<&[f32]> {
-        self.vectors.get(message_id).map(Vec::as_slice)
+        self.entries.get(message_id).map(|e| e.vector.as_slice())
     }
 
-    pub fn upsert(&mut self, message_id: &str, vector: Vec<f32>) -> Result<(), EmbedError> {
+    /// Returns the stored vector iff its hash matches `expected_hash`. A
+    /// `None` here means "either never embedded, or the message text has
+    /// changed since" — both cases require a fresh embedding pass.
+    pub fn get_if_fresh(
+        &self,
+        message_id: &str,
+        expected_hash: &[u8; HASH_LEN],
+    ) -> Option<&[f32]> {
+        let entry = self.entries.get(message_id)?;
+        if &entry.hash == expected_hash {
+            Some(entry.vector.as_slice())
+        } else {
+            None
+        }
+    }
+
+    pub fn upsert(
+        &mut self,
+        message_id: &str,
+        hash: [u8; HASH_LEN],
+        vector: Vec<f32>,
+    ) -> Result<(), EmbedError> {
         if u32::try_from(vector.len()).is_ok_and(|n| n == self.dim) {
-            self.vectors.insert(message_id.to_string(), vector);
+            self.entries
+                .insert(message_id.to_string(), Entry { hash, vector });
             Ok(())
         } else {
             Err(EmbedError::DimMismatch {
@@ -177,11 +245,9 @@ impl EmbeddingStore {
     }
 
     fn encode(&self) -> Vec<u8> {
+        let per_record = 4 + 32 + HASH_LEN + (self.dim as usize) * 4;
         let mut out = Vec::with_capacity(
-            STORE_MAGIC.len()
-                + 4 * 3
-                + self.model.len()
-                + self.vectors.len() * (4 + 32 + (self.dim as usize) * 4),
+            STORE_MAGIC.len() + 4 * 3 + self.model.len() + self.entries.len() * per_record,
         );
         out.extend_from_slice(STORE_MAGIC);
         out.extend_from_slice(&STORE_VERSION.to_le_bytes());
@@ -190,14 +256,15 @@ impl EmbeddingStore {
         out.extend_from_slice(&u32_len(model_bytes).to_le_bytes());
         out.extend_from_slice(model_bytes);
         // Stable order — sorting lets snapshots and fixture tests be deterministic.
-        let mut ids: Vec<&String> = self.vectors.keys().collect();
+        let mut ids: Vec<&String> = self.entries.keys().collect();
         ids.sort();
         for id in ids {
-            let vec = &self.vectors[id];
+            let entry = &self.entries[id];
             let id_bytes = id.as_bytes();
             out.extend_from_slice(&u32_len(id_bytes).to_le_bytes());
             out.extend_from_slice(id_bytes);
-            for f in vec {
+            out.extend_from_slice(&entry.hash);
+            for f in &entry.vector {
                 out.extend_from_slice(&f.to_le_bytes());
             }
         }
@@ -212,9 +279,12 @@ impl EmbeddingStore {
         }
         let version = cur.read_u32()?;
         if version != STORE_VERSION {
-            return Err(cur.corrupt(&format!(
-                "unsupported version {version} (expected {STORE_VERSION})"
-            )));
+            // Schema bump — caller is expected to evict and rebuild rather
+            // than treat this as corruption.
+            return Err(EmbedError::SchemaMismatch {
+                stored: version,
+                expected: STORE_VERSION,
+            });
         }
         let dim = cur.read_u32()?;
         if dim == 0 {
@@ -226,27 +296,31 @@ impl EmbeddingStore {
             .map_err(|_| cur.corrupt("model name is not utf-8"))?
             .to_string();
 
-        let mut vectors = HashMap::new();
+        let mut entries = HashMap::new();
         while !cur.is_eof() {
             let id_len = cur.read_u32()? as usize;
             let id_bytes = cur.take(id_len)?;
             let id = std::str::from_utf8(id_bytes)
                 .map_err(|_| cur.corrupt("message id is not utf-8"))?
                 .to_string();
+            let hash_bytes = cur.take(HASH_LEN)?;
+            let hash: [u8; HASH_LEN] = hash_bytes
+                .try_into()
+                .expect("take(HASH_LEN) yields HASH_LEN bytes");
             let vec_bytes = cur.take((dim as usize) * 4)?;
-            let mut vec = Vec::with_capacity(dim as usize);
+            let mut vector = Vec::with_capacity(dim as usize);
             for chunk in vec_bytes.chunks_exact(4) {
                 let arr: [u8; 4] = chunk.try_into().expect("chunks_exact(4) yields [u8;4]");
-                vec.push(f32::from_le_bytes(arr));
+                vector.push(f32::from_le_bytes(arr));
             }
-            vectors.insert(id, vec);
+            entries.insert(id, Entry { hash, vector });
         }
 
         Ok(Self {
             path: path.to_path_buf(),
             dim,
             model,
-            vectors,
+            entries,
         })
     }
 }
@@ -374,27 +448,62 @@ mod tests {
     }
 
     #[test]
-    fn store_roundtrip_preserves_vectors() {
+    fn store_roundtrip_preserves_vectors_and_hashes() {
         let dir = tempdir().unwrap();
         let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
-        store.upsert("msg-a", vec![0.1, -0.2, 0.3, 0.4]).unwrap();
-        store.upsert("msg-b", vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let hash_a = content_hash("hello world");
+        let hash_b = content_hash("goodbye world");
+        store.upsert("msg-a", hash_a, vec![0.1, -0.2, 0.3, 0.4]).unwrap();
+        store.upsert("msg-b", hash_b, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
         store.flush().unwrap();
 
         let loaded = EmbeddingStore::open(dir.path()).unwrap().unwrap();
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded.dim(), 4);
         assert_eq!(loaded.model(), DEFAULT_MODEL);
-        assert_eq!(loaded.get("msg-a"), Some([0.1f32, -0.2, 0.3, 0.4].as_slice()));
-        assert_eq!(loaded.get("msg-b"), Some([1.0f32, 2.0, 3.0, 4.0].as_slice()));
-        assert_eq!(loaded.get("missing"), None);
+        assert_eq!(
+            loaded.get_if_fresh("msg-a", &hash_a),
+            Some([0.1f32, -0.2, 0.3, 0.4].as_slice())
+        );
+        assert_eq!(
+            loaded.get_if_fresh("msg-b", &hash_b),
+            Some([1.0f32, 2.0, 3.0, 4.0].as_slice())
+        );
+        assert_eq!(loaded.get_if_fresh("missing", &hash_a), None);
+    }
+
+    #[test]
+    fn get_if_fresh_returns_none_when_hash_drifts() {
+        let dir = tempdir().unwrap();
+        let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
+        let original = content_hash("v1 text");
+        let updated = content_hash("v2 text");
+        store.upsert("msg", original, vec![0.1, 0.2, 0.3, 0.4]).unwrap();
+
+        // Same id but different content hash: caller should see a miss and
+        // re-embed rather than serve a stale vector.
+        assert_eq!(store.get_if_fresh("msg", &updated), None);
+        // The diagnostic getter still surfaces the old vector — useful for
+        // debugging, but not for cache decisions.
+        assert!(store.get("msg").is_some());
+
+        // After upserting under the new hash, the cache hits again.
+        store
+            .upsert("msg", updated, vec![0.5, 0.6, 0.7, 0.8])
+            .unwrap();
+        assert_eq!(
+            store.get_if_fresh("msg", &updated),
+            Some([0.5f32, 0.6, 0.7, 0.8].as_slice())
+        );
     }
 
     #[test]
     fn upsert_rejects_dimension_mismatch() {
         let dir = tempdir().unwrap();
         let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
-        let err = store.upsert("msg", vec![0.1, 0.2]).unwrap_err();
+        let err = store
+            .upsert("msg", content_hash("x"), vec![0.1, 0.2])
+            .unwrap_err();
         assert!(matches!(
             err,
             EmbedError::DimMismatch { stored: 4, got: 2 }
@@ -411,5 +520,53 @@ mod tests {
             Ok(_) => panic!("expected corrupt error, got Ok"),
             Err(e) => panic!("expected Corrupt, got {e}"),
         }
+    }
+
+    #[test]
+    fn old_schema_version_yields_schema_mismatch() {
+        // Hand-roll a v1 file (magic + version=1 + minimal trailing bytes).
+        // We don't bother filling out the full v1 record body — readers must
+        // reject the version before they read records, otherwise they'd misalign.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(STORE_FILENAME);
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(STORE_MAGIC);
+        bytes.extend_from_slice(&1u32.to_le_bytes()); // old version
+        bytes.extend_from_slice(&4u32.to_le_bytes()); // dim
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // model_len = 0
+        fs::write(&path, &bytes).unwrap();
+
+        match EmbeddingStore::open(dir.path()) {
+            Err(EmbedError::SchemaMismatch { stored: 1, expected }) => {
+                assert_eq!(expected, STORE_VERSION);
+            }
+            Ok(_) => panic!("expected SchemaMismatch, got Ok"),
+            Err(e) => panic!("expected SchemaMismatch, got {e}"),
+        }
+    }
+
+    #[test]
+    fn evict_removes_existing_sidecar_and_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
+        store
+            .upsert("msg", content_hash("x"), vec![0.0; 4])
+            .unwrap();
+        store.flush().unwrap();
+        assert!(dir.path().join(STORE_FILENAME).exists());
+
+        EmbeddingStore::evict(dir.path()).unwrap();
+        assert!(!dir.path().join(STORE_FILENAME).exists());
+
+        // Calling evict on a missing file is a no-op, not an error — callers
+        // hit this whenever there's nothing to evict.
+        EmbeddingStore::evict(dir.path()).unwrap();
+    }
+
+    #[test]
+    fn content_hash_is_stable_and_text_sensitive() {
+        assert_eq!(content_hash("hello"), content_hash("hello"));
+        assert_ne!(content_hash("hello"), content_hash("hello "));
+        assert_ne!(content_hash(""), content_hash("hello"));
     }
 }

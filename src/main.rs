@@ -816,16 +816,35 @@ fn run_embeddings(
         )
     })?;
 
-    let mut store = embed::EmbeddingStore::open(index_dir)
-        .map_err(|e| {
-            ErrorEnvelope::new("embed-error", format!("failed to open embedding store: {e}"))
-        })?
-        .unwrap_or_else(|| {
+    // On a schema bump (STORE_VERSION mismatch), evict the old sidecar and
+    // start fresh — the alternative would be to refuse to reindex, which is
+    // worse UX than transparently rebuilding. We surface the eviction so it's
+    // visible in the JSON summary.
+    let mut evicted_old_schema = false;
+    let mut store = match embed::EmbeddingStore::open(index_dir) {
+        Ok(Some(s)) => s,
+        Ok(None) => embed::EmbeddingStore::create(index_dir, embedder.model_slug(), embedder.dim()),
+        Err(embed::EmbedError::SchemaMismatch { .. }) => {
+            embed::EmbeddingStore::evict(index_dir).map_err(|e| {
+                ErrorEnvelope::new(
+                    "embed-error",
+                    format!("failed to evict outdated embedding store: {e}"),
+                )
+            })?;
+            evicted_old_schema = true;
             embed::EmbeddingStore::create(index_dir, embedder.model_slug(), embedder.dim())
-        });
+        }
+        Err(e) => {
+            return Err(ErrorEnvelope::new(
+                "embed-error",
+                format!("failed to open embedding store: {e}"),
+            ));
+        }
+    };
 
     let mut errors: Vec<String> = Vec::new();
     let mut messages_embedded = 0usize;
+    let mut messages_reused = 0usize;
 
     for session in sessions {
         let Some(provider) = providers.iter().find(|p| p.provider() == session.provider) else {
@@ -839,17 +858,22 @@ fn run_embeddings(
             }
         };
 
-        let pending: Vec<(String, String)> = messages
+        // (id, text, content_hash) for messages whose cached vector is stale
+        // or absent. We compute the hash up front so the freshness check is a
+        // cheap byte compare against what's in the store.
+        let pending: Vec<(String, String, [u8; embed::HASH_LEN])> = messages
             .iter()
             .filter_map(|m| {
                 let text = collect_text(m);
                 if text.trim().is_empty() {
                     return None;
                 }
-                if store.get(&m.id.0).is_some() {
+                let hash = embed::content_hash(&text);
+                if store.get_if_fresh(&m.id.0, &hash).is_some() {
+                    messages_reused += 1;
                     return None;
                 }
-                Some((m.id.0.clone(), text))
+                Some((m.id.0.clone(), text, hash))
             })
             .collect();
 
@@ -857,11 +881,11 @@ fn run_embeddings(
             continue;
         }
 
-        let texts: Vec<String> = pending.iter().map(|(_, t)| t.clone()).collect();
+        let texts: Vec<String> = pending.iter().map(|(_, t, _)| t.clone()).collect();
         match embedder.embed_batch(&texts) {
             Ok(vectors) => {
-                for ((id, _), vec) in pending.into_iter().zip(vectors) {
-                    if let Err(e) = store.upsert(&id, vec) {
+                for ((id, _, hash), vec) in pending.into_iter().zip(vectors) {
+                    if let Err(e) = store.upsert(&id, hash, vec) {
                         errors.push(format!("{id}: {e}"));
                     } else {
                         messages_embedded += 1;
@@ -884,7 +908,9 @@ fn run_embeddings(
         "model": consent.model,
         "dim": store.dim(),
         "messages_embedded": messages_embedded,
+        "messages_reused_from_cache": messages_reused,
         "messages_total_in_store": store.len(),
+        "evicted_old_schema": evicted_old_schema,
         "consent_accepted_at": consent.accepted_at,
         "errors": errors,
     }))
