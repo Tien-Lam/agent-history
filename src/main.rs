@@ -255,6 +255,32 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         include_context: u32,
     },
+    /// Heuristic-extract candidate architectural decisions from sessions.
+    ///
+    /// Scores each sentence against decision-marker phrases (e.g. "we
+    /// decided", "instead of") and returns the top candidates with their
+    /// citation refs. v1 is intentionally LLM-free — agents that want
+    /// richer extraction can post-process by `aghist show`-ing the refs.
+    Decisions {
+        /// Restrict to a single session by id, unique id prefix, or full
+        /// citation ref `<provider>/<session-id>#<turn>` (turn ignored).
+        #[arg(long, short = 's', value_name = "SESSION_OR_REF")]
+        session: Option<String>,
+
+        /// Drop sentences whose score is below this threshold.
+        /// Default 3.0 keeps explicit decisions and pairs of soft markers.
+        #[arg(long, default_value_t = aghist::decisions::DEFAULT_THRESHOLD, value_name = "FLOAT")]
+        threshold: f32,
+
+        /// Maximum number of candidates to return across all sessions,
+        /// after sorting by score descending.
+        #[arg(long, short = 'n', default_value_t = 50)]
+        limit: usize,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY).
+        #[arg(long)]
+        json: bool,
+    },
     /// Run a stdio MCP server exposing aghist's read paths to agents.
     ///
     /// Speaks JSON-RPC 2.0 over stdin/stdout with newline-delimited messages,
@@ -487,6 +513,7 @@ fn exit_code(code: i32) -> ExitCode {
     u8::try_from(code).map_or(ExitCode::FAILURE, ExitCode::from)
 }
 
+#[allow(clippy::too_many_lines)]
 fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
     if cli.reindex {
         let index_dir = search::SearchIndex::default_index_dir();
@@ -572,6 +599,21 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             format,
             include_context,
         }) => return show_command(&providers, &reference, format, include_context),
+        Some(Command::Decisions {
+            session,
+            threshold,
+            limit,
+            json,
+        }) => {
+            return decisions_command(
+                &providers,
+                session.as_deref(),
+                threshold,
+                limit,
+                json,
+                &cli.filters,
+            );
+        }
         Some(Command::Sources) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
             return sources_command(&providers, mode);
@@ -2275,5 +2317,191 @@ fn write_blocks_text<W: io::Write>(out: &mut W, msg: &Message) -> io::Result<()>
             ContentBlock::Error(t) => writeln!(out, "[error] {t}")?,
         }
     }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decisions_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    session_filter: Option<&str>,
+    threshold: f32,
+    limit: usize,
+    force_json: bool,
+    filters: &FilterArgs,
+) -> Result<i32, ErrorEnvelope> {
+    if !threshold.is_finite() || threshold < 0.0 {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("--threshold must be a non-negative finite number (got {threshold})"),
+        ));
+    }
+
+    // If --session was given as a full citation ref, drop the trailing
+    // `#turn` so it can match the session id; we extract decisions across
+    // the whole session regardless of the cited turn.
+    let session_needle = session_filter.map(|s| {
+        let trimmed = s.trim();
+        let without_turn = trimmed.rsplit_once('#').map_or(trimmed, |(head, _)| head);
+        // Strip leading provider segment if present (`<slug>/<id>` → `<id>`).
+        without_turn
+            .split_once('/')
+            .map_or(without_turn, |(_, rest)| rest)
+            .to_string()
+    });
+
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
+    let mut rows: Vec<DecisionRow> = Vec::new();
+
+    for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        let sessions = match p.discover_sessions() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{}: error: {e}", p.provider());
+                continue;
+            }
+        };
+        for session in sessions {
+            if !session_matches(&session, filters, project_needle.as_deref()) {
+                continue;
+            }
+            if let Some(needle) = session_needle.as_deref() {
+                if !session.id.0.starts_with(needle) {
+                    continue;
+                }
+            }
+            // skip corrupt/unreadable, like the rest of the pipeline
+            let Ok(messages) = p.load_messages(&session) else {
+                continue;
+            };
+
+            // Apply per-message filters (--role, --has-tool-call) before
+            // running extraction. We track the original turn index so the
+            // citation ref still matches the on-disk message position.
+            let scored: Vec<(usize, &Message)> = messages
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| message_matches(m, filters))
+                .collect();
+
+            for (idx, msg) in scored {
+                let turn = u32::try_from(idx + 1).unwrap_or(u32::MAX);
+                let cands = aghist::decisions::extract_from_message(msg, turn, threshold);
+                for c in cands {
+                    let citation = aghist::model::CitationRef::new(
+                        session.provider,
+                        session.id.clone(),
+                        c.turn,
+                    );
+                    let Some(citation) = citation else { continue };
+                    rows.push(DecisionRow {
+                        citation,
+                        candidate: c,
+                        project: session.project_name.clone(),
+                        started_at: session.started_at,
+                    });
+                }
+            }
+        }
+    }
+
+    rows.sort_by(|a, b| {
+        b.candidate
+            .score
+            .partial_cmp(&a.candidate.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.started_at.cmp(&a.started_at))
+            .then_with(|| a.citation.session_id.0.cmp(&b.citation.session_id.0))
+            .then_with(|| a.candidate.turn.cmp(&b.candidate.turn))
+    });
+    if rows.len() > limit {
+        rows.truncate(limit);
+    }
+
+    if rows.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    if want_json {
+        print_decisions_json(&rows).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
+        })?;
+    } else {
+        print_decisions_table(&rows);
+    }
+    Ok(EXIT_OK)
+}
+
+struct DecisionRow {
+    citation: aghist::model::CitationRef,
+    candidate: aghist::decisions::DecisionCandidate,
+    project: Option<String>,
+    started_at: DateTime<Utc>,
+}
+
+fn print_decisions_table(rows: &[DecisionRow]) {
+    println!(
+        "{:<6}  {:<36}  {:<24}  SNIPPET",
+        "SCORE", "REF", "MARKERS"
+    );
+    for row in rows {
+        let r = row.citation.to_string();
+        let r = truncate(&r, 36);
+        let markers = row.candidate.markers.join(",");
+        let markers = truncate(&markers, 24);
+        let snippet = truncate(&row.candidate.snippet, 80);
+        println!(
+            "{:<6.2}  {:<36}  {:<24}  {}",
+            row.candidate.score, r, markers, snippet
+        );
+    }
+}
+
+fn print_decisions_json(rows: &[DecisionRow]) -> std::io::Result<()> {
+    #[derive(serde::Serialize)]
+    struct JsonRow<'a> {
+        #[serde(rename = "ref")]
+        reference: String,
+        provider: aghist::model::Provider,
+        session_id: &'a str,
+        turn: u32,
+        role: aghist::model::Role,
+        score: f32,
+        markers: &'a [String],
+        snippet: &'a str,
+        project: Option<&'a str>,
+        timestamp: chrono::DateTime<chrono::Utc>,
+        started_at: chrono::DateTime<chrono::Utc>,
+    }
+
+    let payload: Vec<JsonRow> = rows
+        .iter()
+        .map(|r| JsonRow {
+            reference: r.citation.to_string(),
+            provider: r.citation.provider,
+            session_id: r.citation.session_id.0.as_str(),
+            turn: r.citation.turn,
+            role: r.candidate.role,
+            score: r.candidate.score,
+            markers: &r.candidate.markers,
+            snippet: r.candidate.snippet.as_str(),
+            project: r.project.as_deref(),
+            timestamp: r.candidate.timestamp,
+            started_at: r.started_at,
+        })
+        .collect();
+
+    serde_json::to_writer(io::stdout().lock(), &payload).map_err(std::io::Error::other)?;
+    println!();
     Ok(())
 }

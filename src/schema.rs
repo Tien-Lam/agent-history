@@ -25,6 +25,7 @@ pub const SUBCOMMANDS: &[&str] = &[
     "health",
     "mcp",
     "schema",
+    "decisions",
 ];
 
 /// Return the schema for a subcommand, or `None` if the name is unknown.
@@ -39,6 +40,7 @@ pub fn schema_for(subcmd: &str) -> Option<Value> {
         "health" => Some(health_schema()),
         "mcp" => Some(mcp_schema()),
         "schema" => Some(schema_schema()),
+        "decisions" => Some(decisions_schema()),
         _ => None,
     }
 }
@@ -570,6 +572,81 @@ fn schema_schema() -> Value {
         },
         "response": {
             "description": "JSON-Schema document for a single subcommand, OR `{ subcommands: [...] }` with --list, OR a map of name → schema with --all."
+        },
+        "exit_codes": exit_codes()
+    })
+}
+
+fn decisions_schema() -> Value {
+    let mut props = serde_json::Map::new();
+    props.insert(
+        "session".to_string(),
+        json!({
+            "type": "string",
+            "description": "Restrict to a session id, unique id prefix, or full citation ref (turn ignored)."
+        }),
+    );
+    props.insert(
+        "threshold".to_string(),
+        json!({
+            "type": "number",
+            "minimum": 0,
+            "default": 3.0,
+            "description": "Drop candidates whose marker-score is below this value."
+        }),
+    );
+    props.insert(
+        "limit".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "Maximum number of candidates to return after sorting by score."
+        }),
+    );
+    props.insert(
+        "json".to_string(),
+        json!({ "type": "boolean", "default": false, "description": "Force JSON output." }),
+    );
+    for (name, schema) in filter_params_fragment() {
+        props.insert(name.to_string(), schema);
+    }
+
+    json!({
+        "$schema": SCHEMA_DRAFT,
+        "$id": "aghist:schema/decisions",
+        "title": "aghist decisions",
+        "command": "decisions",
+        "description": "Heuristic-extract candidate architectural decisions from sessions. Returns ranked sentences with citation refs; agents can post-process by `aghist show`-ing the refs.",
+        "params": {
+            "type": "object",
+            "properties": Value::Object(props),
+            "additionalProperties": false
+        },
+        "response": {
+            "type": "array",
+            "description": "Array of candidates, ordered by score descending then started_at descending.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "ref": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9-]+/.+#[1-9][0-9]*$",
+                        "description": "Citation ref `<provider>/<session-id>#<turn>`."
+                    },
+                    "provider": { "type": "string", "enum": provider_slug_enum() },
+                    "session_id": { "type": "string" },
+                    "turn": { "type": "integer", "minimum": 1 },
+                    "role": { "type": "string", "enum": ["user", "assistant", "system", "tool"] },
+                    "score": { "type": "number" },
+                    "markers": { "type": "array", "items": { "type": "string" } },
+                    "snippet": { "type": "string" },
+                    "project": { "type": ["string", "null"] },
+                    "timestamp": { "type": "string", "format": "date-time" },
+                    "started_at": { "type": "string", "format": "date-time" }
+                },
+                "required": ["ref", "provider", "session_id", "turn", "role", "score", "markers", "snippet", "timestamp", "started_at"]
+            }
         },
         "exit_codes": exit_codes()
     })

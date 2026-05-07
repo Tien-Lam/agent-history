@@ -3,6 +3,7 @@ pub mod app;
 pub mod cli_error;
 pub mod config;
 pub mod cursor;
+pub mod decisions;
 pub mod embed;
 pub mod event;
 pub mod export;
