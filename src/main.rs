@@ -254,12 +254,20 @@ enum Command {
     /// JSON envelope is `{ok, checks:[{name, status, hint?}], summary}` so
     /// agents can branch on individual check kinds.
     Health,
-    /// List detected provider sources: paths, session counts, sizes, last-indexed-at.
+    /// Inspect detected provider sources, or manage the remote-source registry.
     ///
-    /// Helps diagnose "why isn't my session showing up?" — agents (and humans)
-    /// can see which provider directories aghist scanned, how many sessions it
-    /// found, and when the search index was last updated.
-    Sources,
+    /// With no subcommand: lists detected provider sources (paths, session
+    /// counts, sizes, last-indexed-at) — helpful for diagnosing "why isn't
+    /// my session showing up?".
+    ///
+    /// Subcommands manage the persistent registry of remote sources stored
+    /// in `config.toml` under `[[sources]]`. Local sources are still
+    /// auto-detected; the registry is for hosts whose history dirs aghist
+    /// can't see directly (e.g. SSH/rsync targets on other machines).
+    Sources {
+        #[command(subcommand)]
+        command: Option<SourcesCommand>,
+    },
     /// Resolve a citation ref `<provider>/<session-id>#<turn>` to one message.
     Show {
         /// Citation ref. E.g. `claude-code/abc-123#7`.
@@ -379,6 +387,39 @@ enum Command {
     Update,
     /// Remove aghist binary and data
     Uninstall,
+}
+
+/// Subcommands of `aghist sources` that manage the remote-source registry.
+#[derive(Subcommand)]
+enum SourcesCommand {
+    /// Register a new remote source. Persists to `config.toml`.
+    Add {
+        /// Stable identifier for the source (used by `remove`).
+        #[arg(value_name = "NAME")]
+        name: String,
+        /// Hostname or `user@host` pointing at the remote machine.
+        #[arg(long, value_name = "HOST")]
+        host: String,
+        /// Path on the remote machine where the agent history lives.
+        #[arg(long, value_name = "PATH")]
+        path: String,
+        /// Transport used to reach the remote (`ssh` or `rsync`). Defaults to `ssh`.
+        #[arg(long, default_value = "ssh", value_parser = parse_transport, value_name = "TRANSPORT")]
+        transport: config::Transport,
+    },
+    /// List registered remote sources.
+    List,
+    /// Remove a registered remote source by name.
+    Remove {
+        /// Name of the source to remove (matches `add --name`).
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+}
+
+fn parse_transport(raw: &str) -> Result<config::Transport, String> {
+    config::Transport::from_slug(raw)
+        .ok_or_else(|| format!("unknown transport '{raw}'. Valid: ssh, rsync"))
 }
 
 /// JSON `--params` body for `aghist export`.
@@ -918,9 +959,19 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 json,
             );
         }
-        Some(Command::Sources) => {
+        Some(Command::Sources { command }) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
-            return sources_command(&providers, mode);
+            return match command {
+                None => sources_command(&providers, mode),
+                Some(SourcesCommand::List) => sources_list_remote(mode),
+                Some(SourcesCommand::Add {
+                    name,
+                    host,
+                    path,
+                    transport,
+                }) => sources_add_remote(&name, &host, &path, transport, mode),
+                Some(SourcesCommand::Remove { name }) => sources_remove_remote(&name, mode),
+            };
         }
         Some(Command::Health) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
@@ -2412,6 +2463,213 @@ fn render_sources_ndjson<W: io::Write>(out: &mut W, rows: &[SourceRow]) -> io::R
         writeln!(out)?;
     }
     Ok(())
+}
+
+fn resolve_config_path() -> Result<PathBuf, ErrorEnvelope> {
+    config::Config::resolved_path().ok_or_else(|| {
+        ErrorEnvelope::new(
+            "config-error",
+            "could not determine config path; HOME and XDG_CONFIG_HOME are unset",
+        )
+        .with_hint("Set AGHIST_CONFIG=/path/to/config.toml to override.")
+    })
+}
+
+fn write_sources_payload<W: io::Write>(
+    out: &mut W,
+    sources: &[config::RemoteSource],
+    config_path: &std::path::Path,
+    mode: OutputMode,
+) -> io::Result<()> {
+    match mode {
+        OutputMode::Human => render_remote_sources_human(out, sources, config_path),
+        OutputMode::Json => {
+            let payload = serde_json::json!({
+                "sources": sources,
+                "config_path": config_path.display().to_string(),
+            });
+            serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
+            writeln!(out)
+        }
+        OutputMode::Ndjson => {
+            for s in sources {
+                serde_json::to_writer(&mut *out, s).map_err(std::io::Error::other)?;
+                writeln!(out)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn render_remote_sources_human<W: io::Write>(
+    out: &mut W,
+    sources: &[config::RemoteSource],
+    config_path: &std::path::Path,
+) -> io::Result<()> {
+    if sources.is_empty() {
+        writeln!(
+            out,
+            "No remote sources registered. Add one with `aghist sources add <name> --host <host> --path <path>`."
+        )?;
+        writeln!(out, "Config: {}", config_path.display())?;
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "{:<20}  {:<10}  {:<25}  PATH",
+        "NAME", "TRANSPORT", "HOST"
+    )?;
+    for s in sources {
+        writeln!(
+            out,
+            "{:<20}  {:<10}  {:<25}  {}",
+            s.name,
+            s.transport.slug(),
+            s.host,
+            s.path
+        )?;
+    }
+    writeln!(out)?;
+    writeln!(out, "Config: {}", config_path.display())?;
+    Ok(())
+}
+
+fn sources_list_remote(mode: OutputMode) -> Result<i32, ErrorEnvelope> {
+    let config_path = resolve_config_path()?;
+    let config = config::Config::load_from(&config_path);
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    write_sources_payload(&mut out, &config.sources, &config_path, mode).map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write sources output: {e}"))
+    })?;
+    if config.sources.is_empty() {
+        Ok(EXIT_EMPTY)
+    } else {
+        Ok(EXIT_OK)
+    }
+}
+
+fn sources_add_remote(
+    name: &str,
+    host: &str,
+    path: &str,
+    transport: config::Transport,
+    mode: OutputMode,
+) -> Result<i32, ErrorEnvelope> {
+    use std::io::Write as _;
+    let trimmed_name = name.trim();
+    if trimmed_name.is_empty() {
+        return Err(
+            ErrorEnvelope::new("usage", "source name must not be empty")
+                .with_hint("Pick a stable identifier, e.g. `laptop` or `prod-box`."),
+        );
+    }
+    if host.trim().is_empty() {
+        return Err(ErrorEnvelope::new("usage", "--host must not be empty"));
+    }
+    if path.trim().is_empty() {
+        return Err(ErrorEnvelope::new("usage", "--path must not be empty"));
+    }
+
+    let config_path = resolve_config_path()?;
+    let mut config = config::Config::load_from(&config_path);
+    if config.sources.iter().any(|s| s.name == trimmed_name) {
+        return Err(
+            ErrorEnvelope::new(
+                "duplicate-source",
+                format!("a source named '{trimmed_name}' already exists"),
+            )
+            .with_hint("Use `aghist sources remove <name>` first, or pick a different name."),
+        );
+    }
+
+    let new_source = config::RemoteSource {
+        name: trimmed_name.to_string(),
+        host: host.to_string(),
+        path: path.to_string(),
+        transport,
+    };
+    config.sources.push(new_source.clone());
+    config.save_to(&config_path).map_err(|e| {
+        ErrorEnvelope::new(
+            "io-error",
+            format!("failed to write {}: {e}", config_path.display()),
+        )
+    })?;
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if mode.is_machine() {
+        let payload = serde_json::json!({
+            "added": new_source,
+            "config_path": config_path.display().to_string(),
+        });
+        serde_json::to_writer(&mut out, &payload).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}"))
+        })?;
+        writeln!(out).ok();
+    } else {
+        writeln!(
+            out,
+            "Added source '{}' ({} {}:{})",
+            new_source.name,
+            new_source.transport.slug(),
+            new_source.host,
+            new_source.path
+        )
+        .ok();
+        writeln!(out, "Config: {}", config_path.display()).ok();
+    }
+    Ok(EXIT_OK)
+}
+
+fn sources_remove_remote(name: &str, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
+    use std::io::Write as _;
+    let config_path = resolve_config_path()?;
+    let mut config = config::Config::load_from(&config_path);
+    let before = config.sources.len();
+    let mut removed: Option<config::RemoteSource> = None;
+    config.sources.retain(|s| {
+        if s.name == name {
+            removed = Some(s.clone());
+            false
+        } else {
+            true
+        }
+    });
+    if config.sources.len() == before {
+        return Err(
+            ErrorEnvelope::new(
+                "source-not-found",
+                format!("no registered source named '{name}'"),
+            )
+            .with_hint("Run `aghist sources list` to see registered sources."),
+        );
+    }
+    config.save_to(&config_path).map_err(|e| {
+        ErrorEnvelope::new(
+            "io-error",
+            format!("failed to write {}: {e}", config_path.display()),
+        )
+    })?;
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    let removed = removed.expect("retain reported a removal");
+    if mode.is_machine() {
+        let payload = serde_json::json!({
+            "removed": removed,
+            "config_path": config_path.display().to_string(),
+        });
+        serde_json::to_writer(&mut out, &payload).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}"))
+        })?;
+        writeln!(out).ok();
+    } else {
+        writeln!(out, "Removed source '{}'", removed.name).ok();
+        writeln!(out, "Config: {}", config_path.display()).ok();
+    }
+    Ok(EXIT_OK)
 }
 
 #[allow(clippy::cast_precision_loss)]
