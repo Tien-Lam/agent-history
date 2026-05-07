@@ -327,6 +327,31 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Cluster sessions into "threads" of related work (same project, time-adjacent).
+    ///
+    /// Heuristic v1: bucket sessions by `project_name`, then walk each bucket
+    /// chronologically — sessions cluster when their gap is within `--gap-hours`
+    /// (default 4h, "picked it back up after lunch"). Useful for "what's the
+    /// history on feature X across multiple sessions?". No LLM; agents can
+    /// post-process or drill into refs with `aghist show`.
+    Threads {
+        /// Cluster gap in hours. Sessions in the same project within this gap
+        /// merge into one thread; longer gaps split.
+        #[arg(long, default_value_t = aghist::threads::DEFAULT_GAP_HOURS, value_name = "HOURS")]
+        gap_hours: i64,
+
+        /// Drop threads with fewer than this many sessions.
+        #[arg(long, default_value_t = 1, value_name = "N")]
+        min_sessions: usize,
+
+        /// Maximum number of threads to emit (0 = no limit).
+        #[arg(long, short = 'n', default_value_t = 50)]
+        limit: usize,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY).
+        #[arg(long)]
+        json: bool,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -646,6 +671,21 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         }
         Some(Command::Todos { kind, limit, json }) => {
             return todos_command(&providers, &cli.filters, &kind, limit, json);
+        }
+        Some(Command::Threads {
+            gap_hours,
+            min_sessions,
+            limit,
+            json,
+        }) => {
+            return threads_command(
+                &providers,
+                &cli.filters,
+                gap_hours,
+                min_sessions,
+                limit,
+                json,
+            );
         }
         Some(Command::Sources) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
@@ -2292,6 +2332,113 @@ fn render_todos_human<W: io::Write>(out: &mut W, todos: &[TodoCandidate]) -> io:
     }
     writeln!(out)?;
     writeln!(out, "Total: {} candidate(s)", todos.len())?;
+    Ok(())
+}
+
+fn threads_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    gap_hours: i64,
+    min_sessions: usize,
+    limit: usize,
+    force_json: bool,
+) -> Result<i32, ErrorEnvelope> {
+    if gap_hours < 0 {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("--gap-hours must be >= 0 (got {gap_hours})"),
+        ));
+    }
+
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
+    let mut sessions: Vec<Session> = Vec::new();
+    for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        match p.discover_sessions() {
+            Ok(found) => sessions.extend(
+                found
+                    .into_iter()
+                    .filter(|s| session_matches(s, filters, project_needle.as_deref())),
+            ),
+            Err(e) => eprintln!("{}: error: {e}", p.provider()),
+        }
+    }
+
+    let opts = aghist::threads::ClusterOptions {
+        gap: chrono::Duration::hours(gap_hours),
+        min_sessions: min_sessions.max(1),
+    };
+    let mut threads = aghist::threads::cluster(&sessions, opts);
+
+    if limit > 0 && threads.len() > limit {
+        threads.truncate(limit);
+    }
+
+    if threads.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if want_json {
+        render_threads_json(&mut out, &threads)
+    } else {
+        render_threads_human(&mut out, &threads)
+    }
+    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write threads output: {e}")))?;
+
+    Ok(EXIT_OK)
+}
+
+fn render_threads_json<W: io::Write>(
+    out: &mut W,
+    threads: &[aghist::threads::Thread],
+) -> io::Result<()> {
+    let payload = serde_json::json!({
+        "threads": threads,
+        "count": threads.len(),
+    });
+    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn render_threads_human<W: io::Write>(
+    out: &mut W,
+    threads: &[aghist::threads::Thread],
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "{:<19}  {:<19}  {:>5}  {:>4}  {:<24}  PROJECT",
+        "STARTED (UTC)", "ENDED (UTC)", "SESS", "MSGS", "ID"
+    )?;
+    for t in threads {
+        let started = t.started_at.format("%Y-%m-%d %H:%M:%S").to_string();
+        let ended = t.ended_at.format("%Y-%m-%d %H:%M:%S").to_string();
+        let project = t.project.as_deref().unwrap_or("(unknown)");
+        let project = truncate(project, 40);
+        writeln!(
+            out,
+            "{:<19}  {:<19}  {:>5}  {:>4}  {:<24}  {project}",
+            started,
+            ended,
+            t.session_count,
+            t.message_count,
+            truncate(&t.id, 24),
+        )?;
+    }
+    writeln!(out)?;
+    writeln!(out, "Total: {} thread(s)", threads.len())?;
     Ok(())
 }
 
