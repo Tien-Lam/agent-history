@@ -7,6 +7,7 @@ use aghist::health::{self, HealthCheck, HealthStatus};
 #[cfg(feature = "embeddings")]
 use aghist::embed;
 use aghist::search::SearchFilters;
+use aghist::todos::{self, TodoCandidate, TodoKind};
 use aghist::{app, config, export, mcp, provider, schema, search};
 
 use std::io::{self, IsTerminal};
@@ -305,6 +306,27 @@ enum Command {
         #[arg(long, conflicts_with_all = ["list", "subcommand"])]
         all: bool,
     },
+    /// Surface unresolved TODOs / follow-ups / open bd refs across sessions.
+    ///
+    /// Heuristic-first scan: looks for `TODO`, `follow-up`, `come back to`,
+    /// `we should`, and beads-style refs (e.g. `ahist-y3o.7.2`). Each match
+    /// becomes one candidate keyed by a citation ref so the caller can
+    /// `aghist show` or quote the originating turn. No LLM, no `bd` lookups —
+    /// agents can post-process (e.g. drop refs whose `bd show` reports closed).
+    Todos {
+        /// Restrict to one or more kinds. Repeat the flag, or comma-separate.
+        /// Valid: `todo`, `follow-up`, `come-back-to`, `we-should`, `bd-ref`.
+        #[arg(long, value_delimiter = ',', value_parser = parse_todo_kind, value_name = "KIND")]
+        kind: Vec<TodoKind>,
+
+        /// Maximum number of candidates to emit (0 = no limit).
+        #[arg(long, short = 'n', default_value_t = 200)]
+        limit: usize,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY).
+        #[arg(long)]
+        json: bool,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -328,6 +350,14 @@ impl std::str::FromStr for ShowFormat {
             _ => Err(format!("unknown format '{s}' (expected: md, json, text)")),
         }
     }
+}
+
+fn parse_todo_kind(raw: &str) -> Result<TodoKind, String> {
+    TodoKind::from_slug(raw).ok_or_else(|| {
+        format!(
+            "unknown todo kind '{raw}'. Valid: todo, follow-up, come-back-to, we-should, bd-ref"
+        )
+    })
 }
 
 fn parse_provider_slug(raw: &str) -> Result<Provider, String> {
@@ -613,6 +643,9 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 json,
                 &cli.filters,
             );
+        }
+        Some(Command::Todos { kind, limit, json }) => {
+            return todos_command(&providers, &cli.filters, &kind, limit, json);
         }
         Some(Command::Sources) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
@@ -2124,6 +2157,142 @@ fn format_bytes(b: u64) -> String {
     } else {
         format!("{b}B")
     }
+}
+
+fn todos_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    kinds: &[TodoKind],
+    limit: usize,
+    force_json: bool,
+) -> Result<i32, ErrorEnvelope> {
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
+    let mut all: Vec<TodoCandidate> = Vec::new();
+
+    for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        let sessions = match p.discover_sessions() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{}: error: {e}", p.provider());
+                continue;
+            }
+        };
+        for session in sessions {
+            if !session_matches(&session, filters, project_needle.as_deref()) {
+                continue;
+            }
+            let Ok(messages) = p.load_messages(&session) else {
+                continue;
+            };
+            let candidates =
+                todos::extract_from_messages(p.provider(), &session.id, &messages, kinds);
+            for c in candidates {
+                if filters.role.is_some() || filters.has_tool_call {
+                    let turn_idx = (c.citation.turn as usize).saturating_sub(1);
+                    let Some(msg) = messages.get(turn_idx) else {
+                        continue;
+                    };
+                    if !message_matches(msg, filters) {
+                        continue;
+                    }
+                }
+                if let Some(since) = filters.since {
+                    if c.timestamp < since {
+                        continue;
+                    }
+                }
+                if let Some(until) = filters.until {
+                    if c.timestamp > until {
+                        continue;
+                    }
+                }
+                all.push(c);
+            }
+        }
+    }
+
+    // Newest matches first — most useful for "what's still hanging?".
+    all.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then_with(|| a.citation.session_id.0.cmp(&b.citation.session_id.0))
+            .then_with(|| a.citation.turn.cmp(&b.citation.turn))
+            .then_with(|| (a.kind as u8).cmp(&(b.kind as u8)))
+    });
+
+    if limit > 0 && all.len() > limit {
+        all.truncate(limit);
+    }
+
+    if all.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if want_json {
+        render_todos_json(&mut out, &all)
+    } else {
+        render_todos_human(&mut out, &all)
+    }
+    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write todos output: {e}")))?;
+
+    Ok(EXIT_OK)
+}
+
+fn render_todos_json<W: io::Write>(out: &mut W, todos: &[TodoCandidate]) -> io::Result<()> {
+    let payload = serde_json::json!({
+        "todos": todos.iter().map(|c| serde_json::json!({
+            "ref": c.citation.to_string(),
+            "provider": c.citation.provider,
+            "session_id": c.citation.session_id.0,
+            "turn": c.citation.turn,
+            "kind": c.kind,
+            "snippet": c.snippet,
+            "role": c.role,
+            "timestamp": c.timestamp,
+            "bd_id": c.bd_id,
+        })).collect::<Vec<_>>(),
+        "count": todos.len(),
+    });
+    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn render_todos_human<W: io::Write>(out: &mut W, todos: &[TodoCandidate]) -> io::Result<()> {
+    writeln!(
+        out,
+        "{:<14}  {:<19}  {:<46}  SNIPPET",
+        "KIND", "WHEN (UTC)", "REF"
+    )?;
+    for c in todos {
+        let when = c.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
+        let reference = c.citation.to_string();
+        let reference = truncate(&reference, 46);
+        let snippet = truncate(&c.snippet, 80);
+        writeln!(
+            out,
+            "{:<14}  {:<19}  {:<46}  {snippet}",
+            c.kind.slug(),
+            when,
+            reference
+        )?;
+    }
+    writeln!(out)?;
+    writeln!(out, "Total: {} candidate(s)", todos.len())?;
+    Ok(())
 }
 
 fn show_command(

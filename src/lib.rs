@@ -14,4 +14,5 @@ pub mod output;
 pub mod provider;
 pub mod schema;
 pub mod search;
+pub mod todos;
 pub mod ui;
