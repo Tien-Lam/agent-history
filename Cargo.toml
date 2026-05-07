@@ -9,6 +9,7 @@ repository = "https://github.com/Tien-Lam/agent-history"
 [dependencies]
 anyhow = "1"
 arboard = "3"
+base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"] }
 color-eyre = "0.6"

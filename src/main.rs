@@ -30,6 +30,15 @@ struct Cli {
     #[arg(long)]
     list: bool,
 
+    /// Maximum number of sessions to return when paired with `--list`.
+    /// JSON output includes `meta.next_cursor` if more results remain.
+    #[arg(long, default_value_t = 20, requires = "list")]
+    limit: usize,
+
+    /// Opaque pagination cursor (from a prior `meta.next_cursor`) for `--list`.
+    #[arg(long, requires = "list")]
+    cursor: Option<String>,
+
     /// Force rebuild the search index
     #[arg(long)]
     reindex: bool,
@@ -187,6 +196,10 @@ enum Command {
         /// Maximum number of hits to return
         #[arg(long, short = 'n', default_value_t = 20)]
         limit: usize,
+
+        /// Opaque pagination cursor from a prior `meta.next_cursor`.
+        #[arg(long)]
+        cursor: Option<String>,
 
         /// Force JSON output (default: JSON on pipe, table on TTY)
         #[arg(long)]
@@ -522,6 +535,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             query_file,
             stdin,
             limit,
+            cursor,
             json,
             watch,
             watch_interval_ms,
@@ -547,6 +561,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 query_file.as_deref(),
                 stdin,
                 limit,
+                cursor.as_deref(),
                 json,
                 &filters,
                 debug_search,
@@ -570,7 +585,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
 
     if cli.list {
         let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::Streaming);
-        return list_sessions(&providers, mode, &cli.filters);
+        return list_sessions(&providers, mode, cli.limit, cli.cursor.as_deref(), &cli.filters);
     }
 
     run_tui(providers, config)
@@ -1128,6 +1143,11 @@ fn resolve_search_query(
     Ok(buf.trim_end().to_string())
 }
 
+/// Tantivy's `TopDocs::with_limit(N)` materializes only N results, so to
+/// paginate by keyset we ask for a generous upper bound, sort with the same
+/// tie-break the single-page path uses, then slice past the cursor.
+const SEARCH_PAGINATION_POOL: usize = 1000;
+
 #[allow(clippy::too_many_arguments)]
 fn search_command(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -1135,6 +1155,7 @@ fn search_command(
     query_file: Option<&std::path::Path>,
     stdin: bool,
     limit: usize,
+    cursor: Option<&str>,
     force_json: bool,
     filters: &SearchFilters,
     debug_search: bool,
@@ -1157,6 +1178,19 @@ fn search_command(
         return Ok(EXIT_USAGE);
     }
 
+    let after = if let Some(token) = cursor {
+        if let Ok(c) = aghist::cursor::SearchCursor::decode(token) {
+            Some(c)
+        } else {
+            ErrorEnvelope::new("usage", "invalid --cursor token")
+                .with_hint("Cursors are opaque; pass back the `meta.next_cursor` value verbatim.")
+                .emit();
+            return Ok(EXIT_USAGE);
+        }
+    } else {
+        None
+    };
+
     let mut sessions: Vec<Session> = Vec::new();
     for p in providers {
         if let Ok(found) = p.discover_sessions() {
@@ -1176,21 +1210,31 @@ fn search_command(
         ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
     })?;
 
+    // Always pull the pagination pool so cursor resumption sees a stable
+    // ordering across calls. Tantivy ranks by score, but we re-sort below
+    // with our deterministic tie-break.
+    let pool_size = if cursor.is_some() {
+        SEARCH_PAGINATION_POOL
+    } else {
+        limit.max(1)
+    };
     let raw_hits: Vec<(search::SearchHit, Option<search::Explanation>)> = if debug_search {
         index
-            .search_with_filters_and_explain(query, limit, filters)
+            .search_with_filters_and_explain(query, pool_size, filters)
             .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?
             .into_iter()
             .map(|(h, e)| (h, Some(e)))
             .collect()
     } else {
         index
-            .search_with_filters(query, limit, filters)
+            .search_with_filters(query, pool_size, filters)
             .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?
             .into_iter()
             .map(|h| (h, None))
             .collect()
     };
+
+    let total = raw_hits.len();
 
     if raw_hits.is_empty() {
         return Ok(EXIT_EMPTY);
@@ -1219,14 +1263,50 @@ fn search_command(
             .then_with(|| a.0.session_id.cmp(&b.0.session_id))
     });
 
+    let page_start = match &after {
+        Some(c) => ordered
+            .iter()
+            .position(|(h, _)| {
+                // Strictly past the cursor in score-DESC, id-ASC order.
+                // Exact f32 equality is intentional — both sides come from
+                // Tantivy's deterministic scoring for the same query, not
+                // arithmetic that would introduce floating-point drift.
+                #[allow(clippy::float_cmp)]
+                {
+                    h.score < c.score || (h.score == c.score && h.session_id > c.session_id)
+                }
+            })
+            .unwrap_or(ordered.len()),
+        None => 0,
+    };
+
+    let page_end = page_start.saturating_add(limit).min(ordered.len());
+    let page = &ordered[page_start..page_end];
+
+    if page.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let next_cursor = if page_end < ordered.len() {
+        page.last().map(|(h, _)| {
+            aghist::cursor::SearchCursor {
+                score: h.score,
+                session_id: h.session_id.clone(),
+            }
+            .encode()
+        })
+    } else {
+        None
+    };
+
     let want_json = force_json || !io::stdout().is_terminal();
 
     if want_json {
-        print_search_json(&ordered, &session_meta).map_err(|e| {
+        print_search_json(page, &session_meta, total, next_cursor.as_deref()).map_err(|e| {
             ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
         })?;
     } else {
-        print_search_table(&ordered, &session_meta);
+        print_search_table(page, &session_meta, next_cursor.as_deref());
     }
 
     Ok(EXIT_OK)
@@ -1235,6 +1315,8 @@ fn search_command(
 fn print_search_json(
     hits: &[(search::SearchHit, Option<search::Explanation>)],
     sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
+    total: usize,
+    next_cursor: Option<&str>,
 ) -> std::io::Result<()> {
     #[derive(serde::Serialize)]
     struct JsonHit<'a> {
@@ -1266,7 +1348,11 @@ fn print_search_json(
         })
         .collect();
 
-    serde_json::to_writer(io::stdout().lock(), &rows)?;
+    let doc = serde_json::json!({
+        "hits": rows,
+        "meta": { "next_cursor": next_cursor, "total": total },
+    });
+    serde_json::to_writer(io::stdout().lock(), &doc)?;
     println!();
     Ok(())
 }
@@ -1274,6 +1360,7 @@ fn print_search_json(
 fn print_search_table(
     hits: &[(search::SearchHit, Option<search::Explanation>)],
     sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
+    next_cursor: Option<&str>,
 ) {
     println!(
         "{:<6}  {:<16}  {:<12}  {:<20}  {:<14}  SNIPPET",
@@ -1300,6 +1387,9 @@ fn print_search_table(
                 println!("    {line}");
             }
         }
+    }
+    if let Some(token) = next_cursor {
+        println!("\n(more results — pass --cursor {token} for the next page)");
     }
 }
 
@@ -1438,10 +1528,11 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
 fn list_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
     mode: OutputMode,
+    limit: usize,
+    cursor: Option<&str>,
     filters: &FilterArgs,
 ) -> Result<i32, ErrorEnvelope> {
     let mut all_sessions = Vec::new();
@@ -1481,16 +1572,68 @@ fn list_sessions(
         }
     }
 
-    all_sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    // Canonical sort: started_at DESC, session_id ASC. The id tie-break makes
+    // the cursor's keyset comparison total even when two sessions share a
+    // millisecond timestamp.
+    all_sessions.sort_by(|a, b| {
+        b.started_at
+            .cmp(&a.started_at)
+            .then_with(|| a.id.0.cmp(&b.id.0))
+    });
+
+    let total = all_sessions.len();
+
+    let after = if let Some(token) = cursor {
+        if let Ok(c) = aghist::cursor::ListCursor::decode(token) {
+            Some(c)
+        } else {
+            ErrorEnvelope::new("usage", "invalid --cursor token")
+                .with_hint("Cursors are opaque; pass back the `meta.next_cursor` value verbatim.")
+                .emit();
+            return Ok(EXIT_USAGE);
+        }
+    } else {
+        None
+    };
+
+    let page_start = match &after {
+        Some(c) => all_sessions
+            .iter()
+            .position(|s| {
+                // Match the canonical order: started_at DESC, id ASC. We want
+                // the first session strictly *after* the cursor key.
+                s.started_at < c.started_at
+                    || (s.started_at == c.started_at && s.id.0 > c.session_id)
+            })
+            .unwrap_or(all_sessions.len()),
+        None => 0,
+    };
+
+    let page_end = page_start.saturating_add(limit).min(all_sessions.len());
+    let page = &all_sessions[page_start..page_end];
+
+    let next_cursor = if page_end < all_sessions.len() {
+        page.last().map(|s| {
+            aghist::cursor::ListCursor {
+                started_at: s.started_at,
+                session_id: s.id.0.clone(),
+            }
+            .encode()
+        })
+    } else {
+        None
+    };
 
     match mode {
-        OutputMode::Human => render_list_human(&all_sessions),
-        OutputMode::Json => render_list_json(&all_sessions).map_err(|e| {
+        OutputMode::Human => render_list_human(page, total, next_cursor.as_deref()),
+        OutputMode::Json => render_list_json(page, total, next_cursor.as_deref()).map_err(|e| {
             ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
         })?,
-        OutputMode::Ndjson => render_list_ndjson(&all_sessions).map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to write NDJSON output: {e}"))
-        })?,
+        OutputMode::Ndjson => {
+            render_list_ndjson(page, total, next_cursor.as_deref()).map_err(|e| {
+                ErrorEnvelope::new("io-error", format!("failed to write NDJSON output: {e}"))
+            })?;
+        }
     }
 
     if all_sessions.is_empty() {
@@ -1569,9 +1712,9 @@ fn message_matches(message: &Message, filters: &FilterArgs) -> bool {
     true
 }
 
-fn render_list_human(sessions: &[Session]) {
-    println!("\nTotal: {} sessions\n", sessions.len());
-    for s in sessions.iter().take(20) {
+fn render_list_human(sessions: &[Session], total: usize, next_cursor: Option<&str>) {
+    println!("\nTotal: {total} sessions\n");
+    for s in sessions {
         let project = s.project_name.as_deref().unwrap_or("(unknown)");
         let branch = s.git_branch.as_deref().unwrap_or("");
         let summary = match s.summary.as_deref() {
@@ -1591,6 +1734,9 @@ fn render_list_human(sessions: &[Session]) {
             branch,
             summary
         );
+    }
+    if let Some(token) = next_cursor {
+        println!("\n(more results — pass --cursor {token} for the next page)");
     }
 }
 
@@ -1619,17 +1765,28 @@ impl<'a> SessionRow<'a> {
     }
 }
 
-fn render_list_json(sessions: &[Session]) -> std::io::Result<()> {
+fn render_list_json(
+    sessions: &[Session],
+    total: usize,
+    next_cursor: Option<&str>,
+) -> std::io::Result<()> {
     use std::io::Write as _;
     let rows: Vec<SessionRow<'_>> = sessions.iter().map(SessionRow::from_session).collect();
-    let doc = serde_json::json!({ "sessions": rows });
+    let doc = serde_json::json!({
+        "sessions": rows,
+        "meta": { "next_cursor": next_cursor, "total": total },
+    });
     let mut out = std::io::stdout().lock();
     serde_json::to_writer(&mut out, &doc).map_err(std::io::Error::other)?;
     writeln!(out)?;
     Ok(())
 }
 
-fn render_list_ndjson(sessions: &[Session]) -> std::io::Result<()> {
+fn render_list_ndjson(
+    sessions: &[Session],
+    total: usize,
+    next_cursor: Option<&str>,
+) -> std::io::Result<()> {
     use std::io::Write as _;
     let mut out = std::io::stdout().lock();
     for s in sessions {
@@ -1637,6 +1794,14 @@ fn render_list_ndjson(sessions: &[Session]) -> std::io::Result<()> {
         serde_json::to_writer(&mut out, &row).map_err(std::io::Error::other)?;
         writeln!(out)?;
     }
+    // Trailing meta record terminates the stream so consumers can detect EOF
+    // without watching stdin close. Keyed by `meta` so it never collides with
+    // a session row (which is keyed by `id`).
+    let meta = serde_json::json!({
+        "meta": { "next_cursor": next_cursor, "total": total },
+    });
+    serde_json::to_writer(&mut out, &meta).map_err(std::io::Error::other)?;
+    writeln!(out)?;
     Ok(())
 }
 

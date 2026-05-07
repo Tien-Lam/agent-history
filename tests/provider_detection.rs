@@ -39,8 +39,16 @@ macro_rules! assert_empty_list {
             "no error envelope expected on stderr, got: {stderr}"
         );
         let stdout = String::from_utf8(output.stdout).unwrap();
-        let line_count = stdout.lines().filter(|l| !l.is_empty()).count();
-        assert_eq!(line_count, 0, "NDJSON should be empty, got: {stdout:?}");
+        // NDJSON terminates with a `{"meta": ...}` envelope row; the only
+        // structural guarantee for an empty home is that no session rows
+        // (rows with an `id` field) appear.
+        let session_rows = stdout
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .filter(|v| v.get("id").is_some())
+            .count();
+        assert_eq!(session_rows, 0, "NDJSON should have no session rows, got: {stdout:?}");
     }};
 }
 

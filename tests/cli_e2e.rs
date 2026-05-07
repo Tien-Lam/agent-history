@@ -36,9 +36,19 @@ fn list_with_no_data_exits_three_for_empty() {
         .unwrap();
     assert_eq!(output.status.code(), Some(3));
     let stdout = String::from_utf8(output.stdout).unwrap();
+    // Empty list emits zero session rows; the trailing `{"meta": ...}` row
+    // is always present so streaming consumers can detect end-of-stream.
+    let session_rows: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && !l.contains("\"meta\""))
+        .collect();
     assert!(
-        stdout.lines().filter(|l| !l.is_empty()).count() == 0,
-        "empty list under NDJSON should emit zero lines, got: {stdout:?}"
+        session_rows.is_empty(),
+        "empty list under NDJSON should emit zero session rows, got: {session_rows:?}"
+    );
+    assert!(
+        stdout.contains("\"total\":0"),
+        "trailing meta row must report total=0, got: {stdout:?}"
     );
 }
 
@@ -58,7 +68,10 @@ fn list_with_generated_claude_fixtures() {
     let rows: Vec<serde_json::Value> = stdout
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|l| serde_json::from_str(l).expect("each NDJSON line must parse"))
+        .map(|l| {
+            serde_json::from_str::<serde_json::Value>(l).expect("each NDJSON line must parse")
+        })
+        .filter(|v| v.get("id").is_some())
         .collect();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["provider"], "claude_code");
@@ -564,11 +577,12 @@ fn list_with_multiple_providers() {
     let providers: std::collections::HashSet<String> = stdout
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|l| {
-            serde_json::from_str::<serde_json::Value>(l).unwrap()["provider"]
-                .as_str()
-                .unwrap()
-                .to_string()
+        .filter_map(|l| {
+            // Skip the trailing `{"meta": ...}` envelope row; only session
+            // rows carry a `provider` field.
+            serde_json::from_str::<serde_json::Value>(l)
+                .ok()
+                .and_then(|v| v["provider"].as_str().map(str::to_string))
         })
         .collect();
     assert!(providers.contains("claude_code"));
@@ -879,9 +893,9 @@ fn search_debug_search_json_includes_explanation() {
 
     assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    let hits: serde_json::Value =
+    let doc: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("--debug-search --json must emit valid JSON");
-    let arr = hits.as_array().expect("expected JSON array of hits");
+    let arr = doc["hits"].as_array().expect("expected JSON array of hits");
     assert!(!arr.is_empty(), "expected at least one hit for 'User'");
 
     let first = &arr[0];
@@ -915,8 +929,8 @@ fn search_without_debug_search_omits_explanation_field() {
 
     assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    let hits: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-    let arr = hits.as_array().expect("expected array");
+    let doc: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let arr = doc["hits"].as_array().expect("expected array");
     assert!(!arr.is_empty());
     assert!(
         arr[0].get("explanation").is_none(),
@@ -956,14 +970,24 @@ fn list_ndjson_emits_one_session_per_line() {
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    assert_eq!(lines.len(), 1);
-    let row: serde_json::Value =
-        serde_json::from_str(lines[0]).expect("each NDJSON line must be valid JSON");
-    assert!(row["id"].is_string());
-    assert_eq!(row["message_count"], 2);
-    // NDJSON rows must NOT be wrapped in a `sessions` envelope.
-    assert!(row.get("sessions").is_none());
+    let parsed: Vec<serde_json::Value> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| serde_json::from_str(l).expect("each NDJSON line must be valid JSON"))
+        .collect();
+    // One session row + one trailing `{"meta": ...}` envelope row.
+    assert_eq!(parsed.len(), 2);
+    let session = &parsed[0];
+    assert!(session["id"].is_string());
+    assert_eq!(session["message_count"], 2);
+    // NDJSON session rows must NOT be wrapped in a `sessions` envelope.
+    assert!(session.get("sessions").is_none());
+    let meta_row = &parsed[1];
+    assert!(
+        meta_row.get("meta").is_some(),
+        "last NDJSON row must be the meta envelope, got: {meta_row}"
+    );
+    assert_eq!(meta_row["meta"]["total"], 1);
 }
 
 #[test]
@@ -994,6 +1018,161 @@ fn list_rejects_json_and_ndjson_together() {
         .and_then(|l| serde_json::from_str(l).ok())
         .expect("expected JSON envelope on stderr");
     assert_eq!(envelope["error"]["kind"], "usage");
+}
+
+#[test]
+fn list_limit_caps_returned_sessions_and_emits_next_cursor() {
+    let fixture = common::fixtures::claude_multi_session(5, 2);
+    let home = fixture.base_path.parent().unwrap();
+    let output = aghist()
+        .args(["--list", "--json", "--limit", "2"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let sessions = doc["sessions"].as_array().expect("sessions array");
+    assert_eq!(sessions.len(), 2, "limit must cap returned rows");
+    assert_eq!(doc["meta"]["total"], 5, "total reflects all matching rows");
+    assert!(
+        doc["meta"]["next_cursor"].is_string(),
+        "next_cursor must be set when more results exist"
+    );
+}
+
+#[test]
+fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
+    let fixture = common::fixtures::claude_multi_session(5, 2);
+    let home = fixture.base_path.parent().unwrap();
+
+    // First page.
+    let page1 = aghist()
+        .args(["--list", "--json", "--limit", "2"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(page1.status.code(), Some(0));
+    let doc1: serde_json::Value = serde_json::from_slice(&page1.stdout).unwrap();
+    let cursor1 = doc1["meta"]["next_cursor"].as_str().unwrap().to_string();
+    let ids1: Vec<String> = doc1["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect();
+
+    // Second page (resume).
+    let page2 = aghist()
+        .args(["--list", "--json", "--limit", "2", "--cursor", &cursor1])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(page2.status.code(), Some(0));
+    let doc2: serde_json::Value = serde_json::from_slice(&page2.stdout).unwrap();
+    let ids2: Vec<String> = doc2["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids2.len(), 2);
+    let cursor2 = doc2["meta"]["next_cursor"].as_str().unwrap().to_string();
+
+    // Third (final) page — has the last session and no further cursor.
+    let page3 = aghist()
+        .args(["--list", "--json", "--limit", "2", "--cursor", &cursor2])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(page3.status.code(), Some(0));
+    let doc3: serde_json::Value = serde_json::from_slice(&page3.stdout).unwrap();
+    let ids3: Vec<String> = doc3["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids3.len(), 1);
+    assert!(
+        doc3["meta"]["next_cursor"].is_null(),
+        "final page must not advertise another cursor"
+    );
+
+    // No id appears across pages (no skips, no duplicates).
+    let all_ids: Vec<&String> = ids1.iter().chain(ids2.iter()).chain(ids3.iter()).collect();
+    let unique: std::collections::HashSet<&&String> = all_ids.iter().collect();
+    assert_eq!(unique.len(), all_ids.len(), "pagination must not duplicate ids");
+    assert_eq!(all_ids.len(), 5, "all 5 sessions must be visited");
+}
+
+#[test]
+fn list_invalid_cursor_returns_usage_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let assert = aghist()
+        .args(["--list", "--cursor", "not-a-real-cursor!!!"])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let envelope: serde_json::Value = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .and_then(|l| serde_json::from_str(l).ok())
+        .expect("expected JSON envelope on stderr");
+    assert_eq!(envelope["error"]["kind"], "usage");
+}
+
+#[test]
+fn list_cursor_requires_list_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let assert = aghist()
+        .args(["--cursor", "abc"])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let envelope: serde_json::Value = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .and_then(|l| serde_json::from_str(l).ok())
+        .expect("expected JSON envelope on stderr");
+    assert_eq!(envelope["error"]["kind"], "usage");
+}
+
+#[test]
+fn search_invalid_cursor_returns_usage_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let assert = aghist()
+        .args(["search", "anything", "--cursor", "garbage!!"])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let envelope: serde_json::Value = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .and_then(|l| serde_json::from_str(l).ok())
+        .expect("expected JSON envelope on stderr");
+    assert_eq!(envelope["error"]["kind"], "usage");
+}
+
+#[test]
+fn search_json_output_wraps_hits_in_meta_envelope() {
+    let fixture = common::fixtures::claude_multi_session(2, 4);
+    let home = fixture.base_path.parent().unwrap();
+    let output = aghist()
+        .args(["search", "User", "--limit", "5", "--json"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    // EXIT_OK or EXIT_EMPTY (3) — both are acceptable; we only assert the
+    // envelope shape when hits exist.
+    if output.status.code() == Some(0) {
+        let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(doc["hits"].is_array(), "search JSON must wrap rows in 'hits'");
+        assert!(doc["meta"].is_object(), "search JSON must include 'meta'");
+        assert!(doc["meta"]["total"].is_number());
+    }
 }
 
 #[test]
@@ -1321,9 +1500,13 @@ fn list_filter_provider_drops_other_providers() {
         .unwrap();
     assert_eq!(kept.status.code(), Some(0));
     let stdout = String::from_utf8(kept.stdout).unwrap();
+    let session_rows: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && !l.contains("\"meta\""))
+        .collect();
     assert!(
-        stdout.lines().filter(|l| !l.is_empty()).count() == 1,
-        "expected one row for claude-code, got: {stdout:?}"
+        session_rows.len() == 1,
+        "expected one row for claude-code, got: {session_rows:?}"
     );
 
     let dropped = aghist()
@@ -1331,12 +1514,17 @@ fn list_filter_provider_drops_other_providers() {
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
-    // No codex sessions in fixture → EXIT_EMPTY (3) with zero rows.
+    // No codex sessions in fixture → EXIT_EMPTY (3) with zero session rows
+    // (the trailing `{"meta":...}` envelope row is still emitted).
     assert_eq!(dropped.status.code(), Some(3));
     let stdout = String::from_utf8(dropped.stdout).unwrap();
+    let session_rows: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && !l.contains("\"meta\""))
+        .collect();
     assert!(
-        stdout.lines().filter(|l| !l.is_empty()).count() == 0,
-        "expected zero rows for codex-cli, got: {stdout:?}"
+        session_rows.is_empty(),
+        "expected zero rows for codex-cli, got: {session_rows:?}"
     );
 }
 
@@ -1354,9 +1542,13 @@ fn list_filter_since_excludes_older_sessions() {
         .unwrap();
     assert_eq!(output.status.code(), Some(3));
     let stdout = String::from_utf8(output.stdout).unwrap();
+    let session_rows: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && !l.contains("\"meta\""))
+        .collect();
     assert!(
-        stdout.lines().filter(|l| !l.is_empty()).count() == 0,
-        "since cutoff should drop older session, got: {stdout:?}"
+        session_rows.is_empty(),
+        "since cutoff should drop older session, got: {session_rows:?}"
     );
 }
 
@@ -1372,7 +1564,11 @@ fn list_filter_until_includes_older_sessions() {
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(stdout.lines().filter(|l| !l.is_empty()).count(), 1);
+    let session_rows: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && !l.contains("\"meta\""))
+        .collect();
+    assert_eq!(session_rows.len(), 1);
 }
 
 #[test]
@@ -1454,7 +1650,8 @@ fn list_filter_has_tool_call_keeps_only_sessions_with_tool_use() {
     let rows: Vec<serde_json::Value> = stdout
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|l| serde_json::from_str(l).unwrap())
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+        .filter(|v| v.get("id").is_some())
         .collect();
     assert_eq!(rows.len(), 1, "expected only the tool-using session");
     assert_eq!(rows[0]["id"], "session-with-tool");
@@ -1507,7 +1704,8 @@ fn search_filter_role_restricts_hits_to_matching_role() {
         .unwrap();
     assert_eq!(user_only.status.code(), Some(0));
     let stdout = String::from_utf8(user_only.stdout).unwrap();
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let rows = doc["hits"].as_array().expect("search JSON must have hits");
     assert_eq!(rows.len(), 1, "user-role filter should leave one hit");
     let snippet = rows[0]["snippet"].as_str().unwrap_or("");
     assert!(
@@ -1536,7 +1734,8 @@ fn search_filter_has_tool_call_keeps_only_tool_messages() {
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let rows = doc["hits"].as_array().expect("search JSON must have hits");
     // Both messages contain "search-keyword", but only the assistant one has
     // a tool invocation — has-tool-call should drop the user message.
     assert_eq!(rows.len(), 1, "expected only the tool-using assistant hit");
