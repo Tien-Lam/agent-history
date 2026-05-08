@@ -1,6 +1,7 @@
 mod common;
 
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
@@ -14,15 +15,25 @@ fn aghist_bin() -> std::path::PathBuf {
 /// response objects in order. EOF on stdin tells the server to exit, so we
 /// don't need an explicit `shutdown` call.
 fn run_session(env_home: &std::path::Path, requests: &[Value]) -> Vec<Value> {
-    let mut child = Command::new(aghist_bin())
-        .arg("mcp")
+    run_session_with_config(env_home, None, requests)
+}
+
+fn run_session_with_config(
+    env_home: &std::path::Path,
+    config_path: Option<&Path>,
+    requests: &[Value],
+) -> Vec<Value> {
+    let mut cmd = Command::new(aghist_bin());
+    cmd.arg("mcp")
         .env("AGHIST_HOME", env_home)
         .env("AGHIST_INDEX_DIR", env_home.join("aghist-index"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn aghist mcp");
+        .stderr(Stdio::piped());
+    if let Some(p) = config_path {
+        cmd.env("AGHIST_CONFIG", p);
+    }
+    let mut child = cmd.spawn().expect("spawn aghist mcp");
 
     {
         let mut stdin = child.stdin.take().expect("child stdin");
@@ -272,4 +283,195 @@ fn mcp_list_sessions_finds_claude_fixture_via_provider_filter() {
         "expected at least one session, got: {structured}"
     );
     assert_eq!(sessions[0]["provider"], "claude-code");
+}
+
+#[test]
+fn mcp_exposed_empty_hides_all_providers_from_mcp() {
+    // Provider files exist on disk and would normally be discovered, but the
+    // config opts out of exposing them via MCP. The server should report zero
+    // sessions even though `aghist --list` would show them.
+    let fixture = common::fixtures::claude_single_session(2);
+    let home = fixture.base_path.parent().unwrap();
+    let config_path = home.join("aghist-config.toml");
+    std::fs::write(&config_path, "[providers]\nmcp_exposed = []\n").unwrap();
+
+    let responses = run_session_with_config(
+        home,
+        Some(&config_path),
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": { "name": "list_sessions", "arguments": {} }
+        })],
+    );
+
+    assert_eq!(responses.len(), 1);
+    let structured = &responses[0]["result"]["structuredContent"];
+    assert_eq!(structured["total"], 0);
+    assert!(structured["sessions"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn mcp_exposed_subset_blocks_unlisted_providers() {
+    // Claude is on disk and enabled, but mcp_exposed only lets copilot through.
+    // get_message must refuse to resolve a claude ref because the provider
+    // isn't in the MCP-visible set, even though it's available locally.
+    let fixture = common::fixtures::claude_single_session(2);
+    let home = fixture.base_path.parent().unwrap();
+    let config_path = home.join("aghist-config.toml");
+    std::fs::write(
+        &config_path,
+        "[providers]\nmcp_exposed = [\"copilot-cli\"]\n",
+    )
+    .unwrap();
+
+    let responses = run_session_with_config(
+        home,
+        Some(&config_path),
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "get_message",
+                "arguments": { "ref": "claude-code/session-gen#1" }
+            }
+        })],
+    );
+
+    assert_eq!(responses.len(), 1);
+    let result = &responses[0]["result"];
+    assert_eq!(result["isError"], true, "expected error, got: {result}");
+    let txt = result["content"][0]["text"].as_str().unwrap();
+    assert!(
+        txt.contains("claude-code") && txt.contains("not enabled"),
+        "expected provider-not-enabled message, got: {txt}"
+    );
+}
+
+#[test]
+fn mcp_exposed_unset_keeps_all_enabled_providers_visible() {
+    // Sanity check that omitting mcp_exposed preserves prior behaviour: a
+    // config that only sets unrelated fields shouldn't narrow MCP visibility.
+    let fixture = common::fixtures::claude_single_session(2);
+    let home = fixture.base_path.parent().unwrap();
+    let config_path = home.join("aghist-config.toml");
+    std::fs::write(&config_path, "cache_size = 7\n").unwrap();
+
+    let responses = run_session_with_config(
+        home,
+        Some(&config_path),
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "list_sessions",
+                "arguments": { "provider": "claude-code" }
+            }
+        })],
+    );
+
+    let sessions = responses[0]["result"]["structuredContent"]["sessions"]
+        .as_array()
+        .unwrap();
+    assert!(!sessions.is_empty());
+}
+
+#[test]
+fn mcp_tool_calls_do_not_mutate_provider_history() {
+    // Read-only contract: every tool exposed by the MCP server must leave the
+    // upstream session files untouched. We snapshot every file under the
+    // provider's base directory before/after a representative battery of tool
+    // calls and assert byte-for-byte equality.
+    let fixture = common::fixtures::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+
+    let before = snapshot_tree(&fixture.base_path);
+
+    let responses = run_session(
+        home,
+        &[
+            serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            serde_json::json!({
+                "jsonrpc":"2.0","id":2,"method":"tools/call",
+                "params":{"name":"list_sessions","arguments":{"provider":"claude-code"}}
+            }),
+            serde_json::json!({
+                "jsonrpc":"2.0","id":3,"method":"tools/call",
+                "params":{"name":"search_sessions","arguments":{"query":"User"}}
+            }),
+            serde_json::json!({
+                "jsonrpc":"2.0","id":4,"method":"tools/call",
+                "params":{"name":"get_session","arguments":{"session_id":"session-gen"}}
+            }),
+            serde_json::json!({
+                "jsonrpc":"2.0","id":5,"method":"tools/call",
+                "params":{"name":"get_message","arguments":{"ref":"claude-code/session-gen#1"}}
+            }),
+            serde_json::json!({
+                "jsonrpc":"2.0","id":6,"method":"tools/call",
+                "params":{"name":"reindex","arguments":{"force":true}}
+            }),
+            serde_json::json!({
+                "jsonrpc":"2.0","id":7,"method":"tools/call",
+                "params":{"name":"health","arguments":{}}
+            }),
+            serde_json::json!({"jsonrpc":"2.0","id":8,"method":"resources/list"}),
+            serde_json::json!({
+                "jsonrpc":"2.0","id":9,"method":"resources/read",
+                "params":{"uri":"aghist://session/claude-code/session-gen"}
+            }),
+            serde_json::json!({
+                "jsonrpc":"2.0","id":10,"method":"resources/read",
+                "params":{"uri":"aghist://session/claude-code/session-gen/turn/1"}
+            }),
+        ],
+    );
+    // Every call should have succeeded — otherwise we'd be asserting "no
+    // mutation" on a code path that never ran.
+    for resp in &responses {
+        if let Some(result) = resp.get("result") {
+            if let Some(is_error) = result.get("isError") {
+                assert_eq!(is_error, &Value::Bool(false), "tool errored: {resp}");
+            }
+        }
+    }
+
+    let after = snapshot_tree(&fixture.base_path);
+    assert_eq!(
+        before, after,
+        "MCP tool calls mutated provider history files (read-only contract violated)"
+    );
+}
+
+/// Reads every regular file under `root` into a (relative-path → bytes) map.
+/// Used by the read-only contract test to detect any change to provider files.
+fn snapshot_tree(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+    let mut out = std::collections::BTreeMap::new();
+    walk_into(root, root, &mut out);
+    out
+}
+
+fn walk_into(
+    root: &Path,
+    dir: &Path,
+    out: &mut std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>,
+) {
+    for entry in std::fs::read_dir(dir).expect("read provider dir") {
+        let entry = entry.expect("dir entry");
+        let path = entry.path();
+        let ty = entry.file_type().expect("file type");
+        if ty.is_symlink() {
+            continue;
+        }
+        if ty.is_dir() {
+            walk_into(root, &path, out);
+        } else if ty.is_file() {
+            let rel = path.strip_prefix(root).unwrap().to_path_buf();
+            let bytes = std::fs::read(&path).expect("read provider file");
+            out.insert(rel, bytes);
+        }
+    }
 }

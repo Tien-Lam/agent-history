@@ -118,3 +118,94 @@ fn empty_enabled_providers_disables_all() {
     let enabled = config.enabled_providers();
     assert!(enabled.is_empty());
 }
+
+#[test]
+fn mcp_exposed_unset_falls_back_to_enabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(
+        &path,
+        "[providers]\nenabled = [\"claude-code\", \"gemini-cli\"]\n",
+    )
+    .unwrap();
+    let config = Config::load_from(&path);
+
+    let exposed = config.mcp_exposed_providers();
+    assert_eq!(exposed, config.enabled_providers());
+}
+
+#[test]
+fn mcp_exposed_narrows_to_intersection() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(
+        &path,
+        "[providers]\n\
+         enabled = [\"claude-code\", \"gemini-cli\", \"copilot-cli\"]\n\
+         mcp_exposed = [\"claude-code\", \"copilot-cli\"]\n",
+    )
+    .unwrap();
+    let config = Config::load_from(&path);
+
+    let exposed = config.mcp_exposed_providers();
+    assert_eq!(exposed.len(), 2);
+    assert!(exposed.contains(&Provider::ClaudeCode));
+    assert!(exposed.contains(&Provider::CopilotCli));
+    assert!(!exposed.contains(&Provider::GeminiCli));
+}
+
+#[test]
+fn mcp_exposed_cannot_escalate_beyond_enabled() {
+    // Listing a provider in mcp_exposed that isn't enabled must NOT expose it.
+    // mcp_exposed is a narrowing filter, not an override.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(
+        &path,
+        "[providers]\n\
+         enabled = [\"claude-code\"]\n\
+         mcp_exposed = [\"claude-code\", \"gemini-cli\"]\n",
+    )
+    .unwrap();
+    let config = Config::load_from(&path);
+
+    let exposed = config.mcp_exposed_providers();
+    assert_eq!(exposed.len(), 1);
+    assert!(exposed.contains(&Provider::ClaudeCode));
+    assert!(!exposed.contains(&Provider::GeminiCli));
+}
+
+#[test]
+fn mcp_exposed_empty_hides_all_from_mcp() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(
+        &path,
+        "[providers]\n\
+         enabled = [\"claude-code\", \"gemini-cli\"]\n\
+         mcp_exposed = []\n",
+    )
+    .unwrap();
+    let config = Config::load_from(&path);
+
+    assert_eq!(config.enabled_providers().len(), 2);
+    assert!(config.mcp_exposed_providers().is_empty());
+}
+
+#[test]
+fn mcp_exposed_unknown_slugs_are_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(
+        &path,
+        "[providers]\n\
+         enabled = [\"claude-code\", \"gemini-cli\"]\n\
+         mcp_exposed = [\"claude-code\", \"made-up-provider\"]\n",
+    )
+    .unwrap();
+    let config = Config::load_from(&path);
+
+    let exposed = config.mcp_exposed_providers();
+    assert_eq!(exposed.len(), 1);
+    assert!(exposed.contains(&Provider::ClaudeCode));
+}

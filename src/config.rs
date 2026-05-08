@@ -24,6 +24,13 @@ pub struct Config {
 #[serde(default)]
 pub struct ProviderConfig {
     pub enabled: Vec<String>,
+    /// Per-provider allowlist for the `aghist mcp` server. When `None`, all
+    /// `enabled` providers are visible to MCP clients. When `Some`, only the
+    /// intersection of `mcp_exposed` and `enabled` is exposed — letting users
+    /// hide history (e.g. a personal Claude account) from agents that don't
+    /// need it without disabling the provider for the local TUI/CLI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_exposed: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,6 +83,7 @@ impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
             enabled: Provider::all().iter().map(|p| p.slug().to_string()).collect(),
+            mcp_exposed: None,
         }
     }
 }
@@ -148,6 +156,25 @@ impl Config {
             .enabled
             .iter()
             .filter_map(|s| Provider::from_slug(s))
+            .collect()
+    }
+
+    /// Providers that may be exposed by the `aghist mcp` server.
+    ///
+    /// Resolution rules:
+    /// - When `providers.mcp_exposed` is unset, fall back to `enabled_providers()`.
+    /// - When set, return the intersection with `enabled_providers()`. Slugs
+    ///   that aren't in `enabled` (or aren't valid providers) are silently
+    ///   dropped — narrowing only, no escalation.
+    pub fn mcp_exposed_providers(&self) -> HashSet<Provider> {
+        let enabled = self.enabled_providers();
+        let Some(allow) = self.providers.mcp_exposed.as_ref() else {
+            return enabled;
+        };
+        allow
+            .iter()
+            .filter_map(|s| Provider::from_slug(s))
+            .filter(|p| enabled.contains(p))
             .collect()
     }
 }

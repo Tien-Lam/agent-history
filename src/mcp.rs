@@ -19,6 +19,25 @@
 //! The URI shape mirrors the citation-ref triple so URIs are stable across
 //! reindex: provider slug + session id are intrinsic to the source data, and
 //! turn `n` is the load-order position of the message within the session.
+//!
+//! ## Read-only contract
+//!
+//! No tool or resource exposed by this server may mutate provider history. The
+//! `HistoryProvider` trait deliberately offers only read methods
+//! (`discover_sessions`, `load_messages`) — there is no write surface to call.
+//! Tool calls may rebuild the local Tantivy index (a derived cache under
+//! `~/.aghist/`), but they never write back to the upstream session files.
+//! Adding a tool that violates this contract requires loosening the trait,
+//! which should be a deliberate design change — not a quiet edit here.
+//!
+//! ## Provider scoping
+//!
+//! The server only sees the providers handed to `McpServer::new`. `main` filters
+//! `config.enabled_providers()` further by `config.mcp_exposed_providers()` so
+//! users can hide a provider from MCP clients without disabling it for the TUI.
+//! When the resulting list is empty, every tool that walks providers returns
+//! an empty result rather than erroring — the same behaviour as having no
+//! sessions discovered.
 
 use std::io::{self, BufRead, Write};
 

@@ -888,7 +888,17 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         .collect();
 
     match cli.command {
-        Some(Command::Mcp) => return run_mcp(providers),
+        Some(Command::Mcp) => {
+            // MCP gets a narrower view than the rest of the CLI — users can
+            // hide providers from MCP clients (e.g. a personal Claude account)
+            // via `providers.mcp_exposed` without disabling them locally.
+            let exposed = config.mcp_exposed_providers();
+            let mcp_providers: Vec<_> = providers
+                .into_iter()
+                .filter(|p| exposed.contains(&p.provider()))
+                .collect();
+            return run_mcp(mcp_providers);
+        }
         Some(Command::Schema { subcommand, list, all }) => {
             return schema_command(subcommand.as_deref(), list, all);
         }
