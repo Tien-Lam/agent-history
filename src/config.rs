@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::model::Provider;
@@ -148,5 +149,74 @@ impl Config {
             .iter()
             .filter_map(|s| Provider::from_slug(s))
             .collect()
+    }
+}
+
+impl RemoteSource {
+    /// Cache directory for this source, e.g. `<root>/<name>/`.
+    pub fn cache_dir(&self, root: &Path) -> PathBuf {
+        root.join(&self.name)
+    }
+
+    /// Where rsync mirrors the remote tree to. Files under this dir mirror
+    /// `<host>:<path>/`.
+    pub fn data_dir(&self, root: &Path) -> PathBuf {
+        self.cache_dir(root).join("data")
+    }
+
+    /// Path to the per-source manifest written by `aghist sources pull`.
+    pub fn manifest_path(&self, root: &Path) -> PathBuf {
+        self.cache_dir(root).join(".aghist-source.json")
+    }
+}
+
+/// Default sources cache root, e.g. `<aghist cache_dir>/sources/`. Respects
+/// `AGHIST_SOURCES_CACHE_DIR` for tests. Returns `None` when no home/XDG dirs
+/// exist and the env var is unset.
+pub fn sources_cache_root() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("AGHIST_SOURCES_CACHE_DIR") {
+        if !p.is_empty() {
+            return Some(PathBuf::from(p));
+        }
+    }
+    directories::ProjectDirs::from("", "", "aghist")
+        .map(|dirs| dirs.cache_dir().join("sources"))
+}
+
+/// Manifest written under `<cache>/<name>/.aghist-source.json` after each
+/// `aghist sources pull`. Captures a snapshot of the source config at pull
+/// time plus byte/file accounting from the local mirror.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceCacheManifest {
+    pub name: String,
+    pub host: String,
+    pub path: String,
+    pub transport: Transport,
+    pub data_dir: String,
+    pub last_pulled_at: DateTime<Utc>,
+    #[serde(default)]
+    pub last_pull_dry_run: bool,
+    pub byte_count: u64,
+    pub file_count: u64,
+}
+
+impl SourceCacheManifest {
+    pub fn load(path: &Path) -> Option<Self> {
+        let text = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, json)?;
+        std::fs::rename(&tmp, path)?;
+        Ok(())
     }
 }

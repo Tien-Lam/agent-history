@@ -155,6 +155,7 @@ kebab-case, lowercase, no underscores.
 | `io-error`            | Filesystem or terminal IO failure (read/write/permissions). |
 | `index-error`         | Tantivy search index could not be opened, written, or queried. |
 | `update-failed`       | `aghist update` self-update flow failed. |
+| `rsync-failed`        | `aghist sources pull` invoked rsync, which exited non-zero. |
 | `aborted`             | User declined a confirmation prompt (e.g. `uninstall`). |
 | `internal-error`      | Unexpected error from the TUI or another component. Treat as a bug. |
 
