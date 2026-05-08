@@ -8,7 +8,7 @@ use aghist::health::{self, HealthCheck, HealthStatus};
 use aghist::embed;
 use aghist::search::SearchFilters;
 use aghist::todos::{self, TodoCandidate, TodoKind};
-use aghist::{app, config, export, mcp, provider, schema, search};
+use aghist::{app, config, export, federated, mcp, provider, schema, search};
 
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
@@ -1767,12 +1767,8 @@ fn search_command(
         None
     };
 
-    let mut sessions: Vec<Session> = Vec::new();
-    for p in providers {
-        if let Ok(found) = p.discover_sessions() {
-            sessions.extend(found);
-        }
-    }
+    let federation = federated_discovery_for_search(providers);
+    let sessions: Vec<Session> = federation.sessions;
 
     let index_dir = search::SearchIndex::default_index_dir();
     let index = search::SearchIndex::open_or_create(&index_dir).map_err(|e| {
@@ -1781,6 +1777,9 @@ fn search_command(
 
     // Incremental index update — fast on subsequent calls (manifest tracks mtimes).
     // We don't surface progress for the CLI, so drain into a sender we discard.
+    // The local provider list is sufficient: build_index loads messages from
+    // each session's absolute `source_path`, which already points at the
+    // remote cache for federated sessions.
     let (tx, _rx) = crossbeam_channel::unbounded::<aghist::action::Action>();
     index.build_index(&sessions, providers, &tx).map_err(|e| {
         ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
@@ -1904,20 +1903,61 @@ fn search_command(
     let want_json = force_json || !io::stdout().is_terminal();
 
     if want_json {
-        print_search_json(page, &session_meta, total, next_cursor.as_deref(), engine_used)
-            .map_err(|e| {
-                ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
-            })?;
+        print_search_json(
+            page,
+            &session_meta,
+            &federation.source_by_session,
+            total,
+            next_cursor.as_deref(),
+            engine_used,
+        )
+        .map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
+        })?;
     } else {
-        print_search_table(page, &session_meta, next_cursor.as_deref());
+        print_search_table(
+            page,
+            &session_meta,
+            &federation.source_by_session,
+            next_cursor.as_deref(),
+        );
     }
 
     Ok(EXIT_OK)
 }
 
+/// Discover sessions from local providers + every registered remote source.
+///
+/// Falls back to local-only when the config or sources cache root cannot be
+/// resolved (e.g. headless test envs without a HOME dir). Source-level
+/// failures are emitted as `warning:` lines on stderr but never fatal — search
+/// remains usable as long as at least one source returned sessions.
+fn federated_discovery_for_search(
+    providers: &[Box<dyn provider::HistoryProvider>],
+) -> federated::FederatedDiscovery {
+    let sources = match config::Config::resolved_path() {
+        Some(path) => config::Config::load_from(&path).sources,
+        None => Vec::new(),
+    };
+    let Some(cache_root) = config::sources_cache_root() else {
+        // No cache root means no remote sources can be consulted.
+        // Discover locally only — same path as before y3o.6.3.
+        return federated::discover_federated(providers, &[], std::path::Path::new(""));
+    };
+    let result = federated::discover_federated(providers, &sources, &cache_root);
+    for failure in &result.failures {
+        eprintln!(
+            "warning: source '{}': {}",
+            failure.source, failure.message
+        );
+    }
+    result
+}
+
 fn print_search_json(
     hits: &[(search::SearchHit, Option<search::Explanation>)],
     sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
+    source_by_session: &std::collections::HashMap<String, String>,
     total: usize,
     next_cursor: Option<&str>,
     engine: &str,
@@ -1931,6 +1971,9 @@ fn print_search_json(
         provider: Option<aghist::model::Provider>,
         project: Option<&'a str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
+        /// Origin of the session: `"local"` for the host's own provider dirs,
+        /// or a registered remote source name (see `aghist sources list`).
+        source: &'a str,
         #[serde(skip_serializing_if = "Option::is_none")]
         explanation: Option<&'a search::Explanation>,
     }
@@ -1939,6 +1982,9 @@ fn print_search_json(
         .iter()
         .map(|(h, explain)| {
             let session = sessions.get(h.session_id.as_str()).copied();
+            let source = source_by_session
+                .get(h.session_id.as_str())
+                .map_or(federated::LOCAL_SOURCE, String::as_str);
             JsonHit {
                 session_id: &h.session_id,
                 message_id: &h.message_id,
@@ -1947,6 +1993,7 @@ fn print_search_json(
                 provider: session.map(|s| s.provider),
                 project: session.and_then(|s| s.project_name.as_deref()),
                 started_at: session.map(|s| s.started_at),
+                source,
                 explanation: explain.as_ref(),
             }
         })
@@ -1964,12 +2011,29 @@ fn print_search_json(
 fn print_search_table(
     hits: &[(search::SearchHit, Option<search::Explanation>)],
     sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
+    source_by_session: &std::collections::HashMap<String, String>,
     next_cursor: Option<&str>,
 ) {
-    println!(
-        "{:<6}  {:<16}  {:<12}  {:<20}  {:<14}  SNIPPET",
-        "SCORE", "STARTED", "PROVIDER", "PROJECT", "SESSION"
-    );
+    // Only show the SOURCE column when at least one hit is non-local — keeps
+    // the local-only output identical to the pre-federated layout so existing
+    // users and snapshot-style reads aren't disrupted.
+    let any_remote = hits.iter().any(|(h, _)| {
+        source_by_session
+            .get(h.session_id.as_str())
+            .is_some_and(|s| s != federated::LOCAL_SOURCE)
+    });
+
+    if any_remote {
+        println!(
+            "{:<6}  {:<16}  {:<12}  {:<20}  {:<10}  {:<14}  SNIPPET",
+            "SCORE", "STARTED", "PROVIDER", "PROJECT", "SOURCE", "SESSION"
+        );
+    } else {
+        println!(
+            "{:<6}  {:<16}  {:<12}  {:<20}  {:<14}  SNIPPET",
+            "SCORE", "STARTED", "PROVIDER", "PROJECT", "SESSION"
+        );
+    }
     for (h, explain) in hits {
         let session = sessions.get(h.session_id.as_str()).copied();
         let started = session
@@ -1982,10 +2046,21 @@ fn print_search_table(
         let project = truncate(project, 20);
         let session_short = truncate(&h.session_id, 14);
         let snippet = truncate(&h.snippet, 80);
-        println!(
-            "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<14}  {}",
-            h.score, started, provider, project, session_short, snippet
-        );
+        if any_remote {
+            let source = source_by_session
+                .get(h.session_id.as_str())
+                .map_or(federated::LOCAL_SOURCE, String::as_str);
+            let source = truncate(source, 10);
+            println!(
+                "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<10}  {:<14}  {}",
+                h.score, started, provider, project, source, session_short, snippet
+            );
+        } else {
+            println!(
+                "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<14}  {}",
+                h.score, started, provider, project, session_short, snippet
+            );
+        }
         if let Some(explanation) = explain {
             for line in explanation.to_pretty_json().lines() {
                 println!("    {line}");
@@ -2047,12 +2122,8 @@ fn search_watch_command(
     loop {
         iteration += 1;
 
-        let mut sessions: Vec<Session> = Vec::new();
-        for p in providers {
-            if let Ok(found) = p.discover_sessions() {
-                sessions.extend(found);
-            }
-        }
+        let federation = federated_discovery_for_search(providers);
+        let sessions: Vec<Session> = federation.sessions;
 
         let (tx, _rx) = crossbeam_channel::unbounded::<aghist::action::Action>();
         index.build_index(&sessions, providers, &tx).map_err(|e| {
@@ -2072,7 +2143,9 @@ fn search_watch_command(
             if !seen.insert(key) {
                 continue;
             }
-            if write_watch_hit(&mut handle, h, &session_meta).is_err() {
+            if write_watch_hit(&mut handle, h, &session_meta, &federation.source_by_session)
+                .is_err()
+            {
                 // Broken pipe (downstream closed) — exit cleanly.
                 return Ok(EXIT_OK);
             }
@@ -2095,6 +2168,7 @@ fn write_watch_hit<W: std::io::Write>(
     out: &mut W,
     hit: &search::SearchHit,
     sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
+    source_by_session: &std::collections::HashMap<String, String>,
 ) -> std::io::Result<()> {
     #[derive(serde::Serialize)]
     struct JsonHit<'a> {
@@ -2105,9 +2179,13 @@ fn write_watch_hit<W: std::io::Write>(
         provider: Option<aghist::model::Provider>,
         project: Option<&'a str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
+        source: &'a str,
     }
 
     let session = sessions.get(hit.session_id.as_str()).copied();
+    let source = source_by_session
+        .get(hit.session_id.as_str())
+        .map_or(federated::LOCAL_SOURCE, String::as_str);
     let row = JsonHit {
         session_id: &hit.session_id,
         message_id: &hit.message_id,
@@ -2116,6 +2194,7 @@ fn write_watch_hit<W: std::io::Write>(
         provider: session.map(|s| s.provider),
         project: session.and_then(|s| s.project_name.as_deref()),
         started_at: session.map(|s| s.started_at),
+        source,
     };
     serde_json::to_writer(&mut *out, &row)?;
     out.write_all(b"\n")?;

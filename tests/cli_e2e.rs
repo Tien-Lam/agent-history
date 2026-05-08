@@ -808,6 +808,151 @@ fn sources_pull_all_iterates_every_source() {
     assert!(cache_dir.join("b").join(".aghist-source.json").exists());
 }
 
+/// Federated search: a registered remote source whose `data_dir` mirrors a
+/// Claude Code home tree should contribute hits, tagged with the source name
+/// in the `source` JSON field. Local hits stay tagged `"local"`.
+#[test]
+fn search_federates_across_local_and_remote_source_caches() {
+    // Local fixture: a Claude session containing a unique token.
+    let local = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("federated-local")
+        .project("local-proj")
+        .user("FEDERATED_TOKEN local message body")
+        .done()
+        .build();
+    let home = local.base_path.parent().unwrap();
+
+    // Remote source cache: a Claude tree under `<cache>/laptop/data/` with
+    // its own session matching the same token.
+    let cache_dir = tempfile::tempdir().unwrap();
+    let remote_data = cache_dir.path().join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("federated-remote")
+        .project("remote-proj")
+        .user("FEDERATED_TOKEN remote message body")
+        .done()
+        .build();
+    // The fixture builds at `<tmp>/.claude` — copy that into <cache>/laptop/data
+    // so providers_rooted_at(remote_data) finds it via the `.claude` subpath.
+    let remote_claude_src = remote.base_path.clone();
+    let remote_claude_dst = remote_data.join(".claude");
+    copy_dir_recursive(&remote_claude_src, &remote_claude_dst);
+
+    // Register the remote source so federated discovery picks it up.
+    let config_path = cache_dir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources", "add", "laptop", "--host", "laptop.local", "--path", "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["search", "FEDERATED_TOKEN", "--json"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", cache_dir.path())
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let hits = doc["hits"].as_array().expect("hits array");
+    assert!(
+        hits.len() >= 2,
+        "expected hits from both local and remote sources, got: {hits:?}"
+    );
+
+    let by_session: std::collections::HashMap<&str, &str> = hits
+        .iter()
+        .map(|h| (h["session_id"].as_str().unwrap(), h["source"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        by_session.get("federated-local"),
+        Some(&"local"),
+        "local session should be tagged 'local': {by_session:?}"
+    );
+    assert_eq!(
+        by_session.get("federated-remote"),
+        Some(&"laptop"),
+        "remote session should be tagged with source name: {by_session:?}"
+    );
+}
+
+/// Federated search must remain usable when a registered source has never
+/// been pulled — its absence is logged as a `warning:` line on stderr but
+/// search still surfaces local hits and exits 0.
+#[test]
+fn search_partial_failure_when_remote_cache_missing() {
+    let local = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("partial-local")
+        .project("local-proj")
+        .user("PARTIAL_TOKEN local body")
+        .done()
+        .build();
+    let home = local.base_path.parent().unwrap();
+
+    let workdir = tempfile::tempdir().unwrap();
+    let config_path = workdir.path().join("config.toml");
+    let cache_dir = workdir.path().join("cache");
+
+    // Register a source but never pull — its data_dir does not exist.
+    aghist()
+        .args(["sources", "add", "ghost", "--host", "g", "--path", "/p"])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["search", "PARTIAL_TOKEN", "--json"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    // Local hit must still surface — partial failure must not be fatal.
+    assert_eq!(output.status.code(), Some(0));
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("warning:") && stderr.contains("ghost"),
+        "expected warning about missing 'ghost' cache, got: {stderr}"
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let hits = doc["hits"].as_array().unwrap();
+    assert!(!hits.is_empty(), "local hit should still appear");
+    assert_eq!(hits[0]["source"], "local");
+}
+
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) {
+    std::fs::create_dir_all(dst).unwrap();
+    for entry in std::fs::read_dir(src).unwrap().flatten() {
+        let ty = entry.file_type().unwrap();
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_recursive(&from, &to);
+        } else if ty.is_file() {
+            std::fs::copy(&from, &to).unwrap();
+        }
+    }
+}
+
 #[test]
 fn show_resolves_ref_md_default() {
     let fixture = common::fixtures::ClaudeFixtureBuilder::new()

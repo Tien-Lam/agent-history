@@ -7,6 +7,7 @@ pub mod decisions;
 pub mod embed;
 pub mod event;
 pub mod export;
+pub mod federated;
 pub mod health;
 pub mod mcp;
 pub mod model;
