@@ -196,6 +196,15 @@ impl EmbeddingStore {
         self.entries.get(message_id).map(|e| e.vector.as_slice())
     }
 
+    /// Iterate over `(message_id, vector)` pairs. Order is unspecified —
+    /// callers that need stable order should sort downstream. Used by hybrid
+    /// search to compute cosine similarity against every cached embedding.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &[f32])> {
+        self.entries
+            .iter()
+            .map(|(id, entry)| (id.as_str(), entry.vector.as_slice()))
+    }
+
     /// Returns the stored vector iff its hash matches `expected_hash`. A
     /// `None` here means "either never embedded, or the message text has
     /// changed since" — both cases require a fresh embedding pass.

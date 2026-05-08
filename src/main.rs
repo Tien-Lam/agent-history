@@ -241,10 +241,24 @@ enum Command {
         #[arg(long, conflicts_with = "params")]
         debug_search: bool,
 
+        /// Reciprocal Rank Fusion weight on the semantic side, in `[0.0, 1.0]`.
+        ///
+        /// `0.0` (default) → lexical-only BM25, identical to omitting the flag.
+        /// `0.5` → equal RRF blend of BM25 and `FastEmbed` cosine ranks.
+        /// `1.0` → semantic-only.
+        ///
+        /// Fails open: if the binary lacks the `embeddings` feature, or no
+        /// consent / embedding store exists yet, the search degrades to
+        /// lexical-only regardless of this value (see `meta.engine` in JSON
+        /// output). When hybrid is active, `score` becomes the RRF fused
+        /// score (small, ~0–0.03) — not a BM25 score.
+        #[arg(long, default_value_t = 0.0, value_name = "FLOAT", conflicts_with = "params")]
+        hybrid_weight: f32,
+
         /// JSON request body containing all params at once. Mutually exclusive
-        /// with other flags. Schema: `{query, limit?, json?}`. The `query`
-        /// field carries the literal query string; use `--query-file` /
-        /// `--stdin` for file/stdin input.
+        /// with other flags. Schema: `{query, limit?, json?, hybrid_weight?}`.
+        /// The `query` field carries the literal query string; use
+        /// `--query-file` / `--stdin` for file/stdin input.
         #[arg(long, value_name = "JSON")]
         params: Option<String>,
     },
@@ -482,6 +496,8 @@ struct SearchParams {
     cursor: Option<String>,
     #[serde(default)]
     json: bool,
+    #[serde(default)]
+    hybrid_weight: f32,
 }
 
 impl SearchParams {
@@ -615,8 +631,10 @@ struct SearchArgs {
     limit: usize,
     cursor: Option<String>,
     json: bool,
+    hybrid_weight: f32,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn resolve_search_args(
     query: Option<String>,
     query_file: Option<PathBuf>,
@@ -624,6 +642,7 @@ fn resolve_search_args(
     limit: usize,
     cursor: Option<String>,
     json: bool,
+    hybrid_weight: f32,
     params: Option<String>,
 ) -> Result<SearchArgs, ErrorEnvelope> {
     if let Some(raw) = params {
@@ -635,6 +654,7 @@ fn resolve_search_args(
             limit: p.limit,
             cursor: p.cursor,
             json: p.json,
+            hybrid_weight: p.hybrid_weight,
         })
     } else {
         Ok(SearchArgs {
@@ -644,6 +664,7 @@ fn resolve_search_args(
             limit,
             cursor,
             json,
+            hybrid_weight,
         })
     }
 }
@@ -912,6 +933,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             watch_interval_ms,
             watch_iterations,
             debug_search,
+            hybrid_weight,
             params,
         }) => {
             let filters = cli.filters.to_search_filters();
@@ -927,8 +949,16 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                     &filters,
                 );
             }
-            let args =
-                resolve_search_args(query, query_file, stdin, limit, cursor, json, params)?;
+            let args = resolve_search_args(
+                query,
+                query_file,
+                stdin,
+                limit,
+                cursor,
+                json,
+                hybrid_weight,
+                params,
+            )?;
             return search_command(
                 &providers,
                 args.query.as_deref(),
@@ -939,6 +969,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 args.json,
                 &filters,
                 debug_search,
+                args.hybrid_weight,
             );
         }
         Some(Command::Show {
@@ -1343,6 +1374,87 @@ fn run_embeddings(
     }))
 }
 
+/// Try to engage hybrid (lexical + semantic) RRF scoring.
+///
+/// Fail-open: returns `Ok(None)` whenever the semantic side isn't ready —
+/// missing `embeddings` feature, no recorded consent, empty store, embedder
+/// init failure, query embedding failure. Callers fall back to lexical-only.
+/// Only "hard" errors (Tantivy failures during the fused search itself)
+/// surface as `Err`.
+///
+/// On the success path, the embedder embeds `query`, the entire embedding
+/// store is ranked by cosine similarity, the top `pool_size` candidates are
+/// fed into [`search::SearchIndex::search_hybrid`], and the resulting
+/// RRF-fused hits are returned.
+#[cfg(not(feature = "embeddings"))]
+#[allow(clippy::unnecessary_wraps)]
+fn try_hybrid_search(
+    _index_dir: &std::path::Path,
+    _index: &search::SearchIndex,
+    _query: &str,
+    _pool_size: usize,
+    _filters: &SearchFilters,
+    _hybrid_weight: f32,
+) -> Result<Option<Vec<search::SearchHit>>, ErrorEnvelope> {
+    // Lean build: there's no embedder to query with, so silently fall open.
+    Ok(None)
+}
+
+#[cfg(feature = "embeddings")]
+fn try_hybrid_search(
+    index_dir: &std::path::Path,
+    index: &search::SearchIndex,
+    query: &str,
+    pool_size: usize,
+    filters: &SearchFilters,
+    hybrid_weight: f32,
+) -> Result<Option<Vec<search::SearchHit>>, ErrorEnvelope> {
+    if embed::Consent::load(index_dir).is_none() {
+        return Ok(None);
+    }
+    let store = match embed::EmbeddingStore::open(index_dir) {
+        Ok(Some(s)) if !s.is_empty() => s,
+        // No store, empty store, or schema-mismatched store all degrade to
+        // lexical-only. SchemaMismatch is recoverable via a reindex; we don't
+        // try to evict here because that's the indexer's job.
+        _ => return Ok(None),
+    };
+    let cache_dir = index_dir.join("models");
+    // Embedder init reaches the network (model download). Treat any failure
+    // as a soft fail-open: the search still works lexically.
+    let Ok(mut embedder) = embed::Embedder::try_new(&cache_dir) else {
+        return Ok(None);
+    };
+    let q_vec = match embedder.embed_batch(&[query.to_string()]) {
+        Ok(mut v) if !v.is_empty() => v.swap_remove(0),
+        _ => return Ok(None),
+    };
+
+    let mut ranked: Vec<(String, f32)> = store
+        .iter()
+        .map(|(id, vec)| (id.to_string(), search::cosine_similarity(&q_vec, vec)))
+        .collect();
+    ranked.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    ranked.truncate(pool_size);
+    let candidates: Vec<search::SemanticCandidate> = ranked
+        .into_iter()
+        .map(|(message_id, similarity)| search::SemanticCandidate {
+            message_id,
+            similarity,
+        })
+        .collect();
+
+    let hits = index
+        .search_hybrid(query, &candidates, pool_size, filters, hybrid_weight, pool_size)
+        .map_err(|e| {
+            ErrorEnvelope::new("index-error", format!("hybrid search failed: {e}"))
+        })?;
+    Ok(Some(hits))
+}
+
 #[cfg(feature = "embeddings")]
 fn collect_text(message: &Message) -> String {
     use aghist::model::ContentBlock;
@@ -1612,6 +1724,7 @@ fn search_command(
     force_json: bool,
     filters: &SearchFilters,
     debug_search: bool,
+    hybrid_weight: f32,
 ) -> Result<i32, ErrorEnvelope> {
     use aghist::model::Session;
 
@@ -1671,7 +1784,33 @@ fn search_command(
     } else {
         limit.max(1)
     };
-    let raw_hits: Vec<(search::SearchHit, Option<search::Explanation>)> = if debug_search {
+
+    // Hybrid path: only attempt when the user opted in. Falls open to lexical
+    // if the embedding pipeline isn't ready (no consent / empty store / lean
+    // build / embedder fails) — see `try_hybrid_search`.
+    let mut engine_used = "lexical";
+    let hybrid_hits: Option<Vec<search::SearchHit>> = if hybrid_weight > 0.0 {
+        try_hybrid_search(
+            &index_dir,
+            &index,
+            query,
+            pool_size,
+            filters,
+            hybrid_weight,
+        )?
+    } else {
+        None
+    };
+
+    let raw_hits: Vec<(search::SearchHit, Option<search::Explanation>)> = if let Some(hits) =
+        hybrid_hits
+    {
+        engine_used = "hybrid";
+        // Hybrid scores are RRF-fused — Tantivy explanations describe the BM25
+        // contribution only and would be misleading attached to a fused score,
+        // so we omit them. `--debug-search` is documented as lexical-only.
+        hits.into_iter().map(|h| (h, None)).collect()
+    } else if debug_search {
         index
             .search_with_filters_and_explain(query, pool_size, filters)
             .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?
@@ -1755,9 +1894,10 @@ fn search_command(
     let want_json = force_json || !io::stdout().is_terminal();
 
     if want_json {
-        print_search_json(page, &session_meta, total, next_cursor.as_deref()).map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
-        })?;
+        print_search_json(page, &session_meta, total, next_cursor.as_deref(), engine_used)
+            .map_err(|e| {
+                ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
+            })?;
     } else {
         print_search_table(page, &session_meta, next_cursor.as_deref());
     }
@@ -1770,6 +1910,7 @@ fn print_search_json(
     sessions: &std::collections::HashMap<&str, &aghist::model::Session>,
     total: usize,
     next_cursor: Option<&str>,
+    engine: &str,
 ) -> std::io::Result<()> {
     #[derive(serde::Serialize)]
     struct JsonHit<'a> {
@@ -1803,7 +1944,7 @@ fn print_search_json(
 
     let doc = serde_json::json!({
         "hits": rows,
-        "meta": { "next_cursor": next_cursor, "total": total },
+        "meta": { "next_cursor": next_cursor, "total": total, "engine": engine },
     });
     serde_json::to_writer(io::stdout().lock(), &doc)?;
     println!();

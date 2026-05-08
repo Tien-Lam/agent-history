@@ -204,6 +204,16 @@ fn search_params_properties() -> Value {
         "watch_iterations".to_string(),
         json!({ "type": "integer", "minimum": 0, "default": 0, "description": "Stop after N polls (0 = run until interrupted)." }),
     );
+    props.insert(
+        "hybrid_weight".to_string(),
+        json!({
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "default": 0.0,
+            "description": "RRF weight on the semantic side. 0.0 = lexical only (default), 1.0 = semantic only. Fails open to lexical when embeddings unavailable."
+        }),
+    );
     for (name, schema) in filter_params_fragment() {
         props.insert(name.to_string(), schema);
     }

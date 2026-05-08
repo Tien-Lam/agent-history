@@ -1685,6 +1685,92 @@ fn search_invalid_cursor_returns_usage_envelope() {
 }
 
 #[test]
+fn search_help_documents_hybrid_weight_flag() {
+    aghist()
+        .args(["search", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--hybrid-weight"))
+        .stdout(predicate::str::contains("RRF"));
+}
+
+#[test]
+fn search_default_engine_is_lexical_in_meta() {
+    let fixture = common::fixtures::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args(["search", "User", "--json"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        doc["meta"]["engine"], "lexical",
+        "default search must report engine=lexical, got: {}",
+        doc["meta"]
+    );
+}
+
+#[test]
+fn search_hybrid_weight_falls_open_to_lexical_without_embeddings() {
+    // Without the `embeddings` feature compiled in (or with no consent file
+    // and no store), --hybrid-weight must NOT crash or fail — it falls open
+    // to lexical-only and reports `engine: lexical` in meta. This is the
+    // core "fail open" guarantee from ahist-y3o.4.2.
+    let fixture = common::fixtures::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args(["search", "User", "--hybrid-weight", "0.5", "--json"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "hybrid search must succeed even without embeddings; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let arr = doc["hits"].as_array().expect("expected hits array");
+    assert!(!arr.is_empty(), "fail-open hybrid must still return lexical hits");
+    assert_eq!(
+        doc["meta"]["engine"], "lexical",
+        "missing-embeddings build must report engine=lexical (fail-open), got: {}",
+        doc["meta"]
+    );
+}
+
+#[test]
+fn search_hybrid_weight_zero_behaves_like_lexical() {
+    let fixture = common::fixtures::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args(["search", "User", "--hybrid-weight", "0.0", "--json"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        doc["meta"]["engine"], "lexical",
+        "hybrid_weight=0 must not engage hybrid path"
+    );
+}
+
+#[test]
 fn search_json_output_wraps_hits_in_meta_envelope() {
     let fixture = common::fixtures::claude_multi_session(2, 4);
     let home = fixture.base_path.parent().unwrap();
