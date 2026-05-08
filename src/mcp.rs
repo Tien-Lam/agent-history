@@ -11,6 +11,14 @@
 //! - `get_message`     — resolves a citation ref `<provider>/<id>#<turn>`
 //! - `reindex`         — incremental or `--force` rebuild of the search index
 //! - `health`          — same checks as `aghist health`
+//!
+//! Resources exposed (see `resources/list` / `resources/read`):
+//! - `aghist://session/<provider>/<session-id>` — session metadata + all turns
+//! - `aghist://session/<provider>/<session-id>/turn/<n>` — single turn (1-based)
+//!
+//! The URI shape mirrors the citation-ref triple so URIs are stable across
+//! reindex: provider slug + session id are intrinsic to the source data, and
+//! turn `n` is the load-order position of the message within the session.
 
 use std::io::{self, BufRead, Write};
 
@@ -162,7 +170,8 @@ impl McpServer {
             "initialize" => Ok(json!({
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {
-                    "tools": { "listChanged": false }
+                    "tools": { "listChanged": false },
+                    "resources": { "subscribe": false, "listChanged": false }
                 },
                 "serverInfo": {
                     "name": SERVER_NAME,
@@ -176,6 +185,9 @@ impl McpServer {
             "ping" => Ok(json!({})),
             "tools/list" => Ok(json!({ "tools": tool_definitions() })),
             "tools/call" => self.tools_call(params),
+            "resources/list" => self.resources_list(params),
+            "resources/read" => self.resources_read(params),
+            "resources/templates/list" => Ok(json!({ "resourceTemplates": resource_templates() })),
             other => Err(RpcError::new(
                 ERR_METHOD_NOT_FOUND,
                 format!("method not found: {other}"),
@@ -494,6 +506,130 @@ impl McpServer {
         }))
     }
 
+    // ─── resources ─────────────────────────────────────────────────────────
+
+    /// Lists every discoverable session as a top-level `aghist://session/<provider>/<id>`
+    /// resource. Per-turn URIs are advertised via the resource template (see
+    /// `resources/templates/list`) rather than enumerated, since the turn count
+    /// would balloon the listing for large histories.
+    #[allow(clippy::unnecessary_wraps)] // shape matches sibling JSON-RPC handlers.
+    fn resources_list(&self, _params: &Value) -> Result<Value, RpcError> {
+        let mut sessions = self.collect_sessions();
+        sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
+        let resources: Vec<Value> = sessions.iter().map(resource_descriptor).collect();
+        Ok(json!({ "resources": resources }))
+    }
+
+    fn resources_read(&self, params: &Value) -> Result<Value, RpcError> {
+        let uri = params
+            .get("uri")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RpcError::new(ERR_INVALID_PARAMS, "missing 'uri' field"))?
+            .to_string();
+        let parsed = parse_aghist_uri(&uri)
+            .map_err(|e| RpcError::new(ERR_INVALID_PARAMS, format!("invalid uri '{uri}': {e}")))?;
+
+        let payload = match parsed {
+            ParsedUri::Session { provider, session_id } => {
+                self.read_session_resource(provider, &session_id)
+            }
+            ParsedUri::Turn { provider, session_id, turn } => {
+                self.read_turn_resource(provider, &session_id, turn)
+            }
+        }
+        .map_err(|e| RpcError::new(ERR_INVALID_PARAMS, e))?;
+
+        let text = serde_json::to_string_pretty(&payload)
+            .unwrap_or_else(|_| "<unserializable>".to_string());
+        Ok(json!({
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": text,
+            }]
+        }))
+    }
+
+    fn read_session_resource(
+        &self,
+        provider_want: Provider,
+        session_id: &str,
+    ) -> Result<Value, String> {
+        let (session, provider) = self.find_session_strict(provider_want, session_id)?;
+        let messages = provider
+            .load_messages(&session)
+            .map_err(|e| format!("failed to load messages: {e}"))?;
+        let turns: Vec<Value> = messages
+            .iter()
+            .enumerate()
+            .map(|(i, m)| message_row(&session, m, i + 1))
+            .collect();
+        Ok(json!({
+            "uri": session_uri(session.provider, &session.id.0),
+            "session": session_row(&session),
+            "turns": turns,
+        }))
+    }
+
+    fn read_turn_resource(
+        &self,
+        provider_want: Provider,
+        session_id: &str,
+        turn: u32,
+    ) -> Result<Value, String> {
+        let (session, provider) = self.find_session_strict(provider_want, session_id)?;
+        let messages = provider
+            .load_messages(&session)
+            .map_err(|e| format!("failed to load messages: {e}"))?;
+        let total = messages.len();
+        let turn_usize = turn as usize;
+        if turn_usize == 0 || turn_usize > total {
+            return Err(format!(
+                "turn {turn} out of range: session has {total} message(s)"
+            ));
+        }
+        let msg = &messages[turn_usize - 1];
+        Ok(json!({
+            "uri": turn_uri(session.provider, &session.id.0, turn),
+            "session": session_row(&session),
+            "turn": message_row(&session, msg, turn_usize),
+        }))
+    }
+
+    /// Provider-qualified session lookup. Unlike `with_session`, this does NOT
+    /// fall through to other providers — a URI names exactly one provider, so
+    /// resolving against a different one would silently mask typos.
+    fn find_session_strict(
+        &self,
+        provider_want: Provider,
+        session_id: &str,
+    ) -> Result<(Session, &dyn HistoryProvider), String> {
+        let provider = self
+            .providers
+            .iter()
+            .find(|p| p.provider() == provider_want)
+            .ok_or_else(|| {
+                format!(
+                    "provider '{}' is not enabled or not detected",
+                    provider_want.slug()
+                )
+            })?;
+        let sessions = provider
+            .discover_sessions()
+            .map_err(|e| format!("failed to discover sessions: {e}"))?;
+        let session = sessions
+            .into_iter()
+            .find(|s| s.id.0 == session_id)
+            .ok_or_else(|| {
+                format!(
+                    "session '{}' not found in provider '{}'",
+                    session_id,
+                    provider_want.slug()
+                )
+            })?;
+        Ok((session, provider.as_ref()))
+    }
+
     // ─── helpers ───────────────────────────────────────────────────────────
 
     fn collect_sessions(&self) -> Vec<Session> {
@@ -617,6 +753,7 @@ fn tool_error(message: impl Into<String>) -> Value {
 fn session_row(s: &Session) -> Value {
     json!({
         "id": s.id.0,
+        "uri": session_uri(s.provider, &s.id.0),
         "provider": s.provider.slug(),
         "project": s.project_name,
         "branch": s.git_branch,
@@ -629,14 +766,129 @@ fn session_row(s: &Session) -> Value {
 }
 
 fn message_row(session: &Session, msg: &Message, turn: usize) -> Value {
+    let turn_u32 = u32::try_from(turn).unwrap_or(u32::MAX);
     json!({
         "ref": format!("{}/{}#{}", session.provider.slug(), session.id.0, turn),
+        "uri": turn_uri(session.provider, &session.id.0, turn_u32),
         "turn": turn,
         "id": msg.id.0,
         "role": msg.role,
         "timestamp": msg.timestamp,
         "model": msg.model,
         "content": msg.content,
+    })
+}
+
+// ─── URI helpers ───────────────────────────────────────────────────────────
+
+const URI_PREFIX: &str = "aghist://session/";
+
+fn session_uri(provider: Provider, session_id: &str) -> String {
+    format!("{URI_PREFIX}{}/{session_id}", provider.slug())
+}
+
+fn turn_uri(provider: Provider, session_id: &str, turn: u32) -> String {
+    format!("{URI_PREFIX}{}/{session_id}/turn/{turn}", provider.slug())
+}
+
+fn resource_descriptor(s: &Session) -> Value {
+    let title = s
+        .summary
+        .clone()
+        .or_else(|| s.project_name.clone())
+        .unwrap_or_else(|| s.id.0.clone());
+    let description = format!(
+        "{} session ({} messages){}",
+        s.provider.as_str(),
+        s.message_count,
+        s.project_name
+            .as_deref()
+            .map(|p| format!(" — {p}"))
+            .unwrap_or_default(),
+    );
+    json!({
+        "uri": session_uri(s.provider, &s.id.0),
+        "name": title,
+        "description": description,
+        "mimeType": "application/json",
+    })
+}
+
+fn resource_templates() -> Value {
+    json!([
+        {
+            "uriTemplate": "aghist://session/{provider}/{session_id}",
+            "name": "Session",
+            "description": "Full session metadata + ordered turns. \
+                            `provider` is the kebab-case slug \
+                            (claude-code, copilot-cli, gemini-cli, codex-cli, opencode).",
+            "mimeType": "application/json"
+        },
+        {
+            "uriTemplate": "aghist://session/{provider}/{session_id}/turn/{turn}",
+            "name": "Session turn",
+            "description": "A single 1-based turn within a session. \
+                            The triple `(provider, session_id, turn)` matches \
+                            the citation-ref format.",
+            "mimeType": "application/json"
+        }
+    ])
+}
+
+enum ParsedUri {
+    Session { provider: Provider, session_id: String },
+    Turn { provider: Provider, session_id: String, turn: u32 },
+}
+
+/// Parses `aghist://session/<provider>/<session-id>[/turn/<n>]`.
+///
+/// Session IDs are taken verbatim — the same convention citation refs use —
+/// so anything past the provider segment up to an optional `/turn/<n>` tail
+/// is the session id. We don't URL-decode: provider slugs are kebab-case
+/// ASCII, and every session id we discover today is filesystem-safe.
+fn parse_aghist_uri(uri: &str) -> Result<ParsedUri, String> {
+    let rest = uri
+        .strip_prefix(URI_PREFIX)
+        .ok_or_else(|| format!("uri must start with '{URI_PREFIX}'"))?;
+    if rest.is_empty() {
+        return Err("missing provider segment".to_string());
+    }
+
+    let (provider_slug, after_provider) = rest
+        .split_once('/')
+        .ok_or_else(|| "missing session id".to_string())?;
+    if provider_slug.is_empty() {
+        return Err("missing provider segment".to_string());
+    }
+    let provider = Provider::from_slug(provider_slug)
+        .ok_or_else(|| format!("unknown provider slug '{provider_slug}'"))?;
+    if after_provider.is_empty() {
+        return Err("missing session id".to_string());
+    }
+
+    if let Some((session_id, turn_str)) = after_provider.rsplit_once("/turn/") {
+        if session_id.is_empty() {
+            return Err("missing session id".to_string());
+        }
+        if turn_str.is_empty() {
+            return Err("missing turn number".to_string());
+        }
+        let turn: u32 = turn_str
+            .parse()
+            .map_err(|_| format!("invalid turn '{turn_str}' (must be a positive integer)"))?;
+        if turn == 0 {
+            return Err("turn must be >= 1".to_string());
+        }
+        return Ok(ParsedUri::Turn {
+            provider,
+            session_id: session_id.to_string(),
+            turn,
+        });
+    }
+
+    Ok(ParsedUri::Session {
+        provider,
+        session_id: after_provider.to_string(),
     })
 }
 
@@ -841,6 +1093,173 @@ mod tests {
             r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"list_sessions","arguments":{"limit":0}}}"#,
         );
         assert_eq!(resp["result"]["isError"], true);
+    }
+
+    #[test]
+    fn initialize_advertises_resources_capability() {
+        let resp = run_one(
+            &server(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        );
+        let caps = &resp["result"]["capabilities"];
+        assert!(caps["resources"].is_object(), "missing resources cap: {caps}");
+        assert_eq!(caps["resources"]["subscribe"], false);
+        assert_eq!(caps["resources"]["listChanged"], false);
+    }
+
+    #[test]
+    fn resources_list_with_no_providers_returns_empty() {
+        let resp = run_one(
+            &server(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"resources/list"}"#,
+        );
+        assert_eq!(resp["error"], Value::Null);
+        assert!(resp["result"]["resources"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn resources_templates_list_advertises_session_and_turn() {
+        let resp = run_one(
+            &server(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"resources/templates/list"}"#,
+        );
+        let templates = resp["result"]["resourceTemplates"].as_array().unwrap();
+        let uris: Vec<&str> = templates
+            .iter()
+            .map(|t| t["uriTemplate"].as_str().unwrap())
+            .collect();
+        assert!(uris.contains(&"aghist://session/{provider}/{session_id}"));
+        assert!(uris.contains(&"aghist://session/{provider}/{session_id}/turn/{turn}"));
+    }
+
+    #[test]
+    fn resources_read_missing_uri_is_invalid_params() {
+        let resp = run_one(
+            &server(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{}}"#,
+        );
+        assert_eq!(resp["error"]["code"], ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn resources_read_rejects_non_aghist_scheme() {
+        let resp = run_one(
+            &server(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"file:///etc/passwd"}}"#,
+        );
+        assert_eq!(resp["error"]["code"], ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn resources_read_rejects_unknown_provider() {
+        let resp = run_one(
+            &server(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"aghist://session/made-up/abc"}}"#,
+        );
+        assert_eq!(resp["error"]["code"], ERR_INVALID_PARAMS);
+        let msg = resp["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("made-up"), "got: {msg}");
+    }
+
+    #[test]
+    fn resources_read_rejects_unknown_session_for_known_provider() {
+        // No providers wired up, so the lookup fails on provider-not-enabled
+        // before it can reach session resolution. Either way: invalid params.
+        let resp = run_one(
+            &server(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"aghist://session/claude-code/abc"}}"#,
+        );
+        assert_eq!(resp["error"]["code"], ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn resources_read_rejects_zero_turn() {
+        let resp = run_one(
+            &server(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"aghist://session/claude-code/abc/turn/0"}}"#,
+        );
+        assert_eq!(resp["error"]["code"], ERR_INVALID_PARAMS);
+        let msg = resp["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("turn"), "got: {msg}");
+    }
+
+    #[test]
+    fn parse_uri_session_form() {
+        let p = parse_aghist_uri("aghist://session/claude-code/abc-123").unwrap();
+        match p {
+            ParsedUri::Session { provider, session_id } => {
+                assert_eq!(provider, Provider::ClaudeCode);
+                assert_eq!(session_id, "abc-123");
+            }
+            ParsedUri::Turn { .. } => panic!("expected Session form"),
+        }
+    }
+
+    #[test]
+    fn parse_uri_turn_form() {
+        let p = parse_aghist_uri("aghist://session/codex-cli/ses_abc/turn/7").unwrap();
+        match p {
+            ParsedUri::Turn { provider, session_id, turn } => {
+                assert_eq!(provider, Provider::CodexCli);
+                assert_eq!(session_id, "ses_abc");
+                assert_eq!(turn, 7);
+            }
+            ParsedUri::Session { .. } => panic!("expected Turn form"),
+        }
+    }
+
+    #[test]
+    fn parse_uri_session_id_with_slash_in_path_is_treated_as_session_id() {
+        // No real provider emits these today, but if a session id ever contains
+        // a `/`, anything before `/turn/<n>` should still parse as the id.
+        let p = parse_aghist_uri("aghist://session/claude-code/foo/bar/turn/3").unwrap();
+        match p {
+            ParsedUri::Turn { session_id, turn, .. } => {
+                assert_eq!(session_id, "foo/bar");
+                assert_eq!(turn, 3);
+            }
+            ParsedUri::Session { .. } => panic!("expected Turn form"),
+        }
+    }
+
+    #[test]
+    fn parse_uri_rejects_bad_inputs() {
+        assert!(parse_aghist_uri("file:///etc/passwd").is_err());
+        assert!(parse_aghist_uri("aghist://session/").is_err());
+        assert!(parse_aghist_uri("aghist://session/claude-code").is_err());
+        assert!(parse_aghist_uri("aghist://session/claude-code/").is_err());
+        assert!(parse_aghist_uri("aghist://session/claude-code/abc/turn/").is_err());
+        assert!(parse_aghist_uri("aghist://session/claude-code/abc/turn/abc").is_err());
+        assert!(parse_aghist_uri("aghist://session/claude-code/abc/turn/0").is_err());
+    }
+
+    #[test]
+    fn session_uri_round_trips_through_parser() {
+        let uri = session_uri(Provider::OpenCode, "session-xyz");
+        assert_eq!(uri, "aghist://session/opencode/session-xyz");
+        let parsed = parse_aghist_uri(&uri).unwrap();
+        match parsed {
+            ParsedUri::Session { provider, session_id } => {
+                assert_eq!(provider, Provider::OpenCode);
+                assert_eq!(session_id, "session-xyz");
+            }
+            ParsedUri::Turn { .. } => panic!("expected Session"),
+        }
+    }
+
+    #[test]
+    fn turn_uri_round_trips_through_parser() {
+        let uri = turn_uri(Provider::GeminiCli, "g-1", 42);
+        assert_eq!(uri, "aghist://session/gemini-cli/g-1/turn/42");
+        let parsed = parse_aghist_uri(&uri).unwrap();
+        match parsed {
+            ParsedUri::Turn { provider, session_id, turn } => {
+                assert_eq!(provider, Provider::GeminiCli);
+                assert_eq!(session_id, "g-1");
+                assert_eq!(turn, 42);
+            }
+            ParsedUri::Session { .. } => panic!("expected Turn"),
+        }
     }
 
     #[test]

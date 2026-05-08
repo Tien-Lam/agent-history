@@ -148,6 +148,104 @@ fn mcp_health_returns_structured_checks() {
 }
 
 #[test]
+fn mcp_resources_list_and_read_round_trip_against_claude_fixture() {
+    let fixture = common::fixtures::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+
+    // 1. List resources, pick the first session URI off the wire (no string
+    //    munging — we want to prove the URI we hand back resolves).
+    let listings = run_session(
+        home,
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "resources/list"
+        })],
+    );
+    let resources = listings[0]["result"]["resources"].as_array().unwrap();
+    assert!(!resources.is_empty(), "expected at least one session resource");
+    let session_uri = resources[0]["uri"].as_str().unwrap().to_string();
+    assert!(
+        session_uri.starts_with("aghist://session/claude-code/"),
+        "unexpected uri: {session_uri}"
+    );
+    assert_eq!(resources[0]["mimeType"], "application/json");
+
+    // 2. Read the session resource — should return JSON content with all turns.
+    let session_read = run_session(
+        home,
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "resources/read",
+            "params": { "uri": session_uri }
+        })],
+    );
+    let contents = session_read[0]["result"]["contents"].as_array().unwrap();
+    assert_eq!(contents.len(), 1);
+    assert_eq!(contents[0]["mimeType"], "application/json");
+    let body: Value = serde_json::from_str(contents[0]["text"].as_str().unwrap()).unwrap();
+    let turns = body["turns"].as_array().unwrap();
+    assert_eq!(turns.len(), 4, "fixture has 4 messages, body: {body}");
+    assert_eq!(turns[0]["turn"], 1);
+
+    // 3. Read a per-turn URI directly and confirm it matches that turn.
+    let turn_uri = turns[2]["uri"].as_str().unwrap().to_string();
+    assert!(
+        turn_uri.contains("/turn/3"),
+        "expected /turn/3 in {turn_uri}"
+    );
+    let turn_read = run_session(
+        home,
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "resources/read",
+            "params": { "uri": turn_uri }
+        })],
+    );
+    let body: Value =
+        serde_json::from_str(turn_read[0]["result"]["contents"][0]["text"].as_str().unwrap())
+            .unwrap();
+    assert_eq!(body["turn"]["turn"], 3);
+    assert!(body["turn"]["ref"].as_str().unwrap().contains("#3"));
+}
+
+#[test]
+fn mcp_resources_read_out_of_range_turn_is_invalid_params() {
+    let fixture = common::fixtures::claude_single_session(2);
+    let home = fixture.base_path.parent().unwrap();
+
+    // Find a real session id from list_sessions, then craft an out-of-range turn URI.
+    let listings = run_session(
+        home,
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "resources/list"
+        })],
+    );
+    let session_uri = listings[0]["result"]["resources"][0]["uri"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let bogus = format!("{session_uri}/turn/99");
+
+    let resp = run_session(
+        home,
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "resources/read",
+            "params": { "uri": bogus }
+        })],
+    );
+    assert_eq!(resp[0]["error"]["code"], -32602, "got: {:#?}", resp[0]);
+    let msg = resp[0]["error"]["message"].as_str().unwrap();
+    assert!(msg.contains("out of range"), "got: {msg}");
+}
+
+#[test]
 fn mcp_list_sessions_finds_claude_fixture_via_provider_filter() {
     // Build a real provider on disk so we exercise the discover path through
     // tools/call rather than the no-providers shortcut.
