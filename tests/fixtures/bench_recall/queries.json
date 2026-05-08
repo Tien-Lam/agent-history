@@ -1,0 +1,29 @@
+{
+  "_comment": "Labeled query set for ahist-y3o.4.4 — recall@10 / MRR benchmark. Each query targets one expected session_id from the synthetic corpus built in tests/recall_bench.rs. Tag the query type so we can break results down by which retrieval strategy is expected to do best:\n  - lexical: query terms appear verbatim in target session\n  - semantic: paraphrase / synonym; little or no token overlap\n  - mixed:   partial overlap, both signals plausible",
+  "queries": [
+    { "id": "q01", "tag": "lexical", "query": "kubectl apply pod scheduling", "expected_session_id": "kubernetes-deploy" },
+    { "id": "q02", "tag": "semantic", "query": "container orchestration cluster", "expected_session_id": "kubernetes-deploy" },
+    { "id": "q03", "tag": "lexical", "query": "alembic migration postgres", "expected_session_id": "database-migration" },
+    { "id": "q04", "tag": "semantic", "query": "schema upgrade rollback", "expected_session_id": "database-migration" },
+    { "id": "q05", "tag": "lexical", "query": "tokio async await", "expected_session_id": "async-rust" },
+    { "id": "q06", "tag": "semantic", "query": "non-blocking concurrency in Rust", "expected_session_id": "async-rust" },
+    { "id": "q07", "tag": "lexical", "query": "useState useEffect hook", "expected_session_id": "react-component" },
+    { "id": "q08", "tag": "semantic", "query": "frontend component state lifecycle", "expected_session_id": "react-component" },
+    { "id": "q09", "tag": "lexical", "query": "Dockerfile multi-stage build", "expected_session_id": "docker-build" },
+    { "id": "q10", "tag": "semantic", "query": "container image layer caching", "expected_session_id": "docker-build" },
+    { "id": "q11", "tag": "lexical", "query": "GitHub Actions workflow yaml", "expected_session_id": "ci-pipeline" },
+    { "id": "q12", "tag": "semantic", "query": "continuous integration test matrix", "expected_session_id": "ci-pipeline" },
+    { "id": "q13", "tag": "lexical", "query": "valgrind heap profile", "expected_session_id": "memory-leak" },
+    { "id": "q14", "tag": "semantic", "query": "RSS growth garbage collector", "expected_session_id": "memory-leak" },
+    { "id": "q15", "tag": "lexical", "query": "JWT refresh token rotation", "expected_session_id": "authn-token" },
+    { "id": "q16", "tag": "semantic", "query": "OAuth login session lifetime", "expected_session_id": "authn-token" },
+    { "id": "q17", "tag": "lexical", "query": "x509 certificate ACME", "expected_session_id": "tls-cert" },
+    { "id": "q18", "tag": "semantic", "query": "Let's Encrypt automated renewal", "expected_session_id": "tls-cert" },
+    { "id": "q19", "tag": "lexical", "query": "type narrowing conditional types", "expected_session_id": "typescript-types" },
+    { "id": "q20", "tag": "semantic", "query": "TypeScript generics inference", "expected_session_id": "typescript-types" },
+    { "id": "q21", "tag": "lexical", "query": "Apollo GraphQL resolver mutation", "expected_session_id": "graphql-schema" },
+    { "id": "q22", "tag": "semantic", "query": "API subscription real-time pubsub", "expected_session_id": "graphql-schema" },
+    { "id": "q23", "tag": "lexical", "query": "perf top flame graph", "expected_session_id": "linux-perf" },
+    { "id": "q24", "tag": "semantic", "query": "syscall latency tracing tool", "expected_session_id": "linux-perf" }
+  ]
+}
