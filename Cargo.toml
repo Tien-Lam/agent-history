@@ -29,6 +29,8 @@ fastembed = { version = "5", optional = true, default-features = false, features
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+rusqlite_migration = "2.5.0"
 
 [target.'cfg(not(windows))'.dependencies]
 self_update = { version = "0.42", default-features = false, features = [

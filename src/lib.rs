@@ -10,6 +10,7 @@ pub mod export;
 pub mod federated;
 pub mod health;
 pub mod mcp;
+pub mod metadata;
 pub mod model;
 pub mod output;
 pub mod provider;
