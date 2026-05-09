@@ -3475,3 +3475,257 @@ fn schema_subcommand_includes_star_unstar_stars() {
         assert!(parsed["definitions"]["Star"].is_object());
     }
 }
+
+// ─── metadata filters: --note / --tag / --starred ──────────────────────────
+
+/// Build a Claude fixture with three known sessions, all under the same
+/// `AGHIST_HOME`, returning the home path and the session ids in deterministic
+/// order. Each session has a single user turn so `message_count` == 1.
+fn three_session_fixture() -> (common::fixtures::FixtureDir, std::path::PathBuf) {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("sess-alpha")
+        .project("alpha-proj")
+        .user("alpha body")
+        .done()
+        .add_session("sess-beta")
+        .project("beta-proj")
+        .user("beta body")
+        .done()
+        .add_session("sess-gamma")
+        .project("gamma-proj")
+        .user("gamma body")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap().to_path_buf();
+    (fixture, home)
+}
+
+fn list_session_ids_json(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter_map(|v| v.get("id").and_then(|x| x.as_str()).map(String::from))
+        .collect()
+}
+
+#[test]
+fn list_filters_by_starred() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+
+    // Star alpha (session-level) and gamma (turn-level). Beta stays unstarred.
+    aghist()
+        .args(["star", "claude-code/sess-alpha"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+    aghist()
+        .args(["star", "claude-code/sess-gamma#1"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+
+    let out = aghist()
+        .args(["--list", "--starred"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}",
+        String::from_utf8_lossy(&out.stderr));
+    let ids = list_session_ids_json(std::str::from_utf8(&out.stdout).unwrap());
+    let set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+    assert_eq!(set, ["sess-alpha", "sess-gamma"].into_iter().collect());
+}
+
+#[test]
+fn list_filters_by_tag_exact_match() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+
+    aghist()
+        .args(["tag", "add", "claude-code/sess-alpha", "review"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+    aghist()
+        .args(["tag", "add", "claude-code/sess-beta", "todo"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+    aghist()
+        .args(["tag", "add", "claude-code/sess-gamma#1", "review"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+
+    let out = aghist()
+        .args(["--list", "--tag", "review"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let ids = list_session_ids_json(std::str::from_utf8(&out.stdout).unwrap());
+    let set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+    assert_eq!(set, ["sess-alpha", "sess-gamma"].into_iter().collect());
+}
+
+#[test]
+fn list_filters_by_note_substring_case_insensitive() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+
+    aghist()
+        .args(["note", "add", "claude-code/sess-alpha", "--body", "Look at THIS bug later"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+    aghist()
+        .args(["note", "add", "claude-code/sess-beta", "--body", "different content"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+
+    let out = aghist()
+        .args(["--list", "--note", "this bug"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let ids = list_session_ids_json(std::str::from_utf8(&out.stdout).unwrap());
+    assert_eq!(ids, vec!["sess-alpha".to_string()]);
+}
+
+#[test]
+fn list_filters_combine_with_intersection() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+
+    // Both alpha and beta tagged 'review'; only alpha starred. Combined
+    // filter must produce only alpha.
+    for s in ["sess-alpha", "sess-beta"] {
+        aghist()
+            .args(["tag", "add", &format!("claude-code/{s}"), "review"])
+            .env("AGHIST_METADATA_DB", &db)
+            .assert()
+            .success();
+    }
+    aghist()
+        .args(["star", "claude-code/sess-alpha"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+
+    let out = aghist()
+        .args(["--list", "--tag", "review", "--starred"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let ids = list_session_ids_json(std::str::from_utf8(&out.stdout).unwrap());
+    assert_eq!(ids, vec!["sess-alpha".to_string()]);
+}
+
+#[test]
+fn list_metadata_filter_no_match_exits_three() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+
+    let out = aghist()
+        .args(["--list", "--starred"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+}
+
+#[test]
+fn search_filters_by_starred() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+    let index_dir = tempfile::tempdir().unwrap();
+
+    aghist()
+        .args(["star", "claude-code/sess-alpha"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+
+    // Word "body" matches all three sessions; --starred narrows to alpha.
+    let out = aghist()
+        .args(["search", "body", "--json", "--starred"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}",
+        String::from_utf8_lossy(&out.stderr));
+    let doc: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
+    let hits = doc["hits"].as_array().unwrap();
+    let ids: std::collections::HashSet<&str> = hits
+        .iter()
+        .map(|h| h["session_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["sess-alpha"].into_iter().collect());
+}
+
+#[test]
+fn search_metadata_filter_no_match_exits_three() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let out = aghist()
+        .args(["search", "body", "--json", "--tag", "nonexistent"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+}
+
+#[test]
+fn list_invalid_note_substring_emits_usage_envelope() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+
+    let assert = aghist()
+        .args(["--list", "--note", "   "])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .code(1);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+    let env: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(env["error"]["kind"], "usage");
+}
+
+#[test]
+fn schema_search_includes_metadata_filter_params() {
+    let out = aghist().args(["schema", "search"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
+    let props = &parsed["params"]["properties"];
+    assert!(props["note"].is_object(), "search schema missing 'note' param");
+    assert!(props["tag"].is_object(), "search schema missing 'tag' param");
+    assert!(props["starred"].is_object(), "search schema missing 'starred' param");
+    assert_eq!(props["starred"]["type"], "boolean");
+}

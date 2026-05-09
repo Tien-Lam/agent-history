@@ -101,6 +101,23 @@ struct FilterArgs {
     /// load message content.
     #[arg(long, global = true)]
     has_tool_call: bool,
+
+    /// Keep only sessions that have a user note whose body contains this
+    /// substring (case-insensitive). Matches notes attached to the session
+    /// itself or to any of its turns. Notes live in the metadata sidecar
+    /// (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides).
+    #[arg(long, global = true, value_name = "SUBSTR")]
+    note: Option<String>,
+
+    /// Keep only sessions that have this exact tag attached (session-level
+    /// OR on any of its turns). Tags live in the same metadata sidecar.
+    #[arg(long, global = true, value_name = "NAME")]
+    tag: Option<String>,
+
+    /// Keep only sessions that have at least one star (session-level OR on
+    /// any of its turns). Stars live in the same metadata sidecar.
+    #[arg(long, global = true)]
+    starred: bool,
 }
 
 impl FilterArgs {
@@ -115,6 +132,9 @@ impl FilterArgs {
         }
     }
 
+    fn has_metadata_filter(&self) -> bool {
+        self.note.is_some() || self.tag.is_some() || self.starred
+    }
 }
 
 fn parse_role_slug(raw: &str) -> Result<Role, String> {
@@ -1114,6 +1134,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             params,
         }) => {
             let filters = cli.filters.to_search_filters();
+            let metadata_keys = resolve_metadata_filter(&cli.filters)?;
             if watch {
                 return search_watch_command(
                     &providers,
@@ -1124,6 +1145,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                     watch_interval_ms,
                     watch_iterations,
                     &filters,
+                    metadata_keys.as_ref(),
                 );
             }
             let args = resolve_search_args(
@@ -1147,6 +1169,7 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 &filters,
                 debug_search,
                 args.hybrid_weight,
+                metadata_keys.as_ref(),
             );
         }
         Some(Command::Show {
@@ -1241,7 +1264,15 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
 
     if cli.list {
         let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::Streaming);
-        return list_sessions(&providers, mode, cli.limit, cli.cursor.as_deref(), &cli.filters);
+        let metadata_keys = resolve_metadata_filter(&cli.filters)?;
+        return list_sessions(
+            &providers,
+            mode,
+            cli.limit,
+            cli.cursor.as_deref(),
+            &cli.filters,
+            metadata_keys.as_ref(),
+        );
     }
 
     run_tui(providers, config)
@@ -1923,6 +1954,7 @@ fn search_command(
     filters: &SearchFilters,
     debug_search: bool,
     hybrid_weight: f32,
+    metadata_keys: Option<&std::collections::HashSet<String>>,
 ) -> Result<i32, ErrorEnvelope> {
     use aghist::model::Session;
 
@@ -2023,17 +2055,36 @@ fn search_command(
             .collect()
     };
 
-    let total = raw_hits.len();
-
-    if raw_hits.is_empty() {
-        return Ok(EXIT_EMPTY);
-    }
-
     // Tie-break by (started_at DESC, session_id ASC) for deterministic ordering.
     // Tantivy already returns score-DESC; we use a stable sort to preserve that
     // and only reorder ties.
     let session_meta: std::collections::HashMap<&str, &Session> =
         sessions.iter().map(|s| (s.id.0.as_str(), s)).collect();
+
+    // Metadata filter post-filters hits whose session isn't in the allowed
+    // `<provider>/<id>` set. Index-level filtering would couple the search
+    // crate to the metadata sidecar; post-filter keeps separation of concerns
+    // and avoids reindexing whenever a tag/star/note is added or removed.
+    let raw_hits: Vec<(search::SearchHit, Option<search::Explanation>)> =
+        if let Some(keys) = metadata_keys {
+            raw_hits
+                .into_iter()
+                .filter(|(hit, _)| {
+                    session_meta
+                        .get(hit.session_id.as_str())
+                        .map(|s| session_metadata_key(s))
+                        .is_some_and(|k| keys.contains(&k))
+                })
+                .collect()
+        } else {
+            raw_hits
+        };
+
+    let total = raw_hits.len();
+
+    if raw_hits.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
 
     let mut ordered = raw_hits;
     ordered.sort_by(|a, b| {
@@ -2277,6 +2328,7 @@ fn search_watch_command(
     interval_ms: u64,
     max_iterations: u32,
     filters: &SearchFilters,
+    metadata_keys: Option<&std::collections::HashSet<String>>,
 ) -> Result<i32, ErrorEnvelope> {
     use aghist::model::Session;
     use std::collections::HashSet;
@@ -2327,6 +2379,15 @@ fn search_watch_command(
 
         let mut handle = stdout.lock();
         for h in &hits {
+            if let Some(keys) = metadata_keys {
+                let allowed = session_meta
+                    .get(h.session_id.as_str())
+                    .map(|s| session_metadata_key(s))
+                    .is_some_and(|k| keys.contains(&k));
+                if !allowed {
+                    continue;
+                }
+            }
             let key = (h.session_id.clone(), h.message_id.clone());
             if !seen.insert(key) {
                 continue;
@@ -2405,6 +2466,7 @@ fn list_sessions(
     limit: usize,
     cursor: Option<&str>,
     filters: &FilterArgs,
+    metadata_keys: Option<&std::collections::HashSet<String>>,
 ) -> Result<i32, ErrorEnvelope> {
     let mut all_sessions = Vec::new();
 
@@ -2428,6 +2490,7 @@ fn list_sessions(
                 let kept: Vec<Session> = sessions
                     .into_iter()
                     .filter(|s| session_matches(s, filters, project_needle.as_deref()))
+                    .filter(|s| metadata_filter_matches(s, metadata_keys))
                     .filter(|s| {
                         !needs_messages || session_has_matching_message(p.as_ref(), s, filters)
                     })
@@ -2549,6 +2612,43 @@ fn session_matches(
         }
     }
     true
+}
+
+/// Resolve `--note`/`--tag`/`--starred` into a set of
+/// `<provider-slug>/<session-id>` keys, opening the metadata sidecar on
+/// demand. Returns `Ok(None)` when no metadata filter is requested so the
+/// caller can skip the lookup entirely (and avoid creating the DB on disk).
+fn resolve_metadata_filter(
+    filters: &FilterArgs,
+) -> Result<Option<std::collections::HashSet<String>>, ErrorEnvelope> {
+    if !filters.has_metadata_filter() {
+        return Ok(None);
+    }
+    let conn = open_metadata_db()?;
+    metadata::filter_session_keys(
+        &conn,
+        filters.note.as_deref(),
+        filters.tag.as_deref(),
+        filters.starred,
+    )
+    .map_err(|e| metadata_error(&e))
+}
+
+/// Build the canonical metadata key for a session: `<provider-slug>/<id>`.
+fn session_metadata_key(session: &Session) -> String {
+    format!("{}/{}", session.provider.slug(), session.id.0)
+}
+
+/// Returns true when `metadata_keys` is `None` (filter inactive) or when the
+/// session's `<provider>/<id>` key is in the allowed set.
+fn metadata_filter_matches(
+    session: &Session,
+    metadata_keys: Option<&std::collections::HashSet<String>>,
+) -> bool {
+    let Some(keys) = metadata_keys else {
+        return true;
+    };
+    keys.contains(&session_metadata_key(session))
 }
 
 /// Returns true if the session contains at least one message satisfying the

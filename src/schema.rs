@@ -143,6 +143,27 @@ fn filter_params_fragment() -> Vec<(&'static str, Value)> {
                 "description": "Keep only messages (or sessions containing messages) with a tool invocation."
             }),
         ),
+        (
+            "note",
+            json!({
+                "type": "string",
+                "description": "Keep only sessions that have a user note whose body contains this case-insensitive substring (session-level OR any of its turns). Backed by the metadata sidecar."
+            }),
+        ),
+        (
+            "tag",
+            json!({
+                "type": "string",
+                "description": "Keep only sessions with this exact tag attached (session-level OR any of its turns). Backed by the metadata sidecar."
+            }),
+        ),
+        (
+            "starred",
+            json!({
+                "type": "boolean",
+                "description": "Keep only sessions with at least one star (session-level OR any of its turns). Backed by the metadata sidecar."
+            }),
+        ),
     ]
 }
 
