@@ -7,15 +7,37 @@ This project is **bd + gt driven**: tasks live in beads (`bd`), and Gas Town (`g
 ## Build & Test
 
 ```bash
-cargo build                        # dev build
-cargo test                         # all tests
-cargo test <name>                  # single test by name
-cargo insta review                 # review snapshot changes
-cargo clippy                       # lint (pedantic enabled)
-cargo run                          # launch TUI
-cargo run -- --list                # list sessions without TUI
-cargo run -- export -f md -s <id>  # export session to stdout
+cargo build                          # dev build
+cargo test                           # all tests
+cargo test <name>                    # single test by name
+cargo insta review                   # review snapshot changes
+cargo clippy                         # lint (pedantic enabled)
+cargo run                            # launch TUI
+cargo run -- --list                  # list sessions without TUI
+cargo run -- export -f md -s <id>    # export session to stdout
+cargo run -- search <q> --debug-search  # BM25 explanation per hit
+cargo run -- mcp                     # JSON-RPC stdio MCP server
+cargo run -- schema --list           # list subcommands with JSON-Schemas
 ```
+
+## Agent-friendly CLI surface
+
+Every subcommand has a stable error envelope (single-line JSON on stderr), semantic exit codes (`0` success, `1` runtime error, `2` usage error, `3` success-but-empty), JSON output on a pipe (or with `--json`), and a discoverable schema (`aghist schema <subcmd>`). New surfaces beyond the baseline TUI/--list/export:
+
+- `search <query> [--hybrid-weight 0..1] [--debug-search] [--watch] [--query-file F | --stdin | --params JSON]`
+- `show <provider>/<session-id>#<turn> [--include-context N]` — citation-ref resolver
+- `index [--force] [--accept-download]` — idempotent, delta-aware via content-hash manifest; `--accept-download` enables FastEmbed (~90 MB)
+- `health` — machine-readable doctor
+- `sources [add | list | remove | pull]` — local provider listing + remote source registry (rsync), federated search across `~/.cache/aghist/sources/<name>/data/`
+- `decisions` / `todos` / `threads` — heuristic cross-session extractors
+- `schema [--list | --all | <subcmd>]` — JSON-Schema (draft-2020-12) introspection
+- `mcp` — JSON-RPC 2.0 stdio server: tools `search_sessions`, `list_sessions`, `get_session`, `get_message`, `reindex`, `health`; resources `aghist://session/<provider>/<id>` and `aghist://session/<provider>/<id>/turn/<n>`
+
+Global filter flags accepted on most subcommands: `--provider <slug>`, `--since/--until <RFC3339>`, `--project <substr>`, `--role user|assistant|tool`, `--has-tool-call`. Global pagination on `--list`: `--limit <N>`, `--cursor <opaque>` (response includes `meta.next_cursor`).
+
+## CLI error envelope and exit codes
+
+See [`AGENTS.md`](AGENTS.md#cli-error-envelope-and-exit-codes) for the full spec — stable `kind` values, exit-code 3 semantics, the JSON shape.
 
 ## Code Map
 

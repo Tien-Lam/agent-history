@@ -34,13 +34,20 @@ graph TD
 
 ## Entry point
 
-`src/main.rs` handles three execution paths:
+`src/main.rs` handles two broad execution paths:
 
-1. **TUI mode** (default) — sets up the terminal with crossterm, creates `App`, runs the event loop, then restores terminal state on exit.
-2. **`--list`** — prints sessions to stdout and exits.
-3. **`export` subcommand** — renders a single session to Markdown, JSON, or HTML and writes to file or stdout.
+1. **TUI mode** (no subcommand, no `--list`) — sets up the terminal with crossterm, creates `App`, runs the event loop, then restores terminal state on exit.
+2. **One-shot CLI subcommands** — see the full surface in [`CLAUDE.md`](../CLAUDE.md#agent-friendly-cli-surface). Each subcommand emits stable JSON on a pipe, uses semantic exit codes, and has a discoverable JSON-Schema (`aghist schema <subcmd>`).
 
 CLI parsing uses clap with derive macros. Configuration is loaded from `~/.config/aghist/config.toml` (or `%APPDATA%\aghist\config.toml` on Windows) via `Config::load()`. Providers are auto-detected, then filtered against the config's enabled list.
+
+### Output discipline
+
+Successful command output goes to stdout as either a JSON document (machine modes) or a human-readable table (TTY mode); errors go to stderr as a single-line `{"error":{"kind":"…","message":"…","hint":"…"}}` envelope and never to stdout. `--json` and `--ndjson` are global flags that override the TTY auto-detect; they are mutually exclusive. Exit codes are stable contract: `0` success, `1` runtime error, `2` usage error, `3` success-but-empty (treat as the empty answer, not a failure).
+
+### Citation refs
+
+`<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`) is the canonical handle for a single message. Refs are *opaque-stable across reindex* — the same `(provider, session-id, turn)` always points at the same message as long as the source files are unchanged. `src/model/citation.rs` defines `CitationRef` with parser/builder/Display. The `aghist show <ref>` resolver and the `aghist://session/<provider>/<id>/turn/<n>` MCP resource both consume this format.
 
 ## Provider system
 
@@ -154,15 +161,47 @@ Messages for a selected session are loaded synchronously on the main thread but 
 
 ## Search
 
-**`src/search.rs`**
+**`src/search.rs`**, **`src/embed.rs`**
 
-Full-text search uses Tantivy, a Rust search engine library. The index is persisted to disk (platform data directory) and rebuilt incrementally:
+Full-text search uses Tantivy. The index is persisted to disk (platform cache directory, overridable via `AGHIST_INDEX_DIR`) and rebuilt incrementally:
 
-- A **manifest** (`manifest.json`) tracks which session files have been indexed and their last-modified timestamps.
-- On startup, `build_index()` skips sessions whose source file hasn't changed since the last index build.
-- `--reindex` clears the index and manifest, forcing a full rebuild on next launch.
+- A **manifest** (`manifest.json`) tracks which session files have been indexed and their content hashes.
+- `build_index()` skips sessions whose hash matches the manifest — first run on ~1k sessions is ~1.5s, subsequent runs ~150 ms.
+- `aghist index --force` clears the index and manifest, forcing a full rebuild.
+- The index schema stores: session ID, message ID, provider, project, role, content text, tool-call output text (separate field, indexed for `--has-tool-call`), source-cache name (for federation), and timestamp.
 
-The index schema stores: session ID, message ID, provider, project, role, content text, and timestamp. Queries search the `content` and `project` fields. Results are ranked by Tantivy's BM25 scoring.
+### Filters and pagination
+
+Global filter flags (`--provider`, `--since`, `--until`, `--project`, `--role`, `--has-tool-call`) are applied as Tantivy query terms or post-filter passes depending on the field. `--list` and `search` paginate via opaque base64 cursors (`{last_score, last_session_id}` or `{started_at, session_id}`), never offset-based — agents always know whether more results remain via `meta.next_cursor`.
+
+### Hybrid (lexical + semantic)
+
+Optional. Behind `--accept-download` consent (persisted next to the index), `aghist index` also computes FastEmbed (`AllMiniLML6V2`, ~90 MB) embeddings into a sidecar table keyed by message content hash. `aghist search --hybrid-weight <w>` (`0` = lexical-only, `1` = semantic-only, `0.5` = even RRF blend) fuses BM25 and cosine ranks via Reciprocal Rank Fusion.
+
+The system **fails open**: without consent or without the `embeddings` build feature, hybrid search degrades silently to lexical (the response's `meta.engine` field reports which path served the query). Embedding cache invalidation is keyed by message content hash, so reindex is cheap when message text is unchanged.
+
+### Federated (cross-machine)
+
+`aghist sources add` registers a remote (`<host>:<path>`) and `sources pull` rsyncs `<host>:<path>/` to `~/.cache/aghist/sources/<name>/data/` (cache root overridable via `AGHIST_SOURCES_CACHE_DIR`). The indexer treats every cache as an additional `~/.claude`-shaped tree, normalised through the same provider implementations. Search results carry a `source` field (`local` or `<remote-name>`); when a session exists in both local and a remote cache, the local label wins (the indexer dedupes by content hash and prefers the local-fast-path label).
+
+## MCP server
+
+**`src/mcp.rs`**
+
+`aghist mcp` runs a JSON-RPC 2.0 server over stdio per the [MCP stdio transport](https://modelcontextprotocol.io/). It exposes aghist's read paths to agent clients without requiring them to parse the CLI:
+
+| Tool | Purpose |
+|------|---------|
+| `search_sessions` | BM25/hybrid search; same filters as the CLI |
+| `list_sessions` | Paginated session listing |
+| `get_session` | Load all messages for a session |
+| `get_message` | Resolve a citation ref to one message |
+| `reindex` | Trigger an incremental index rebuild |
+| `health` | Machine-readable doctor (same as `aghist health`) |
+
+Resources are exposed as `aghist://session/<provider>/<session-id>` and `aghist://session/<provider>/<session-id>/turn/<n>` — agents can attach an entire session or a single turn as context.
+
+The server is implicitly read-only (no tools mutate session content; `reindex` only refreshes the search index). The `provider.mcp_exposed` config narrows which providers are visible to MCP clients independently of the CLI's `enabled` list — useful for hiding personal accounts from work agents on the same machine.
 
 ## UI components
 
