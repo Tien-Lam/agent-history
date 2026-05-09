@@ -11,6 +11,7 @@ use aghist::provider::codex_cli::CodexCliProvider;
 use aghist::provider::copilot_cli::CopilotCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
+use aghist::provider_diagnostic::{analyze_provider, ProviderDiagnostic};
 
 use common::helpers::fixtures_dir;
 
@@ -400,4 +401,100 @@ fn live_data_diagnostic() {
             provider.provider()
         );
     }
+}
+
+// ─── Per-block tool-call fidelity (ahist-80j.7) ────────────────────────────
+
+fn fixture_provider_set() -> Vec<(&'static str, Box<dyn HistoryProvider>)> {
+    vec![
+        (
+            "claude",
+            Box::new(ClaudeCodeProvider::new(vec![fixtures_dir().join("claude")])),
+        ),
+        (
+            "copilot",
+            Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot")])),
+        ),
+        (
+            "copilot_v2",
+            Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot_v2")])),
+        ),
+        (
+            "codex",
+            Box::new(CodexCliProvider::new(vec![fixtures_dir().join("codex")])),
+        ),
+        (
+            "codex_v2",
+            Box::new(CodexCliProvider::new(vec![fixtures_dir().join("codex_v2")])),
+        ),
+        (
+            "opencode",
+            Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode")])),
+        ),
+        (
+            "opencode_v2",
+            Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")])),
+        ),
+    ]
+}
+
+fn diagnose_all_fixtures() -> Vec<ProviderDiagnostic> {
+    fixture_provider_set()
+        .into_iter()
+        .map(|(label, p)| {
+            analyze_provider(label, p.as_ref(), None)
+                .unwrap_or_else(|e| panic!("{label}: analyze_provider failed: {e}"))
+        })
+        .collect()
+}
+
+/// Hard fidelity invariants that every provider parser must satisfy.
+///
+/// These run as part of `cargo test` and therefore as a CI gate (see
+/// `.github/workflows/ci.yml`). A regression in any parser that emits
+/// malformed tool calls — empty names, non-JSON arguments — fails this
+/// test before the change reaches `main`. Softer fidelity drift (id
+/// pairing rates, block counts) is caught by
+/// `all_fixture_providers_diagnostic_summary_snapshot`.
+#[test]
+fn all_fixture_providers_tool_call_fidelity() {
+    let diagnostics = diagnose_all_fixtures();
+
+    for diag in &diagnostics {
+        let f = &diag.tool_call_fidelity;
+        let label = &diag.label;
+
+        assert_eq!(
+            f.empty_names, 0,
+            "[{label}] {} ToolUse block(s) had an empty name — name is the primary search key",
+            f.empty_names,
+        );
+        assert_eq!(
+            f.invalid_json_args, 0,
+            "[{label}] {} ToolUse block(s) had non-empty arguments that failed to parse as JSON",
+            f.invalid_json_args,
+        );
+    }
+
+    // At least one fixture must exercise tool calls so the assertions above
+    // aren't vacuously satisfied if every parser silently dropped them.
+    let total_tool_calls: usize = diagnostics
+        .iter()
+        .map(|d| d.tool_call_fidelity.tool_calls)
+        .sum();
+    assert!(
+        total_tool_calls > 0,
+        "no fixture produced any ToolUse blocks — tool-call extraction may be silently broken across all providers",
+    );
+}
+
+/// Snapshot the per-fixture diagnostic so any drift in block counts or
+/// pairing fidelity is reviewable via `cargo insta review`. This is the
+/// machine-readable summary surfaced (in the same shape) by `aghist health`.
+#[test]
+fn all_fixture_providers_diagnostic_summary_snapshot() {
+    let diagnostics = diagnose_all_fixtures();
+    let pretty = serde_json::to_string_pretty(&diagnostics)
+        .expect("ProviderDiagnostic must serialise as JSON");
+    insta::assert_snapshot!(pretty);
 }

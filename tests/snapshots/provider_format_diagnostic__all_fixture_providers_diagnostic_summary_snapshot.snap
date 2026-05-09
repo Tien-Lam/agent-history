@@ -1,0 +1,203 @@
+---
+source: tests/provider_format_diagnostic.rs
+assertion_line: 499
+expression: pretty
+---
+[
+  {
+    "label": "claude",
+    "provider": "claude-code",
+    "session_count": 1,
+    "message_count": 4,
+    "blocks": {
+      "text": 4,
+      "code_block": 1,
+      "tool_use": 1,
+      "tool_result": 1,
+      "thinking": 1,
+      "error": 0,
+      "total": 8
+    },
+    "tool_call_fidelity": {
+      "tool_calls": 1,
+      "tool_results": 1,
+      "paired": 1,
+      "unpaired_calls": 0,
+      "orphan_results": 0,
+      "empty_names": 0,
+      "empty_call_ids": 0,
+      "empty_result_ids": 0,
+      "invalid_json_args": 0,
+      "success_results": 1,
+      "failure_results": 0
+    }
+  },
+  {
+    "label": "copilot",
+    "provider": "copilot-cli",
+    "session_count": 1,
+    "message_count": 3,
+    "blocks": {
+      "text": 2,
+      "code_block": 1,
+      "tool_use": 1,
+      "tool_result": 0,
+      "thinking": 0,
+      "error": 0,
+      "total": 4
+    },
+    "tool_call_fidelity": {
+      "tool_calls": 1,
+      "tool_results": 0,
+      "paired": 0,
+      "unpaired_calls": 1,
+      "orphan_results": 0,
+      "empty_names": 0,
+      "empty_call_ids": 0,
+      "empty_result_ids": 0,
+      "invalid_json_args": 0,
+      "success_results": 0,
+      "failure_results": 0
+    }
+  },
+  {
+    "label": "copilot_v2",
+    "provider": "copilot-cli",
+    "session_count": 1,
+    "message_count": 3,
+    "blocks": {
+      "text": 3,
+      "code_block": 0,
+      "tool_use": 1,
+      "tool_result": 0,
+      "thinking": 0,
+      "error": 0,
+      "total": 4
+    },
+    "tool_call_fidelity": {
+      "tool_calls": 1,
+      "tool_results": 0,
+      "paired": 0,
+      "unpaired_calls": 1,
+      "orphan_results": 0,
+      "empty_names": 0,
+      "empty_call_ids": 0,
+      "empty_result_ids": 0,
+      "invalid_json_args": 0,
+      "success_results": 0,
+      "failure_results": 0
+    }
+  },
+  {
+    "label": "codex",
+    "provider": "codex-cli",
+    "session_count": 1,
+    "message_count": 5,
+    "blocks": {
+      "text": 3,
+      "code_block": 0,
+      "tool_use": 1,
+      "tool_result": 0,
+      "thinking": 0,
+      "error": 1,
+      "total": 5
+    },
+    "tool_call_fidelity": {
+      "tool_calls": 1,
+      "tool_results": 0,
+      "paired": 0,
+      "unpaired_calls": 0,
+      "orphan_results": 0,
+      "empty_names": 0,
+      "empty_call_ids": 1,
+      "empty_result_ids": 0,
+      "invalid_json_args": 0,
+      "success_results": 0,
+      "failure_results": 0
+    }
+  },
+  {
+    "label": "codex_v2",
+    "provider": "codex-cli",
+    "session_count": 1,
+    "message_count": 5,
+    "blocks": {
+      "text": 5,
+      "code_block": 1,
+      "tool_use": 0,
+      "tool_result": 0,
+      "thinking": 0,
+      "error": 0,
+      "total": 6
+    },
+    "tool_call_fidelity": {
+      "tool_calls": 0,
+      "tool_results": 0,
+      "paired": 0,
+      "unpaired_calls": 0,
+      "orphan_results": 0,
+      "empty_names": 0,
+      "empty_call_ids": 0,
+      "empty_result_ids": 0,
+      "invalid_json_args": 0,
+      "success_results": 0,
+      "failure_results": 0
+    }
+  },
+  {
+    "label": "opencode",
+    "provider": "opencode",
+    "session_count": 1,
+    "message_count": 2,
+    "blocks": {
+      "text": 2,
+      "code_block": 1,
+      "tool_use": 0,
+      "tool_result": 0,
+      "thinking": 0,
+      "error": 0,
+      "total": 3
+    },
+    "tool_call_fidelity": {
+      "tool_calls": 0,
+      "tool_results": 0,
+      "paired": 0,
+      "unpaired_calls": 0,
+      "orphan_results": 0,
+      "empty_names": 0,
+      "empty_call_ids": 0,
+      "empty_result_ids": 0,
+      "invalid_json_args": 0,
+      "success_results": 0,
+      "failure_results": 0
+    }
+  },
+  {
+    "label": "opencode_v2",
+    "provider": "opencode",
+    "session_count": 1,
+    "message_count": 2,
+    "blocks": {
+      "text": 2,
+      "code_block": 0,
+      "tool_use": 1,
+      "tool_result": 1,
+      "thinking": 0,
+      "error": 0,
+      "total": 4
+    },
+    "tool_call_fidelity": {
+      "tool_calls": 1,
+      "tool_results": 1,
+      "paired": 1,
+      "unpaired_calls": 0,
+      "orphan_results": 0,
+      "empty_names": 0,
+      "empty_call_ids": 0,
+      "empty_result_ids": 0,
+      "invalid_json_args": 0,
+      "success_results": 1,
+      "failure_results": 0
+    }
+  }
+]

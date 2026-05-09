@@ -200,6 +200,18 @@ fn health_returns_ok_envelope_with_writable_index() {
     assert_eq!(providers_check["status"], "ok");
 
     assert!(parsed["summary"]["ok_count"].as_u64().unwrap() >= 2);
+
+    // ahist-80j.7: health surfaces a per-provider fidelity summary so
+    // agents can see tool-call extraction quality without spawning a
+    // separate diagnostic.
+    let fidelity = parsed["provider_fidelity"]
+        .as_array()
+        .expect("provider_fidelity array");
+    assert!(!fidelity.is_empty(), "expected fidelity row for the fixture provider");
+    let row = &fidelity[0];
+    assert_eq!(row["provider"], "claude-code");
+    assert!(row["session_count"].as_u64().unwrap() >= 1);
+    assert!(row["tool_call_fidelity"]["empty_names"].as_u64().unwrap() == 0);
 }
 
 #[test]
