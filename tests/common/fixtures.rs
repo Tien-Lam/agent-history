@@ -1253,6 +1253,5 @@ fn serde_json_string(s: &str) -> String {
 fn iso_to_millis(iso: &str) -> u64 {
     use chrono::DateTime;
     DateTime::parse_from_rfc3339(iso)
-        .map(|dt| u64::try_from(dt.timestamp_millis()).unwrap_or(0))
-        .unwrap_or(0)
+        .map_or(0, |dt| u64::try_from(dt.timestamp_millis()).unwrap_or(0))
 }

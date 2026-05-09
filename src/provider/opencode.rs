@@ -114,7 +114,7 @@ impl HistoryProvider for OpenCodeProvider {
             }
         }
 
-        sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
         Ok(sessions)
     }
 
@@ -149,7 +149,7 @@ impl HistoryProvider for OpenCodeProvider {
             }
         }
 
-        messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        messages.sort_by_key(|m| m.timestamp);
         tracing::info!(
             message_dir = %message_dir.display(),
             files = file_count,
@@ -205,19 +205,17 @@ fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> 
     // Count messages in the message directory
     let message_dir = storage_base.join("message").join(&raw.id);
     let message_count = if message_dir.exists() {
-        std::fs::read_dir(&message_dir)
-            .map(|entries| {
-                entries
-                    .filter_map(Result::ok)
-                    .filter(|e| {
-                        e.path()
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            == Some("json")
-                    })
-                    .count()
-            })
-            .unwrap_or(0)
+        std::fs::read_dir(&message_dir).map_or(0, |entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        == Some("json")
+                })
+                .count()
+        })
     } else {
         0
     };

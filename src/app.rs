@@ -258,7 +258,7 @@ impl App {
             }
         }
 
-        all_sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        all_sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
         let _ = tx.send(Action::SessionsLoaded(all_sessions));
 
         while let Ok(action) = self.action_rx.try_recv() {

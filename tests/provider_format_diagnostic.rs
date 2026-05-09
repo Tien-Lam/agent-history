@@ -337,7 +337,7 @@ fn all_fixture_providers_roundtrip() {
 
 // ─── Live data diagnostic (opt-in via env var) ──────────────────────────────
 
-/// Run with AGHIST_LIVE_TEST=1 to test against real data on this system.
+/// Run with `AGHIST_LIVE_TEST=1` to test against real data on this system.
 /// This test doesn't assert — it prints a diagnostic report.
 #[test]
 fn live_data_diagnostic() {

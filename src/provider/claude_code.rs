@@ -116,7 +116,7 @@ impl HistoryProvider for ClaudeCodeProvider {
             }
         }
 
-        sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
         Ok(sessions)
     }
 
@@ -449,24 +449,22 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
                             arguments,
                         }));
                     }
-                    "tool_result" => {
-                        if role == Role::User {
-                            let tool_call_id = item
-                                .get("tool_use_id")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            let is_error = item
-                                .get("is_error")
-                                .and_then(serde_json::Value::as_bool)
-                                .unwrap_or(false);
-                            let output = extract_tool_result_text(item);
-                            blocks.push(ContentBlock::ToolResult(ToolResult {
-                                tool_call_id,
-                                success: !is_error,
-                                output,
-                            }));
-                        }
+                    "tool_result" if role == Role::User => {
+                        let tool_call_id = item
+                            .get("tool_use_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let is_error = item
+                            .get("is_error")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        let output = extract_tool_result_text(item);
+                        blocks.push(ContentBlock::ToolResult(ToolResult {
+                            tool_call_id,
+                            success: !is_error,
+                            output,
+                        }));
                     }
                     _ => {}
                 }

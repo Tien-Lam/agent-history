@@ -26,6 +26,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 
 #[derive(Parser)]
 #[command(name = "aghist", version, about = "Browse and search AI agent conversation history")]
+#[allow(clippy::struct_excessive_bools)] // CLI flag struct: clap requires bool fields per flag
 struct Cli {
     /// List sessions without opening the TUI
     #[arg(long)]
@@ -1723,7 +1724,7 @@ fn resolve_search_query(
 /// tie-break the single-page path uses, then slice past the cursor.
 const SEARCH_PAGINATION_POOL: usize = 1000;
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn search_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     query: Option<&str>,
