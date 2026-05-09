@@ -30,6 +30,9 @@ pub const SUBCOMMANDS: &[&str] = &[
     "threads",
     "note",
     "tag",
+    "star",
+    "unstar",
+    "stars",
 ];
 
 /// Return the schema for a subcommand, or `None` if the name is unknown.
@@ -49,6 +52,9 @@ pub fn schema_for(subcmd: &str) -> Option<Value> {
         "threads" => Some(threads_schema()),
         "note" => Some(note_schema()),
         "tag" => Some(tag_schema()),
+        "star" => Some(star_schema()),
+        "unstar" => Some(unstar_schema()),
+        "stars" => Some(stars_schema()),
         _ => None,
     }
 }
@@ -1073,6 +1079,110 @@ fn tag_schema() -> Value {
             }
         },
         "definitions": { "Tag": tag_row },
+        "exit_codes": exit_codes()
+    })
+}
+
+fn star_row() -> Value {
+    let session_ref_pattern =
+        "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
+    json!({
+        "type": "object",
+        "properties": {
+            "session_ref": {
+                "type": "string",
+                "pattern": session_ref_pattern,
+                "description": "<provider>/<session-id>[#<turn>]"
+            },
+            "starred_at": {
+                "type": "string",
+                "description": "ISO-8601 UTC, sub-second precision."
+            }
+        },
+        "required": ["session_ref", "starred_at"]
+    })
+}
+
+fn star_schema() -> Value {
+    let session_ref_pattern =
+        "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
+    json!({
+        "$schema": SCHEMA_DRAFT,
+        "$id": "aghist:schema/star",
+        "title": "aghist star",
+        "command": "star",
+        "description": "Mark a session or turn as starred. Stars live in the metadata sidecar (~/.local/share/aghist/metadata.db; AGHIST_METADATA_DB overrides). Starring an already-starred ref raises a `star-conflict` error. aghist never mutates provider history files.",
+        "params": {
+            "type": "object",
+            "properties": {
+                "reference": { "type": "string", "pattern": session_ref_pattern }
+            },
+            "required": ["reference"],
+            "additionalProperties": false
+        },
+        "response": {
+            "type": "object",
+            "properties": { "starred": { "$ref": "#/definitions/Star" } },
+            "required": ["starred"]
+        },
+        "definitions": { "Star": star_row() },
+        "exit_codes": exit_codes()
+    })
+}
+
+fn unstar_schema() -> Value {
+    let session_ref_pattern =
+        "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
+    json!({
+        "$schema": SCHEMA_DRAFT,
+        "$id": "aghist:schema/unstar",
+        "title": "aghist unstar",
+        "command": "unstar",
+        "description": "Remove a star from a session or turn. Errors with `star-not-found` if the ref is not currently starred.",
+        "params": {
+            "type": "object",
+            "properties": {
+                "reference": { "type": "string", "pattern": session_ref_pattern }
+            },
+            "required": ["reference"],
+            "additionalProperties": false
+        },
+        "response": {
+            "type": "object",
+            "properties": { "unstarred": { "$ref": "#/definitions/Star" } },
+            "required": ["unstarred"]
+        },
+        "definitions": { "Star": star_row() },
+        "exit_codes": exit_codes()
+    })
+}
+
+fn stars_schema() -> Value {
+    let session_ref_pattern =
+        "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
+    json!({
+        "$schema": SCHEMA_DRAFT,
+        "$id": "aghist:schema/stars",
+        "title": "aghist stars",
+        "command": "stars",
+        "description": "List starred sessions and turns. With no ref: every star, newest first. With `<provider>/<session-id>`: the session row plus any of its turns. With a turn-level ref: that turn exactly. Empty result exits 3.",
+        "params": {
+            "type": "object",
+            "properties": {
+                "reference": { "type": "string", "pattern": session_ref_pattern },
+                "json": { "type": "boolean" }
+            },
+            "additionalProperties": false
+        },
+        "response": {
+            "type": "object",
+            "properties": {
+                "stars": { "type": "array", "items": { "$ref": "#/definitions/Star" } },
+                "count": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["stars", "count"]
+        },
+        "definitions": { "Star": star_row() },
         "exit_codes": exit_codes()
     })
 }

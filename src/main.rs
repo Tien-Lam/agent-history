@@ -8,7 +8,7 @@ use aghist::health::{self, HealthCheck, HealthStatus};
 use aghist::embed;
 use aghist::search::SearchFilters;
 use aghist::todos::{self, TodoCandidate, TodoKind};
-use aghist::metadata::{self, MetadataError, Note, Tag};
+use aghist::metadata::{self, MetadataError, Note, Star, Tag};
 use aghist::{app, config, export, federated, mcp, provider, schema, search};
 
 use std::io::{self, IsTerminal};
@@ -421,6 +421,38 @@ enum Command {
     Tag {
         #[command(subcommand)]
         command: TagCommand,
+    },
+    /// Mark a session or turn as starred.
+    ///
+    /// Stars live in the metadata sidecar (same database as `aghist note`/`tag`).
+    /// Each star is keyed by a session ref of the form `<provider>/<session-id>`
+    /// or `<provider>/<session-id>#<turn>`. Starring an already-starred ref
+    /// raises a `star-conflict` error. aghist never mutates provider history files.
+    Star {
+        /// Session ref: `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+        #[arg(value_name = "REF")]
+        reference: String,
+    },
+    /// Remove a star from a session or turn. Errors with `star-not-found` if
+    /// the ref is not currently starred.
+    Unstar {
+        /// Session ref: `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+        #[arg(value_name = "REF")]
+        reference: String,
+    },
+    /// List starred sessions and turns.
+    ///
+    /// With no ref: every star, newest first. With `<provider>/<session-id>`:
+    /// the session row plus any of its turns. With a turn-level ref: that turn
+    /// exactly. Empty result exits with code 3.
+    Stars {
+        /// Optional session ref filter.
+        #[arg(value_name = "REF")]
+        reference: Option<String>,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY).
+        #[arg(long)]
+        json: bool,
     },
     /// Update aghist to the latest release
     Update,
@@ -1190,6 +1222,19 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         Some(Command::Tag { command }) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
             return tag_dispatch(command, mode);
+        }
+        Some(Command::Star { reference }) => {
+            let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
+            return star_command(&reference, mode);
+        }
+        Some(Command::Unstar { reference }) => {
+            let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
+            return unstar_command(&reference, mode);
+        }
+        Some(Command::Stars { reference, json }) => {
+            let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
+            let mode = if json { OutputMode::Json } else { mode };
+            return stars_list(reference.as_deref(), mode);
         }
         None => {}
     }
@@ -2824,6 +2869,16 @@ fn metadata_error(err: &MetadataError) -> ErrorEnvelope {
             format!("tag '{tag}' is not attached to {session_ref}"),
         )
         .with_hint("Run `aghist tag list <ref>` to see attached tags."),
+        MetadataError::StarAlreadyExists { session_ref } => ErrorEnvelope::new(
+            "star-conflict",
+            format!("{session_ref} is already starred"),
+        )
+        .with_hint("Each session ref can be starred at most once. Use `aghist unstar <ref>` first if you want to re-star."),
+        MetadataError::StarNotFound { session_ref } => ErrorEnvelope::new(
+            "star-not-found",
+            format!("{session_ref} is not starred"),
+        )
+        .with_hint("Run `aghist stars` to see starred refs."),
         MetadataError::Sqlite(_) => ErrorEnvelope::new("metadata-error", err.to_string()),
     }
 }
@@ -3001,6 +3056,78 @@ fn emit_tag_list(tags: &[Tag], mode: OutputMode) -> Result<(), ErrorEnvelope> {
                         tag.id, tag.session_ref, tag.tag, tag.created_at
                     )
                     .ok();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn star_command(reference: &str, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
+    let conn = open_metadata_db()?;
+    let row = metadata::star_add(&conn, reference).map_err(|e| metadata_error(&e))?;
+    emit_star_payload(&row, "starred", mode)?;
+    Ok(EXIT_OK)
+}
+
+fn unstar_command(reference: &str, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
+    let conn = open_metadata_db()?;
+    let row = metadata::star_remove(&conn, reference).map_err(|e| metadata_error(&e))?;
+    emit_star_payload(&row, "unstarred", mode)?;
+    Ok(EXIT_OK)
+}
+
+fn stars_list(reference: Option<&str>, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
+    let conn = open_metadata_db()?;
+    let stars = metadata::star_list(&conn, reference).map_err(|e| metadata_error(&e))?;
+    emit_star_list(&stars, mode)?;
+    if stars.is_empty() {
+        Ok(EXIT_EMPTY)
+    } else {
+        Ok(EXIT_OK)
+    }
+}
+
+fn emit_star_payload(star: &Star, action: &str, mode: OutputMode) -> Result<(), ErrorEnvelope> {
+    use std::io::Write as _;
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if mode.is_machine() {
+        let payload = serde_json::json!({ action: star });
+        serde_json::to_writer(&mut out, &payload)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
+        writeln!(out).ok();
+    } else {
+        writeln!(out, "{action} {}", star.session_ref).ok();
+    }
+    Ok(())
+}
+
+fn emit_star_list(stars: &[Star], mode: OutputMode) -> Result<(), ErrorEnvelope> {
+    use std::io::Write as _;
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    match mode {
+        OutputMode::Json => {
+            let payload = serde_json::json!({ "stars": stars, "count": stars.len() });
+            serde_json::to_writer(&mut out, &payload)
+                .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
+            writeln!(out).ok();
+        }
+        OutputMode::Ndjson => {
+            for star in stars {
+                serde_json::to_writer(&mut out, star).map_err(|e| {
+                    ErrorEnvelope::new("io-error", format!("failed to emit NDJSON row: {e}"))
+                })?;
+                writeln!(out).ok();
+            }
+        }
+        OutputMode::Human => {
+            if stars.is_empty() {
+                writeln!(out, "(no stars)").ok();
+            } else {
+                for star in stars {
+                    writeln!(out, "★ {} (starred {})", star.session_ref, star.starred_at).ok();
                 }
             }
         }
