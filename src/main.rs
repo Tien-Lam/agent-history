@@ -8,6 +8,7 @@ use aghist::health::{self, HealthCheck, HealthStatus};
 use aghist::embed;
 use aghist::search::SearchFilters;
 use aghist::todos::{self, TodoCandidate, TodoKind};
+use aghist::metadata::{self, MetadataError, Note};
 use aghist::{app, config, export, federated, mcp, provider, schema, search};
 
 use std::io::{self, IsTerminal};
@@ -398,6 +399,17 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Manage per-user notes attached to sessions or turns.
+    ///
+    /// Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`
+    /// by default; override with `AGHIST_METADATA_DB`). Each note is keyed by a
+    /// session ref of the form `<provider>/<session-id>` (session-level) or
+    /// `<provider>/<session-id>#<turn>` (turn-level). aghist never mutates the
+    /// underlying provider history files.
+    Note {
+        #[command(subcommand)]
+        command: NoteCommand,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -454,6 +466,70 @@ enum SourcesCommand {
         /// Run rsync with `--dry-run`; no files are written.
         #[arg(long)]
         dry_run: bool,
+    },
+}
+
+/// Subcommands of `aghist note` that manage per-user session annotations.
+#[derive(Subcommand)]
+enum NoteCommand {
+    /// Attach a new note to a session ref. The body is read from `--body`,
+    /// `--body-file`, or stdin (`--stdin`). Outputs the created note as JSON
+    /// (single object) on stdout.
+    Add {
+        /// Session ref: `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+        #[arg(value_name = "REF")]
+        reference: String,
+
+        /// Note body as a literal string. Mutually exclusive with `--body-file`/`--stdin`.
+        #[arg(long, conflicts_with_all = ["body_file", "stdin"], value_name = "TEXT")]
+        body: Option<String>,
+
+        /// Read the body from a file (use `-` for stdin).
+        #[arg(long, conflicts_with_all = ["body", "stdin"], value_name = "PATH")]
+        body_file: Option<PathBuf>,
+
+        /// Read the body from standard input (read until EOF).
+        #[arg(long, conflicts_with_all = ["body", "body_file"])]
+        stdin: bool,
+    },
+    /// List notes, optionally filtered by session ref.
+    ///
+    /// With no ref: every note, newest first. With `<provider>/<session-id>`:
+    /// every note on that session and any of its turns. With a turn-level ref:
+    /// only notes on that exact turn.
+    List {
+        /// Optional session ref filter.
+        #[arg(value_name = "REF")]
+        reference: Option<String>,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Replace the body of an existing note.
+    Edit {
+        /// Numeric note id (from `aghist note add` or `aghist note list`).
+        #[arg(value_name = "ID")]
+        id: i64,
+
+        /// New body as a literal string. Mutually exclusive with `--body-file`/`--stdin`.
+        #[arg(long, conflicts_with_all = ["body_file", "stdin"], value_name = "TEXT")]
+        body: Option<String>,
+
+        /// Read the new body from a file (use `-` for stdin).
+        #[arg(long, conflicts_with_all = ["body", "stdin"], value_name = "PATH")]
+        body_file: Option<PathBuf>,
+
+        /// Read the new body from standard input (read until EOF).
+        #[arg(long, conflicts_with_all = ["body", "body_file"])]
+        stdin: bool,
+    },
+    /// Remove a note by id. Outputs the deleted row as JSON on stdout.
+    #[command(alias = "rm")]
+    Remove {
+        /// Numeric note id.
+        #[arg(value_name = "ID")]
+        id: i64,
     },
 }
 
@@ -1048,6 +1124,10 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         Some(Command::Health) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
             return health_command(&providers, mode);
+        }
+        Some(Command::Note { command }) => {
+            let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
+            return note_dispatch(command, mode);
         }
         None => {}
     }
@@ -2583,6 +2663,190 @@ fn render_health_json<W: io::Write>(
     });
     serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
     writeln!(out)?;
+    Ok(())
+}
+
+fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
+    let conn = open_metadata_db()?;
+    match command {
+        NoteCommand::Add {
+            reference,
+            body,
+            body_file,
+            stdin,
+        } => {
+            let body = read_note_body(body.as_deref(), body_file.as_deref(), stdin)?;
+            let note = metadata::note_add(&conn, &reference, &body).map_err(|e| metadata_error(&e))?;
+            emit_note_payload(&note, "added", mode)?;
+            Ok(EXIT_OK)
+        }
+        NoteCommand::List { reference, json } => {
+            let mode = if json { OutputMode::Json } else { mode };
+            let notes = metadata::note_list(&conn, reference.as_deref()).map_err(|e| metadata_error(&e))?;
+            emit_note_list(&notes, mode)?;
+            if notes.is_empty() {
+                Ok(EXIT_EMPTY)
+            } else {
+                Ok(EXIT_OK)
+            }
+        }
+        NoteCommand::Edit {
+            id,
+            body,
+            body_file,
+            stdin,
+        } => {
+            let body = read_note_body(body.as_deref(), body_file.as_deref(), stdin)?;
+            let note = metadata::note_edit(&conn, id, &body).map_err(|e| metadata_error(&e))?;
+            emit_note_payload(&note, "updated", mode)?;
+            Ok(EXIT_OK)
+        }
+        NoteCommand::Remove { id } => {
+            let note = metadata::note_remove(&conn, id).map_err(|e| metadata_error(&e))?;
+            emit_note_payload(&note, "removed", mode)?;
+            Ok(EXIT_OK)
+        }
+    }
+}
+
+fn open_metadata_db() -> Result<rusqlite::Connection, ErrorEnvelope> {
+    metadata::open_default().map_err(|e| metadata_error(&e))
+}
+
+fn metadata_error(err: &MetadataError) -> ErrorEnvelope {
+    match err {
+        MetadataError::NoPath => ErrorEnvelope::new(
+            "config-error",
+            "could not resolve metadata.db path",
+        )
+        .with_hint("Set AGHIST_METADATA_DB=/path/to/metadata.db, or ensure XDG/home dirs exist."),
+        MetadataError::CreateDir { ref path, .. } => ErrorEnvelope::new(
+            "io-error",
+            format!("could not create metadata dir {}: {err}", path.display()),
+        ),
+        MetadataError::Open { ref path, .. } => ErrorEnvelope::new(
+            "io-error",
+            format!("could not open metadata.db at {}: {err}", path.display()),
+        ),
+        MetadataError::Migrate { ref path, .. } => ErrorEnvelope::new(
+            "metadata-error",
+            format!("metadata.db migration failed at {}: {err}", path.display()),
+        ),
+        MetadataError::InvalidSessionRef(_, _) => ErrorEnvelope::new(
+            "invalid-ref",
+            err.to_string(),
+        )
+        .with_hint(
+            "Use '<provider>/<session-id>' or '<provider>/<session-id>#<turn>'. \
+             Valid providers: claude-code, copilot-cli, gemini-cli, codex-cli, opencode.",
+        ),
+        MetadataError::EmptyBody => ErrorEnvelope::new(
+            "usage",
+            "note body must not be empty",
+        )
+        .with_hint("Pass --body \"text\", --body-file PATH, or --stdin."),
+        MetadataError::NoteNotFound(id) => ErrorEnvelope::new(
+            "note-not-found",
+            format!("no note with id {id}"),
+        )
+        .with_hint("Run `aghist note list` to see existing note ids."),
+        MetadataError::Sqlite(_) => ErrorEnvelope::new("metadata-error", err.to_string()),
+    }
+}
+
+fn read_note_body(
+    body: Option<&str>,
+    body_file: Option<&std::path::Path>,
+    stdin: bool,
+) -> Result<String, ErrorEnvelope> {
+    use std::io::Read;
+    if let Some(b) = body {
+        return Ok(b.to_string());
+    }
+    let mut buf = String::new();
+    if stdin {
+        io::stdin().read_to_string(&mut buf).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to read note body from stdin: {e}"))
+        })?;
+        return Ok(buf);
+    }
+    if let Some(path) = body_file {
+        if path == std::path::Path::new("-") {
+            io::stdin().read_to_string(&mut buf).map_err(|e| {
+                ErrorEnvelope::new("io-error", format!("failed to read note body from stdin: {e}"))
+            })?;
+        } else {
+            buf = std::fs::read_to_string(path).map_err(|e| {
+                ErrorEnvelope::new(
+                    "io-error",
+                    format!("failed to read note body from {}: {e}", path.display()),
+                )
+            })?;
+        }
+        return Ok(buf);
+    }
+    Err(ErrorEnvelope::new(
+        "usage",
+        "note body required: pass --body, --body-file, or --stdin",
+    ))
+}
+
+fn emit_note_payload(note: &Note, action: &str, mode: OutputMode) -> Result<(), ErrorEnvelope> {
+    use std::io::Write as _;
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if mode.is_machine() {
+        let payload = serde_json::json!({ action: note });
+        serde_json::to_writer(&mut out, &payload)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
+        writeln!(out).ok();
+    } else {
+        writeln!(out, "{action} note {} on {}", note.id, note.session_ref).ok();
+        for line in note.body.lines() {
+            writeln!(out, "  {line}").ok();
+        }
+    }
+    Ok(())
+}
+
+fn emit_note_list(notes: &[Note], mode: OutputMode) -> Result<(), ErrorEnvelope> {
+    use std::io::Write as _;
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    match mode {
+        OutputMode::Json => {
+            let payload = serde_json::json!({ "notes": notes, "count": notes.len() });
+            serde_json::to_writer(&mut out, &payload).map_err(|e| {
+                ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}"))
+            })?;
+            writeln!(out).ok();
+        }
+        OutputMode::Ndjson => {
+            for note in notes {
+                serde_json::to_writer(&mut out, note).map_err(|e| {
+                    ErrorEnvelope::new("io-error", format!("failed to emit NDJSON row: {e}"))
+                })?;
+                writeln!(out).ok();
+            }
+        }
+        OutputMode::Human => {
+            if notes.is_empty() {
+                writeln!(out, "(no notes)").ok();
+            } else {
+                for note in notes {
+                    writeln!(
+                        out,
+                        "#{} {} (created {}, updated {})",
+                        note.id, note.session_ref, note.created_at, note.updated_at
+                    )
+                    .ok();
+                    for line in note.body.lines() {
+                        writeln!(out, "  {line}").ok();
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
 
