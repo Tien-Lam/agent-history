@@ -8,7 +8,7 @@ use aghist::health::{self, HealthCheck, HealthStatus};
 use aghist::embed;
 use aghist::search::SearchFilters;
 use aghist::todos::{self, TodoCandidate, TodoKind};
-use aghist::metadata::{self, MetadataError, Note};
+use aghist::metadata::{self, MetadataError, Note, Tag};
 use aghist::{app, config, export, federated, mcp, provider, schema, search};
 
 use std::io::{self, IsTerminal};
@@ -410,6 +410,18 @@ enum Command {
         #[command(subcommand)]
         command: NoteCommand,
     },
+    /// Manage per-user tags attached to sessions or turns.
+    ///
+    /// Tags live in the metadata sidecar (same database as `aghist note`).
+    /// Each tag is a short label (e.g. `review`, `todo`) attached to a session
+    /// ref of the form `<provider>/<session-id>` or
+    /// `<provider>/<session-id>#<turn>`. The (`session_ref`, `tag`) pair is unique:
+    /// adding the same tag twice is a no-op error. aghist never mutates the
+    /// underlying provider history files.
+    Tag {
+        #[command(subcommand)]
+        command: TagCommand,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -530,6 +542,52 @@ enum NoteCommand {
         /// Numeric note id.
         #[arg(value_name = "ID")]
         id: i64,
+    },
+}
+
+/// Subcommands of `aghist tag` that manage per-user session tags.
+#[derive(Subcommand)]
+enum TagCommand {
+    /// Attach a tag to a session ref. Outputs the created row as JSON on stdout.
+    /// Adding the same (ref, tag) pair twice raises a `tag-conflict` error.
+    Add {
+        /// Session ref: `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+        #[arg(value_name = "REF")]
+        reference: String,
+
+        /// Tag label. Whitespace-trimmed; must be non-empty.
+        #[arg(value_name = "TAG")]
+        tag: String,
+    },
+    /// List tags, optionally filtered by session ref and/or tag value.
+    ///
+    /// With no arguments: every tag, newest first. With `<provider>/<session-id>`:
+    /// every tag on that session and any of its turns. With a turn-level ref:
+    /// tags on that exact turn. `--tag <name>` narrows to a specific tag value
+    /// (combinable with the ref filter).
+    List {
+        /// Optional session ref filter.
+        #[arg(value_name = "REF")]
+        reference: Option<String>,
+
+        /// Filter by exact tag value (e.g. `--tag review`).
+        #[arg(long, value_name = "TAG")]
+        tag: Option<String>,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Detach a tag from a session ref. Outputs the deleted row as JSON.
+    #[command(alias = "rm")]
+    Remove {
+        /// Session ref the tag is attached to.
+        #[arg(value_name = "REF")]
+        reference: String,
+
+        /// Tag label to remove.
+        #[arg(value_name = "TAG")]
+        tag: String,
     },
 }
 
@@ -1128,6 +1186,10 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         Some(Command::Note { command }) => {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
             return note_dispatch(command, mode);
+        }
+        Some(Command::Tag { command }) => {
+            let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
+            return tag_dispatch(command, mode);
         }
         None => {}
     }
@@ -2750,6 +2812,18 @@ fn metadata_error(err: &MetadataError) -> ErrorEnvelope {
             format!("no note with id {id}"),
         )
         .with_hint("Run `aghist note list` to see existing note ids."),
+        MetadataError::EmptyTag => ErrorEnvelope::new("usage", "tag must not be empty")
+            .with_hint("Pass a non-empty tag value, e.g. `aghist tag add <ref> review`."),
+        MetadataError::TagAlreadyExists { session_ref, tag } => ErrorEnvelope::new(
+            "tag-conflict",
+            format!("tag '{tag}' is already attached to {session_ref}"),
+        )
+        .with_hint("Each (session_ref, tag) pair is unique. Use a different tag, or remove the existing one first."),
+        MetadataError::TagNotFound { session_ref, tag } => ErrorEnvelope::new(
+            "tag-not-found",
+            format!("tag '{tag}' is not attached to {session_ref}"),
+        )
+        .with_hint("Run `aghist tag list <ref>` to see attached tags."),
         MetadataError::Sqlite(_) => ErrorEnvelope::new("metadata-error", err.to_string()),
     }
 }
@@ -2843,6 +2917,90 @@ fn emit_note_list(notes: &[Note], mode: OutputMode) -> Result<(), ErrorEnvelope>
                     for line in note.body.lines() {
                         writeln!(out, "  {line}").ok();
                     }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn tag_dispatch(command: TagCommand, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
+    let conn = open_metadata_db()?;
+    match command {
+        TagCommand::Add { reference, tag } => {
+            let row = metadata::tag_add(&conn, &reference, &tag).map_err(|e| metadata_error(&e))?;
+            emit_tag_payload(&row, "added", mode)?;
+            Ok(EXIT_OK)
+        }
+        TagCommand::List {
+            reference,
+            tag,
+            json,
+        } => {
+            let mode = if json { OutputMode::Json } else { mode };
+            let tags = metadata::tag_list(&conn, reference.as_deref(), tag.as_deref())
+                .map_err(|e| metadata_error(&e))?;
+            emit_tag_list(&tags, mode)?;
+            if tags.is_empty() {
+                Ok(EXIT_EMPTY)
+            } else {
+                Ok(EXIT_OK)
+            }
+        }
+        TagCommand::Remove { reference, tag } => {
+            let row =
+                metadata::tag_remove(&conn, &reference, &tag).map_err(|e| metadata_error(&e))?;
+            emit_tag_payload(&row, "removed", mode)?;
+            Ok(EXIT_OK)
+        }
+    }
+}
+
+fn emit_tag_payload(tag: &Tag, action: &str, mode: OutputMode) -> Result<(), ErrorEnvelope> {
+    use std::io::Write as _;
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if mode.is_machine() {
+        let payload = serde_json::json!({ action: tag });
+        serde_json::to_writer(&mut out, &payload)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
+        writeln!(out).ok();
+    } else {
+        writeln!(out, "{action} tag '{}' on {}", tag.tag, tag.session_ref).ok();
+    }
+    Ok(())
+}
+
+fn emit_tag_list(tags: &[Tag], mode: OutputMode) -> Result<(), ErrorEnvelope> {
+    use std::io::Write as _;
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    match mode {
+        OutputMode::Json => {
+            let payload = serde_json::json!({ "tags": tags, "count": tags.len() });
+            serde_json::to_writer(&mut out, &payload)
+                .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
+            writeln!(out).ok();
+        }
+        OutputMode::Ndjson => {
+            for tag in tags {
+                serde_json::to_writer(&mut out, tag).map_err(|e| {
+                    ErrorEnvelope::new("io-error", format!("failed to emit NDJSON row: {e}"))
+                })?;
+                writeln!(out).ok();
+            }
+        }
+        OutputMode::Human => {
+            if tags.is_empty() {
+                writeln!(out, "(no tags)").ok();
+            } else {
+                for tag in tags {
+                    writeln!(
+                        out,
+                        "#{} {} [{}] (created {})",
+                        tag.id, tag.session_ref, tag.tag, tag.created_at
+                    )
+                    .ok();
                 }
             }
         }

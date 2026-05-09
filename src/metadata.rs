@@ -48,6 +48,12 @@ pub enum MetadataError {
     EmptyBody,
     #[error("note id {0} not found")]
     NoteNotFound(i64),
+    #[error("tag must not be empty")]
+    EmptyTag,
+    #[error("tag '{tag}' is already attached to {session_ref}")]
+    TagAlreadyExists { session_ref: String, tag: String },
+    #[error("tag '{tag}' is not attached to {session_ref}")]
+    TagNotFound { session_ref: String, tag: String },
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -248,6 +254,146 @@ pub fn note_edit(conn: &Connection, id: i64, body: &str) -> Result<Note> {
 pub fn note_remove(conn: &Connection, id: i64) -> Result<Note> {
     let existing = note_get(conn, id)?.ok_or(MetadataError::NoteNotFound(id))?;
     conn.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
+    Ok(existing)
+}
+
+/// One row from the `tags` table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Tag {
+    pub id: i64,
+    pub session_ref: String,
+    pub tag: String,
+    pub created_at: String,
+}
+
+const TAG_COLUMNS: &str = "id, session_ref, tag, created_at";
+
+fn row_to_tag(row: &rusqlite::Row<'_>) -> rusqlite::Result<Tag> {
+    Ok(Tag {
+        id: row.get(0)?,
+        session_ref: row.get(1)?,
+        tag: row.get(2)?,
+        created_at: row.get(3)?,
+    })
+}
+
+/// Trim and validate a tag value. Tags are user-supplied labels; aghist only
+/// requires that they be non-empty after trimming. Uniqueness per
+/// `session_ref` is enforced by the schema.
+fn normalize_tag(tag: &str) -> Result<&str> {
+    let trimmed = tag.trim();
+    if trimmed.is_empty() {
+        return Err(MetadataError::EmptyTag);
+    }
+    Ok(trimmed)
+}
+
+/// Attach `tag` to `session_ref`. Returns the freshly-inserted row. Errors with
+/// `TagAlreadyExists` if the (`session_ref`, `tag`) pair is already present.
+pub fn tag_add(conn: &Connection, session_ref: &str, tag: &str) -> Result<Tag> {
+    let session_ref = validate_session_ref(session_ref)?;
+    let tag = normalize_tag(tag)?;
+    let result = conn.execute(
+        "INSERT INTO tags(session_ref, tag) VALUES (?1, ?2)",
+        params![session_ref, tag],
+    );
+    match result {
+        Ok(_) => {
+            let id = conn.last_insert_rowid();
+            tag_get_by_id(conn, id)?.ok_or_else(|| MetadataError::TagNotFound {
+                session_ref: session_ref.to_string(),
+                tag: tag.to_string(),
+            })
+        }
+        Err(rusqlite::Error::SqliteFailure(err, _))
+            if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            Err(MetadataError::TagAlreadyExists {
+                session_ref: session_ref.to_string(),
+                tag: tag.to_string(),
+            })
+        }
+        Err(e) => Err(MetadataError::Sqlite(e)),
+    }
+}
+
+fn tag_get_by_id(conn: &Connection, id: i64) -> Result<Option<Tag>> {
+    let sql = format!("SELECT {TAG_COLUMNS} FROM tags WHERE id = ?1");
+    let tag = conn
+        .query_row(&sql, params![id], row_to_tag)
+        .optional()?;
+    Ok(tag)
+}
+
+/// List tags, optionally filtered by `session_ref` and/or `tag` value.
+///
+/// Filter semantics for `session_ref`:
+/// - `None` → match any `session_ref`.
+/// - `Some("<provider>/<session>#<turn>")` → exact match on that turn.
+/// - `Some("<provider>/<session>")` → tags on the session itself OR on any of
+///   its turns.
+///
+/// `tag_filter` matches the tag value exactly when `Some`. Combining the two
+/// narrows the result to rows that satisfy both constraints. Results are
+/// ordered newest-first.
+pub fn tag_list(
+    conn: &Connection,
+    session_ref_filter: Option<&str>,
+    tag_filter: Option<&str>,
+) -> Result<Vec<Tag>> {
+    let order = "ORDER BY datetime(created_at) DESC, id DESC";
+    let columns = TAG_COLUMNS;
+
+    let mut clauses: Vec<&str> = Vec::new();
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(raw) = session_ref_filter {
+        validate_session_ref(raw)?;
+        if raw.contains('#') {
+            clauses.push("session_ref = ?");
+            params_vec.push(Box::new(raw.to_string()));
+        } else {
+            clauses.push("(session_ref = ? OR session_ref LIKE ?)");
+            params_vec.push(Box::new(raw.to_string()));
+            params_vec.push(Box::new(format!("{raw}#%")));
+        }
+    }
+    if let Some(raw) = tag_filter {
+        let normalized = normalize_tag(raw)?;
+        clauses.push("tag = ?");
+        params_vec.push(Box::new(normalized.to_string()));
+    }
+
+    let sql = if clauses.is_empty() {
+        format!("SELECT {columns} FROM tags {order}")
+    } else {
+        format!("SELECT {columns} FROM tags WHERE {} {order}", clauses.join(" AND "))
+    };
+
+    let mut stmt = conn.prepare(&sql)?;
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(AsRef::as_ref).collect();
+    let rows = stmt.query_map(param_refs.as_slice(), row_to_tag)?;
+    let tags = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(tags)
+}
+
+/// Detach `tag` from `session_ref`. Returns the deleted row, or
+/// `TagNotFound` if no matching row exists.
+pub fn tag_remove(conn: &Connection, session_ref: &str, tag: &str) -> Result<Tag> {
+    let session_ref = validate_session_ref(session_ref)?;
+    let tag = normalize_tag(tag)?;
+    let sql = format!("SELECT {TAG_COLUMNS} FROM tags WHERE session_ref = ?1 AND tag = ?2");
+    let existing: Option<Tag> = conn
+        .query_row(&sql, params![session_ref, tag], row_to_tag)
+        .optional()?;
+    let existing = existing.ok_or_else(|| MetadataError::TagNotFound {
+        session_ref: session_ref.to_string(),
+        tag: tag.to_string(),
+    })?;
+    conn.execute(
+        "DELETE FROM tags WHERE session_ref = ?1 AND tag = ?2",
+        params![session_ref, tag],
+    )?;
     Ok(existing)
 }
 
@@ -500,6 +646,113 @@ mod tests {
         assert!(matches!(
             note_remove(&conn, note.id),
             Err(MetadataError::NoteNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn tag_add_returns_populated_row() {
+        let (_tmp, conn) = open_fresh();
+        let tag = tag_add(&conn, "claude-code/abc", "review").unwrap();
+        assert!(tag.id >= 1);
+        assert_eq!(tag.session_ref, "claude-code/abc");
+        assert_eq!(tag.tag, "review");
+        assert!(!tag.created_at.is_empty());
+    }
+
+    #[test]
+    fn tag_add_trims_and_rejects_empty() {
+        let (_tmp, conn) = open_fresh();
+        let tag = tag_add(&conn, "claude-code/abc", "  todo  ").unwrap();
+        assert_eq!(tag.tag, "todo");
+        assert!(matches!(
+            tag_add(&conn, "claude-code/abc", "   "),
+            Err(MetadataError::EmptyTag)
+        ));
+    }
+
+    #[test]
+    fn tag_add_rejects_duplicate() {
+        let (_tmp, conn) = open_fresh();
+        tag_add(&conn, "claude-code/abc", "review").unwrap();
+        let err = tag_add(&conn, "claude-code/abc", "review");
+        assert!(matches!(
+            err,
+            Err(MetadataError::TagAlreadyExists { ref session_ref, ref tag })
+                if session_ref == "claude-code/abc" && tag == "review"
+        ));
+    }
+
+    #[test]
+    fn tag_add_rejects_invalid_ref() {
+        let (_tmp, conn) = open_fresh();
+        assert!(matches!(
+            tag_add(&conn, "bad-provider/abc", "review"),
+            Err(MetadataError::InvalidSessionRef(_, _))
+        ));
+    }
+
+    #[test]
+    fn tag_list_filters_by_session_or_turn_or_tag_value() {
+        let (_tmp, conn) = open_fresh();
+        let session = tag_add(&conn, "claude-code/abc", "review").unwrap();
+        let turn7 = tag_add(&conn, "claude-code/abc#7", "todo").unwrap();
+        let turn7_review = tag_add(&conn, "claude-code/abc#7", "review").unwrap();
+        let other = tag_add(&conn, "opencode/xyz", "review").unwrap();
+
+        let all = tag_list(&conn, None, None).unwrap();
+        assert_eq!(all.len(), 4);
+
+        // Session-level filter sees the session row + every turn under it.
+        let scoped = tag_list(&conn, Some("claude-code/abc"), None).unwrap();
+        let ids: Vec<_> = scoped.iter().map(|t| t.id).collect();
+        assert!(ids.contains(&session.id));
+        assert!(ids.contains(&turn7.id));
+        assert!(ids.contains(&turn7_review.id));
+        assert!(!ids.contains(&other.id));
+
+        // Turn-level filter is exact.
+        let turn_only = tag_list(&conn, Some("claude-code/abc#7"), None).unwrap();
+        let ids: Vec<_> = turn_only.iter().map(|t| t.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&turn7.id));
+        assert!(ids.contains(&turn7_review.id));
+
+        // Tag-value filter narrows across sessions.
+        let reviews = tag_list(&conn, None, Some("review")).unwrap();
+        assert_eq!(reviews.len(), 3);
+
+        // Combined filters AND together.
+        let scoped_review = tag_list(&conn, Some("claude-code/abc"), Some("review")).unwrap();
+        let ids: Vec<_> = scoped_review.iter().map(|t| t.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&session.id));
+        assert!(ids.contains(&turn7_review.id));
+    }
+
+    #[test]
+    fn tag_remove_returns_deleted_row_and_is_idempotent_negative() {
+        let (_tmp, conn) = open_fresh();
+        let added = tag_add(&conn, "claude-code/abc", "review").unwrap();
+        let removed = tag_remove(&conn, "claude-code/abc", "review").unwrap();
+        assert_eq!(removed, added);
+
+        // Removing the same pair again yields TagNotFound.
+        assert!(matches!(
+            tag_remove(&conn, "claude-code/abc", "review"),
+            Err(MetadataError::TagNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn tag_remove_rejects_invalid_ref_and_empty_tag() {
+        let (_tmp, conn) = open_fresh();
+        assert!(matches!(
+            tag_remove(&conn, "bad/abc", "review"),
+            Err(MetadataError::InvalidSessionRef(_, _))
+        ));
+        assert!(matches!(
+            tag_remove(&conn, "claude-code/abc", "  "),
+            Err(MetadataError::EmptyTag)
         ));
     }
 
