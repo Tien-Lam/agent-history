@@ -22,13 +22,13 @@ expression: render_to_text(&terminal)
 │  OpenCode  Apr 08                ││ ╰─│  ◉ Gemini CLI                        │                                       │
 │    dbproject                     ││ Th│  ◉ Codex CLI                         │                                       │
 │    Refactor database layer       ││   │  ◉ OpenCode                          │                                       │
+│                                  ││   │  ◉ Cursor                            │                                       │
 │                                  ││   │                                      │                                       │
 │                                  ││   │Filters                               │                                       │
 │                                  ││   │  Project: (any)                      │                                       │
 │                                  ││   │  From:    (any)                      │                                       │
 │                                  ││   │  To:      (any)                      │                                       │
 │                                  ││   ╰──────────────────────────────────────╯                                       │
-│                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │

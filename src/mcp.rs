@@ -703,7 +703,7 @@ fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "provider": { "type": "string", "enum": ["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode"] },
+                    "provider": { "type": "string", "enum": ["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", "cursor"] },
                     "project": { "type": "string", "description": "Substring match on session project_name." },
                     "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 50 }
                 }
@@ -738,7 +738,7 @@ fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "provider": { "type": "string", "enum": ["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode"] },
+                    "provider": { "type": "string", "enum": ["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", "cursor"] },
                     "force": { "type": "boolean", "default": false, "description": "Clear the index first for a full rebuild." }
                 }
             }
@@ -840,7 +840,7 @@ fn resource_templates() -> Value {
             "name": "Session",
             "description": "Full session metadata + ordered turns. \
                             `provider` is the kebab-case slug \
-                            (claude-code, copilot-cli, gemini-cli, codex-cli, opencode).",
+                            (claude-code, copilot-cli, gemini-cli, codex-cli, opencode, cursor).",
             "mimeType": "application/json"
         },
         {

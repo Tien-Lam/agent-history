@@ -113,6 +113,7 @@ fn provider_color(provider: crate::model::Provider) -> ratatui::style::Color {
         crate::model::Provider::GeminiCli => palette::GEMINI,
         crate::model::Provider::CodexCli => palette::CODEX,
         crate::model::Provider::OpenCode => palette::OPENCODE,
+        crate::model::Provider::Cursor => palette::CURSOR,
     }
 }
 

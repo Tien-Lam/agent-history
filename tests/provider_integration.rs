@@ -6,6 +6,7 @@ use aghist::model::{ContentBlock, Provider, Role, Session, SessionId};
 use aghist::provider::claude_code::ClaudeCodeProvider;
 use aghist::provider::codex_cli::CodexCliProvider;
 use aghist::provider::copilot_cli::CopilotCliProvider;
+use aghist::provider::cursor::CursorProvider;
 use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
@@ -310,8 +311,36 @@ fn nonexistent_base_dir_returns_empty() {
     let codex = CodexCliProvider::new(vec![fake_dir.clone()]);
     assert!(codex.discover_sessions().unwrap().is_empty());
 
-    let opencode = OpenCodeProvider::new(vec![fake_dir]);
+    let opencode = OpenCodeProvider::new(vec![fake_dir.clone()]);
     assert!(opencode.discover_sessions().unwrap().is_empty());
+
+    let cursor = CursorProvider::new(vec![fake_dir]);
+    assert!(cursor.discover_sessions().unwrap().is_empty());
+}
+
+// ─── Cursor ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn cursor_discover_and_load_from_generated_fixture() {
+    let fixture = common::fixtures::cursor_single_session(4);
+    let provider = CursorProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+
+    assert_eq!(sessions.len(), 1);
+    let s = &sessions[0];
+    assert_eq!(s.id.0, "comp-gen-001");
+    assert_eq!(s.provider, Provider::Cursor);
+    assert_eq!(s.project_name.as_deref(), Some("myapp"));
+    assert_eq!(s.message_count, 4);
+
+    let messages = provider.load_messages(s).unwrap();
+    assert_eq!(messages.len(), 4);
+    assert_eq!(messages[0].role, Role::User);
+    assert_eq!(messages[1].role, Role::Assistant);
+    assert!(matches!(
+        &messages[0].content[0],
+        ContentBlock::Text(t) if t.contains("User message 0")
+    ));
 }
 
 // ─── IO Error Paths ─────────────────────────────────────────────────────────

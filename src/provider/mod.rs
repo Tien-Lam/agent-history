@@ -1,6 +1,7 @@
 pub mod claude_code;
 pub mod codex_cli;
 pub mod copilot_cli;
+pub mod cursor;
 pub mod error;
 pub mod gemini_cli;
 pub mod opencode;
@@ -55,6 +56,9 @@ pub fn detect_all_providers() -> Vec<Box<dyn HistoryProvider>> {
         providers.push(Box::new(p));
     }
     if let Some(p) = opencode::OpenCodeProvider::detect() {
+        providers.push(Box::new(p));
+    }
+    if let Some(p) = cursor::CursorProvider::detect() {
         providers.push(Box::new(p));
     }
     providers

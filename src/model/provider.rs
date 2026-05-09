@@ -5,6 +5,7 @@ pub enum Provider {
     GeminiCli,
     CodexCli,
     OpenCode,
+    Cursor,
 }
 
 /// Serializes as the kebab-case [`Provider::slug`]. This matches the
@@ -35,6 +36,7 @@ impl Provider {
             Self::GeminiCli => "Gemini CLI",
             Self::CodexCli => "Codex CLI",
             Self::OpenCode => "OpenCode",
+            Self::Cursor => "Cursor",
         }
     }
 
@@ -48,6 +50,7 @@ impl Provider {
             Self::GeminiCli => "gemini-cli",
             Self::CodexCli => "codex-cli",
             Self::OpenCode => "opencode",
+            Self::Cursor => "cursor",
         }
     }
 
@@ -59,6 +62,7 @@ impl Provider {
             "gemini-cli" => Some(Self::GeminiCli),
             "codex-cli" => Some(Self::CodexCli),
             "opencode" => Some(Self::OpenCode),
+            "cursor" => Some(Self::Cursor),
             _ => None,
         }
     }
@@ -70,6 +74,7 @@ impl Provider {
             Self::GeminiCli,
             Self::CodexCli,
             Self::OpenCode,
+            Self::Cursor,
         ]
     }
 
@@ -88,6 +93,9 @@ impl Provider {
                 format!("codex resume {safe}")
             }
             Self::OpenCode => format!("opencode --session {safe_id}"),
+            // Cursor is a GUI app without a CLI flag to resume a specific
+            // composer session — best we can do is launch the editor.
+            Self::Cursor => "cursor".to_string(),
         }
     }
 }
@@ -192,6 +200,13 @@ mod tests {
         assert_eq!(Provider::GeminiCli.slug(), "gemini-cli");
         assert_eq!(Provider::CodexCli.slug(), "codex-cli");
         assert_eq!(Provider::OpenCode.slug(), "opencode");
+        assert_eq!(Provider::Cursor.slug(), "cursor");
+    }
+
+    #[test]
+    fn resume_command_cursor() {
+        let cmd = Provider::Cursor.resume_command("composer-abc");
+        assert_eq!(cmd, "cursor");
     }
 
     #[test]

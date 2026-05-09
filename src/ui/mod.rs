@@ -30,6 +30,7 @@ pub mod palette {
     pub const GEMINI: Color = Color::Rgb(138, 173, 244);        // blue
     pub const CODEX: Color = Color::Rgb(205, 214, 244);         // white
     pub const OPENCODE: Color = Color::Rgb(198, 160, 246);      // purple
+    pub const CURSOR: Color = Color::Rgb(139, 213, 202);        // teal
 }
 
 pub fn role_style(role: Role) -> Style {

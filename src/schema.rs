@@ -71,7 +71,7 @@ pub fn subcommand_index() -> Value {
 // ─── shared fragments ──────────────────────────────────────────────────────
 
 fn provider_slug_enum() -> Value {
-    json!(["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode"])
+    json!(["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", "cursor"])
 }
 
 fn exit_codes() -> Value {
@@ -277,7 +277,7 @@ fn search_schema() -> Value {
                     "score": { "type": "number" },
                     "snippet": { "type": "string" },
                     "provider": { "type": ["string", "null"], "enum": [
-                        "claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", null
+                        "claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", "cursor", null
                     ] },
                     "project": { "type": ["string", "null"] },
                     "started_at": { "type": ["string", "null"], "format": "date-time" }

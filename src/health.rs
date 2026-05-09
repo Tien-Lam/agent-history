@@ -44,7 +44,7 @@ pub fn run_health_checks(providers: &[Box<dyn HistoryProvider>]) -> Vec<HealthCh
             name: "providers-detected",
             status: HealthStatus::Warn,
             message: "no providers detected on this system".to_string(),
-            hint: Some("Use one of the supported agents (claude-code, copilot-cli, gemini-cli, codex-cli, opencode), or check `aghist sources`.".to_string()),
+            hint: Some("Use one of the supported agents (claude-code, copilot-cli, gemini-cli, codex-cli, opencode, cursor), or check `aghist sources`.".to_string()),
         });
     } else {
         let slugs: Vec<&str> = providers.iter().map(|p| p.provider().slug()).collect();

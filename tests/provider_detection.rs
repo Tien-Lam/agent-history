@@ -9,6 +9,7 @@ use aghist::model::Provider;
 use aghist::provider::claude_code::ClaudeCodeProvider;
 use aghist::provider::codex_cli::CodexCliProvider;
 use aghist::provider::copilot_cli::CopilotCliProvider;
+use aghist::provider::cursor::CursorProvider;
 use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
@@ -142,6 +143,14 @@ fn opencode_provider_with_nonexistent_dir() {
 }
 
 #[test]
+fn cursor_provider_with_nonexistent_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = CursorProvider::new(vec![dir.path().join("does-not-exist")]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert!(sessions.is_empty());
+}
+
+#[test]
 fn generated_claude_fixtures_discoverable() {
     let fixture = common::fixtures::claude_single_session(4);
     let provider = ClaudeCodeProvider::new(vec![fixture.base_path.clone()]);
@@ -196,6 +205,17 @@ fn generated_opencode_fixtures_discoverable() {
 }
 
 #[test]
+fn generated_cursor_fixtures_discoverable() {
+    let fixture = common::fixtures::cursor_single_session(4);
+    let provider = CursorProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].provider, Provider::Cursor);
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+    assert_eq!(messages.len(), 4);
+}
+
+#[test]
 fn config_filters_detected_providers_via_cli() {
     // Create fixtures with Claude data + Gemini dir
     let fixture = common::fixtures::claude_single_session(2);
@@ -245,8 +265,8 @@ fn all_generated_providers_discoverable() {
     }
     drop(dirs);
 
-    // 5 providers * 2 sessions each
-    assert_eq!(total, 10);
+    // 6 providers * 2 sessions each
+    assert_eq!(total, 12);
 }
 
 #[test]

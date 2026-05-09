@@ -163,7 +163,7 @@ enum Command {
     /// of `added` / `updated` / `unchanged` counts to stdout.
     Index {
         /// Reindex only sessions from this provider
-        /// (`claude-code`, `copilot-cli`, `gemini-cli`, `codex-cli`, `opencode`).
+        /// (`claude-code`, `copilot-cli`, `gemini-cli`, `codex-cli`, `opencode`, `cursor`).
         #[arg(long, value_parser = parse_provider_slug, conflicts_with = "params")]
         provider: Option<Provider>,
 
@@ -580,7 +580,7 @@ fn parse_todo_kind(raw: &str) -> Result<TodoKind, String> {
 fn parse_provider_slug(raw: &str) -> Result<Provider, String> {
     Provider::from_slug(raw).ok_or_else(|| {
         format!(
-            "unknown provider slug '{raw}'. Valid: claude-code, copilot-cli, gemini-cli, codex-cli, opencode"
+            "unknown provider slug '{raw}'. Valid: claude-code, copilot-cli, gemini-cli, codex-cli, opencode, cursor"
         )
     })
 }

@@ -14,7 +14,7 @@ fn default_config_when_file_missing() {
     assert_eq!(config.cache_size, 20);
     assert!(!config.show_tool_calls);
     assert_eq!(config.max_messages_per_session, 5000);
-    assert_eq!(config.providers.enabled.len(), 5);
+    assert_eq!(config.providers.enabled.len(), 6);
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn corrupt_toml_falls_back_to_defaults() {
     let config = Config::load_from(&path);
 
     assert_eq!(config.cache_size, 20);
-    assert_eq!(config.providers.enabled.len(), 5);
+    assert_eq!(config.providers.enabled.len(), 6);
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn partial_config_fills_defaults() {
     assert_eq!(config.max_messages_per_session, 100);
     assert_eq!(config.cache_size, 20);
     assert!(!config.show_tool_calls);
-    assert_eq!(config.providers.enabled.len(), 5);
+    assert_eq!(config.providers.enabled.len(), 6);
 }
 
 #[test]
