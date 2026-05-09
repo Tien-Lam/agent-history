@@ -11,6 +11,7 @@
 //! is unchanged; instead, callers consult [`FederatedDiscovery::source_of`] to
 //! map a `SessionId` back to its source.
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -210,13 +211,20 @@ pub fn discover_federated(
         out
     });
 
+    // Outcomes are ordered local-first; preserve that precedence when sessions
+    // collide. Without this, a remote source mirroring the same provider dirs
+    // (e.g. a backup of this host) would overwrite the `"local"` tag with the
+    // remote source name and double-index the session under two different
+    // source_paths.
     let mut sessions = Vec::new();
     let mut source_by_session: HashMap<String, String> = HashMap::new();
     let mut failures = Vec::new();
     for (tag, batch, failure) in outcomes {
         for s in batch {
-            source_by_session.insert(s.id.0.clone(), tag.clone());
-            sessions.push(s);
+            if let Entry::Vacant(v) = source_by_session.entry(s.id.0.clone()) {
+                v.insert(tag.clone());
+                sessions.push(s);
+            }
         }
         if let Some(f) = failure {
             failures.push(f);
@@ -302,6 +310,47 @@ mod tests {
             .collect();
         assert_eq!(by_id.get("local-1").map(String::as_str), Some(LOCAL_SOURCE));
         assert_eq!(by_id.get("remote-1").map(String::as_str), Some("laptop"));
+        assert!(result.failures.is_empty());
+    }
+
+    #[test]
+    fn local_tag_wins_when_remote_mirrors_overlap_with_local_session_id() {
+        // Same session_id present locally and on a remote mirror (e.g. a backup
+        // of this host). The local tag must win so callers know the session
+        // came from the host's own dirs, and the session must appear only once
+        // so we don't double-index it under two source_paths.
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        write_claude_fixture(&home, "shared-1");
+
+        let cache = tmp.path().join("cache");
+        let remote_data = cache.join("backup").join("data");
+        std::fs::create_dir_all(&remote_data).unwrap();
+        write_claude_fixture(&remote_data, "shared-1");
+
+        let local = ClaudeCodeProvider::new(vec![home.join(".claude")]);
+        let providers: Vec<Box<dyn HistoryProvider>> = vec![Box::new(local)];
+
+        let sources = vec![RemoteSource {
+            name: "backup".to_string(),
+            host: "backup.local".to_string(),
+            path: "/home/x".to_string(),
+            transport: Transport::Ssh,
+        }];
+
+        let result = discover_federated(&providers, &sources, &cache);
+        let shared: Vec<_> = result
+            .sessions
+            .iter()
+            .filter(|s| s.id.0 == "shared-1")
+            .collect();
+        assert_eq!(
+            shared.len(),
+            1,
+            "duplicate session ids across sources must dedupe; got {shared:?}"
+        );
+        assert_eq!(result.source_of(&shared[0].id), LOCAL_SOURCE);
         assert!(result.failures.is_empty());
     }
 
