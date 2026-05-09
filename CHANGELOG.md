@@ -4,6 +4,72 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-05-09
+
+The y3o roadmap: aghist grows an agent-friendly CLI surface, semantic search, an MCP server, and cross-machine federated history. 27 commits since 0.2.1.
+
+### Added
+
+#### Agent-friendly CLI surface
+
+- `aghist search <query>` — Tantivy BM25 search subcommand (was previously TUI-only)
+- `aghist show <provider>/<session-id>#<turn>` — citation-ref resolver, `--include-context N` for surrounding turns
+- `aghist health` — machine-readable doctor (`{checks, ok, summary}` envelope)
+- `aghist index` — idempotent, delta-aware index management; `--force` for full rebuild; `--accept-download` to opt into FastEmbed
+- `aghist sources` — list local provider paths + sizes + last-indexed-at; subcommands `add/list/remove/pull` for cross-machine remotes
+- `aghist decisions` / `aghist todos` / `aghist threads` — heuristic cross-session extractors (decisions, follow-ups, project clusters)
+- `aghist schema [<subcmd>|--list|--all]` — JSON-Schema (draft-2020-12) introspection for every subcommand
+- `aghist mcp` — stdio MCP JSON-RPC 2.0 server: tools `search_sessions`, `list_sessions`, `get_session`, `get_message`, `reindex`, `health`; resources `aghist://session/<provider>/<id>` and `aghist://session/<provider>/<id>/turn/<n>`
+
+#### Output discipline
+
+- Stable JSON error envelope: `{"error":{"kind":"<kebab>","message":"…","hint":"…"}}` on stderr
+- Semantic exit codes: `0` success, `1` runtime error, `2` usage error, `3` success-but-empty
+- `--json` / `--ndjson` global flags; auto-detect JSON when stdout is not a TTY
+- `--params <JSON>` on every subcommand: submit the whole request body in one JSON, validated against `aghist schema <subcmd>`
+- `--query-file` and `--stdin` for `aghist search` queries with special characters
+- `--watch` mode on `aghist search`: stream NDJSON as new sessions land
+
+#### Filters and pagination
+
+- Global filter flags: `--provider <slug>`, `--since/--until <RFC3339>`, `--project <substr>`, `--role user|assistant|tool`, `--has-tool-call`
+- `--limit <N>` + `--cursor <opaque>` opaque-cursor pagination on `--list` and `search`; response includes `meta.next_cursor` and `meta.total`
+- `--turn-range A:B` (1-based inclusive) on `aghist export` to slice sessions
+
+#### Citation refs
+
+- Stable `<provider-slug>/<session-id>#<turn>` ref format, opaque-stable across reindex (`src/model/citation.rs`)
+
+#### Search engine
+
+- Tool-call output text indexed in a separate Tantivy field — `--has-tool-call` filter and search hits land on Bash stdout, file reads, grep results, etc.
+- `--debug-search` emits per-hit BM25 explanation tree
+- `--hybrid-weight <0..1>` opt-in RRF blend of BM25 + FastEmbed cosine ranks (lexical-only at `0`, semantic-only at `1`); fails open to lexical when no consent
+- FastEmbed (`AllMiniLML6V2`, ~90 MB) integrated behind `aghist index --accept-download`; consent persisted next to the index
+- Embedding cache invalidation keyed by message content hash; reindex of unchanged messages is free
+- Recall@10 / MRR bench harness across lexical, semantic, and hybrid (`tests/recall_bench.rs`, `tests/fixtures/bench_recall/`)
+
+#### Cross-machine sources
+
+- `aghist sources add <name> --host <h> --path <p> [--transport ssh|rsync]` — register a remote in `~/.config/aghist/config.toml`
+- `aghist sources pull [<name>|--all] [--dry-run]` — rsync remote → `~/.cache/aghist/sources/<name>/data/` (override cache root via `AGHIST_SOURCES_CACHE_DIR`; override rsync binary via `AGHIST_RSYNC_BIN`)
+- Federated search: indexer treats every cache as an additional provider source; `aghist search` returns hits from local + remote with a `source` field
+
+#### MCP
+
+- Per-provider allowlist: `[providers] mcp_exposed = [...]` narrows what `aghist mcp` exposes independently of the CLI's `enabled` list (e.g. hide a personal account from work agents)
+
+### Changed
+
+- **Breaking** (JSON only): `Provider` now serializes as kebab-case slug (`"claude-code"`, `"copilot-cli"`, etc.) to match the CLI's `--provider` input. Was snake_case (`"claude_code"`). Affects every JSON response with a `provider` field.
+- **Breaking** (JSON only): `aghist decisions --json` now returns `{decisions: [...], count: N}` to match `todos` and `threads`. Was a bare array.
+- Index manifest now keyed by content hash instead of mtime — surviving file copies / pulls across machines without spurious re-indexing.
+
+### Fixed
+
+- Provider tests for `copilot_v2_discover_sessions` / `opencode_v2_discover_sessions` now pass on Linux (Windows-style fixture paths previously failed `project_name` extraction).
+- Federated search: when local and a remote source contain the same session, `source` label correctly preserves `local` instead of clobbering to the remote (defeating the local-fast-path).
+
 ## [0.2.1] - 2026-04-12
 
 ### Fixed
