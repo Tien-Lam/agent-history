@@ -74,7 +74,7 @@ fn list_with_generated_claude_fixtures() {
         .filter(|v| v.get("id").is_some())
         .collect();
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["provider"], "claude_code");
+    assert_eq!(rows[0]["provider"], "claude-code");
     assert_eq!(rows[0]["message_count"], 4);
 }
 
@@ -241,8 +241,8 @@ fn sources_emits_json_with_provider_rows() {
     let sources = parsed["sources"].as_array().expect("sources array");
     let claude_row = sources
         .iter()
-        .find(|r| r["provider"] == "claude_code")
-        .expect("claude_code source row");
+        .find(|r| r["provider"] == "claude-code")
+        .expect("claude-code source row");
     assert!(claude_row["session_count"].as_u64().unwrap() >= 1);
     assert!(claude_row["paths"].as_array().is_some());
     assert!(parsed["index"]["dir"].is_string());
@@ -1258,8 +1258,8 @@ fn list_with_multiple_providers() {
                 .and_then(|v| v["provider"].as_str().map(str::to_string))
         })
         .collect();
-    assert!(providers.contains("claude_code"));
-    assert!(providers.contains("codex_cli"));
+    assert!(providers.contains("claude-code"));
+    assert!(providers.contains("codex-cli"));
 }
 
 #[test]
@@ -2530,6 +2530,40 @@ fn list_filter_provider_drops_other_providers() {
     assert!(
         session_rows.is_empty(),
         "expected zero rows for codex-cli, got: {session_rows:?}"
+    );
+}
+
+#[test]
+fn list_json_provider_round_trips_through_cli_input() {
+    // Regression: ahist-jqb. JSON output used to emit "claude_code"
+    // (snake_case) while --provider only accepts "claude-code" (kebab),
+    // breaking `aghist --list --json | jq -r .sessions[0].provider |
+    // xargs aghist --provider`. Output now matches the input slug.
+    let fixture = common::fixtures::claude_single_session(2);
+    let home = fixture.base_path.parent().unwrap();
+
+    let json_out = aghist()
+        .args(["--list", "--json", "--limit", "1"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(json_out.status.code(), Some(0));
+    let stdout = String::from_utf8(json_out.stdout).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let provider_slug = parsed["sessions"][0]["provider"].as_str().unwrap();
+    assert_eq!(provider_slug, "claude-code");
+
+    // Feed the slug back through --provider — must not error.
+    let round_trip = aghist()
+        .args(["--list", "--provider", provider_slug])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(
+        round_trip.status.code(),
+        Some(0),
+        "round-trip failed: stderr={}",
+        String::from_utf8_lossy(&round_trip.stderr)
     );
 }
 

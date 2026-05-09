@@ -1,11 +1,30 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Provider {
     ClaudeCode,
     CopilotCli,
     GeminiCli,
     CodexCli,
     OpenCode,
+}
+
+/// Serializes as the kebab-case [`Provider::slug`]. This matches the
+/// CLI input contract (`--provider claude-code`) and citation refs, so
+/// JSON output round-trips through `--provider` without conversion.
+impl serde::Serialize for Provider {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        ser.serialize_str(self.slug())
+    }
+}
+
+/// Deserializes from the kebab-case [`Provider::slug`]. Unknown slugs
+/// (including the legacy `snake_case` forms) are rejected.
+impl<'de> serde::Deserialize<'de> for Provider {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let s = <&str as serde::Deserialize>::deserialize(de)?;
+        Self::from_slug(s).ok_or_else(|| {
+            serde::de::Error::custom(format!("unknown provider slug {s:?}"))
+        })
+    }
 }
 
 impl Provider {
@@ -191,5 +210,30 @@ mod tests {
     #[test]
     fn shell_escape_single_quotes() {
         assert_eq!(shell_escape("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn serialize_uses_kebab_case_slug() {
+        for &p in Provider::all() {
+            let json = serde_json::to_string(&p).unwrap();
+            assert_eq!(json, format!("\"{}\"", p.slug()));
+        }
+    }
+
+    #[test]
+    fn deserialize_round_trips_via_slug() {
+        for &p in Provider::all() {
+            let json = serde_json::to_string(&p).unwrap();
+            let back: Provider = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, p, "round-trip for {p:?}");
+        }
+    }
+
+    #[test]
+    fn deserialize_rejects_legacy_snake_case() {
+        // Pre-fix output emitted "claude_code"; reject it so callers can't
+        // silently accept ambiguous slugs.
+        assert!(serde_json::from_str::<Provider>("\"claude_code\"").is_err());
+        assert!(serde_json::from_str::<Provider>("\"codex_cli\"").is_err());
     }
 }
