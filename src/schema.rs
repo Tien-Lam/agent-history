@@ -725,29 +725,37 @@ fn decisions_schema() -> Value {
             "additionalProperties": false
         },
         "response": {
-            "type": "array",
-            "description": "Array of candidates, ordered by score descending then started_at descending.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "ref": {
-                        "type": "string",
-                        "pattern": "^[a-z0-9-]+/.+#[1-9][0-9]*$",
-                        "description": "Citation ref `<provider>/<session-id>#<turn>`."
-                    },
-                    "provider": { "type": "string", "enum": provider_slug_enum() },
-                    "session_id": { "type": "string" },
-                    "turn": { "type": "integer", "minimum": 1 },
-                    "role": { "type": "string", "enum": ["user", "assistant", "system", "tool"] },
-                    "score": { "type": "number" },
-                    "markers": { "type": "array", "items": { "type": "string" } },
-                    "snippet": { "type": "string" },
-                    "project": { "type": ["string", "null"] },
-                    "timestamp": { "type": "string", "format": "date-time" },
-                    "started_at": { "type": "string", "format": "date-time" }
+            "type": "object",
+            "description": "JSON output (when --json or stdout is not a TTY).",
+            "properties": {
+                "decisions": {
+                    "type": "array",
+                    "description": "Candidates ordered by score descending then started_at descending.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "ref": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9-]+/.+#[1-9][0-9]*$",
+                                "description": "Citation ref `<provider>/<session-id>#<turn>`."
+                            },
+                            "provider": { "type": "string", "enum": provider_slug_enum() },
+                            "session_id": { "type": "string" },
+                            "turn": { "type": "integer", "minimum": 1 },
+                            "role": { "type": "string", "enum": ["user", "assistant", "system", "tool"] },
+                            "score": { "type": "number" },
+                            "markers": { "type": "array", "items": { "type": "string" } },
+                            "snippet": { "type": "string" },
+                            "project": { "type": ["string", "null"] },
+                            "timestamp": { "type": "string", "format": "date-time" },
+                            "started_at": { "type": "string", "format": "date-time" }
+                        },
+                        "required": ["ref", "provider", "session_id", "turn", "role", "score", "markers", "snippet", "timestamp", "started_at"]
+                    }
                 },
-                "required": ["ref", "provider", "session_id", "turn", "role", "score", "markers", "snippet", "timestamp", "started_at"]
-            }
+                "count": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["decisions", "count"]
         },
         "exit_codes": exit_codes()
     })

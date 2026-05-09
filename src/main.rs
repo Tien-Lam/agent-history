@@ -3822,7 +3822,13 @@ fn print_decisions_json(rows: &[DecisionRow]) -> std::io::Result<()> {
         started_at: chrono::DateTime<chrono::Utc>,
     }
 
-    let payload: Vec<JsonRow> = rows
+    #[derive(serde::Serialize)]
+    struct Payload<'a> {
+        decisions: Vec<JsonRow<'a>>,
+        count: usize,
+    }
+
+    let decisions: Vec<JsonRow> = rows
         .iter()
         .map(|r| JsonRow {
             reference: r.citation.to_string(),
@@ -3839,6 +3845,10 @@ fn print_decisions_json(rows: &[DecisionRow]) -> std::io::Result<()> {
         })
         .collect();
 
+    let payload = Payload {
+        count: decisions.len(),
+        decisions,
+    };
     serde_json::to_writer(io::stdout().lock(), &payload).map_err(std::io::Error::other)?;
     println!();
     Ok(())
