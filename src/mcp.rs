@@ -260,6 +260,19 @@ impl McpServer {
             .build_index(&sessions, &self.providers, &tx)
             .map_err(|e| format!("failed to build index: {e}"))?;
 
+        // Best-effort: surface user notes alongside session messages. Sidecar
+        // failures are intentionally swallowed — a missing metadata.db is the
+        // common case and must not break MCP search.
+        if let Some(path) = crate::metadata::default_path() {
+            if path.exists() {
+                if let Ok(conn) = crate::metadata::open(&path) {
+                    if let Ok(notes) = crate::metadata::note_list(&conn, None) {
+                        let _ = index.index_notes(&notes);
+                    }
+                }
+            }
+        }
+
         let hits = index
             .search(&query, limit)
             .map_err(|e| format!("search failed: {e}"))?;
@@ -300,24 +313,40 @@ impl McpServer {
 
         let mut hits_json = Vec::with_capacity(hits.len());
         for h in &hits {
-            let session = session_meta.get(h.session_id.as_str()).copied();
-            let turn = turn_lookup
-                .get(&(h.session_id.clone(), h.message_id.clone()))
-                .copied();
-            let citation_ref = session.zip(turn).map(|(s, t)| {
-                format!("{}/{}#{}", s.provider.slug(), s.id.0, t)
-            });
-            hits_json.push(json!({
-                "ref": citation_ref,
-                "session_id": h.session_id,
-                "message_id": h.message_id,
-                "turn": turn,
-                "score": h.score,
-                "snippet": h.snippet,
-                "provider": session.map(|s| s.provider.slug()),
-                "project": session.and_then(|s| s.project_name.as_deref()),
-                "started_at": session.map(|s| s.started_at),
-            }));
+            match h.kind {
+                crate::search::HitKind::Note => {
+                    // Notes carry their own ref shape (`<provider>/<id>[#<turn>]`)
+                    // so we surface it directly. Per-message fields don't apply.
+                    hits_json.push(json!({
+                        "kind": crate::search::HitKind::Note.slug(),
+                        "ref": h.note_session_ref,
+                        "note_id": h.note_id,
+                        "score": h.score,
+                        "snippet": h.snippet,
+                    }));
+                }
+                crate::search::HitKind::Message => {
+                    let session = session_meta.get(h.session_id.as_str()).copied();
+                    let turn = turn_lookup
+                        .get(&(h.session_id.clone(), h.message_id.clone()))
+                        .copied();
+                    let citation_ref = session.zip(turn).map(|(s, t)| {
+                        format!("{}/{}#{}", s.provider.slug(), s.id.0, t)
+                    });
+                    hits_json.push(json!({
+                        "kind": crate::search::HitKind::Message.slug(),
+                        "ref": citation_ref,
+                        "session_id": h.session_id,
+                        "message_id": h.message_id,
+                        "turn": turn,
+                        "score": h.score,
+                        "snippet": h.snippet,
+                        "provider": session.map(|s| s.provider.slug()),
+                        "project": session.and_then(|s| s.project_name.as_deref()),
+                        "started_at": session.map(|s| s.started_at),
+                    }));
+                }
+            }
         }
 
         Ok(json!({

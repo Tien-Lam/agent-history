@@ -14,6 +14,7 @@ use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Te
 pub use tantivy::query::Explanation;
 
 use crate::action::Action;
+use crate::metadata::Note;
 use crate::model::{ContentBlock, Message, Provider, Role, Session};
 use crate::provider::HistoryProvider;
 
@@ -29,12 +30,40 @@ pub enum SearchError {
     Json(#[from] serde_json::Error),
 }
 
+/// What kind of indexed document a [`SearchHit`] points at. Drives the JSON
+/// output shape (`kind="message"` vs `kind="note"`) and tells callers which of
+/// the optional note fields are populated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HitKind {
+    /// A session message — `session_id`/`message_id` identify the source turn.
+    Message,
+    /// A user note from the metadata sidecar — `note_id`/`note_session_ref`
+    /// identify the row; `session_id`/`message_id` are empty.
+    Note,
+}
+
+impl HitKind {
+    /// Stable lowercase slug used in JSON output and the indexed `kind` field.
+    pub fn slug(self) -> &'static str {
+        match self {
+            HitKind::Message => "message",
+            HitKind::Note => "note",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SearchHit {
+    pub kind: HitKind,
     pub session_id: String,
     pub message_id: String,
     pub snippet: String,
     pub score: f32,
+    /// `Some` when `kind == HitKind::Note`: the metadata.db row id.
+    pub note_id: Option<i64>,
+    /// `Some` when `kind == HitKind::Note`: the note's `session_ref`
+    /// (`<provider>/<session-id>[#<turn>]`), as stored in the sidecar.
+    pub note_session_ref: Option<String>,
 }
 
 /// One semantic candidate sourced from cosine similarity over the embedding
@@ -88,6 +117,21 @@ pub struct IndexStats {
     pub unchanged: usize,
 }
 
+/// Outcome of a single [`SearchIndex::index_notes`] pass. Mirrors [`IndexStats`]
+/// in spirit but counts metadata.db note rows instead of session files.
+#[derive(Debug, Default, Clone)]
+pub struct NotesIndexStats {
+    /// Notes never seen by the manifest before.
+    pub added: usize,
+    /// Notes whose `updated_at` advanced since the manifest snapshot.
+    pub updated: usize,
+    /// Notes already present at the current `updated_at` — skipped.
+    pub unchanged: usize,
+    /// Notes present in the manifest but absent from the input list — pruned
+    /// from the index so deletes in the sidecar propagate to search.
+    pub removed: usize,
+}
+
 pub struct SearchIndex {
     index: Index,
     reader: IndexReader,
@@ -101,6 +145,9 @@ pub struct SearchIndex {
     f_tool_output: Field,
     f_timestamp: Field,
     f_has_tool_call: Field,
+    f_kind: Field,
+    f_note_id: Field,
+    f_note_session_ref: Field,
     index_dir: PathBuf,
 }
 
@@ -131,6 +178,11 @@ impl SearchFilters {
 #[derive(Serialize, Deserialize, Default)]
 struct Manifest {
     sessions: HashMap<String, u64>,
+    /// Note id → `updated_at` snapshot from the metadata sidecar. `#[serde(default)]`
+    /// keeps pre-q3o.6 manifests deserializable; on schema-mismatch wipes the
+    /// whole manifest is recreated from scratch anyway.
+    #[serde(default)]
+    notes: HashMap<String, String>,
 }
 
 impl SearchIndex {
@@ -148,6 +200,9 @@ impl SearchIndex {
         let f_tool_output = builder.add_text_field("tool_output", TEXT | STORED);
         let f_timestamp = builder.add_i64_field("timestamp", INDEXED | STORED);
         let f_has_tool_call = builder.add_i64_field("has_tool_call", INDEXED | STORED);
+        let f_kind = builder.add_text_field("kind", STRING | STORED);
+        let f_note_id = builder.add_i64_field("note_id", INDEXED | STORED);
+        let f_note_session_ref = builder.add_text_field("note_session_ref", STRING | STORED);
         let schema = builder.build();
 
         let meta_path = index_dir.join("meta.json");
@@ -182,6 +237,9 @@ impl SearchIndex {
             f_tool_output,
             f_timestamp,
             f_has_tool_call,
+            f_kind,
+            f_note_id,
+            f_note_session_ref,
             index_dir: index_dir.to_path_buf(),
         })
     }
@@ -229,6 +287,7 @@ impl SearchIndex {
                         let project = session.project_name.as_deref().unwrap_or("");
                         let has_tool_call = i64::from(message_has_tool_call(msg));
                         let mut doc = TantivyDocument::default();
+                        doc.add_text(self.f_kind, HitKind::Message.slug());
                         doc.add_text(self.f_session_id, &session.id.0);
                         doc.add_text(self.f_message_id, &msg.id.0);
                         doc.add_text(self.f_provider, session.provider.slug());
@@ -253,6 +312,74 @@ impl SearchIndex {
         writer.commit()?;
         self.save_manifest(&manifest)?;
 
+        Ok(stats)
+    }
+
+    /// Index notes from the metadata sidecar so they show up alongside session
+    /// content in `search`. Incremental: a note whose `updated_at` matches the
+    /// manifest snapshot is skipped, so repeat calls are cheap. Notes present
+    /// in the manifest but absent from `notes` are removed from the index, so
+    /// metadata.db deletes propagate.
+    ///
+    /// Each indexed note becomes a Tantivy doc with `kind="note"`, the note id
+    /// in `note_id`, the `session_ref` in `note_session_ref`, and the body in
+    /// `content` (so the same query parser that searches messages also matches
+    /// notes). Note docs intentionally omit provider/role/timestamp fields:
+    /// notes don't belong to a single message turn, so any `--provider`,
+    /// `--role`, or `--since/--until` filter at search time will exclude them
+    /// via Tantivy's MUST clauses — which is the right behaviour, since those
+    /// dimensions don't apply to a free-form annotation.
+    pub fn index_notes(&self, notes: &[Note]) -> Result<NotesIndexStats, SearchError> {
+        let mut manifest = self.load_manifest();
+        let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
+        let mut stats = NotesIndexStats::default();
+
+        // Track ids seen this pass so we can prune stale manifest entries.
+        let mut current_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::with_capacity(notes.len());
+
+        for note in notes {
+            let key = note.id.to_string();
+            current_ids.insert(key.clone());
+
+            match manifest.notes.get(&key) {
+                Some(prev) if prev == &note.updated_at => {
+                    stats.unchanged += 1;
+                    continue;
+                }
+                Some(_) => stats.updated += 1,
+                None => stats.added += 1,
+            }
+
+            // delete-by-term keys on the i64 note_id field — message docs
+            // don't carry note_id so they're untouched.
+            writer.delete_term(Term::from_field_i64(self.f_note_id, note.id));
+
+            let mut doc = TantivyDocument::default();
+            doc.add_text(self.f_kind, HitKind::Note.slug());
+            doc.add_i64(self.f_note_id, note.id);
+            doc.add_text(self.f_note_session_ref, &note.session_ref);
+            doc.add_text(self.f_content, &note.body);
+            writer.add_document(doc)?;
+
+            manifest.notes.insert(key, note.updated_at.clone());
+        }
+
+        // Prune notes that vanished from the sidecar.
+        let stale: Vec<(String, i64)> = manifest
+            .notes
+            .keys()
+            .filter(|k| !current_ids.contains(*k))
+            .filter_map(|k| k.parse::<i64>().ok().map(|id| (k.clone(), id)))
+            .collect();
+        for (key, id) in stale {
+            writer.delete_term(Term::from_field_i64(self.f_note_id, id));
+            manifest.notes.remove(&key);
+            stats.removed += 1;
+        }
+
+        writer.commit()?;
+        self.save_manifest(&manifest)?;
         Ok(stats)
     }
 
@@ -504,10 +631,13 @@ impl SearchIndex {
             by_msg_id.insert(
                 message_id.clone(),
                 SearchHit {
+                    kind: HitKind::Message,
                     session_id,
                     message_id,
                     snippet,
                     score: 0.0,
+                    note_id: None,
+                    note_session_ref: None,
                 },
             );
         }
@@ -607,27 +737,13 @@ impl SearchIndex {
                     continue;
                 }
             }
-            let session_id = field_text(&doc, self.f_session_id);
-            let message_id = field_text(&doc, self.f_message_id);
-            let content = field_text(&doc, self.f_content);
-            let tool_output = field_text(&doc, self.f_tool_output);
-            let snippet = best_snippet(&content, &tool_output, query_str, 120);
-
+            let hit = self.doc_to_hit(&doc, query_str, score);
             let explanation = if explain {
                 Some(combined.explain(&searcher, addr)?)
             } else {
                 None
             };
-
-            hits.push((
-                SearchHit {
-                    session_id,
-                    message_id,
-                    snippet,
-                    score,
-                },
-                explanation,
-            ));
+            hits.push((hit, explanation));
         }
 
         Ok(hits)
@@ -700,6 +816,39 @@ impl SearchIndex {
         }
         directories::ProjectDirs::from("", "", "aghist")
             .map_or_else(|| PathBuf::from(".aghist-index"), |d| d.cache_dir().join("search-index"))
+    }
+
+    /// Materialize a stored Tantivy doc into a [`SearchHit`], reading the
+    /// `kind` field to drive whether note metadata is populated. Centralized
+    /// so message-only and hybrid paths both produce a uniformly-shaped hit.
+    fn doc_to_hit(&self, doc: &TantivyDocument, query_str: &str, score: f32) -> SearchHit {
+        let kind = if field_text(doc, self.f_kind) == HitKind::Note.slug() {
+            HitKind::Note
+        } else {
+            HitKind::Message
+        };
+        let session_id = field_text(doc, self.f_session_id);
+        let message_id = field_text(doc, self.f_message_id);
+        let content = field_text(doc, self.f_content);
+        let tool_output = field_text(doc, self.f_tool_output);
+        let snippet = best_snippet(&content, &tool_output, query_str, 120);
+        let (note_id, note_session_ref) = match kind {
+            HitKind::Note => {
+                let r = field_text(doc, self.f_note_session_ref);
+                let r = if r.is_empty() { None } else { Some(r) };
+                (field_i64(doc, self.f_note_id), r)
+            }
+            HitKind::Message => (None, None),
+        };
+        SearchHit {
+            kind,
+            session_id,
+            message_id,
+            snippet,
+            score,
+            note_id,
+            note_session_ref,
+        }
     }
 
     fn load_manifest(&self) -> Manifest {
@@ -784,6 +933,10 @@ fn field_text(doc: &TantivyDocument, field: Field) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()
+}
+
+fn field_i64(doc: &TantivyDocument, field: Field) -> Option<i64> {
+    doc.get_first(field).and_then(|v| v.as_i64())
 }
 
 fn file_mtime(path: &Path) -> u64 {
@@ -1099,6 +1252,114 @@ mod tests {
         assert!(
             m3_score > m4_score,
             "lexical+semantic hit (m-3, score {m3_score}) should outrank semantic-only (m-4, score {m4_score})"
+        );
+    }
+
+    fn make_note(id: i64, session_ref: &str, body: &str, updated_at: &str) -> Note {
+        Note {
+            id,
+            session_ref: session_ref.to_string(),
+            body: body.to_string(),
+            created_at: updated_at.to_string(),
+            updated_at: updated_at.to_string(),
+        }
+    }
+
+    #[test]
+    fn index_notes_makes_bodies_searchable_with_kind_note() {
+        let (_dir, index) = build_tiny_index();
+        let notes = vec![make_note(
+            1,
+            "claude-code/sess-1#3",
+            "investigate xylophone bug",
+            "2026-01-01T00:00:00Z",
+        )];
+        let stats = index.index_notes(&notes).unwrap();
+        assert_eq!(stats.added, 1);
+        assert_eq!(stats.unchanged, 0);
+
+        let hits = index
+            .search_with_filters("xylophone", 10, &SearchFilters::default())
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, HitKind::Note);
+        assert_eq!(hits[0].note_id, Some(1));
+        assert_eq!(
+            hits[0].note_session_ref.as_deref(),
+            Some("claude-code/sess-1#3")
+        );
+    }
+
+    #[test]
+    fn index_notes_is_incremental_on_unchanged_updated_at() {
+        let (_dir, index) = build_tiny_index();
+        let notes = vec![make_note(
+            42,
+            "claude-code/sess-1",
+            "first version",
+            "2026-01-01T00:00:00Z",
+        )];
+        let s1 = index.index_notes(&notes).unwrap();
+        assert_eq!(s1.added, 1);
+        let s2 = index.index_notes(&notes).unwrap();
+        // Re-indexing with the same updated_at must skip everything.
+        assert_eq!(s2.added, 0);
+        assert_eq!(s2.updated, 0);
+        assert_eq!(s2.unchanged, 1);
+    }
+
+    #[test]
+    fn index_notes_replaces_doc_when_updated_at_advances() {
+        let (_dir, index) = build_tiny_index();
+        let v1 = vec![make_note(
+            7,
+            "claude-code/sess-1",
+            "old text marker7",
+            "2026-01-01T00:00:00Z",
+        )];
+        index.index_notes(&v1).unwrap();
+        let v2 = vec![make_note(
+            7,
+            "claude-code/sess-1",
+            "new text marker7",
+            "2026-02-01T00:00:00Z",
+        )];
+        let stats = index.index_notes(&v2).unwrap();
+        assert_eq!(stats.updated, 1);
+
+        // Old body must no longer match.
+        let old_hits = index
+            .search_with_filters("old", 10, &SearchFilters::default())
+            .unwrap();
+        assert!(
+            old_hits.iter().all(|h| h.kind != HitKind::Note),
+            "old note body should have been replaced: {old_hits:?}"
+        );
+        // New body must match.
+        let new_hits = index
+            .search_with_filters("new", 10, &SearchFilters::default())
+            .unwrap();
+        assert!(new_hits.iter().any(|h| h.kind == HitKind::Note));
+    }
+
+    #[test]
+    fn index_notes_prunes_removed_rows() {
+        let (_dir, index) = build_tiny_index();
+        let v1 = vec![make_note(
+            9,
+            "claude-code/sess-1",
+            "soon-to-vanish marker9",
+            "2026-01-01T00:00:00Z",
+        )];
+        index.index_notes(&v1).unwrap();
+        let stats = index.index_notes(&[]).unwrap();
+        assert_eq!(stats.removed, 1);
+        let hits = index
+            .search_with_filters("soon-to-vanish", 10, &SearchFilters::default())
+            .unwrap();
+        assert!(
+            hits.iter().all(|h| h.kind != HitKind::Note),
+            "pruned note must not match: {hits:?}"
         );
     }
 

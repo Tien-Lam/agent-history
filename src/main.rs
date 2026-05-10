@@ -2168,6 +2168,11 @@ fn search_command(
         ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
     })?;
 
+    // Best-effort: index user notes so they show up alongside messages.
+    // Sidecar absence (no metadata.db on disk yet) is the common case and must
+    // not fail search — we just skip silently.
+    try_index_notes(&index);
+
     // Always pull the pagination pool so cursor resumption sees a stable
     // ordering across calls. Tantivy ranks by score, but we re-sort below
     // with our deterministic tie-break.
@@ -2232,11 +2237,20 @@ fn search_command(
         if let Some(keys) = metadata_keys {
             raw_hits
                 .into_iter()
-                .filter(|(hit, _)| {
-                    session_meta
+                .filter(|(hit, _)| match hit.kind {
+                    search::HitKind::Message => session_meta
                         .get(hit.session_id.as_str())
                         .map(|s| session_metadata_key(s))
-                        .is_some_and(|k| keys.contains(&k))
+                        .is_some_and(|k| keys.contains(&k)),
+                    // For note hits the canonical key is the note's target
+                    // (`<provider>/<session-id>`, turn suffix stripped) — keep
+                    // the note iff its target session is in the allowed set,
+                    // mirroring how notes are surfaced as session annotations.
+                    search::HitKind::Note => hit
+                        .note_session_ref
+                        .as_deref()
+                        .map(strip_turn_suffix)
+                        .is_some_and(|k| keys.contains(k)),
                 })
                 .collect()
         } else {
@@ -2366,6 +2380,9 @@ fn print_search_json(
 ) -> std::io::Result<()> {
     #[derive(serde::Serialize)]
     struct JsonHit<'a> {
+        /// Stable discriminator: `"message"` (default) or `"note"`. Agents can
+        /// branch on this without inspecting which optional fields are present.
+        kind: &'static str,
         session_id: &'a str,
         message_id: &'a str,
         score: f32,
@@ -2376,27 +2393,53 @@ fn print_search_json(
         /// Origin of the session: `"local"` for the host's own provider dirs,
         /// or a registered remote source name (see `aghist sources list`).
         source: &'a str,
+        /// Populated for `kind="note"`: the metadata.db row id.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        note_id: Option<i64>,
+        /// Populated for `kind="note"`: citation-style ref for the note's
+        /// target (`<provider>/<session-id>[#<turn>]`).
+        #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+        ref_: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
         explanation: Option<&'a search::Explanation>,
     }
 
     let rows: Vec<JsonHit> = hits
         .iter()
-        .map(|(h, explain)| {
-            let session = sessions.get(h.session_id.as_str()).copied();
-            let source = source_by_session
-                .get(h.session_id.as_str())
-                .map_or(federated::LOCAL_SOURCE, String::as_str);
-            JsonHit {
+        .map(|(h, explain)| match h.kind {
+            search::HitKind::Note => JsonHit {
+                kind: search::HitKind::Note.slug(),
                 session_id: &h.session_id,
                 message_id: &h.message_id,
                 score: h.score,
                 snippet: &h.snippet,
-                provider: session.map(|s| s.provider),
-                project: session.and_then(|s| s.project_name.as_deref()),
-                started_at: session.map(|s| s.started_at),
-                source,
+                provider: None,
+                project: None,
+                started_at: None,
+                source: federated::LOCAL_SOURCE,
+                note_id: h.note_id,
+                ref_: h.note_session_ref.as_deref(),
                 explanation: explain.as_ref(),
+            },
+            search::HitKind::Message => {
+                let session = sessions.get(h.session_id.as_str()).copied();
+                let source = source_by_session
+                    .get(h.session_id.as_str())
+                    .map_or(federated::LOCAL_SOURCE, String::as_str);
+                JsonHit {
+                    kind: search::HitKind::Message.slug(),
+                    session_id: &h.session_id,
+                    message_id: &h.message_id,
+                    score: h.score,
+                    snippet: &h.snippet,
+                    provider: session.map(|s| s.provider),
+                    project: session.and_then(|s| s.project_name.as_deref()),
+                    started_at: session.map(|s| s.started_at),
+                    source,
+                    note_id: None,
+                    ref_: None,
+                    explanation: explain.as_ref(),
+                }
             }
         })
         .collect();
@@ -2437,16 +2480,42 @@ fn print_search_table(
         );
     }
     for (h, explain) in hits {
+        let is_note = matches!(h.kind, search::HitKind::Note);
         let session = sessions.get(h.session_id.as_str()).copied();
-        let started = session
-            .map(|s| s.started_at.format("%Y-%m-%d %H:%M").to_string())
-            .unwrap_or_default();
-        let provider = session.map_or("", |s| s.provider.as_str());
-        let project = session
-            .and_then(|s| s.project_name.as_deref())
-            .unwrap_or("");
-        let project = truncate(project, 20);
-        let session_short = truncate(&h.session_id, 14);
+        let started = if is_note {
+            String::new()
+        } else {
+            session
+                .map(|s| s.started_at.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_default()
+        };
+        // For note rows the PROVIDER column carries the `note` discriminator
+        // so the row is visually distinct without needing a new column. The
+        // PROJECT column shows the note's session_ref (turn-stripped) so the
+        // human reader can still locate the underlying session.
+        let provider = if is_note {
+            "note"
+        } else {
+            session.map_or("", |s| s.provider.as_str())
+        };
+        let project_owned = if is_note {
+            h.note_session_ref
+                .as_deref()
+                .map(|r| strip_turn_suffix(r).to_string())
+                .unwrap_or_default()
+        } else {
+            session
+                .and_then(|s| s.project_name.as_deref())
+                .unwrap_or("")
+                .to_string()
+        };
+        let project = truncate(&project_owned, 20);
+        let session_label = if is_note {
+            h.note_id.map_or_else(String::new, |id| format!("note#{id}"))
+        } else {
+            h.session_id.clone()
+        };
+        let session_short = truncate(&session_label, 14);
         let snippet = truncate(&h.snippet, 80);
         if any_remote {
             let source = source_by_session
@@ -2533,6 +2602,8 @@ fn search_watch_command(
             ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
         })?;
 
+        try_index_notes(&index);
+
         let hits = index
             .search_with_filters(query, limit, filters)
             .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?;
@@ -2584,6 +2655,7 @@ fn write_watch_hit<W: std::io::Write>(
 ) -> std::io::Result<()> {
     #[derive(serde::Serialize)]
     struct JsonHit<'a> {
+        kind: &'static str,
         session_id: &'a str,
         message_id: &'a str,
         score: f32,
@@ -2592,21 +2664,45 @@ fn write_watch_hit<W: std::io::Write>(
         project: Option<&'a str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         source: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        note_id: Option<i64>,
+        #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+        ref_: Option<&'a str>,
     }
 
-    let session = sessions.get(hit.session_id.as_str()).copied();
-    let source = source_by_session
-        .get(hit.session_id.as_str())
-        .map_or(federated::LOCAL_SOURCE, String::as_str);
-    let row = JsonHit {
-        session_id: &hit.session_id,
-        message_id: &hit.message_id,
-        score: hit.score,
-        snippet: &hit.snippet,
-        provider: session.map(|s| s.provider),
-        project: session.and_then(|s| s.project_name.as_deref()),
-        started_at: session.map(|s| s.started_at),
-        source,
+    let row = match hit.kind {
+        search::HitKind::Note => JsonHit {
+            kind: search::HitKind::Note.slug(),
+            session_id: &hit.session_id,
+            message_id: &hit.message_id,
+            score: hit.score,
+            snippet: &hit.snippet,
+            provider: None,
+            project: None,
+            started_at: None,
+            source: federated::LOCAL_SOURCE,
+            note_id: hit.note_id,
+            ref_: hit.note_session_ref.as_deref(),
+        },
+        search::HitKind::Message => {
+            let session = sessions.get(hit.session_id.as_str()).copied();
+            let source = source_by_session
+                .get(hit.session_id.as_str())
+                .map_or(federated::LOCAL_SOURCE, String::as_str);
+            JsonHit {
+                kind: search::HitKind::Message.slug(),
+                session_id: &hit.session_id,
+                message_id: &hit.message_id,
+                score: hit.score,
+                snippet: &hit.snippet,
+                provider: session.map(|s| s.provider),
+                project: session.and_then(|s| s.project_name.as_deref()),
+                started_at: session.map(|s| s.started_at),
+                source,
+                note_id: None,
+                ref_: None,
+            }
+        }
     };
     serde_json::to_writer(&mut *out, &row)?;
     out.write_all(b"\n")?;
@@ -2800,6 +2896,13 @@ fn resolve_metadata_filter(
 /// Build the canonical metadata key for a session: `<provider-slug>/<id>`.
 fn session_metadata_key(session: &Session) -> String {
     format!("{}/{}", session.provider.slug(), session.id.0)
+}
+
+/// Drop a `#<turn>` suffix, leaving `<provider-slug>/<session-id>` — the same
+/// key shape as [`session_metadata_key`] so note refs and session refs can be
+/// compared against the same allow-set.
+fn strip_turn_suffix(session_ref: &str) -> &str {
+    session_ref.rsplit_once('#').map_or(session_ref, |(prefix, _)| prefix)
 }
 
 /// Returns true when `metadata_keys` is `None` (filter inactive) or when the
@@ -3081,6 +3184,26 @@ fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i32, ErrorEnv
 
 fn open_metadata_db() -> Result<rusqlite::Connection, ErrorEnvelope> {
     metadata::open_default().map_err(|e| metadata_error(&e))
+}
+
+/// Best-effort: open the metadata sidecar and feed every note into the search
+/// index. Any failure (sidecar not yet created, IO error, malformed row) is
+/// swallowed — `aghist search` must keep working without notes when the
+/// sidecar is unavailable, since metadata is opt-in.
+fn try_index_notes(index: &search::SearchIndex) {
+    let Some(path) = metadata::default_path() else {
+        return;
+    };
+    if !path.exists() {
+        return;
+    }
+    let Ok(conn) = metadata::open(&path) else {
+        return;
+    };
+    let Ok(notes) = metadata::note_list(&conn, None) else {
+        return;
+    };
+    let _ = index.index_notes(&notes);
 }
 
 fn metadata_error(err: &MetadataError) -> ErrorEnvelope {
