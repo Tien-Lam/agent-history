@@ -18,7 +18,7 @@
       "model": "gemini-2.5-pro",
       "thoughts": [{"description": "User wants to understand async patterns"}],
       "tokens": {"input": 30, "output": 150},
-      "toolCalls": [{"id": "tc-g1", "name": "search_docs", "args": {"query": "async await"}}]
+      "toolCalls": [{"id": "tc-g1", "name": "search_docs", "args": {"query": "async await"}, "response": {"output": "Found 3 docs on async/await."}}]
     }
   ]
 }

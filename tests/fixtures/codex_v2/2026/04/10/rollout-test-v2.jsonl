@@ -5,4 +5,6 @@
 {"timestamp":"2026-04-10T09:00:10Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"system prompt content"}]}}
 {"timestamp":"2026-04-10T09:00:12Z","type":"event_msg","payload":{"type":"user_message","message":"Can you also add input validation?","images":[]}}
 {"timestamp":"2026-04-10T09:00:15Z","type":"event_msg","payload":{"type":"agent_message","message":"Sure, I'll add input validation using zod schemas.","phase":"commentary"}}
+{"timestamp":"2026-04-10T09:00:16Z","type":"response_item","payload":{"type":"function_call","name":"shell","call_id":"call_abc123","arguments":"{\"command\":[\"cat\",\"src/api.ts\"]}"}}
+{"timestamp":"2026-04-10T09:00:17Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_abc123","output":"export function handler(req) {\n  return { ok: true };\n}"}}
 {"timestamp":"2026-04-10T09:00:20Z","type":"token_count","payload":{"input":500,"output":200}}

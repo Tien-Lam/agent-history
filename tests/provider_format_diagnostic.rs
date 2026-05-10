@@ -9,6 +9,7 @@ use aghist::model::{ContentBlock, Provider, Role};
 use aghist::provider::claude_code::ClaudeCodeProvider;
 use aghist::provider::codex_cli::CodexCliProvider;
 use aghist::provider::copilot_cli::CopilotCliProvider;
+use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
 use aghist::provider_diagnostic::{analyze_provider, ProviderDiagnostic};
@@ -304,6 +305,10 @@ fn all_fixture_providers_roundtrip() {
             "opencode_v2",
             Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")])),
         ),
+        (
+            "gemini",
+            Box::new(GeminiCliProvider::new(vec![fixtures_dir().join("gemini")])),
+        ),
     ];
 
     for (label, provider) in &providers {
@@ -434,6 +439,10 @@ fn fixture_provider_set() -> Vec<(&'static str, Box<dyn HistoryProvider>)> {
         (
             "opencode_v2",
             Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")])),
+        ),
+        (
+            "gemini",
+            Box::new(GeminiCliProvider::new(vec![fixtures_dir().join("gemini")])),
         ),
     ]
 }

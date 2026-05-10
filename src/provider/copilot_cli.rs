@@ -169,6 +169,8 @@ fn count_message_events(path: &Path) -> usize {
                 || l.contains("\"assistant.message\"")
                 || l.contains("\"tool.execution_start\"")
                 || l.contains("\"tool.execution_complete\"")
+                || l.contains("\"tool.invoke\"")
+                || l.contains("\"tool.result\"")
         })
         .count()
 }
@@ -235,21 +237,19 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
                 }
                 continue;
             }
-            "tool.execution_complete" => {
-                // Tool result: data.toolCallId + data.result + data.success
+            "tool.execution_complete" | "tool.result" => {
+                // Tool result. Two shapes seen in real Copilot CLI data:
+                //   - tool.execution_complete: data.result is an object
+                //     with content/detailedContent fields, plus data.success
+                //   - tool.result: data.result is a plain string
                 if let Some(ref data) = event.data {
                     let call_id = data.tool_call_id.clone().unwrap_or_default();
                     let success = data.success.unwrap_or(true);
                     let output = data
                         .result
                         .as_ref()
-                        .and_then(|r| {
-                            r.detailed_content
-                                .as_deref()
-                                .or(r.content.as_deref())
-                        })
-                        .unwrap_or("")
-                        .to_string();
+                        .map(extract_result_text)
+                        .unwrap_or_default();
                     if !output.is_empty() {
                         let timestamp = event
                             .timestamp
@@ -415,14 +415,22 @@ struct RawEventData {
     arguments: Option<serde_json::Value>,
     /// `tool.execution_complete` fields
     success: Option<bool>,
-    result: Option<RawToolResult>,
+    /// `tool.execution_complete`: object with content/detailedContent.
+    /// `tool.result` (newer): a plain string. Both shapes are accepted.
+    result: Option<serde_json::Value>,
 }
 
-#[derive(Deserialize)]
-struct RawToolResult {
-    content: Option<String>,
-    #[serde(rename = "detailedContent")]
-    detailed_content: Option<String>,
+fn extract_result_text(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Object(map) => map
+            .get("detailedContent")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| map.get("content").and_then(serde_json::Value::as_str))
+            .map(str::to_owned)
+            .unwrap_or_default(),
+        _ => String::new(),
+    }
 }
 
 #[derive(Deserialize)]

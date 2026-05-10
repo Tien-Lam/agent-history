@@ -77,7 +77,7 @@ fn copilot_discover_sessions() {
     assert_eq!(s.id.0, "copilot-session-001");
     assert_eq!(s.provider, Provider::CopilotCli);
     assert_eq!(s.project_name.as_deref(), Some("myapp"));
-    assert_eq!(s.message_count, 2); // user.message + assistant.message
+    assert_eq!(s.message_count, 3); // user.message + assistant.message + tool.invoke
 }
 
 #[test]

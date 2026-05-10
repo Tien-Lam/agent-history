@@ -296,11 +296,14 @@ fn convert_messages(raw_messages: &[RawMessage]) -> Vec<Message> {
             }
         }
 
-        // Tool calls
+        // Tool calls. Gemini CLI sometimes attaches a `response` object
+        // to a tool call once it has executed; emit a paired ToolResult so
+        // downstream consumers (search, export, MCP) can correlate them.
         if let Some(ref tool_calls) = msg.tool_calls {
             for tc in tool_calls {
+                let id = tc.id.clone().unwrap_or_default();
                 content.push(ContentBlock::ToolUse(ToolCall {
-                    id: tc.id.clone().unwrap_or_default(),
+                    id: id.clone(),
                     name: tc.name.clone().unwrap_or_else(|| "unknown".to_string()),
                     arguments: tc
                         .args
@@ -308,6 +311,15 @@ fn convert_messages(raw_messages: &[RawMessage]) -> Vec<Message> {
                         .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
                         .unwrap_or_default(),
                 }));
+                if let Some(output) = tc.response.as_ref().map(extract_tool_response_text) {
+                    if !output.is_empty() {
+                        content.push(ContentBlock::ToolResult(crate::model::ToolResult {
+                            tool_call_id: id,
+                            success: tc.error.is_none(),
+                            output,
+                        }));
+                    }
+                }
             }
         }
 
@@ -400,4 +412,25 @@ struct RawToolCall {
     id: Option<String>,
     name: Option<String>,
     args: Option<serde_json::Value>,
+    /// Populated by gemini-cli after the tool has executed. Shape varies —
+    /// often `{"output": "..."}` or a free-form provider blob — so we
+    /// accept any JSON value and stringify on read.
+    response: Option<serde_json::Value>,
+    /// Set when the tool execution failed.
+    error: Option<serde_json::Value>,
+}
+
+fn extract_tool_response_text(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Object(map) => {
+            for key in ["output", "result", "content", "text"] {
+                if let Some(s) = map.get(key).and_then(serde_json::Value::as_str) {
+                    return s.to_string();
+                }
+            }
+            serde_json::to_string_pretty(v).unwrap_or_default()
+        }
+        _ => serde_json::to_string_pretty(v).unwrap_or_default(),
+    }
 }
