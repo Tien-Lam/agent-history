@@ -258,6 +258,79 @@ fn corrupt_fixtures_no_crash() {
     assert!(app.session_count() > 0);
 }
 
+// ─── Live-updating search debounce ──────────────────────────────────────────
+
+#[test]
+fn search_input_debounces_until_idle() {
+    use aghist::action::Action;
+
+    let mut app = App::new(all_providers(), Config::default());
+    app.load_sessions();
+
+    app.dispatch(Action::SearchStart);
+    app.dispatch(Action::SearchInput('t'));
+    app.dispatch(Action::SearchInput('e'));
+    app.dispatch(Action::SearchInput('s'));
+
+    // Search is queued but not yet flushed.
+    assert!(
+        app.has_pending_search(),
+        "fast typing should leave a pending search"
+    );
+
+    // Tick before the debounce window elapses → still pending.
+    app.tick();
+    assert!(
+        app.has_pending_search(),
+        "tick within debounce window should not flush"
+    );
+
+    // Wait past the debounce window, then tick → flushes.
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    app.tick();
+    assert!(
+        !app.has_pending_search(),
+        "tick after debounce window should flush"
+    );
+}
+
+#[test]
+fn search_submit_flushes_pending_search() {
+    use aghist::action::Action;
+
+    let mut app = App::new(all_providers(), Config::default());
+    app.load_sessions();
+
+    app.dispatch(Action::SearchStart);
+    app.dispatch(Action::SearchInput('a'));
+    assert!(app.has_pending_search());
+
+    // Submit must not strand the queued query — flush before navigating.
+    app.dispatch(Action::SearchSubmit);
+    assert!(
+        !app.has_pending_search(),
+        "SearchSubmit should flush any pending debounced search"
+    );
+}
+
+#[test]
+fn search_cancel_drops_pending_search() {
+    use aghist::action::Action;
+
+    let mut app = App::new(all_providers(), Config::default());
+    app.load_sessions();
+
+    app.dispatch(Action::SearchStart);
+    app.dispatch(Action::SearchInput('z'));
+    assert!(app.has_pending_search());
+
+    app.dispatch(Action::SearchCancel);
+    assert!(
+        !app.has_pending_search(),
+        "SearchCancel should drop the pending debounced search"
+    );
+}
+
 #[test]
 fn nonexistent_dirs_empty_state() {
     let fake = PathBuf::from("/nonexistent/path");

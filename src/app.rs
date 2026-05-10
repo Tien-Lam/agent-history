@@ -1,7 +1,11 @@
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Debounce window for live-updating search. Keystrokes within this window
+/// coalesce into a single Tantivy query, run on the next event-loop tick.
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(120);
 
 use chrono::Utc;
 use crossterm::event::Event;
@@ -134,6 +138,7 @@ pub struct App {
     filtered_session_ids: Option<Vec<String>>,
     index_ready: bool,
     index_progress: Option<(usize, usize)>,
+    search_pending_at: Option<Instant>,
 
     filter: FilterState,
     export_cursor: usize,
@@ -173,6 +178,7 @@ impl App {
             filtered_session_ids: None,
             index_ready: false,
             index_progress: None,
+            search_pending_at: None,
 
             filter: FilterState::new(),
             export_cursor: 0,
@@ -236,6 +242,8 @@ impl App {
             while let Ok(action) = self.action_rx.try_recv() {
                 self.dispatch(action);
             }
+
+            self.tick();
 
             if self.should_quit {
                 break;
@@ -320,6 +328,22 @@ impl App {
         self.preload_focused_session();
     }
 
+    /// Run any pending debounced search if its idle window has elapsed.
+    /// Called from the run loop and from tests.
+    pub fn tick(&mut self) {
+        if let Some(t) = self.search_pending_at {
+            if t.elapsed() >= SEARCH_DEBOUNCE {
+                self.execute_search();
+                self.search_pending_at = None;
+            }
+        }
+    }
+
+    /// Whether a debounced search is queued but not yet executed.
+    pub fn has_pending_search(&self) -> bool {
+        self.search_pending_at.is_some()
+    }
+
     fn execute_search(&mut self) {
         if self.search_query.is_empty() {
             self.filtered_session_ids = None;
@@ -379,6 +403,9 @@ impl App {
                 }
             }
             Action::SelectSession | Action::SearchSubmit => {
+                if self.search_pending_at.take().is_some() {
+                    self.execute_search();
+                }
                 if let Some((session_id, source_path, provider)) =
                     self.resolve_selected_session()
                 {
@@ -447,20 +474,22 @@ impl App {
                 self.search_query.clear();
                 self.search_results.clear();
                 self.filtered_session_ids = None;
+                self.search_pending_at = None;
                 self.mode = AppMode::Search;
             }
             Action::SearchInput(c) => {
                 self.search_query.push(c);
-                self.execute_search();
+                self.search_pending_at = Some(Instant::now());
             }
             Action::SearchBackspace => {
                 self.search_query.pop();
-                self.execute_search();
+                self.search_pending_at = Some(Instant::now());
             }
             Action::SearchCancel => {
                 self.search_query.clear();
                 self.search_results.clear();
                 self.filtered_session_ids = None;
+                self.search_pending_at = None;
                 self.session_list
                     .state
                     .select(if self.sessions.is_empty() { None } else { Some(0) });
