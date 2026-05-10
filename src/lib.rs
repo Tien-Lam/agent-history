@@ -20,3 +20,4 @@ pub mod search;
 pub mod threads;
 pub mod todos;
 pub mod ui;
+pub mod usage;

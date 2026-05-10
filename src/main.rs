@@ -474,6 +474,32 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Aggregate token usage and (when pricing is known) USD cost across sessions.
+    ///
+    /// Walks every session that passes the global filter flags (`--provider`,
+    /// `--since`, `--project`, etc.) and produces one row per group (default
+    /// `--by model`). Pricing comes from a small hand-curated table — sessions
+    /// using a model not in the table contribute tokens but report `cost_usd:
+    /// null`, and any unpriced session anywhere in the report nulls the
+    /// overall total too. We don't extrapolate prices.
+    ///
+    /// JSON envelope: `{rows:[...], totals:{...}, meta:{group_by, ...}}`.
+    /// Rows are ordered by `total_tokens` descending, with key as a stable
+    /// tiebreaker. Empty result exits 3.
+    Usage {
+        /// Group rows by `model` (default), `provider`, or `project`.
+        #[arg(long, default_value = "model", value_parser = parse_usage_group_by, value_name = "DIM")]
+        by: aghist::usage::GroupBy,
+
+        /// Cap rows after sorting (0 = no limit). Totals always cover every
+        /// matching session, even those clipped from `rows`.
+        #[arg(long, short = 'n', default_value_t = 0)]
+        limit: usize,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY).
+        #[arg(long)]
+        json: bool,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -769,6 +795,11 @@ fn parse_provider_slug(raw: &str) -> Result<Provider, String> {
             "unknown provider slug '{raw}'. Valid: claude-code, copilot-cli, gemini-cli, codex-cli, opencode, cursor"
         )
     })
+}
+
+fn parse_usage_group_by(raw: &str) -> Result<aghist::usage::GroupBy, String> {
+    aghist::usage::GroupBy::parse(raw)
+        .map_err(|bad| format!("unknown --by value '{bad}'. Valid: model, provider, project"))
 }
 
 fn resolve_export_args(
@@ -1258,6 +1289,9 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             let mode = OutputMode::resolve(cli.json, cli.ndjson, CommandKind::OneShot);
             let mode = if json { OutputMode::Json } else { mode };
             return stars_list(reference.as_deref(), mode);
+        }
+        Some(Command::Usage { by, limit, json }) => {
+            return usage_command(&providers, &cli.filters, by, limit, json);
         }
         None => {}
     }
@@ -4144,6 +4178,137 @@ fn render_threads_human<W: io::Write>(
     }
     writeln!(out)?;
     writeln!(out, "Total: {} thread(s)", threads.len())?;
+    Ok(())
+}
+
+fn usage_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    group_by: aghist::usage::GroupBy,
+    limit: usize,
+    force_json: bool,
+) -> Result<i32, ErrorEnvelope> {
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
+    let mut sessions: Vec<Session> = Vec::new();
+    for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        match p.discover_sessions() {
+            Ok(found) => sessions.extend(
+                found
+                    .into_iter()
+                    .filter(|s| session_matches(s, filters, project_needle.as_deref())),
+            ),
+            Err(e) => eprintln!("{}: error: {e}", p.provider()),
+        }
+    }
+
+    let report = aghist::usage::aggregate(&sessions, group_by);
+    if report.rows.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let total_rows = report.rows.len();
+    let trimmed = if limit > 0 && total_rows > limit {
+        let mut r = report;
+        r.rows.truncate(limit);
+        r
+    } else {
+        report
+    };
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if want_json {
+        render_usage_json(&mut out, &trimmed, group_by, total_rows)
+    } else {
+        render_usage_human(&mut out, &trimmed, group_by, total_rows)
+    }
+    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write usage output: {e}")))?;
+
+    Ok(EXIT_OK)
+}
+
+fn render_usage_json<W: io::Write>(
+    out: &mut W,
+    report: &aghist::usage::UsageReport,
+    group_by: aghist::usage::GroupBy,
+    total_rows: usize,
+) -> io::Result<()> {
+    let payload = serde_json::json!({
+        "rows": report.rows,
+        "totals": report.totals,
+        "meta": {
+            "group_by": group_by.as_str(),
+            "row_count": report.rows.len(),
+            "total_row_count": total_rows,
+        },
+    });
+    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn render_usage_human<W: io::Write>(
+    out: &mut W,
+    report: &aghist::usage::UsageReport,
+    group_by: aghist::usage::GroupBy,
+    total_rows: usize,
+) -> io::Result<()> {
+    let key_header = match group_by {
+        aghist::usage::GroupBy::Model => "MODEL",
+        aghist::usage::GroupBy::Provider => "PROVIDER",
+        aghist::usage::GroupBy::Project => "PROJECT",
+    };
+    writeln!(
+        out,
+        "{:<32}  {:>5}  {:>12}  {:>12}  {:>14}  COST",
+        key_header, "SESS", "INPUT", "OUTPUT", "TOTAL TOKENS"
+    )?;
+    for row in &report.rows {
+        let cost = row
+            .cost_usd
+            .map_or_else(|| "—".to_string(), |c| format!("${c:.4}"));
+        writeln!(
+            out,
+            "{:<32}  {:>5}  {:>12}  {:>12}  {:>14}  {cost}",
+            truncate(&row.key, 32),
+            row.session_count,
+            row.input_tokens,
+            row.output_tokens,
+            row.total_tokens,
+        )?;
+    }
+    writeln!(out)?;
+    let total_cost = report
+        .totals
+        .cost_usd
+        .map_or_else(|| "—".to_string(), |c| format!("${c:.4}"));
+    writeln!(
+        out,
+        "Total: {} session(s), {} message(s), {} token(s), cost {}",
+        report.totals.session_count,
+        report.totals.message_count,
+        report.totals.total_tokens,
+        total_cost,
+    )?;
+    if total_rows > report.rows.len() {
+        writeln!(
+            out,
+            "(showing {} of {} row(s) — pass --limit 0 for all)",
+            report.rows.len(),
+            total_rows,
+        )?;
+    }
     Ok(())
 }
 
