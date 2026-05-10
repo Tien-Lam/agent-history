@@ -4354,3 +4354,82 @@ fn schema_subcommand_includes_report() {
     assert!(resp["top_projects"].is_object());
     assert!(resp["project_count"].is_object());
 }
+
+#[test]
+fn decisions_llm_without_api_key_returns_llm_error_envelope() {
+    // Generate any fixture so the heuristic emits at least one candidate.
+    // We use a session with explicit decision language; the LLM path then
+    // groups by session and tries to call the API — but with no key set it
+    // must fail fast with kind=llm-error.
+    let mut builder = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("ses-llm-no-key")
+        .project("p")
+        .display("decisions session");
+    builder = builder.assistant("After discussion we decided to use BM25 for ranking.");
+    let fixture = builder.done().build();
+    let home = fixture.base_path.parent().unwrap();
+    let output = aghist()
+        .arg("decisions")
+        .arg("--llm")
+        .env("AGHIST_HOME", home)
+        // Defensively unset both keys — even on a CI host that has them set
+        // for other tools, this test must exercise the missing-key path.
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("AGHIST_LLM_API_KEY")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("\"kind\":\"llm-error\""),
+        "stderr should carry llm-error envelope, got: {stderr:?}"
+    );
+    assert!(
+        stderr.contains("ANTHROPIC_API_KEY"),
+        "missing-key error should name the env var: {stderr:?}"
+    );
+}
+
+#[test]
+fn decisions_llm_model_without_llm_flag_is_usage_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .arg("decisions")
+        .arg("--llm-model")
+        .arg("claude-haiku-test")
+        .env("AGHIST_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("\"kind\":\"usage\""),
+        "stderr should be usage envelope, got: {stderr:?}"
+    );
+    assert!(stderr.contains("--llm"), "hint should mention --llm: {stderr:?}");
+}
+
+#[test]
+fn decisions_schema_documents_llm_params_and_response() {
+    let out = aghist().args(["schema", "decisions"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
+    let props = &parsed["params"]["properties"];
+    assert!(props["llm"].is_object(), "llm param should be in schema");
+    assert_eq!(props["llm"]["type"], "boolean");
+    assert!(props["llm_model"].is_object(), "llm_model param should be in schema");
+    let one_of = parsed["response"]["oneOf"].as_array().unwrap();
+    assert_eq!(one_of.len(), 2, "response should oneOf {{heuristic, llm}}");
+    let llm_schema = one_of
+        .iter()
+        .find(|s| s["properties"].get("mode").is_some())
+        .expect("llm-mode schema variant present");
+    let item_props = &llm_schema["properties"]["decisions"]["items"]["properties"];
+    for field in ["summary", "rationale", "alternatives", "ref"] {
+        assert!(
+            item_props.get(field).is_some(),
+            "llm response items must include {field}"
+        );
+    }
+}

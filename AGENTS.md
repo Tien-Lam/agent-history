@@ -157,6 +157,7 @@ kebab-case, lowercase, no underscores.
 | `update-failed`       | `aghist update` self-update flow failed. |
 | `rsync-failed`        | `aghist sources pull` invoked rsync, which exited non-zero. |
 | `aborted`             | User declined a confirmation prompt (e.g. `uninstall`). |
+| `llm-error`           | LLM-backed flow failed (missing API key, HTTP error, non-2xx, unparseable response). Today only `aghist decisions --llm` emits this. |
 | `internal-error`      | Unexpected error from the TUI or another component. Treat as a bug. |
 
 ## bd ↔ gt Architecture (this project)

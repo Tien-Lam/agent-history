@@ -325,10 +325,18 @@ enum Command {
     },
     /// Heuristic-extract candidate architectural decisions from sessions.
     ///
-    /// Scores each sentence against decision-marker phrases (e.g. "we
-    /// decided", "instead of") and returns the top candidates with their
-    /// citation refs. v1 is intentionally LLM-free — agents that want
-    /// richer extraction can post-process by `aghist show`-ing the refs.
+    /// Default path is the deterministic regex/marker heuristic: scores each
+    /// sentence against decision-marker phrases (e.g. "we decided", "instead
+    /// of") and returns ranked candidates with citation refs.
+    ///
+    /// Pass `--llm` to route the heuristic candidates through a Claude
+    /// Messages API call that returns structured records of the form
+    /// `{summary, rationale, alternatives, ref}`. Configured via env:
+    /// `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`),
+    /// `AGHIST_LLM_ENDPOINT` (defaults to api.anthropic.com),
+    /// `AGHIST_LLM_MODEL` (defaults to claude-haiku-4-5). The system prompt
+    /// is sent with `cache_control: ephemeral` so multi-session runs reuse
+    /// Anthropic's prompt cache.
     Decisions {
         /// Restrict to a single session by id, unique id prefix, or full
         /// citation ref `<provider>/<session-id>#<turn>` (turn ignored).
@@ -341,13 +349,23 @@ enum Command {
         threshold: f32,
 
         /// Maximum number of candidates to return across all sessions,
-        /// after sorting by score descending.
+        /// after sorting by score descending (heuristic) or by recency (--llm).
         #[arg(long, short = 'n', default_value_t = 50)]
         limit: usize,
 
         /// Force JSON output (default: JSON on pipe, table on TTY).
         #[arg(long)]
         json: bool,
+
+        /// Route heuristic candidates through an LLM for structured extraction.
+        /// Requires `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`).
+        #[arg(long)]
+        llm: bool,
+
+        /// Override the LLM model id (default: claude-haiku-4-5-20251001
+        /// or `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
+        #[arg(long, value_name = "MODEL")]
+        llm_model: Option<String>,
     },
     /// Run a stdio MCP server exposing aghist's read paths to agents.
     ///
@@ -1304,6 +1322,8 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             threshold,
             limit,
             json,
+            llm,
+            llm_model,
         }) => {
             return decisions_command(
                 &providers,
@@ -1312,6 +1332,8 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 limit,
                 json,
                 &cli.filters,
+                llm,
+                llm_model.as_deref(),
             );
         }
         Some(Command::Todos { kind, limit, json }) => {
@@ -5071,6 +5093,69 @@ fn write_blocks_text<W: io::Write>(out: &mut W, msg: &Message) -> io::Result<()>
     Ok(())
 }
 
+/// Run the heuristic across all matching sessions, returning unsorted rows.
+fn collect_decision_rows(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    project_needle: Option<&str>,
+    session_needle: Option<&str>,
+    threshold: f32,
+) -> Vec<DecisionRow> {
+    let mut rows: Vec<DecisionRow> = Vec::new();
+    for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        let sessions = match p.discover_sessions() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{}: error: {e}", p.provider());
+                continue;
+            }
+        };
+        for session in sessions {
+            if !session_matches(&session, filters, project_needle) {
+                continue;
+            }
+            if let Some(needle) = session_needle {
+                if !session.id.0.starts_with(needle) {
+                    continue;
+                }
+            }
+            let Ok(messages) = p.load_messages(&session) else {
+                continue;
+            };
+            let scored: Vec<(usize, &Message)> = messages
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| message_matches(m, filters))
+                .collect();
+            for (idx, msg) in scored {
+                let turn = u32::try_from(idx + 1).unwrap_or(u32::MAX);
+                let cands = aghist::decisions::extract_from_message(msg, turn, threshold);
+                for c in cands {
+                    let Some(citation) = aghist::model::CitationRef::new(
+                        session.provider,
+                        session.id.clone(),
+                        c.turn,
+                    ) else {
+                        continue;
+                    };
+                    rows.push(DecisionRow {
+                        citation,
+                        candidate: c,
+                        project: session.project_name.clone(),
+                        started_at: session.started_at,
+                    });
+                }
+            }
+        }
+    }
+    rows
+}
+
 #[allow(clippy::too_many_arguments)]
 fn decisions_command(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -5079,7 +5164,15 @@ fn decisions_command(
     limit: usize,
     force_json: bool,
     filters: &FilterArgs,
+    use_llm: bool,
+    llm_model: Option<&str>,
 ) -> Result<i32, ErrorEnvelope> {
+    if !use_llm && llm_model.is_some() {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            "--llm-model requires --llm",
+        ));
+    }
     if !threshold.is_finite() || threshold < 0.0 {
         return Err(ErrorEnvelope::new(
             "usage",
@@ -5106,64 +5199,13 @@ fn decisions_command(
         .map(str::to_lowercase)
         .filter(|s| !s.is_empty());
 
-    let mut rows: Vec<DecisionRow> = Vec::new();
-
-    for p in providers {
-        if let Some(want) = filters.provider {
-            if p.provider() != want {
-                continue;
-            }
-        }
-        let sessions = match p.discover_sessions() {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("{}: error: {e}", p.provider());
-                continue;
-            }
-        };
-        for session in sessions {
-            if !session_matches(&session, filters, project_needle.as_deref()) {
-                continue;
-            }
-            if let Some(needle) = session_needle.as_deref() {
-                if !session.id.0.starts_with(needle) {
-                    continue;
-                }
-            }
-            // skip corrupt/unreadable, like the rest of the pipeline
-            let Ok(messages) = p.load_messages(&session) else {
-                continue;
-            };
-
-            // Apply per-message filters (--role, --has-tool-call) before
-            // running extraction. We track the original turn index so the
-            // citation ref still matches the on-disk message position.
-            let scored: Vec<(usize, &Message)> = messages
-                .iter()
-                .enumerate()
-                .filter(|(_, m)| message_matches(m, filters))
-                .collect();
-
-            for (idx, msg) in scored {
-                let turn = u32::try_from(idx + 1).unwrap_or(u32::MAX);
-                let cands = aghist::decisions::extract_from_message(msg, turn, threshold);
-                for c in cands {
-                    let citation = aghist::model::CitationRef::new(
-                        session.provider,
-                        session.id.clone(),
-                        c.turn,
-                    );
-                    let Some(citation) = citation else { continue };
-                    rows.push(DecisionRow {
-                        citation,
-                        candidate: c,
-                        project: session.project_name.clone(),
-                        started_at: session.started_at,
-                    });
-                }
-            }
-        }
-    }
+    let mut rows = collect_decision_rows(
+        providers,
+        filters,
+        project_needle.as_deref(),
+        session_needle.as_deref(),
+        threshold,
+    );
 
     rows.sort_by(|a, b| {
         b.candidate
@@ -5174,6 +5216,11 @@ fn decisions_command(
             .then_with(|| a.citation.session_id.0.cmp(&b.citation.session_id.0))
             .then_with(|| a.candidate.turn.cmp(&b.candidate.turn))
     });
+
+    if use_llm {
+        return run_llm_decisions(rows, limit, force_json, llm_model);
+    }
+
     if rows.len() > limit {
         rows.truncate(limit);
     }
@@ -5191,6 +5238,230 @@ fn decisions_command(
         print_decisions_table(&rows);
     }
     Ok(EXIT_OK)
+}
+
+/// Route heuristic candidates through the LLM and emit structured decisions.
+///
+/// Groups rows by `(provider, session_id)` and issues one Messages API call
+/// per session. The system prompt is cache-controlled, so calls 2..N pay
+/// near-zero on the static prompt tokens. Falls through to `EXIT_EMPTY` if
+/// no decisions survive.
+fn run_llm_decisions(
+    rows: Vec<DecisionRow>,
+    limit: usize,
+    force_json: bool,
+    llm_model: Option<&str>,
+) -> Result<i32, ErrorEnvelope> {
+    if rows.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
+    if let Some(model) = llm_model {
+        config = config.with_model(model.to_string());
+    }
+    let transport = aghist::llm::UreqTransport::new(config.timeout);
+
+    let groups = group_by_session(rows);
+    let mut out = run_extraction(&transport, &config, groups)?;
+
+    out.sort_by(|a, b| {
+        b.started_at
+            .cmp(&a.started_at)
+            .then_with(|| a.citation.session_id.0.cmp(&b.citation.session_id.0))
+            .then_with(|| a.citation.turn.cmp(&b.citation.turn))
+    });
+    if out.len() > limit {
+        out.truncate(limit);
+    }
+    if out.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    if force_json || !io::stdout().is_terminal() {
+        print_llm_decisions_json(&out).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
+        })?;
+    } else {
+        print_llm_decisions_table(&out);
+    }
+    Ok(EXIT_OK)
+}
+
+/// Group heuristic rows by `(provider, session_id)`, preserving first-seen
+/// order so the API call sequence stays predictable.
+fn group_by_session(rows: Vec<DecisionRow>) -> Vec<SessionGroup> {
+    let mut order: Vec<(Provider, aghist::model::SessionId)> = Vec::new();
+    let mut grouped: std::collections::HashMap<
+        (Provider, aghist::model::SessionId),
+        SessionGroup,
+    > = std::collections::HashMap::new();
+    for row in rows {
+        let key = (row.citation.provider, row.citation.session_id.clone());
+        let entry = grouped.entry(key.clone()).or_insert_with(|| {
+            order.push(key.clone());
+            SessionGroup {
+                provider: row.citation.provider,
+                session_id: row.citation.session_id.clone(),
+                project: row.project.clone(),
+                started_at: row.started_at,
+                candidates: Vec::new(),
+            }
+        });
+        entry.candidates.push(GroupedCandidate {
+            turn: row.candidate.turn,
+            role: row.candidate.role,
+            snippet: row.candidate.snippet,
+        });
+    }
+    let mut out = Vec::with_capacity(order.len());
+    for key in order {
+        if let Some(g) = grouped.remove(&key) {
+            out.push(g);
+        }
+    }
+    out
+}
+
+fn run_extraction<T: aghist::llm::LlmTransport + ?Sized>(
+    transport: &T,
+    config: &aghist::llm::LlmConfig,
+    groups: Vec<SessionGroup>,
+) -> Result<Vec<LlmRow>, ErrorEnvelope> {
+    let mut out = Vec::new();
+    for group in groups {
+        let candidates: Vec<aghist::llm::Candidate> = group
+            .candidates
+            .iter()
+            .map(|c| aghist::llm::Candidate {
+                turn: c.turn,
+                role: c.role,
+                snippet: c.snippet.as_str(),
+            })
+            .collect();
+        let input = aghist::llm::ExtractionInput {
+            provider: group.provider,
+            session_id: &group.session_id,
+            project: group.project.as_deref(),
+            candidates,
+        };
+        let extracted = aghist::llm::extract_for_session(transport, config, &input)
+            .map_err(|e| map_llm_error(&e))?;
+        for ed in extracted {
+            out.push(LlmRow {
+                citation: ed.citation,
+                decision: ed.decision,
+                source_snippet: ed.source_snippet,
+                project: group.project.clone(),
+                started_at: group.started_at,
+            });
+        }
+    }
+    Ok(out)
+}
+
+struct SessionGroup {
+    provider: Provider,
+    session_id: aghist::model::SessionId,
+    project: Option<String>,
+    started_at: DateTime<Utc>,
+    candidates: Vec<GroupedCandidate>,
+}
+
+struct GroupedCandidate {
+    turn: u32,
+    role: Role,
+    snippet: String,
+}
+
+struct LlmRow {
+    citation: CitationRef,
+    decision: aghist::llm::StructuredDecision,
+    source_snippet: Option<String>,
+    project: Option<String>,
+    started_at: DateTime<Utc>,
+}
+
+fn map_llm_error(e: &aghist::llm::LlmError) -> ErrorEnvelope {
+    use aghist::llm::LlmError;
+    let env = ErrorEnvelope::new("llm-error", e.to_string());
+    match e {
+        LlmError::MissingApiKey => {
+            env.with_hint("Set ANTHROPIC_API_KEY (or AGHIST_LLM_API_KEY) and re-run.")
+        }
+        LlmError::ApiStatus { status: 401 | 403, .. } => env.with_hint(
+            "Verify ANTHROPIC_API_KEY is valid and has access to the chosen model.",
+        ),
+        LlmError::ApiStatus { status: 429, .. } => {
+            env.with_hint("Rate limited — retry with --limit lowered or wait and retry.")
+        }
+        _ => env,
+    }
+}
+
+fn print_llm_decisions_table(rows: &[LlmRow]) {
+    println!(
+        "{:<36}  {:<60}  RATIONALE",
+        "REF", "SUMMARY"
+    );
+    for row in rows {
+        let r = row.citation.to_string();
+        let r = truncate(&r, 36);
+        let summary = truncate(&row.decision.summary, 60);
+        let rationale = truncate(&row.decision.rationale, 80);
+        println!("{r:<36}  {summary:<60}  {rationale}");
+    }
+}
+
+fn print_llm_decisions_json(rows: &[LlmRow]) -> std::io::Result<()> {
+    use std::io::Write as _;
+
+    #[derive(serde::Serialize)]
+    struct JsonRow<'a> {
+        #[serde(rename = "ref")]
+        reference: String,
+        provider: aghist::model::Provider,
+        session_id: &'a str,
+        turn: u32,
+        summary: &'a str,
+        rationale: &'a str,
+        alternatives: &'a [String],
+        source_snippet: Option<&'a str>,
+        project: Option<&'a str>,
+        started_at: chrono::DateTime<chrono::Utc>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct Payload<'a> {
+        decisions: Vec<JsonRow<'a>>,
+        count: usize,
+        mode: &'static str,
+    }
+
+    let decisions: Vec<JsonRow> = rows
+        .iter()
+        .map(|r| JsonRow {
+            reference: r.citation.to_string(),
+            provider: r.citation.provider,
+            session_id: r.citation.session_id.0.as_str(),
+            turn: r.citation.turn,
+            summary: r.decision.summary.as_str(),
+            rationale: r.decision.rationale.as_str(),
+            alternatives: &r.decision.alternatives,
+            source_snippet: r.source_snippet.as_deref(),
+            project: r.project.as_deref(),
+            started_at: r.started_at,
+        })
+        .collect();
+
+    let payload = Payload {
+        count: decisions.len(),
+        mode: "llm",
+        decisions,
+    };
+    let mut stdout = io::stdout().lock();
+    serde_json::to_writer(&mut stdout, &payload)?;
+    writeln!(stdout)
 }
 
 struct DecisionRow {

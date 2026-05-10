@@ -9,6 +9,7 @@ pub mod event;
 pub mod export;
 pub mod federated;
 pub mod health;
+pub mod llm;
 pub mod mcp;
 pub mod metadata;
 pub mod model;
