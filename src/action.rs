@@ -37,6 +37,8 @@ pub enum Action {
     FilterInput(char),
     FilterBackspace,
     FilterClearAll,
+    // Stars / bookmarks
+    ToggleStar,
     // Resume
     CopyResumeCommand,
     // Export

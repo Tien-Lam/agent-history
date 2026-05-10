@@ -55,6 +55,7 @@ fn map_browse_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('/') => Some(Action::SearchStart),
         KeyCode::Char('f') => Some(Action::ToggleFilter),
         KeyCode::Char('y') => Some(Action::CopyResumeCommand),
+        KeyCode::Char('s') => Some(Action::ToggleStar),
         KeyCode::Char('?') => Some(Action::ToggleHelp),
         KeyCode::Tab => Some(Action::SwitchFocus),
         _ => None,
@@ -79,6 +80,7 @@ fn map_view_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('t') => Some(Action::ToggleToolCalls),
         KeyCode::Char('e') => Some(Action::ExportStart),
         KeyCode::Char('y') => Some(Action::CopyResumeCommand),
+        KeyCode::Char('s') => Some(Action::ToggleStar),
         KeyCode::Char('?') => Some(Action::ToggleHelp),
         _ => None,
     }

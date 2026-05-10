@@ -25,7 +25,14 @@ impl SessionListComponent {
         Self { state }
     }
 
-    pub fn render(&mut self, sessions: &[&Session], focused: bool, frame: &mut Frame, area: Rect) {
+    pub fn render(
+        &mut self,
+        sessions: &[&Session],
+        focused: bool,
+        is_starred: &dyn Fn(&Session) -> bool,
+        frame: &mut Frame,
+        area: Rect,
+    ) {
         let items: Vec<ListItem> = sessions
             .iter()
             .map(|s| {
@@ -36,6 +43,8 @@ impl SessionListComponent {
                     .as_deref()
                     .unwrap_or("(unknown project)");
                 let branch = s.git_branch.as_deref().unwrap_or("");
+                let starred = is_starred(s);
+                let star_marker = if starred { "\u{2605} " } else { "" };
                 let summary = match s.summary.as_deref() {
                     Some(text) if text.chars().count() > 80 => {
                         let mut s: String = text.chars().take(77).collect();
@@ -46,17 +55,27 @@ impl SessionListComponent {
                     None => String::new(),
                 };
 
+                let mut header_spans = vec![
+                    Span::styled(
+                        provider,
+                        Style::default()
+                            .fg(provider_color(s.provider))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("  ", Style::default()),
+                    Span::styled(time, Style::default().fg(palette::TEXT_DIM)),
+                ];
+                if starred {
+                    header_spans.push(Span::styled("  ", Style::default()));
+                    header_spans.push(Span::styled(
+                        star_marker.trim_end(),
+                        Style::default()
+                            .fg(palette::YELLOW)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
                 let mut lines = vec![
-                    Line::from(vec![
-                        Span::styled(
-                            provider,
-                            Style::default()
-                                .fg(provider_color(s.provider))
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled("  ", Style::default()),
-                        Span::styled(time, Style::default().fg(palette::TEXT_DIM)),
-                    ]),
+                    Line::from(header_spans),
                     Line::from(vec![
                         Span::styled("  ", Style::default()),
                         Span::styled(project, Style::default().fg(palette::TEXT)),

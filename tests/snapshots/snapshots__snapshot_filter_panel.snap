@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 102
 expression: render_to_text(&terminal)
 ---
 ╭ Sessions (5) ────────────────────╮╭ test-project • claude-sonnet-4-20250514 • 0k tok ────────────────────────────────╮
@@ -14,20 +15,20 @@ expression: render_to_text(&terminal)
 │  Gemini CLI  Apr 08              ││                                                                                  │
 │    test-project                  ││ Assistant   10:00:15                                                             │
 │    Explain how async/await works ││────────────────────────────────────────                                          │
-│                                  ││ Here's the fix:                                                                  │
-│  Codex CLI  Apr 08               ││ ╭─╭ Filter ──────────────────────────────╮                                       │
-│    (unknown project)             ││ │ │Providers                             │                                       │
-│    Add error handling to the API ││ │ │  ◉ Claude Code                       │                                       │
-│                                  ││ │ │  ◉ Copilot CLI                       │                                       │
-│  OpenCode  Apr 08                ││ ╰─│  ◉ Gemini CLI                        │                                       │
-│    dbproject                     ││ Th│  ◉ Codex CLI                         │                                       │
-│    Refactor database layer       ││   │  ◉ OpenCode                          │                                       │
-│                                  ││   │  ◉ Cursor                            │                                       │
+│                                  ││ He╭ Filter ──────────────────────────────╮                                       │
+│  Codex CLI  Apr 08               ││ ╭─│Providers                             │                                       │
+│    (unknown project)             ││ │ │  ◉ Claude Code                       │                                       │
+│    Add error handling to the API ││ │ │  ◉ Copilot CLI                       │                                       │
+│                                  ││ │ │  ◉ Gemini CLI                        │                                       │
+│  OpenCode  Apr 08                ││ ╰─│  ◉ Codex CLI                         │                                       │
+│    dbproject                     ││ Th│  ◉ OpenCode                          │                                       │
+│    Refactor database layer       ││   │  ◉ Cursor                            │                                       │
 │                                  ││   │                                      │                                       │
 │                                  ││   │Filters                               │                                       │
 │                                  ││   │  Project: (any)                      │                                       │
 │                                  ││   │  From:    (any)                      │                                       │
 │                                  ││   │  To:      (any)                      │                                       │
+│                                  ││   │  ◯ Starred only                      │                                       │
 │                                  ││   ╰──────────────────────────────────────╯                                       │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │

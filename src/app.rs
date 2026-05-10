@@ -21,6 +21,7 @@ use crate::export::ExportFormat;
 use crate::model::{Message, Provider, Session, SessionId};
 use crate::provider::HistoryProvider;
 use crate::search::{SearchHit, SearchIndex};
+use crate::stars::StarStore;
 use crate::ui::message_view::MessageViewComponent;
 use crate::ui::session_list::SessionListComponent;
 use crate::ui::status_bar::StatusBarComponent;
@@ -41,6 +42,7 @@ pub struct FilterState {
     pub project_query: String,
     pub date_from: Option<chrono::NaiveDate>,
     pub date_to: Option<chrono::NaiveDate>,
+    pub starred_only: bool,
     pub cursor: usize,
     pub editing_field: Option<FilterField>,
 }
@@ -63,6 +65,7 @@ impl FilterState {
             project_query: String::new(),
             date_from: None,
             date_to: None,
+            starred_only: false,
             cursor: 0,
             editing_field: None,
         }
@@ -73,6 +76,7 @@ impl FilterState {
             || !self.project_query.is_empty()
             || self.date_from.is_some()
             || self.date_to.is_some()
+            || self.starred_only
     }
 
     fn matches(&self, session: &Session) -> bool {
@@ -111,7 +115,11 @@ impl FilterState {
     }
 
     fn item_count() -> usize {
-        Provider::all().len() + 3 // providers + project + date_from + date_to
+        Provider::all().len() + 4 // providers + project + date_from + date_to + starred_only
+    }
+
+    fn starred_idx() -> usize {
+        Provider::all().len() + 3
     }
 }
 
@@ -144,10 +152,21 @@ pub struct App {
     export_cursor: usize,
     pre_help_mode: AppMode,
     pub status_message: Option<String>,
+    stars: StarStore,
 }
 
 impl App {
     pub fn new(providers: Vec<Box<dyn HistoryProvider>>, config: Config) -> Self {
+        Self::with_stars(providers, config, StarStore::load_default())
+    }
+
+    /// Construct an `App` with an explicit `StarStore`. Tests use this to
+    /// avoid touching the user's real `~/.config/aghist/stars.toml`.
+    pub fn with_stars(
+        providers: Vec<Box<dyn HistoryProvider>>,
+        config: Config,
+        stars: StarStore,
+    ) -> Self {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let cache_size = NonZeroUsize::new(config.cache_size)
             .unwrap_or(NonZeroUsize::MIN);
@@ -184,6 +203,7 @@ impl App {
             export_cursor: 0,
             pre_help_mode: AppMode::Browse,
             status_message: None,
+            stars,
         }
     }
 
@@ -303,8 +323,12 @@ impl App {
             self.sessions.iter().collect()
         };
 
+        let starred_only = self.filter.starred_only;
         if self.filter.is_active() {
-            base.into_iter().filter(|s| self.filter.matches(s)).collect()
+            base.into_iter()
+                .filter(|s| self.filter.matches(s))
+                .filter(|s| !starred_only || self.stars.is_starred(s.provider, &s.id.0))
+                .collect()
         } else {
             base
         }
@@ -318,6 +342,21 @@ impl App {
         let idx = self.session_list.selected_index()?;
         let display = self.display_sessions();
         display.get(idx).map(|s| (s.id.0.clone(), s.source_path.clone(), s.provider))
+    }
+
+    /// Ensure the selection index sits within the displayed-session range.
+    /// Called after operations that may shrink the visible list (e.g.
+    /// unstarring while the starred-only filter is active).
+    fn clamp_selection(&mut self) {
+        let count = self.display_count();
+        let new_sel = match self.session_list.selected_index() {
+            _ if count == 0 => None,
+            Some(i) if i >= count => Some(count - 1),
+            Some(i) => Some(i),
+            None => Some(0),
+        };
+        self.session_list.state.select(new_sel);
+        self.preload_focused_session();
     }
 
     fn apply_filters(&mut self) {
@@ -533,6 +572,8 @@ impl App {
                     let p = providers[self.filter.cursor];
                     let enabled = self.filter.provider_enabled.entry(p).or_insert(true);
                     *enabled = !*enabled;
+                } else if self.filter.cursor == FilterState::starred_idx() {
+                    self.filter.starred_only = !self.filter.starred_only;
                 }
             }
             Action::FilterEdit => {
@@ -575,6 +616,26 @@ impl App {
             }
             Action::FilterClearAll => {
                 self.filter = FilterState::new();
+            }
+
+            // Stars / bookmarks
+            Action::ToggleStar => {
+                if let Some((session_id, _, provider)) = self.resolve_selected_session() {
+                    match self.stars.toggle(provider, &session_id) {
+                        Ok(true) => {
+                            self.status_message = Some("Starred".to_string());
+                        }
+                        Ok(false) => {
+                            self.status_message = Some("Unstarred".to_string());
+                            // If we just unstarred while filtering by starred-only,
+                            // the selection may now point past the end of the list.
+                            self.clamp_selection();
+                        }
+                        Err(e) => {
+                            self.warnings.push(format!("Failed to save stars: {e}"));
+                        }
+                    }
+                }
             }
 
             // Resume
@@ -784,6 +845,9 @@ impl App {
             ])
             .split(main_layout[0]);
 
+        // Inline display computation so the resulting `Vec<&Session>` borrows
+        // only `self.sessions` — leaving `self.session_list`, `self.stars`,
+        // and `self.message_cache` free to be borrowed independently below.
         let base: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
             ids.iter()
                 .filter_map(|id| self.sessions.iter().find(|s| s.id.0 == *id))
@@ -792,15 +856,22 @@ impl App {
             self.sessions.iter().collect()
         };
         let display: Vec<&Session> = if self.filter.is_active() {
-            base.into_iter().filter(|s| self.filter.matches(s)).collect()
+            let starred_only = self.filter.starred_only;
+            let stars = &self.stars;
+            base.into_iter()
+                .filter(|s| self.filter.matches(s))
+                .filter(|s| !starred_only || stars.is_starred(s.provider, &s.id.0))
+                .collect()
         } else {
             base
         };
 
         // Session list
         let list_focused = self.mode == AppMode::Browse || self.mode == AppMode::Search;
+        let stars = &self.stars;
+        let is_starred = |s: &Session| stars.is_starred(s.provider, &s.id.0);
         self.session_list
-            .render(&display, list_focused, frame, content_layout[0]);
+            .render(&display, list_focused, &is_starred, frame, content_layout[0]);
 
         // Message view
         let selected_idx = self.session_list.selected_index();
@@ -874,6 +945,7 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Line::from(vec![Span::styled("  g         ", key), Span::styled("Go to top", desc)]),
         Line::from(vec![Span::styled("  G         ", key), Span::styled("Go to bottom", desc)]),
         Line::from(vec![Span::styled("  y         ", key), Span::styled("Show resume command", desc)]),
+        Line::from(vec![Span::styled("  s         ", key), Span::styled("Toggle star (bookmark)", desc)]),
         Line::from(vec![Span::styled("  /         ", key), Span::styled("Search conversations", desc)]),
         Line::from(vec![Span::styled("  f         ", key), Span::styled("Open filter panel", desc)]),
         Line::from(vec![Span::styled("  Tab       ", key), Span::styled("Switch focus", desc)]),
@@ -1030,6 +1102,31 @@ fn render_filter_overlay(
         to_line = to_line.style(selected_style);
     }
     lines.push(to_line);
+
+    let starred_idx = FilterState::starred_idx();
+    let starred_marker = if filter.starred_only {
+        "\u{25c9}"
+    } else {
+        "\u{25ef}"
+    };
+    let mut starred_line = Line::from(vec![
+        Span::styled(
+            format!("  {starred_marker} "),
+            Style::default().fg(if filter.starred_only {
+                palette::YELLOW
+            } else {
+                palette::TEXT_FAINT
+            }),
+        ),
+        Span::styled(
+            "Starred only",
+            Style::default().fg(palette::TEXT),
+        ),
+    ]);
+    if filter.cursor == starred_idx {
+        starred_line = starred_line.style(selected_style);
+    }
+    lines.push(starred_line);
 
     let panel_width = 40;
     let panel_height = u16::try_from(lines.len() + 2).unwrap_or(20).min(area.height.saturating_sub(2));
