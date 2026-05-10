@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 33
 expression: render_to_text(&terminal)
 ---
 ╭ Sessions (5) ────────────────────╮╭ test-project • gemini-2.5-pro • 0k tok ──────────────────────────────────────────╮
@@ -16,7 +17,7 @@ expression: render_to_text(&terminal)
 │    Explain how async/await works ││ │   return resp.json();                                                          │
 │                                  ││ │ }                                                                              │
 │  Codex CLI  Apr 08               ││ ╰─────                                                                           │
-│    (unknown project)             ││ ▶ search_docs                                                                    │
+│    (unknown project)             ││ ▶ search_docs async await ✔                                                      │
 │    Add error handling to the API ││                                                                                  │
 │                                  ││                                                                                  │
 │  OpenCode  Apr 08                ││                                                                                  │

@@ -25,6 +25,7 @@ expression: render_to_text(&terminal)
 │    Refactor database layer       ││  Ctrl+U    Page up                           │                                   │
 │                                  ││  g / G     Top / bottom                      │                                   │
 │                                  ││  t         Toggle tool calls                 │                                   │
+│                                  ││  r         Toggle raw tool output            │                                   │
 │                                  ││  e         Export session                    │                                   │
 │                                  ││  y         Show resume command               │                                   │
 │                                  ││  Esc       Back to list                      │                                   │
@@ -40,6 +41,5 @@ expression: render_to_text(&terminal)
 │                                  ││  Space     Toggle provider                   │                                   │
 │                                  ││  e         Edit text field                   │                                   │
 │                                  ││  Ctrl+C    Clear all filters                 │                                   │
-│                                  ││  Esc / f   Close panel                       │                                   │
 ╰──────────────────────────────────╯╰──────────────────────────────────────────────╯───────────────────────────────────╯
  Esc close

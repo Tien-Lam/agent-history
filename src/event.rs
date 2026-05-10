@@ -79,6 +79,7 @@ fn map_view_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('g') => Some(Action::GoToTop),
         KeyCode::Char('G') => Some(Action::GoToBottom),
         KeyCode::Char('t') => Some(Action::ToggleToolCalls),
+        KeyCode::Char('r') => Some(Action::ToggleRawToolOutput),
         KeyCode::Char('e') => Some(Action::ExportStart),
         KeyCode::Char('y') => Some(Action::CopyResumeCommand),
         KeyCode::Char('s') => Some(Action::ToggleStar),

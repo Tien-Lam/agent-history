@@ -584,6 +584,19 @@ impl App {
             Action::ToggleToolCalls => {
                 self.message_view.show_tool_calls = !self.message_view.show_tool_calls;
             }
+            Action::ToggleRawToolOutput => {
+                self.message_view.show_raw_output = !self.message_view.show_raw_output;
+                // Auto-expand tool calls when entering raw mode — a "raw"
+                // toggle that produces no visible output would just confuse.
+                if self.message_view.show_raw_output {
+                    self.message_view.show_tool_calls = true;
+                }
+                self.status_message = Some(if self.message_view.show_raw_output {
+                    "Raw tool output: ON".to_string()
+                } else {
+                    "Raw tool output: OFF".to_string()
+                });
+            }
 
             Action::ToggleHelp => {
                 if self.mode == AppMode::Help {
@@ -1080,6 +1093,7 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Line::from(vec![Span::styled("  Ctrl+U    ", key), Span::styled("Page up", desc)]),
         Line::from(vec![Span::styled("  g / G     ", key), Span::styled("Top / bottom", desc)]),
         Line::from(vec![Span::styled("  t         ", key), Span::styled("Toggle tool calls", desc)]),
+        Line::from(vec![Span::styled("  r         ", key), Span::styled("Toggle raw tool output", desc)]),
         Line::from(vec![Span::styled("  e         ", key), Span::styled("Export session", desc)]),
         Line::from(vec![Span::styled("  y         ", key), Span::styled("Show resume command", desc)]),
         Line::from(vec![Span::styled("  Esc       ", key), Span::styled("Back to list", desc)]),

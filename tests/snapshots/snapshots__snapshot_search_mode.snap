@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 120
 expression: render_to_text(&terminal)
 ---
 ╭ Sessions (5) ────────────────────╮╭ test-project • claude-sonnet-4-20250514 • 0k tok ────────────────────────────────╮
@@ -10,7 +11,7 @@ expression: render_to_text(&terminal)
 │                                  ││ Assistant   10:00:05                                                             │
 │  Copilot CLI  Apr 08             ││────────────────────────────────────────                                          │
 │    myapp                         ││ I'll fix the build error.                                                        │
-│                                  ││ ▶ Read                                                                           │
+│                                  ││ ▶ Read main.rs ✔                                                                 │
 │  Gemini CLI  Apr 08              ││                                                                                  │
 │    test-project                  ││ Assistant   10:00:15                                                             │
 │    Explain how async/await works ││────────────────────────────────────────                                          │

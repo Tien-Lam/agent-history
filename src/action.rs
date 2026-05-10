@@ -53,6 +53,10 @@ pub enum Action {
     // UI
     Resize(u16, u16),
     ToggleToolCalls,
+    /// Toggle "raw" mode for tool I/O — drops truncation on tool args,
+    /// tool output, and thinking blocks. Only meaningful when tool calls
+    /// are also expanded (`ToggleToolCalls`).
+    ToggleRawToolOutput,
     ToggleHelp,
     SwitchFocus,
 }

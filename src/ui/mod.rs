@@ -1,6 +1,7 @@
 pub mod message_view;
 pub mod session_list;
 pub mod status_bar;
+pub mod syntax;
 
 use ratatui::style::{Modifier, Style};
 
