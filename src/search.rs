@@ -679,7 +679,7 @@ fn extract_content(message: &Message) -> String {
     parts.join("\n")
 }
 
-pub fn message_has_tool_call(message: &Message) -> bool {
+fn message_has_tool_call(message: &Message) -> bool {
     message
         .content
         .iter()
