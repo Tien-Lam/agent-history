@@ -500,6 +500,46 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Per-project productivity dashboard.
+    ///
+    /// Aggregates one project's history into a single envelope: session and
+    /// message counts, token usage (with cost when known), heuristic
+    /// architectural decisions, open TODOs, cross-session work threads, the
+    /// files most often touched by tool calls, and a 24-bucket UTC
+    /// time-of-day histogram. No LLM — agents that want richer extraction can
+    /// post-process by `aghist show`-ing the citation refs.
+    ///
+    /// `<name>` is matched as a case-insensitive substring against the
+    /// session's `project_name`. Use `--decisions`/`--todos`/`--threads`/
+    /// `--files` to cap each section (raw counts live in `meta.*_total`).
+    ///
+    /// Empty result (no matching sessions) exits with code 3.
+    Project {
+        /// Project name. Matched as a case-insensitive substring against
+        /// each session's `project_name`.
+        #[arg(value_name = "NAME")]
+        name: String,
+
+        /// Cap the decisions section. 0 = no cap.
+        #[arg(long, default_value_t = aghist::project::ProjectLimits::DEFAULTS.decisions, value_name = "N")]
+        decisions: usize,
+
+        /// Cap the todos section. 0 = no cap.
+        #[arg(long, default_value_t = aghist::project::ProjectLimits::DEFAULTS.todos, value_name = "N")]
+        todos: usize,
+
+        /// Cap the threads section. 0 = no cap.
+        #[arg(long, default_value_t = aghist::project::ProjectLimits::DEFAULTS.threads, value_name = "N")]
+        threads: usize,
+
+        /// Cap the top-files section. 0 = no cap.
+        #[arg(long, default_value_t = aghist::project::ProjectLimits::DEFAULTS.files, value_name = "N")]
+        files: usize,
+
+        /// Force JSON output (default: JSON on pipe, table on TTY).
+        #[arg(long)]
+        json: bool,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -1292,6 +1332,22 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         }
         Some(Command::Usage { by, limit, json }) => {
             return usage_command(&providers, &cli.filters, by, limit, json);
+        }
+        Some(Command::Project {
+            name,
+            decisions,
+            todos,
+            threads,
+            files,
+            json,
+        }) => {
+            let limits = aghist::project::ProjectLimits {
+                decisions,
+                todos,
+                threads,
+                files,
+            };
+            return project_command(&providers, &cli.filters, &name, limits, json);
         }
         None => {}
     }
@@ -4310,6 +4366,229 @@ fn render_usage_human<W: io::Write>(
         )?;
     }
     Ok(())
+}
+
+fn project_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    name: &str,
+    limits: aghist::project::ProjectLimits,
+    force_json: bool,
+) -> Result<i32, ErrorEnvelope> {
+    let needle = name.trim();
+    if needle.is_empty() {
+        ErrorEnvelope::new("usage", "project <name> must not be empty").emit();
+        return Ok(EXIT_USAGE);
+    }
+    let needle_lower = needle.to_lowercase();
+    // The global `--project` filter, if set, AND-narrows the positional name —
+    // both must match. Useful for agents combining a saved alias with an
+    // ad-hoc query.
+    let extra_project = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
+    let mut bundles: Vec<(Session, Vec<Message>)> = Vec::new();
+    for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        let sessions = match p.discover_sessions() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{}: error: {e}", p.provider());
+                continue;
+            }
+        };
+        for session in sessions {
+            // Reuse session-level filters (since/until/note/tag/starred) by
+            // routing through the shared helper. The positional `name` is
+            // applied on top so the global `--project` substring still works.
+            if !session_matches(&session, filters, extra_project.as_deref()) {
+                continue;
+            }
+            let project_name = session.project_name.as_deref().unwrap_or("");
+            if !project_name.to_lowercase().contains(&needle_lower) {
+                continue;
+            }
+            let Ok(messages) = p.load_messages(&session) else {
+                continue;
+            };
+            bundles.push((session, messages));
+        }
+    }
+
+    if bundles.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let report = aghist::project::aggregate(needle, &bundles, limits);
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if want_json {
+        render_project_json(&mut out, &report)
+    } else {
+        render_project_human(&mut out, &report)
+    }
+    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write project output: {e}")))?;
+
+    Ok(EXIT_OK)
+}
+
+fn render_project_json<W: io::Write>(
+    out: &mut W,
+    report: &aghist::project::ProjectReport,
+) -> io::Result<()> {
+    serde_json::to_writer(&mut *out, report).map_err(std::io::Error::other)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn render_project_human<W: io::Write>(
+    out: &mut W,
+    report: &aghist::project::ProjectReport,
+) -> io::Result<()> {
+    writeln!(out, "Project: {}", report.query)?;
+    if !report.matched_projects.is_empty() {
+        writeln!(out, "Matched: {}", report.matched_projects.join(", "))?;
+    }
+    let cost = report
+        .token_usage
+        .cost_usd
+        .map_or_else(|| "—".to_string(), |c| format!("${c:.4}"));
+    writeln!(
+        out,
+        "{} session(s), {} message(s), {} token(s), cost {cost}",
+        report.session_count, report.message_count, report.token_usage.total_tokens,
+    )?;
+    if let (Some(start), Some(end)) = (report.started_at, report.ended_at) {
+        writeln!(
+            out,
+            "Active: {} → {}",
+            start.format("%Y-%m-%d %H:%M:%SZ"),
+            end.format("%Y-%m-%d %H:%M:%SZ"),
+        )?;
+    }
+    writeln!(out)?;
+
+    writeln!(
+        out,
+        "Tokens: in {} | out {} | cache_r {} | cache_w {}",
+        report.token_usage.input_tokens,
+        report.token_usage.output_tokens,
+        report.token_usage.cache_read_tokens,
+        report.token_usage.cache_write_tokens,
+    )?;
+    writeln!(out)?;
+
+    writeln!(
+        out,
+        "Decisions ({} of {}):",
+        report.decisions.len(),
+        report.meta.decisions_total,
+    )?;
+    if report.decisions.is_empty() {
+        writeln!(out, "  (none)")?;
+    }
+    for d in &report.decisions {
+        let snippet = truncate(&d.snippet, 80);
+        writeln!(
+            out,
+            "  [{:>4.1}] {}  {snippet}",
+            d.score,
+            truncate(&d.reference, 36),
+        )?;
+    }
+    writeln!(out)?;
+
+    writeln!(
+        out,
+        "Todos ({} of {}):",
+        report.todos.len(),
+        report.meta.todos_total,
+    )?;
+    if report.todos.is_empty() {
+        writeln!(out, "  (none)")?;
+    }
+    for t in &report.todos {
+        let snippet = truncate(&t.snippet, 80);
+        writeln!(
+            out,
+            "  [{:<12}] {}  {snippet}",
+            t.kind.slug(),
+            truncate(&t.reference, 36),
+        )?;
+    }
+    writeln!(out)?;
+
+    writeln!(
+        out,
+        "Threads ({} of {}; gap {}h):",
+        report.threads.len(),
+        report.meta.threads_total,
+        report.meta.thread_gap_hours,
+    )?;
+    if report.threads.is_empty() {
+        writeln!(out, "  (none)")?;
+    }
+    for t in &report.threads {
+        writeln!(
+            out,
+            "  {} → {}  {} session(s), {} msg(s)",
+            t.started_at.format("%Y-%m-%d %H:%M"),
+            t.ended_at.format("%Y-%m-%d %H:%M"),
+            t.session_count,
+            t.message_count,
+        )?;
+    }
+    writeln!(out)?;
+
+    writeln!(
+        out,
+        "Top files ({} of {}):",
+        report.top_files.len(),
+        report.meta.files_total,
+    )?;
+    if report.top_files.is_empty() {
+        writeln!(out, "  (none)")?;
+    }
+    for f in &report.top_files {
+        writeln!(out, "  {:>6}  {}", f.count, truncate(&f.path, 70))?;
+    }
+    writeln!(out)?;
+
+    writeln!(out, "Time of day (UTC, message counts):")?;
+    let max = *report.time_of_day.iter().max().unwrap_or(&0);
+    for (h, count) in report.time_of_day.iter().enumerate() {
+        let bar_len = bar_cells(*count, max, 20);
+        let bar = "█".repeat(bar_len);
+        writeln!(out, "  {h:02}:00  {count:>6}  {bar}")?;
+    }
+    Ok(())
+}
+
+/// Scale a `count` to a 0..=`max_cells` bar width relative to `max`.
+/// Saturates to `max_cells` so a one-off outlier doesn't blow the layout
+/// and rounds to the nearest cell so small bars round up rather than vanish.
+#[allow(clippy::cast_precision_loss)] // u64 → f64: counts are message tallies, fit easily
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_wrap)]
+fn bar_cells(count: u64, max: u64, max_cells: u64) -> usize {
+    if max == 0 || count == 0 {
+        return 0;
+    }
+    // Cap the ratio at 1.0 so saturation is explicit.
+    let ratio = (count as f64 / max as f64).min(1.0);
+    let cells = (ratio * max_cells as f64).round() as u64;
+    cells.min(max_cells) as usize
 }
 
 fn show_command(

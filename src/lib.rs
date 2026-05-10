@@ -13,6 +13,7 @@ pub mod mcp;
 pub mod metadata;
 pub mod model;
 pub mod output;
+pub mod project;
 pub mod provider;
 pub mod provider_diagnostic;
 pub mod schema;

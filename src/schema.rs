@@ -34,6 +34,7 @@ pub const SUBCOMMANDS: &[&str] = &[
     "unstar",
     "stars",
     "usage",
+    "project",
 ];
 
 /// Return the schema for a subcommand, or `None` if the name is unknown.
@@ -57,6 +58,7 @@ pub fn schema_for(subcmd: &str) -> Option<Value> {
         "unstar" => Some(unstar_schema()),
         "stars" => Some(stars_schema()),
         "usage" => Some(usage_schema()),
+        "project" => Some(project_schema()),
         _ => None,
     }
 }
@@ -1314,6 +1316,199 @@ fn usage_schema() -> Value {
                 },
                 "required": ["session_count", "message_count", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
             })
+        },
+        "exit_codes": exit_codes()
+    })
+}
+
+#[allow(clippy::too_many_lines)]
+fn project_schema() -> Value {
+    let mut props = serde_json::Map::new();
+    props.insert(
+        "name".to_string(),
+        json!({
+            "type": "string",
+            "minLength": 1,
+            "description": "Project name. Matched as a case-insensitive substring against each session's project_name."
+        }),
+    );
+    props.insert(
+        "decisions".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 5,
+            "description": "Cap the decisions section (0 = no cap). Raw count remains in meta.decisions_total."
+        }),
+    );
+    props.insert(
+        "todos".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 10,
+            "description": "Cap the todos section (0 = no cap). Raw count remains in meta.todos_total."
+        }),
+    );
+    props.insert(
+        "threads".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 5,
+            "description": "Cap the threads section (0 = no cap). Raw count remains in meta.threads_total."
+        }),
+    );
+    props.insert(
+        "files".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 10,
+            "description": "Cap the top-files section (0 = no cap). Raw count remains in meta.files_total."
+        }),
+    );
+    props.insert(
+        "json".to_string(),
+        json!({
+            "type": "boolean",
+            "description": "Force JSON output (default: JSON on pipe, table on TTY)."
+        }),
+    );
+    for (name, schema) in filter_params_fragment() {
+        props.insert(name.to_string(), schema);
+    }
+
+    json!({
+        "$schema": SCHEMA_DRAFT,
+        "$id": "aghist:schema/project",
+        "title": "aghist project",
+        "command": "project",
+        "description": "Per-project productivity dashboard. Aggregates one project's sessions into session/message counts, token usage (with cost when known), heuristic decisions/TODOs, threads, top files touched, and a 24-bucket UTC time-of-day histogram. Heuristics reuse `aghist decisions/todos/threads/usage` — no LLM. Empty result exits 3.",
+        "params": {
+            "type": "object",
+            "properties": Value::Object(props),
+            "required": ["name"],
+            "additionalProperties": false
+        },
+        "response": {
+            "type": "object",
+            "description": "JSON output (when --json or stdout is not a TTY).",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The literal `<name>` query, after trimming."
+                },
+                "matched_projects": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Distinct project names whose sessions matched the query."
+                },
+                "session_count": { "type": "integer", "minimum": 0 },
+                "message_count": { "type": "integer", "minimum": 0 },
+                "started_at": { "type": ["string", "null"], "format": "date-time" },
+                "ended_at": { "type": ["string", "null"], "format": "date-time" },
+                "token_usage": {
+                    "type": "object",
+                    "properties": {
+                        "input_tokens": { "type": "integer", "minimum": 0 },
+                        "output_tokens": { "type": "integer", "minimum": 0 },
+                        "cache_read_tokens": { "type": "integer", "minimum": 0 },
+                        "cache_write_tokens": { "type": "integer", "minimum": 0 },
+                        "total_tokens": { "type": "integer", "minimum": 0 },
+                        "cost_usd": {
+                            "type": ["number", "null"],
+                            "description": "USD across the project, or null if any session uses an unpriced model."
+                        }
+                    },
+                    "required": ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
+                },
+                "decisions": {
+                    "type": "array",
+                    "description": "Top-scoring decision candidates, sorted by score desc.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "ref": { "type": "string" },
+                            "provider": { "type": "string", "enum": provider_slug_enum() },
+                            "session_id": { "type": "string" },
+                            "turn": { "type": "integer", "minimum": 1 },
+                            "score": { "type": "number" },
+                            "markers": { "type": "array", "items": { "type": "string" } },
+                            "snippet": { "type": "string" },
+                            "timestamp": { "type": "string", "format": "date-time" }
+                        },
+                        "required": ["ref", "provider", "session_id", "turn", "score", "markers", "snippet", "timestamp"]
+                    }
+                },
+                "todos": {
+                    "type": "array",
+                    "description": "Open TODOs / follow-ups / bd refs, newest first.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "ref": { "type": "string" },
+                            "provider": { "type": "string", "enum": provider_slug_enum() },
+                            "session_id": { "type": "string" },
+                            "turn": { "type": "integer", "minimum": 1 },
+                            "kind": {
+                                "type": "string",
+                                "enum": ["todo", "follow_up", "come_back_to", "we_should", "bd_ref"]
+                            },
+                            "snippet": { "type": "string" },
+                            "timestamp": { "type": "string", "format": "date-time" },
+                            "bd_id": { "type": ["string", "null"] }
+                        },
+                        "required": ["ref", "provider", "session_id", "turn", "kind", "snippet", "timestamp"]
+                    }
+                },
+                "threads": {
+                    "type": "array",
+                    "description": "Cross-session work threads (`aghist threads` output, scoped to this project)."
+                },
+                "top_files": {
+                    "type": "array",
+                    "description": "Files most often referenced by tool calls. Counts derive from top-level `file_path`/`path`/`notebook_path`/`filename`/`target_file` keys in tool-call JSON.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string" },
+                            "count": { "type": "integer", "minimum": 1 }
+                        },
+                        "required": ["path", "count"]
+                    }
+                },
+                "time_of_day": {
+                    "type": "array",
+                    "description": "24-element UTC histogram of message counts. Index = hour (0..23).",
+                    "minItems": 24,
+                    "maxItems": 24,
+                    "items": { "type": "integer", "minimum": 0 }
+                },
+                "meta": {
+                    "type": "object",
+                    "properties": {
+                        "limits": {
+                            "type": "object",
+                            "properties": {
+                                "decisions": { "type": "integer", "minimum": 0 },
+                                "todos": { "type": "integer", "minimum": 0 },
+                                "threads": { "type": "integer", "minimum": 0 },
+                                "files": { "type": "integer", "minimum": 0 }
+                            },
+                            "required": ["decisions", "todos", "threads", "files"]
+                        },
+                        "decisions_total": { "type": "integer", "minimum": 0 },
+                        "todos_total": { "type": "integer", "minimum": 0 },
+                        "threads_total": { "type": "integer", "minimum": 0 },
+                        "files_total": { "type": "integer", "minimum": 0 },
+                        "thread_gap_hours": { "type": "integer", "minimum": 0 },
+                        "decisions_threshold": { "type": "number" }
+                    },
+                    "required": ["limits", "decisions_total", "todos_total", "threads_total", "files_total", "thread_gap_hours", "decisions_threshold"]
+                }
+            },
+            "required": ["query", "matched_projects", "session_count", "message_count", "token_usage", "decisions", "todos", "threads", "top_files", "time_of_day", "meta"]
         },
         "exit_codes": exit_codes()
     })

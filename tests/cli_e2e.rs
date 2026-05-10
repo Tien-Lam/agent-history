@@ -3851,6 +3851,166 @@ fn schema_subcommand_includes_usage() {
     assert!(row_props["total_tokens"].is_object());
 }
 
+// ─── project subcommand ───────────────────────────────────────────────────
+
+#[test]
+fn project_with_no_data_exits_three_for_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["project", "alpha"])
+        .env("AGHIST_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+}
+
+#[test]
+fn project_aggregates_sessions_messages_tokens_and_emits_envelope() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-proj-1")
+        .project("alpha")
+        .user("hi")
+        .assistant_with_tool("looking", "Read", r#"{"file_path":"src/main.rs"}"#)
+        .done()
+        .add_session("session-proj-2")
+        .project("alpha")
+        .user("again")
+        .assistant_with_tool(
+            "we decided to ship v1 instead of waiting",
+            "Edit",
+            r#"{"file_path":"src/main.rs"}"#,
+        )
+        .done()
+        .add_session("session-other-1")
+        .project("beta")
+        .user("unrelated")
+        .assistant("noise")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let output = aghist()
+        .args(["project", "alpha"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+
+    assert_eq!(parsed["query"], "alpha");
+    let matched = parsed["matched_projects"].as_array().unwrap();
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0], "alpha");
+    assert_eq!(parsed["session_count"], 2);
+    // Two user + two assistant tool-use messages = 4. The exact tally depends
+    // on how the provider materializes tool-use blocks, so we just assert >0.
+    assert!(parsed["message_count"].as_u64().unwrap() >= 2);
+    assert!(parsed["token_usage"]["total_tokens"].as_u64().unwrap() > 0);
+    // claude-sonnet-4-* is in the pricing table → cost is non-null.
+    assert!(parsed["token_usage"]["cost_usd"].is_number());
+
+    let files = parsed["top_files"].as_array().unwrap();
+    let main_rs = files
+        .iter()
+        .find(|f| f["path"] == "src/main.rs")
+        .expect("expected src/main.rs in top_files");
+    assert!(main_rs["count"].as_u64().unwrap() >= 2);
+
+    let tod = parsed["time_of_day"].as_array().unwrap();
+    assert_eq!(tod.len(), 24);
+    let total_msgs: u64 = tod.iter().map(|v| v.as_u64().unwrap()).sum();
+    assert!(total_msgs > 0);
+
+    assert!(parsed["meta"]["limits"]["files"].as_u64().unwrap() >= 1);
+    assert!(parsed["meta"]["thread_gap_hours"].is_number());
+}
+
+#[test]
+fn project_match_is_case_insensitive_substring() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-mixed")
+        .project("Alpha-Service")
+        .user("hi")
+        .assistant("hello")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let output = aghist()
+        .args(["project", "alpha"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap();
+    assert_eq!(parsed["session_count"], 1);
+    let matched = parsed["matched_projects"].as_array().unwrap();
+    assert!(matched.iter().any(|v| v == "Alpha-Service"));
+}
+
+#[test]
+fn project_limits_truncate_files_section_but_meta_keeps_total() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-files")
+        .project("alpha")
+        .user("hi")
+        .assistant_with_tool("a", "Read", r#"{"file_path":"a.rs"}"#)
+        .assistant_with_tool("b", "Read", r#"{"file_path":"b.rs"}"#)
+        .assistant_with_tool("c", "Read", r#"{"file_path":"c.rs"}"#)
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let output = aghist()
+        .args(["project", "alpha", "--files", "2", "--json"])
+        .env("AGHIST_HOME", home)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap();
+    let files = parsed["top_files"].as_array().unwrap();
+    assert_eq!(files.len(), 2);
+    assert_eq!(parsed["meta"]["files_total"], 3);
+}
+
+#[test]
+fn project_empty_name_emits_usage_envelope() {
+    let assert = aghist()
+        .args(["project", " "])
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        stderr.contains("project") || stderr.contains("empty"),
+        "expected error mentioning empty name, got: {stderr}"
+    );
+}
+
+#[test]
+fn schema_subcommand_includes_project() {
+    let out = aghist().args(["schema", "--list"]).output().unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
+    let arr = parsed["subcommands"].as_array().unwrap();
+    assert!(arr.iter().any(|v| v == "project"));
+
+    let project_schema = aghist().args(["schema", "project"]).output().unwrap();
+    assert_eq!(project_schema.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&project_schema.stdout).unwrap().trim()).unwrap();
+    assert_eq!(parsed["command"], "project");
+    assert_eq!(parsed["params"]["properties"]["name"]["minLength"], 1);
+    let response = &parsed["response"]["properties"];
+    assert!(response["session_count"].is_object());
+    assert!(response["top_files"].is_object());
+    assert!(response["time_of_day"].is_object());
+    assert_eq!(response["time_of_day"]["minItems"], 24);
+}
+
 #[test]
 fn schema_search_includes_metadata_filter_params() {
     let out = aghist().args(["schema", "search"]).output().unwrap();
