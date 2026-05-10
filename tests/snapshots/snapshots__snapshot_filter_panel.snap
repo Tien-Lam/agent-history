@@ -14,23 +14,23 @@ expression: render_to_text(&terminal)
 │                                  ││ ▶ Read main.rs ✔                                                                 │
 │  Gemini CLI  Apr 08              ││                                                                                  │
 │    test-project                  ││ Assistant   10:00:15                                                             │
-│    Explain how async/await works ││────────────────────────────────────────                                          │
-│                                  ││ He╭ Filter ──────────────────────────────╮                                       │
-│  Codex CLI  Apr 08               ││ ╭─│Providers                             │                                       │
-│    (unknown project)             ││ │ │  ◉ Claude Code                       │                                       │
-│    Add error handling to the API ││ │ │  ◉ Copilot CLI                       │                                       │
-│                                  ││ │ │  ◉ Gemini CLI                        │                                       │
-│  OpenCode  Apr 08                ││ ╰─│  ◉ Codex CLI                         │                                       │
-│    dbproject                     ││ Th│  ◉ OpenCode                          │                                       │
-│    Refactor database layer       ││   │  ◉ Cursor                            │                                       │
-│                                  ││   │                                      │                                       │
+│    Explain how async/await works ││───╭ Filter ──────────────────────────────╮                                       │
+│                                  ││ He│Providers                             │                                       │
+│  Codex CLI  Apr 08               ││ ╭─│  ◉ Claude Code                       │                                       │
+│    (unknown project)             ││ │ │  ◉ Copilot CLI                       │                                       │
+│    Add error handling to the API ││ │ │  ◉ Gemini CLI                        │                                       │
+│                                  ││ │ │  ◉ Codex CLI                         │                                       │
+│  OpenCode  Apr 08                ││ ╰─│  ◉ OpenCode                          │                                       │
+│    dbproject                     ││ Th│  ◉ Cursor                            │                                       │
+│    Refactor database layer       ││   │                                      │                                       │
 │                                  ││   │Filters                               │                                       │
 │                                  ││   │  Project: (any)                      │                                       │
 │                                  ││   │  From:    (any)                      │                                       │
 │                                  ││   │  To:      (any)                      │                                       │
+│                                  ││   │  Role:    (any)                      │                                       │
+│                                  ││   │  ◯ Has tool call                     │                                       │
 │                                  ││   │  ◯ Starred only                      │                                       │
 │                                  ││   ╰──────────────────────────────────────╯                                       │
-│                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │

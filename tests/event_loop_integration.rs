@@ -682,12 +682,15 @@ fn starred_only_filter_hides_unstarred_sessions() {
         KeyCode::Char('s'),    // star session 0
         KeyCode::Char('f'),    // open filter
         // Cursor lands on the first provider; jump to the starred-only
-        // toggle which sits after all providers + 3 text fields.
+        // toggle which sits after all providers + 3 text fields + 2
+        // message-level toggles (role, has-tool-call).
         KeyCode::Char('G'),    // GoToBottom is unmapped in Filter mode → no-op
-        // Walk down: 6 providers + 3 text fields = 9 → press j 9 times.
+        // Walk down: 6 providers + 3 text fields + 2 message toggles = 11
+        // → press j 11 times.
         KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
         KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
         KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
+        KeyCode::Char('j'), KeyCode::Char('j'),
         KeyCode::Char(' '),    // toggle "starred only"
         KeyCode::Char('f'),    // close filter (applies it)
         KeyCode::Char('q'),

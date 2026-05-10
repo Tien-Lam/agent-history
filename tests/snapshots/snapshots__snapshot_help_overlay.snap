@@ -38,7 +38,7 @@ expression: render_to_text(&terminal)
 │                                  ││                                              │                                   │
 │                                  ││Filter Panel                                  │                                   │
 │                                  ││  j / k     Navigate items                    │                                   │
-│                                  ││  Space     Toggle provider                   │                                   │
+│                                  ││  Space     Toggle / cycle row                │                                   │
 │                                  ││  e         Edit text field                   │                                   │
 │                                  ││  Ctrl+C    Clear all filters                 │                                   │
 ╰──────────────────────────────────╯╰──────────────────────────────────────────────╯───────────────────────────────────╯

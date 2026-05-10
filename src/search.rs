@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tantivy::collector::TopDocs;
+use tantivy::collector::{DocSetCollector, TopDocs};
 use tantivy::query::{BooleanQuery, Occur, Query, QueryParser, RangeQuery, TermQuery};
 use tantivy::schema::{Field, IndexRecordOption, Schema, Value, INDEXED, STORED, STRING, TEXT};
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
@@ -633,6 +633,59 @@ impl SearchIndex {
         Ok(hits)
     }
 
+    /// Return the set of session IDs that contain at least one indexed message
+    /// matching the given message-level filters. Used by the TUI filter panel
+    /// to live-filter the session list by role / has-tool-call without
+    /// loading every session's messages into memory.
+    ///
+    /// Returns an empty set when no filter is active (caller should treat
+    /// "no filter" as "no constraint", not "show nothing").
+    pub fn session_ids_with_messages(
+        &self,
+        role: Option<Role>,
+        has_tool_call: bool,
+    ) -> Result<HashSet<String>, SearchError> {
+        if role.is_none() && !has_tool_call {
+            return Ok(HashSet::new());
+        }
+
+        self.reader.reload()?;
+        let searcher = self.reader.searcher();
+
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+        if let Some(role) = role {
+            let term = Term::from_field_text(self.f_role, role.slug());
+            clauses.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        if has_tool_call {
+            let term = Term::from_field_i64(self.f_has_tool_call, 1);
+            clauses.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        let combined: Box<dyn Query> = if clauses.len() == 1 {
+            clauses.into_iter().next().expect("one clause").1
+        } else {
+            Box::new(BooleanQuery::new(clauses))
+        };
+
+        // Walk every matching message and collect distinct session_ids.
+        // Ranking is irrelevant here — `DocSetCollector` is cheaper than
+        // `TopDocs` because it skips score tracking and has no top-N cap.
+        let docs = searcher.search(&combined, &DocSetCollector)?;
+
+        let mut session_ids = HashSet::new();
+        for addr in docs {
+            let doc: TantivyDocument = searcher.doc(addr)?;
+            session_ids.insert(field_text(&doc, self.f_session_id));
+        }
+        Ok(session_ids)
+    }
+
     pub fn clear(&self) -> Result<(), SearchError> {
         let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
         writer.delete_all_documents()?;
@@ -892,6 +945,75 @@ mod tests {
         index.build_index(&sessions, &providers, &tx).unwrap();
 
         (dir, index)
+    }
+
+    #[test]
+    fn session_ids_with_messages_filters_by_role() {
+        let dir = tempdir().unwrap();
+        let index = SearchIndex::open_or_create(dir.path()).unwrap();
+
+        let stub = StubProvider::new(Provider::ClaudeCode);
+        let s_user = make_session("sess-user-only", "alpha");
+        let s_mixed = make_session("sess-mixed", "beta");
+        stub.add(s_user.clone(), vec![make_message("u-1", "user only msg")]);
+        let mut asst = make_message("a-1", "assistant reply");
+        asst.role = Role::Assistant;
+        stub.add(s_mixed.clone(), vec![make_message("u-2", "user msg"), asst]);
+
+        let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+        let sessions = vec![s_user, s_mixed];
+        let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+        index.build_index(&sessions, &providers, &tx).unwrap();
+
+        let only_assistant = index
+            .session_ids_with_messages(Some(Role::Assistant), false)
+            .unwrap();
+        assert_eq!(only_assistant.len(), 1);
+        assert!(only_assistant.contains("sess-mixed"));
+
+        let any_user = index
+            .session_ids_with_messages(Some(Role::User), false)
+            .unwrap();
+        assert_eq!(any_user.len(), 2);
+
+        // No filter → empty set (caller treats as "no constraint").
+        let none = index.session_ids_with_messages(None, false).unwrap();
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn session_ids_with_messages_filters_by_has_tool_call() {
+        let dir = tempdir().unwrap();
+        let index = SearchIndex::open_or_create(dir.path()).unwrap();
+
+        let stub = StubProvider::new(Provider::ClaudeCode);
+        let s_plain = make_session("sess-plain", "alpha");
+        let s_with_tool = make_session("sess-with-tool", "beta");
+        stub.add(s_plain.clone(), vec![make_message("p-1", "no tool here")]);
+        let mut tool_msg = make_message("t-1", "calling tool");
+        tool_msg.role = Role::Assistant;
+        tool_msg.content.push(ContentBlock::ToolUse(crate::model::ToolCall {
+            id: "tc-1".to_string(),
+            name: "fs.read".to_string(),
+            arguments: "{\"path\":\"/x\"}".to_string(),
+        }));
+        stub.add(s_with_tool.clone(), vec![tool_msg]);
+
+        let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+        let sessions = vec![s_plain, s_with_tool];
+        let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+        index.build_index(&sessions, &providers, &tx).unwrap();
+
+        let with_tools = index.session_ids_with_messages(None, true).unwrap();
+        assert_eq!(with_tools.len(), 1);
+        assert!(with_tools.contains("sess-with-tool"));
+
+        // Combined: assistant role AND has-tool-call → still just the tool session.
+        let combined = index
+            .session_ids_with_messages(Some(Role::Assistant), true)
+            .unwrap();
+        assert_eq!(combined.len(), 1);
+        assert!(combined.contains("sess-with-tool"));
     }
 
     #[test]

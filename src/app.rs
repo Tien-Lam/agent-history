@@ -22,7 +22,7 @@ use crate::action::Action;
 use crate::config::Config;
 use crate::event::{map_key_event, CrosstermEventSource, EventSource};
 use crate::export::ExportFormat;
-use crate::model::{Message, Provider, Session, SessionId};
+use crate::model::{Message, Provider, Role, Session, SessionId};
 use crate::provider::HistoryProvider;
 use crate::embed;
 use crate::search::{SearchFilters, SearchHit, SearchIndex};
@@ -47,6 +47,13 @@ pub struct FilterState {
     pub project_query: String,
     pub date_from: Option<chrono::NaiveDate>,
     pub date_to: Option<chrono::NaiveDate>,
+    /// `None` = any role; cycles None → User → Assistant → Tool → None.
+    /// Filters the session list to sessions containing at least one message
+    /// with this role (resolved via the search index).
+    pub role: Option<Role>,
+    /// When true, restrict to sessions that have at least one tool-call
+    /// message (resolved via the search index).
+    pub has_tool_call: bool,
     pub starred_only: bool,
     pub cursor: usize,
     pub editing_field: Option<FilterField>,
@@ -70,6 +77,8 @@ impl FilterState {
             project_query: String::new(),
             date_from: None,
             date_to: None,
+            role: None,
+            has_tool_call: false,
             starred_only: false,
             cursor: 0,
             editing_field: None,
@@ -81,7 +90,16 @@ impl FilterState {
             || !self.project_query.is_empty()
             || self.date_from.is_some()
             || self.date_to.is_some()
+            || self.role.is_some()
+            || self.has_tool_call
             || self.starred_only
+    }
+
+    /// True when at least one message-level filter is active. Message-level
+    /// filters (role, has-tool-call) require the search index to resolve to
+    /// session IDs and are applied as a separate set-intersection step.
+    pub fn has_message_filter(&self) -> bool {
+        self.role.is_some() || self.has_tool_call
     }
 
     fn matches(&self, session: &Session) -> bool {
@@ -120,11 +138,32 @@ impl FilterState {
     }
 
     fn item_count() -> usize {
-        Provider::all().len() + 4 // providers + project + date_from + date_to + starred_only
+        // providers + project + date_from + date_to + role + has_tool_call + starred_only
+        Provider::all().len() + 6
+    }
+
+    fn role_idx() -> usize {
+        Provider::all().len() + 3
+    }
+
+    fn tool_call_idx() -> usize {
+        Provider::all().len() + 4
     }
 
     fn starred_idx() -> usize {
-        Provider::all().len() + 3
+        Provider::all().len() + 5
+    }
+}
+
+/// Cycle through the role filter: None → User → Assistant → Tool → None.
+/// Skips `System` because session-list filtering treats system messages as
+/// noise (not user-facing turns).
+fn cycle_role(role: Option<Role>) -> Option<Role> {
+    match role {
+        None => Some(Role::User),
+        Some(Role::User) => Some(Role::Assistant),
+        Some(Role::Assistant) => Some(Role::Tool),
+        Some(Role::Tool | Role::System) => None,
     }
 }
 
@@ -167,6 +206,10 @@ pub struct App {
     last_engine: &'static str,
 
     filter: FilterState,
+    /// Session IDs returned by the message-level filter (role / has-tool-call)
+    /// resolved against the search index. `None` means no message-level filter
+    /// is active; an empty set means the filter is active but matched nothing.
+    msg_filter_session_ids: Option<HashSet<String>>,
     export_cursor: usize,
     pre_help_mode: AppMode,
     pub status_message: Option<String>,
@@ -222,6 +265,7 @@ impl App {
             last_engine: "lexical",
 
             filter: FilterState::new(),
+            msg_filter_session_ids: None,
             export_cursor: 0,
             pre_help_mode: AppMode::Browse,
             status_message: None,
@@ -382,10 +426,12 @@ impl App {
         };
 
         let starred_only = self.filter.starred_only;
+        let msg_ids = self.msg_filter_session_ids.as_ref();
         if self.filter.is_active() {
             base.into_iter()
                 .filter(|s| self.filter.matches(s))
                 .filter(|s| !starred_only || self.stars.is_starred(s.provider, &s.id.0))
+                .filter(|s| msg_ids.is_none_or(|ids| ids.contains(&s.id.0)))
                 .collect()
         } else {
             base
@@ -423,6 +469,40 @@ impl App {
             .state
             .select(if count > 0 { Some(0) } else { None });
         self.preload_focused_session();
+    }
+
+    /// Refresh `msg_filter_session_ids` from the search index when role or
+    /// has-tool-call toggles change. If the index isn't ready yet, surface a
+    /// status message and clear the cache so the filter is a no-op until the
+    /// index finishes building (rather than silently hiding all sessions).
+    fn recompute_message_filter(&mut self) {
+        if !self.filter.has_message_filter() {
+            self.msg_filter_session_ids = None;
+            return;
+        }
+
+        let Some(ref index) = self.search_index else {
+            self.msg_filter_session_ids = None;
+            self.status_message =
+                Some("Filter unavailable — search index missing".to_string());
+            return;
+        };
+        if !self.index_ready {
+            self.msg_filter_session_ids = None;
+            self.status_message =
+                Some("Filter pending — wait for index to finish building".to_string());
+            return;
+        }
+
+        match index.session_ids_with_messages(self.filter.role, self.filter.has_tool_call) {
+            Ok(ids) => {
+                self.msg_filter_session_ids = Some(ids);
+            }
+            Err(e) => {
+                self.warnings.push(format!("Filter index error: {e}"));
+                self.msg_filter_session_ids = None;
+            }
+        }
     }
 
     /// Run any pending debounced search if its idle window has elapsed.
@@ -668,6 +748,11 @@ impl App {
             Action::IndexReady => {
                 self.index_ready = true;
                 self.index_progress = None;
+                // If a message-level filter was set while the index was still
+                // building, resolve it now that we have data.
+                if self.filter.has_message_filter() && self.msg_filter_session_ids.is_none() {
+                    self.recompute_message_filter();
+                }
             }
 
             // Filter
@@ -698,6 +783,12 @@ impl App {
                     let p = providers[self.filter.cursor];
                     let enabled = self.filter.provider_enabled.entry(p).or_insert(true);
                     *enabled = !*enabled;
+                } else if self.filter.cursor == FilterState::role_idx() {
+                    self.filter.role = cycle_role(self.filter.role);
+                    self.recompute_message_filter();
+                } else if self.filter.cursor == FilterState::tool_call_idx() {
+                    self.filter.has_tool_call = !self.filter.has_tool_call;
+                    self.recompute_message_filter();
                 } else if self.filter.cursor == FilterState::starred_idx() {
                     self.filter.starred_only = !self.filter.starred_only;
                 }
@@ -742,6 +833,7 @@ impl App {
             }
             Action::FilterClearAll => {
                 self.filter = FilterState::new();
+                self.msg_filter_session_ids = None;
             }
 
             // Stars / bookmarks
@@ -1106,7 +1198,7 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Line::raw(""),
         Line::from(Span::styled("Filter Panel", header)),
         Line::from(vec![Span::styled("  j / k     ", key), Span::styled("Navigate items", desc)]),
-        Line::from(vec![Span::styled("  Space     ", key), Span::styled("Toggle provider", desc)]),
+        Line::from(vec![Span::styled("  Space     ", key), Span::styled("Toggle / cycle row", desc)]),
         Line::from(vec![Span::styled("  e         ", key), Span::styled("Edit text field", desc)]),
         Line::from(vec![Span::styled("  Ctrl+C    ", key), Span::styled("Clear all filters", desc)]),
         Line::from(vec![Span::styled("  Esc / f   ", key), Span::styled("Close panel", desc)]),
@@ -1240,6 +1332,41 @@ fn render_filter_overlay(
         to_line = to_line.style(selected_style);
     }
     lines.push(to_line);
+
+    let role_idx = FilterState::role_idx();
+    let role_value = filter
+        .role
+        .map_or_else(|| "(any)".to_string(), |r| r.slug().to_string());
+    let mut role_line = Line::from(vec![
+        Span::styled("  Role:    ", Style::default().fg(palette::PEACH)),
+        Span::styled(role_value, Style::default().fg(palette::TEXT)),
+    ]);
+    if filter.cursor == role_idx {
+        role_line = role_line.style(selected_style);
+    }
+    lines.push(role_line);
+
+    let tool_idx = FilterState::tool_call_idx();
+    let tool_marker = if filter.has_tool_call {
+        "\u{25c9}"
+    } else {
+        "\u{25ef}"
+    };
+    let mut tool_line = Line::from(vec![
+        Span::styled(
+            format!("  {tool_marker} "),
+            Style::default().fg(if filter.has_tool_call {
+                palette::GREEN
+            } else {
+                palette::TEXT_FAINT
+            }),
+        ),
+        Span::styled("Has tool call", Style::default().fg(palette::TEXT)),
+    ]);
+    if filter.cursor == tool_idx {
+        tool_line = tool_line.style(selected_style);
+    }
+    lines.push(tool_line);
 
     let starred_idx = FilterState::starred_idx();
     let starred_marker = if filter.starred_only {
