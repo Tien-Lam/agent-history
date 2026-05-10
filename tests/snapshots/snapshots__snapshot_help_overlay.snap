@@ -14,15 +14,16 @@ expression: render_to_text(&terminal)
 │                                  ││  y         Show resume command               │                                   │
 │  Gemini CLI  Apr 08              ││  s         Toggle star (bookmark)            │                                   │
 │    test-project                  ││  /         Search conversations              │                                   │
-│    Explain how async/await works ││  f         Open filter panel                 │                                   │
-│                                  ││  Tab       Switch focus                      │                                   │
-│  Codex CLI  Apr 08               ││                                              │                                   │
-│    (unknown project)             ││View Mode                                     │                                   │
-│    Add error handling to the API ││  j / Down  Scroll down                       │                                   │
-│                                  ││  k / Up    Scroll up                         │                                   │
-│  OpenCode  Apr 08                ││  Ctrl+D    Page down                         │                                   │
-│    dbproject                     ││  Ctrl+U    Page up                           │                                   │
-│    Refactor database layer       ││  g / G     Top / bottom                      │                                   │
+│    Explain how async/await works ││  H         Toggle hybrid (semantic) search   │                                   │
+│                                  ││  f         Open filter panel                 │                                   │
+│  Codex CLI  Apr 08               ││  Tab       Switch focus                      │                                   │
+│    (unknown project)             ││                                              │                                   │
+│    Add error handling to the API ││View Mode                                     │                                   │
+│                                  ││  j / Down  Scroll down                       │                                   │
+│  OpenCode  Apr 08                ││  k / Up    Scroll up                         │                                   │
+│    dbproject                     ││  Ctrl+D    Page down                         │                                   │
+│    Refactor database layer       ││  Ctrl+U    Page up                           │                                   │
+│                                  ││  g / G     Top / bottom                      │                                   │
 │                                  ││  t         Toggle tool calls                 │                                   │
 │                                  ││  e         Export session                    │                                   │
 │                                  ││  y         Show resume command               │                                   │
@@ -30,6 +31,7 @@ expression: render_to_text(&terminal)
 │                                  ││                                              │                                   │
 │                                  ││Search Mode                                   │                                   │
 │                                  ││  Type      Filter sessions                   │                                   │
+│                                  ││  Tab       Toggle hybrid engine              │                                   │
 │                                  ││  Enter     Open selected                     │                                   │
 │                                  ││  Esc       Cancel search                     │                                   │
 │                                  ││                                              │                                   │
@@ -39,7 +41,5 @@ expression: render_to_text(&terminal)
 │                                  ││  e         Edit text field                   │                                   │
 │                                  ││  Ctrl+C    Clear all filters                 │                                   │
 │                                  ││  Esc / f   Close panel                       │                                   │
-│                                  ││                                              │                                   │
-│                                  ││Global                                        │                                   │
 ╰──────────────────────────────────╯╰──────────────────────────────────────────────╯───────────────────────────────────╯
  Esc close

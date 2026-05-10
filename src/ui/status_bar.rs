@@ -30,13 +30,14 @@ impl StatusBarComponent {
         warning_count: usize,
         filter_active: bool,
         status_message: Option<&str>,
+        engine: Option<&str>,
         frame: &mut Frame,
         area: Rect,
     ) {
         let bg = Style::default().bg(palette::SURFACE);
 
         if mode == AppMode::Search {
-            let line = Line::from(vec![
+            let mut spans = vec![
                 Span::styled(
                     " / ",
                     Style::default()
@@ -45,8 +46,19 @@ impl StatusBarComponent {
                 ),
                 Span::styled(search_query, Style::default().fg(palette::TEXT)),
                 Span::styled("\u{2588}", Style::default().fg(palette::ACCENT)),
-            ]);
-            frame.render_widget(Paragraph::new(line).style(bg), area);
+            ];
+            if let Some(label) = engine {
+                spans.push(Span::styled(
+                    "  \u{2502} ",
+                    Style::default().fg(palette::TEXT_FAINT),
+                ));
+                spans.push(engine_span(label));
+                spans.push(Span::styled(
+                    "  Tab: toggle",
+                    Style::default().fg(palette::TEXT_DIM),
+                ));
+            }
+            frame.render_widget(Paragraph::new(Line::from(spans)).style(bg), area);
             return;
         }
 
@@ -129,6 +141,14 @@ impl StatusBarComponent {
             ));
         }
 
+        if let Some(label) = engine {
+            spans.push(Span::styled(
+                "  \u{2502} ",
+                Style::default().fg(palette::TEXT_FAINT),
+            ));
+            spans.push(engine_span(label));
+        }
+
         if warning_count > 0 {
             spans.push(Span::styled(
                 "  \u{2502} ",
@@ -165,4 +185,23 @@ impl StatusBarComponent {
         let line = Line::from(spans);
         frame.render_widget(Paragraph::new(line).style(bg), area);
     }
+}
+
+/// Visual badge for the active search engine. Hybrid is highlighted (accent
+/// colour, bold) so it pops; lexical stays muted since it's the default and
+/// shouldn't draw the eye.
+fn engine_span(label: &str) -> Span<'static> {
+    let (text, style) = match label {
+        "hybrid" => (
+            "engine: hybrid".to_string(),
+            Style::default()
+                .fg(palette::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ),
+        other => (
+            format!("engine: {other}"),
+            Style::default().fg(palette::TEXT_DIM),
+        ),
+    };
+    Span::styled(text, style)
 }

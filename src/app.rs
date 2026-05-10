@@ -7,6 +7,10 @@ use std::time::{Duration, Instant};
 /// coalesce into a single Tantivy query, run on the next event-loop tick.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(120);
 
+/// RRF blend weight used by the TUI hybrid toggle. Mirrors the CLI's
+/// "balanced" setting — lexical and semantic ranks contribute equally.
+const HYBRID_WEIGHT: f32 = 0.5;
+
 use chrono::Utc;
 use crossterm::event::Event;
 use lru::LruCache;
@@ -20,7 +24,8 @@ use crate::event::{map_key_event, CrosstermEventSource, EventSource};
 use crate::export::ExportFormat;
 use crate::model::{Message, Provider, Session, SessionId};
 use crate::provider::HistoryProvider;
-use crate::search::{SearchHit, SearchIndex};
+use crate::embed;
+use crate::search::{SearchFilters, SearchHit, SearchIndex};
 use crate::stars::StarStore;
 use crate::ui::message_view::MessageViewComponent;
 use crate::ui::session_list::SessionListComponent;
@@ -123,6 +128,7 @@ impl FilterState {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct App {
     config: Config,
     sessions: Vec<Session>,
@@ -141,12 +147,24 @@ pub struct App {
     action_tx: crossbeam_channel::Sender<Action>,
 
     search_index: Option<Arc<SearchIndex>>,
+    index_dir: std::path::PathBuf,
     search_query: String,
     search_results: Vec<SearchHit>,
     filtered_session_ids: Option<Vec<String>>,
     index_ready: bool,
     index_progress: Option<(usize, usize)>,
     search_pending_at: Option<Instant>,
+    /// True when a hybrid search pipeline is wired up for this index dir
+    /// (feature compiled in + consent recorded + non-empty store). Decided
+    /// at startup; toggled to `false` if a later check fails.
+    hybrid_available: bool,
+    /// User-controlled toggle: when `true` and `hybrid_available`, queries
+    /// run through RRF. Defaults on when available.
+    hybrid_enabled: bool,
+    /// Engine that produced `search_results` (`"lexical"` or `"hybrid"`).
+    /// Surfaced in the status bar so users can see whether their toggle
+    /// actually engaged the semantic side.
+    last_engine: &'static str,
 
     filter: FilterState,
     export_cursor: usize,
@@ -192,12 +210,16 @@ impl App {
             action_tx,
 
             search_index: None,
+            index_dir: SearchIndex::default_index_dir(),
             search_query: String::new(),
             search_results: Vec::new(),
             filtered_session_ids: None,
             index_ready: false,
             index_progress: None,
             search_pending_at: None,
+            hybrid_available: false,
+            hybrid_enabled: false,
+            last_engine: "lexical",
 
             filter: FilterState::new(),
             export_cursor: 0,
@@ -227,6 +249,36 @@ impl App {
         self.should_quit
     }
 
+    /// Whether the embedding pipeline is wired up for the current index.
+    /// `false` on lean (no-feature) builds and on indexes that haven't been
+    /// embedded yet. The TUI uses this to decide whether to show the hybrid
+    /// indicator at all.
+    pub fn hybrid_available(&self) -> bool {
+        self.hybrid_available
+    }
+
+    /// User-visible state of the hybrid toggle. Independent of
+    /// `hybrid_available` — when the toggle is on but the pipeline isn't
+    /// ready, queries silently fall open to lexical-only and `last_engine()`
+    /// reflects what actually ran.
+    pub fn hybrid_enabled(&self) -> bool {
+        self.hybrid_enabled
+    }
+
+    /// Engine that produced the current `search_results` (`"lexical"` or
+    /// `"hybrid"`). Mirrors `meta.engine` from the CLI's JSON output.
+    pub fn last_engine(&self) -> &'static str {
+        self.last_engine
+    }
+
+    /// Test-only escape hatch that sidesteps the on-disk consent + embedding
+    /// store probe. Exercises the ToggleHybrid path without standing up a
+    /// real fastembed pipeline.
+    #[doc(hidden)]
+    pub fn set_hybrid_available_for_tests(&mut self, available: bool) {
+        self.hybrid_available = available;
+    }
+
     pub fn run<B: Backend<Error: Send + Sync + 'static>>(
         &mut self,
         terminal: &mut Terminal<B>,
@@ -239,9 +291,15 @@ impl App {
         terminal: &mut Terminal<B>,
         mut events: impl EventSource,
     ) -> anyhow::Result<()> {
-        self.search_index = SearchIndex::open_or_create(&SearchIndex::default_index_dir())
+        self.index_dir = SearchIndex::default_index_dir();
+        self.search_index = SearchIndex::open_or_create(&self.index_dir)
             .map(Arc::new)
             .ok();
+        self.hybrid_available = embed::hybrid_ready(&self.index_dir);
+        // Default ON when the embedding pipeline is wired up — hybrid is
+        // strictly an improvement over lexical when the store is populated.
+        // Users can still hit the toggle to compare modes side-by-side.
+        self.hybrid_enabled = self.hybrid_available;
 
         self.load_sessions();
         self.start_indexing();
@@ -387,6 +445,11 @@ impl App {
         if self.search_query.is_empty() {
             self.filtered_session_ids = None;
             self.search_results.clear();
+            self.last_engine = if self.hybrid_enabled && self.hybrid_available {
+                "hybrid"
+            } else {
+                "lexical"
+            };
             self.session_list.state.select(if self.sessions.is_empty() { None } else { Some(0) });
             return;
         }
@@ -398,7 +461,30 @@ impl App {
             return;
         }
 
-        if let Ok(hits) = index.search(&self.search_query, 200) {
+        // Try the hybrid pipeline first when the user has it on; fall open to
+        // lexical-only on any failure (no consent, empty store, embedder
+        // bootstrap fails, etc). `meta.engine` reflects what actually ran.
+        let hybrid_hits = if self.hybrid_enabled && self.hybrid_available {
+            embed::try_hybrid_search(
+                &self.index_dir,
+                index,
+                &self.search_query,
+                200,
+                &SearchFilters::default(),
+                HYBRID_WEIGHT,
+            )
+        } else {
+            None
+        };
+
+        let (engine, hits_result) = if let Some(hits) = hybrid_hits {
+            ("hybrid", Ok(hits))
+        } else {
+            ("lexical", index.search(&self.search_query, 200))
+        };
+
+        if let Ok(hits) = hits_result {
+            self.last_engine = engine;
             let mut seen = HashSet::new();
             let ids: Vec<String> = hits
                 .iter()
@@ -523,6 +609,33 @@ impl App {
             Action::SearchBackspace => {
                 self.search_query.pop();
                 self.search_pending_at = Some(Instant::now());
+            }
+            Action::ToggleHybrid => {
+                if self.hybrid_available {
+                    self.hybrid_enabled = !self.hybrid_enabled;
+                    self.status_message = Some(if self.hybrid_enabled {
+                        "Hybrid search: ON".to_string()
+                    } else {
+                        "Hybrid search: OFF".to_string()
+                    });
+                    // Re-run the current query so the engine label and
+                    // result ordering reflect the new mode immediately.
+                    if self.search_query.is_empty() {
+                        self.last_engine = if self.hybrid_enabled {
+                            "hybrid"
+                        } else {
+                            "lexical"
+                        };
+                    } else {
+                        self.search_pending_at = None;
+                        self.execute_search();
+                    }
+                } else {
+                    self.status_message = Some(
+                        "Hybrid search unavailable — run `aghist index --accept-download`"
+                            .to_string(),
+                    );
+                }
             }
             Action::SearchCancel => {
                 self.search_query.clear();
@@ -886,6 +999,14 @@ impl App {
 
         // Status bar
         let warning_count = self.warnings.len();
+        // Show the engine indicator only when the embedding pipeline is wired
+        // up — otherwise lexical is the only option and the badge would just
+        // be visual noise.
+        let engine_label = if self.hybrid_available {
+            Some(self.last_engine)
+        } else {
+            None
+        };
         self.status_bar.render(
             self.mode,
             self.loading,
@@ -894,6 +1015,7 @@ impl App {
             warning_count,
             self.filter.is_active(),
             self.status_message.as_deref(),
+            engine_label,
             frame,
             main_layout[1],
         );
@@ -947,6 +1069,7 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Line::from(vec![Span::styled("  y         ", key), Span::styled("Show resume command", desc)]),
         Line::from(vec![Span::styled("  s         ", key), Span::styled("Toggle star (bookmark)", desc)]),
         Line::from(vec![Span::styled("  /         ", key), Span::styled("Search conversations", desc)]),
+        Line::from(vec![Span::styled("  H         ", key), Span::styled("Toggle hybrid (semantic) search", desc)]),
         Line::from(vec![Span::styled("  f         ", key), Span::styled("Open filter panel", desc)]),
         Line::from(vec![Span::styled("  Tab       ", key), Span::styled("Switch focus", desc)]),
         Line::raw(""),
@@ -963,6 +1086,7 @@ fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Line::raw(""),
         Line::from(Span::styled("Search Mode", header)),
         Line::from(vec![Span::styled("  Type      ", key), Span::styled("Filter sessions", desc)]),
+        Line::from(vec![Span::styled("  Tab       ", key), Span::styled("Toggle hybrid engine", desc)]),
         Line::from(vec![Span::styled("  Enter     ", key), Span::styled("Open selected", desc)]),
         Line::from(vec![Span::styled("  Esc       ", key), Span::styled("Cancel search", desc)]),
         Line::raw(""),
