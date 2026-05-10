@@ -247,7 +247,13 @@ pub fn aggregate(
     }
 }
 
-fn aggregate_tokens(sessions: &[(Session, Vec<Message>)]) -> ProjectTokens {
+/// Aggregate token totals across the given session bundles.
+///
+/// Sessions without a usage block contribute zero tokens but don't null
+/// out cost. Sessions whose `model` is unknown to the pricing table null
+/// the cost field — the convention `aghist usage`/`aghist project` use.
+#[must_use]
+pub fn aggregate_tokens(sessions: &[(Session, Vec<Message>)]) -> ProjectTokens {
     let mut t = ProjectTokens::default();
     let mut cost = 0.0f64;
     let mut has_unpriced = false;
@@ -300,7 +306,11 @@ fn collect_projects(sessions: &[(Session, Vec<Message>)]) -> Vec<String> {
     seen
 }
 
-fn collect_decisions(sessions: &[(Session, Vec<Message>)]) -> Vec<DecisionRow> {
+/// Collect decision-candidate rows across all messages in `sessions`,
+/// filtered by [`crate::decisions::DEFAULT_THRESHOLD`]. The returned rows
+/// are unsorted; callers typically sort by `score` desc.
+#[must_use]
+pub fn collect_decisions(sessions: &[(Session, Vec<Message>)]) -> Vec<DecisionRow> {
     let mut out = Vec::new();
     for (s, msgs) in sessions {
         for (idx, msg) in msgs.iter().enumerate() {
@@ -323,7 +333,10 @@ fn collect_decisions(sessions: &[(Session, Vec<Message>)]) -> Vec<DecisionRow> {
     out
 }
 
-fn collect_todos(sessions: &[(Session, Vec<Message>)]) -> Vec<TodoRow> {
+/// Collect TODO-candidate rows across all messages in `sessions`. The
+/// returned rows are unsorted; callers typically sort newest-first.
+#[must_use]
+pub fn collect_todos(sessions: &[(Session, Vec<Message>)]) -> Vec<TodoRow> {
     let mut out = Vec::new();
     for (s, msgs) in sessions {
         let candidates: Vec<TodoCandidate> =

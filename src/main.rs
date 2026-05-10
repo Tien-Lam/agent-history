@@ -540,6 +540,52 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Cross-project weekly summary suitable for journals or reviews.
+    ///
+    /// Aggregates a window of activity across every provider into a single
+    /// envelope: top active projects, decision count, open TODOs, and
+    /// completed work threads. Token totals and (when pricing is known)
+    /// USD cost line up with `aghist usage`. The window defaults to the
+    /// last 7 days; `--week`/`--month`/`--days N` are mutually exclusive
+    /// shortcuts. The global `--since`/`--until` filters override the
+    /// computed start/end if set.
+    ///
+    /// Default output is Markdown — paste straight into a journal. Pass
+    /// `--json` for the structured envelope (schema: `aghist schema report`).
+    /// Empty result (no matching sessions) exits with code 3.
+    Report {
+        /// Window length in days. Mutually exclusive with `--week`/`--month`.
+        #[arg(long, value_name = "N", conflicts_with_all = ["week", "month"])]
+        days: Option<i64>,
+
+        /// Shorthand for `--days 7`.
+        #[arg(long, conflicts_with_all = ["days", "month"])]
+        week: bool,
+
+        /// Shorthand for `--days 30`.
+        #[arg(long, conflicts_with_all = ["days", "week"])]
+        month: bool,
+
+        /// Cap the top-projects section. 0 = no cap.
+        #[arg(long, default_value_t = aghist::report::ReportLimits::DEFAULTS.top_projects, value_name = "N")]
+        top_projects: usize,
+
+        /// Cap the decisions section. 0 = no cap.
+        #[arg(long, default_value_t = aghist::report::ReportLimits::DEFAULTS.decisions, value_name = "N")]
+        decisions: usize,
+
+        /// Cap the todos section. 0 = no cap.
+        #[arg(long, default_value_t = aghist::report::ReportLimits::DEFAULTS.todos, value_name = "N")]
+        todos: usize,
+
+        /// Cap the threads section. 0 = no cap.
+        #[arg(long, default_value_t = aghist::report::ReportLimits::DEFAULTS.threads, value_name = "N")]
+        threads: usize,
+
+        /// Emit the structured JSON envelope instead of Markdown.
+        #[arg(long)]
+        json: bool,
+    },
     /// Update aghist to the latest release
     Update,
     /// Remove aghist binary and data
@@ -1348,6 +1394,33 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 files,
             };
             return project_command(&providers, &cli.filters, &name, limits, json);
+        }
+        Some(Command::Report {
+            days,
+            week,
+            month,
+            top_projects,
+            decisions,
+            todos,
+            threads,
+            json,
+        }) => {
+            let window_days = if month {
+                30
+            } else if week {
+                7
+            } else {
+                days.unwrap_or(7)
+            };
+            let limits = aghist::report::ReportLimits {
+                top_projects,
+                decisions,
+                todos,
+                threads,
+            };
+            return report_command(
+                &providers, &cli.filters, window_days, limits, json,
+            );
         }
         None => {}
     }
@@ -4572,6 +4645,96 @@ fn render_project_human<W: io::Write>(
         writeln!(out, "  {h:02}:00  {count:>6}  {bar}")?;
     }
     Ok(())
+}
+
+fn report_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    window_days: i64,
+    limits: aghist::report::ReportLimits,
+    force_json: bool,
+) -> Result<i32, ErrorEnvelope> {
+    use std::io::Write as _;
+    // Resolve the window: --days/--week/--month set the default span, but
+    // the global --since/--until override the computed start/end so users
+    // can still pin an exact range.
+    let now = Utc::now();
+    let end = filters.until.unwrap_or(now);
+    let start = filters
+        .since
+        .unwrap_or_else(|| end - chrono::Duration::days(window_days.max(1)));
+    if end < start {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            "--until must be greater than or equal to --since",
+        )
+        .with_hint("Pass timestamps in chronological order, or rely on --days."));
+    }
+    let window = aghist::report::ReportWindow::between(start, end);
+
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
+    // Reuse the global filter machinery for since/until/project/provider so
+    // the report sees the same sessions any other subcommand would for the
+    // same flag set. We additionally clip to [start, end] in case the
+    // caller did not pass --since/--until.
+    let mut bundles: Vec<(Session, Vec<Message>)> = Vec::new();
+    for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        let sessions = match p.discover_sessions() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{}: error: {e}", p.provider());
+                continue;
+            }
+        };
+        for session in sessions {
+            if !session_matches(&session, filters, project_needle.as_deref()) {
+                continue;
+            }
+            // Always clip to the resolved window — protects against the
+            // common case where neither --since nor --until is set.
+            if session.started_at < start || session.started_at > end {
+                continue;
+            }
+            let Ok(messages) = p.load_messages(&session) else {
+                continue;
+            };
+            bundles.push((session, messages));
+        }
+    }
+
+    if bundles.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let envelope = aghist::report::aggregate(window, &bundles, limits);
+
+    // The spec calls for "Markdown output suitable for pasting into a
+    // journal or weekly review", so `report` deviates from the rest of the
+    // CLI and defaults to Markdown for both TTY and pipe. `--json` exists
+    // for agents that need to consume the structured envelope.
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if force_json {
+        serde_json::to_writer(&mut out, &envelope)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to encode report: {e}")))?;
+        writeln!(out)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write report: {e}")))?;
+    } else {
+        let md = aghist::report::render_markdown(&envelope);
+        write!(out, "{md}")
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write report: {e}")))?;
+    }
+    Ok(EXIT_OK)
 }
 
 /// Scale a `count` to a 0..=`max_cells` bar width relative to `max`.

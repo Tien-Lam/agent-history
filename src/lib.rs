@@ -16,6 +16,7 @@ pub mod output;
 pub mod project;
 pub mod provider;
 pub mod provider_diagnostic;
+pub mod report;
 pub mod schema;
 pub mod search;
 pub mod threads;

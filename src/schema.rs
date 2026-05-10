@@ -35,6 +35,7 @@ pub const SUBCOMMANDS: &[&str] = &[
     "stars",
     "usage",
     "project",
+    "report",
 ];
 
 /// Return the schema for a subcommand, or `None` if the name is unknown.
@@ -59,6 +60,7 @@ pub fn schema_for(subcmd: &str) -> Option<Value> {
         "stars" => Some(stars_schema()),
         "usage" => Some(usage_schema()),
         "project" => Some(project_schema()),
+        "report" => Some(report_schema()),
         _ => None,
     }
 }
@@ -1509,6 +1511,211 @@ fn project_schema() -> Value {
                 }
             },
             "required": ["query", "matched_projects", "session_count", "message_count", "token_usage", "decisions", "todos", "threads", "top_files", "time_of_day", "meta"]
+        },
+        "exit_codes": exit_codes()
+    })
+}
+
+#[allow(clippy::too_many_lines)]
+fn report_schema() -> Value {
+    let mut props = serde_json::Map::new();
+    props.insert(
+        "days".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 1,
+            "default": 7,
+            "description": "Window length in days. Mutually exclusive with `week`/`month`."
+        }),
+    );
+    props.insert(
+        "week".to_string(),
+        json!({
+            "type": "boolean",
+            "description": "Shorthand for `days=7`. Mutually exclusive with `days`/`month`."
+        }),
+    );
+    props.insert(
+        "month".to_string(),
+        json!({
+            "type": "boolean",
+            "description": "Shorthand for `days=30`. Mutually exclusive with `days`/`week`."
+        }),
+    );
+    props.insert(
+        "top_projects".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 3,
+            "description": "Cap the top-projects section (0 = no cap). Raw count remains in meta.projects_total."
+        }),
+    );
+    props.insert(
+        "decisions".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 5,
+            "description": "Cap the decisions section (0 = no cap). Raw count remains in meta.decisions_total."
+        }),
+    );
+    props.insert(
+        "todos".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 10,
+            "description": "Cap the todos section (0 = no cap). Raw count remains in meta.todos_total."
+        }),
+    );
+    props.insert(
+        "threads".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 5,
+            "description": "Cap the threads section (0 = no cap). Raw count remains in meta.threads_total."
+        }),
+    );
+    props.insert(
+        "json".to_string(),
+        json!({
+            "type": "boolean",
+            "description": "Emit the structured JSON envelope instead of Markdown. Default is Markdown for both TTY and pipe."
+        }),
+    );
+    for (name, schema) in filter_params_fragment() {
+        props.insert(name.to_string(), schema);
+    }
+
+    json!({
+        "$schema": SCHEMA_DRAFT,
+        "$id": "aghist:schema/report",
+        "title": "aghist report",
+        "command": "report",
+        "description": "Cross-project weekly summary suitable for journals or reviews. Aggregates a window of activity (default last 7 days) across every provider into top active projects, decision count, open TODOs, and completed work threads. Heuristics reuse `aghist decisions/todos/threads/usage` — no LLM. Default output is Markdown; `json:true` emits the structured envelope. Empty result exits 3.",
+        "params": {
+            "type": "object",
+            "properties": Value::Object(props),
+            "required": [],
+            "additionalProperties": false
+        },
+        "response": {
+            "type": "object",
+            "description": "JSON envelope (when `json:true`). Without `json`, the response is a Markdown document.",
+            "properties": {
+                "window": {
+                    "type": "object",
+                    "properties": {
+                        "started_at": { "type": "string", "format": "date-time" },
+                        "ended_at": { "type": "string", "format": "date-time" },
+                        "days": { "type": "integer", "minimum": 1 }
+                    },
+                    "required": ["started_at", "ended_at", "days"]
+                },
+                "session_count": { "type": "integer", "minimum": 0 },
+                "message_count": { "type": "integer", "minimum": 0 },
+                "project_count": { "type": "integer", "minimum": 0 },
+                "token_usage": {
+                    "type": "object",
+                    "properties": {
+                        "input_tokens": { "type": "integer", "minimum": 0 },
+                        "output_tokens": { "type": "integer", "minimum": 0 },
+                        "cache_read_tokens": { "type": "integer", "minimum": 0 },
+                        "cache_write_tokens": { "type": "integer", "minimum": 0 },
+                        "total_tokens": { "type": "integer", "minimum": 0 },
+                        "cost_usd": {
+                            "type": ["number", "null"],
+                            "description": "USD across the window, or null if any session uses an unpriced model."
+                        }
+                    },
+                    "required": ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
+                },
+                "top_projects": {
+                    "type": "array",
+                    "description": "Most active projects in the window, sorted by message_count desc.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "project": { "type": "string" },
+                            "session_count": { "type": "integer", "minimum": 0 },
+                            "message_count": { "type": "integer", "minimum": 0 },
+                            "input_tokens": { "type": "integer", "minimum": 0 },
+                            "output_tokens": { "type": "integer", "minimum": 0 },
+                            "total_tokens": { "type": "integer", "minimum": 0 },
+                            "cost_usd": { "type": ["number", "null"] }
+                        },
+                        "required": ["project", "session_count", "message_count", "input_tokens", "output_tokens", "total_tokens", "cost_usd"]
+                    }
+                },
+                "decisions": {
+                    "type": "array",
+                    "description": "Top-scoring decision candidates, sorted by score desc.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "ref": { "type": "string" },
+                            "provider": { "type": "string", "enum": provider_slug_enum() },
+                            "session_id": { "type": "string" },
+                            "turn": { "type": "integer", "minimum": 1 },
+                            "score": { "type": "number" },
+                            "markers": { "type": "array", "items": { "type": "string" } },
+                            "snippet": { "type": "string" },
+                            "timestamp": { "type": "string", "format": "date-time" }
+                        },
+                        "required": ["ref", "provider", "session_id", "turn", "score", "markers", "snippet", "timestamp"]
+                    }
+                },
+                "todos": {
+                    "type": "array",
+                    "description": "Open TODOs / follow-ups / bd refs, newest first.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "ref": { "type": "string" },
+                            "provider": { "type": "string", "enum": provider_slug_enum() },
+                            "session_id": { "type": "string" },
+                            "turn": { "type": "integer", "minimum": 1 },
+                            "kind": {
+                                "type": "string",
+                                "enum": ["todo", "follow_up", "come_back_to", "we_should", "bd_ref"]
+                            },
+                            "snippet": { "type": "string" },
+                            "timestamp": { "type": "string", "format": "date-time" },
+                            "bd_id": { "type": ["string", "null"] }
+                        },
+                        "required": ["ref", "provider", "session_id", "turn", "kind", "snippet", "timestamp"]
+                    }
+                },
+                "threads": {
+                    "type": "array",
+                    "description": "Cross-session work threads in the window (`aghist threads` output, scoped to the window)."
+                },
+                "meta": {
+                    "type": "object",
+                    "properties": {
+                        "limits": {
+                            "type": "object",
+                            "properties": {
+                                "top_projects": { "type": "integer", "minimum": 0 },
+                                "decisions": { "type": "integer", "minimum": 0 },
+                                "todos": { "type": "integer", "minimum": 0 },
+                                "threads": { "type": "integer", "minimum": 0 }
+                            },
+                            "required": ["top_projects", "decisions", "todos", "threads"]
+                        },
+                        "projects_total": { "type": "integer", "minimum": 0 },
+                        "decisions_total": { "type": "integer", "minimum": 0 },
+                        "todos_total": { "type": "integer", "minimum": 0 },
+                        "threads_total": { "type": "integer", "minimum": 0 },
+                        "thread_gap_hours": { "type": "integer", "minimum": 0 },
+                        "decisions_threshold": { "type": "number" }
+                    },
+                    "required": ["limits", "projects_total", "decisions_total", "todos_total", "threads_total", "thread_gap_hours", "decisions_threshold"]
+                }
+            },
+            "required": ["window", "session_count", "message_count", "project_count", "token_usage", "top_projects", "decisions", "todos", "threads", "meta"]
         },
         "exit_codes": exit_codes()
     })
