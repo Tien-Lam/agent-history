@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use serde::Serialize;
 
+use crate::metadata::Note;
 use crate::model::{ContentBlock, Message, Role, Session};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,14 +54,64 @@ impl std::str::FromStr for ExportFormat {
 }
 
 pub fn export(format: ExportFormat, session: &Session, messages: &[Message]) -> String {
+    export_with_notes(format, session, messages, &[])
+}
+
+/// Same as [`export`], but with `notes` injected inline at their citation refs.
+///
+/// Notes are partitioned by `session_ref`: those without a `#turn` suffix are
+/// session-level and render once near the metadata header; those with a turn
+/// render right after the corresponding message (1-based turn = message index
+/// + 1). Notes whose ref doesn't match this session are silently ignored.
+pub fn export_with_notes(
+    format: ExportFormat,
+    session: &Session,
+    messages: &[Message],
+    notes: &[Note],
+) -> String {
     match format {
-        ExportFormat::Markdown => to_markdown(session, messages),
-        ExportFormat::Json => to_json(session, messages),
-        ExportFormat::Html => to_html(session, messages),
+        ExportFormat::Markdown => to_markdown_with_notes(session, messages, notes),
+        ExportFormat::Json => to_json_with_notes(session, messages, notes),
+        ExportFormat::Html => to_html_with_notes(session, messages, notes),
+    }
+}
+
+/// Bucket of notes for a single session, partitioned by their citation ref.
+struct NoteBuckets<'a> {
+    session_level: Vec<&'a Note>,
+    by_turn: HashMap<u32, Vec<&'a Note>>,
+}
+
+impl<'a> NoteBuckets<'a> {
+    fn build(session: &Session, notes: &'a [Note]) -> Self {
+        let session_ref = format!("{}/{}", session.provider.slug(), session.id.0);
+        let turn_prefix = format!("{session_ref}#");
+        let mut session_level = Vec::new();
+        let mut by_turn: HashMap<u32, Vec<&Note>> = HashMap::new();
+        for n in notes {
+            if n.session_ref == session_ref {
+                session_level.push(n);
+            } else if let Some(rest) = n.session_ref.strip_prefix(&turn_prefix) {
+                if let Ok(turn) = rest.parse::<u32>() {
+                    if turn > 0 {
+                        by_turn.entry(turn).or_default().push(n);
+                    }
+                }
+            }
+        }
+        Self { session_level, by_turn }
     }
 }
 
 pub fn to_markdown(session: &Session, messages: &[Message]) -> String {
+    to_markdown_with_notes(session, messages, &[])
+}
+
+pub fn to_markdown_with_notes(
+    session: &Session,
+    messages: &[Message],
+    notes: &[Note],
+) -> String {
     let mut out = String::new();
 
     let title = session.project_name.as_deref().unwrap_or("Conversation");
@@ -78,12 +130,38 @@ pub fn to_markdown(session: &Session, messages: &[Message]) -> String {
     }
     out.push_str("\n---\n\n");
 
-    for msg in messages {
+    let buckets = NoteBuckets::build(session, notes);
+    if !buckets.session_level.is_empty() {
+        out.push_str("## 📝 Private annotations\n\n");
+        for n in &buckets.session_level {
+            render_note_md(&mut out, n);
+        }
+    }
+
+    for (idx, msg) in messages.iter().enumerate() {
         let _ = writeln!(out, "## {}\n", msg.role);
         render_content_md(&mut out, &msg.content);
+        let turn = u32::try_from(idx).unwrap_or(u32::MAX).saturating_add(1);
+        if let Some(turn_notes) = buckets.by_turn.get(&turn) {
+            for n in turn_notes {
+                render_note_md(&mut out, n);
+            }
+        }
     }
 
     out
+}
+
+fn render_note_md(out: &mut String, note: &Note) {
+    let _ = writeln!(
+        out,
+        "> **📝 Private annotation** — {} (id {})\n>",
+        note.created_at, note.id
+    );
+    for line in note.body.lines() {
+        let _ = writeln!(out, "> {line}");
+    }
+    out.push('\n');
 }
 
 fn render_content_md(out: &mut String, blocks: &[ContentBlock]) {
@@ -121,17 +199,67 @@ fn render_content_md(out: &mut String, blocks: &[ContentBlock]) {
 }
 
 pub fn to_json(session: &Session, messages: &[Message]) -> String {
+    to_json_with_notes(session, messages, &[])
+}
+
+pub fn to_json_with_notes(session: &Session, messages: &[Message], notes: &[Note]) -> String {
     #[derive(Serialize)]
     struct ExportData<'a> {
         session: &'a Session,
         messages: &'a [Message],
+        #[serde(skip_serializing_if = "Option::is_none")]
+        notes: Option<Vec<NoteWire<'a>>>,
     }
 
-    serde_json::to_string_pretty(&ExportData { session, messages })
-        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
+    /// JSON projection of [`Note`] with a `kind: "private-annotation"` tag
+    /// so consumers don't conflate annotations with session content.
+    #[derive(Serialize)]
+    struct NoteWire<'a> {
+        kind: &'static str,
+        id: i64,
+        session_ref: &'a str,
+        body: &'a str,
+        created_at: &'a str,
+        updated_at: &'a str,
+    }
+
+    // Only emit notes that belong to this session (session-level or turn-level).
+    let buckets = NoteBuckets::build(session, notes);
+    let mut matched: Vec<&Note> = buckets.session_level.clone();
+    for v in buckets.by_turn.values() {
+        matched.extend(v.iter().copied());
+    }
+    matched.sort_by_key(|n| n.id);
+    let wire_notes: Vec<NoteWire<'_>> = matched
+        .into_iter()
+        .map(|n| NoteWire {
+            kind: "private-annotation",
+            id: n.id,
+            session_ref: &n.session_ref,
+            body: &n.body,
+            created_at: &n.created_at,
+            updated_at: &n.updated_at,
+        })
+        .collect();
+    let notes_field = if wire_notes.is_empty() {
+        None
+    } else {
+        Some(wire_notes)
+    };
+
+    serde_json::to_string_pretty(&ExportData {
+        session,
+        messages,
+        notes: notes_field,
+    })
+    .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
 }
 
 pub fn to_html(session: &Session, messages: &[Message]) -> String {
+    to_html_with_notes(session, messages, &[])
+}
+
+pub fn to_html_with_notes(session: &Session, messages: &[Message], notes: &[Note]) -> String {
     let title = html_escape(session.project_name.as_deref().unwrap_or("Conversation"));
     let provider = html_escape(session.provider.as_str());
     let date = session.started_at.format("%Y-%m-%d %H:%M UTC").to_string();
@@ -146,8 +274,17 @@ pub fn to_html(session: &Session, messages: &[Message]) -> String {
         let _ = write!(meta, "<br>\n  <strong>Model:</strong> {}", html_escape(model));
     }
 
+    let buckets = NoteBuckets::build(session, notes);
     let mut body = String::new();
-    for msg in messages {
+    if !buckets.session_level.is_empty() {
+        body.push_str("<section class=\"session-notes\">\n");
+        body.push_str("<h2>📝 Private annotations</h2>\n");
+        for n in &buckets.session_level {
+            render_note_html(&mut body, n);
+        }
+        body.push_str("</section>\n");
+    }
+    for (idx, msg) in messages.iter().enumerate() {
         let role_class = match msg.role {
             Role::User => "user",
             Role::Assistant => "assistant",
@@ -160,6 +297,12 @@ pub fn to_html(session: &Session, messages: &[Message]) -> String {
             html_escape(msg.role.as_str())
         );
         render_content_html(&mut body, &msg.content);
+        let turn = u32::try_from(idx).unwrap_or(u32::MAX).saturating_add(1);
+        if let Some(turn_notes) = buckets.by_turn.get(&turn) {
+            for n in turn_notes {
+                render_note_html(&mut body, n);
+            }
+        }
         body.push_str("</div>\n");
     }
 
@@ -197,6 +340,11 @@ details{{margin:.75rem 0;border:1px solid var(--border);border-radius:6px;paddin
 summary{{cursor:pointer;font-weight:600}}
 .error{{color:#d32f2f;padding:.5rem;border:1px solid #d32f2f;border-radius:4px}}
 .thinking{{font-style:italic;color:var(--meta)}}
+aside.note{{margin:.75rem 0;padding:.75rem 1rem;border-left:4px solid #ffb300;background:rgba(255,179,0,.08);border-radius:4px}}
+aside.note .note-label{{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#b26500;margin-bottom:.25rem}}
+aside.note .note-body{{white-space:pre-wrap}}
+section.session-notes{{margin:1.5rem 0}}
+section.session-notes h2{{font-size:1rem;margin:0 0 .5rem 0}}
 </style>
 </head>
 <body>
@@ -258,6 +406,19 @@ fn render_content_html(out: &mut String, blocks: &[ContentBlock]) {
             }
         }
     }
+}
+
+fn render_note_html(out: &mut String, note: &Note) {
+    let _ = writeln!(
+        out,
+        "<aside class=\"note\" data-kind=\"private-annotation\">\n  \
+         <div class=\"note-label\">📝 Private annotation — {} (id {})</div>\n  \
+         <div class=\"note-body\">{}</div>\n\
+         </aside>",
+        html_escape(&note.created_at),
+        note.id,
+        html_escape(&note.body),
+    );
 }
 
 fn html_escape(s: &str) -> String {

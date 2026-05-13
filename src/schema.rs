@@ -403,6 +403,10 @@ fn export_schema() -> Value {
                     "type": "string",
                     "pattern": "^[0-9]*(:[0-9]*)?$",
                     "description": "1-based inclusive turn range: A:B, :B, A:, or a single A."
+                },
+                "include_notes": {
+                    "type": "boolean",
+                    "description": "Inline private annotations (from the metadata sidecar) at their citation refs. Notes stay marked 'private annotation' in the output."
                 }
             },
             "required": ["format", "session"],

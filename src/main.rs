@@ -170,8 +170,17 @@ enum Command {
         #[arg(long, conflicts_with = "params")]
         turn_range: Option<String>,
 
+        /// Inline private annotations (notes from the metadata sidecar) at their
+        /// citation refs. Session-level notes render once near the top; turn-level
+        /// notes render after the message they're attached to. Notes stay marked
+        /// "private annotation" so consumers don't conflate them with session
+        /// content. No-op when the metadata sidecar is absent or has no matching
+        /// notes.
+        #[arg(long, conflicts_with = "params")]
+        include_notes: bool,
+
         /// JSON request body containing all params at once. Mutually exclusive
-        /// with other flags. Schema: `{format, session, output?, turn_range?}`.
+        /// with other flags. Schema: `{format, session, output?, turn_range?, include_notes?}`.
         /// Lets agents skip per-flag discovery and submit a single JSON request.
         #[arg(long, value_name = "JSON")]
         params: Option<String>,
@@ -811,6 +820,8 @@ struct ExportParams {
     output: Option<PathBuf>,
     #[serde(default)]
     turn_range: Option<String>,
+    #[serde(default)]
+    include_notes: bool,
 }
 
 /// JSON `--params` body for `aghist index`.
@@ -929,25 +940,41 @@ fn parse_usage_group_by(raw: &str) -> Result<aghist::usage::GroupBy, String> {
         .map_err(|bad| format!("unknown --by value '{bad}'. Valid: model, provider, project"))
 }
 
+struct ResolvedExport {
+    format: export::ExportFormat,
+    session: String,
+    output: Option<PathBuf>,
+    turn_range: Option<String>,
+    include_notes: bool,
+}
+
 fn resolve_export_args(
     format: Option<export::ExportFormat>,
     session: Option<String>,
     output: Option<PathBuf>,
     turn_range: Option<String>,
+    include_notes: bool,
     params: Option<String>,
-) -> Result<(export::ExportFormat, String, Option<PathBuf>, Option<String>), ErrorEnvelope> {
+) -> Result<ResolvedExport, ErrorEnvelope> {
     if let Some(json) = params {
         let p: ExportParams = parse_params(&json, "export")?;
         let format = parse_params_field(&p.format, "format", str::parse::<export::ExportFormat>)?;
-        Ok((format, p.session, p.output, p.turn_range))
+        Ok(ResolvedExport {
+            format,
+            session: p.session,
+            output: p.output,
+            turn_range: p.turn_range,
+            include_notes: p.include_notes,
+        })
     } else {
         // clap enforces these via `required_unless_present = "params"`.
-        Ok((
-            format.expect("clap requires --format unless --params is set"),
-            session.expect("clap requires --session unless --params is set"),
+        Ok(ResolvedExport {
+            format: format.expect("clap requires --format unless --params is set"),
+            session: session.expect("clap requires --session unless --params is set"),
             output,
             turn_range,
-        ))
+            include_notes,
+        })
     }
 }
 
@@ -1254,17 +1281,19 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             session,
             output,
             turn_range,
+            include_notes,
             params,
         }) => {
-            let (format, session, output, turn_range) = resolve_export_args(
-                format, session, output, turn_range, params,
+            let resolved = resolve_export_args(
+                format, session, output, turn_range, include_notes, params,
             )?;
             return export_session(
                 &providers,
-                format,
-                &session,
-                output.as_deref(),
-                turn_range.as_deref(),
+                resolved.format,
+                &resolved.session,
+                resolved.output.as_deref(),
+                resolved.turn_range.as_deref(),
+                resolved.include_notes,
             );
         }
         Some(Command::Index {
@@ -1916,12 +1945,53 @@ fn collect_text(message: &Message) -> String {
     parts.join("\n")
 }
 
+/// Best-effort: pull the session's notes from the metadata sidecar, restricted
+/// to the exported turn range. Returns `None` if the sidecar can't be opened
+/// (the common case: the user hasn't created one yet). Notes that fall outside
+/// the slice are dropped; turn-level notes have their `session_ref` rebased so
+/// turn N in the full session becomes turn `N - turn_offset` in the slice.
+fn load_session_notes(
+    session: &Session,
+    turn_offset: usize,
+    slice_len: usize,
+) -> Option<Vec<Note>> {
+    let path = metadata::default_path()?;
+    if !path.exists() {
+        return None;
+    }
+    let conn = metadata::open(&path).ok()?;
+    let session_ref = format!("{}/{}", session.provider.slug(), session.id.0);
+    let all = metadata::note_list(&conn, Some(&session_ref)).ok()?;
+    let offset = u32::try_from(turn_offset).unwrap_or(u32::MAX);
+    let max_turn_inclusive = offset.saturating_add(u32::try_from(slice_len).unwrap_or(u32::MAX));
+    let turn_prefix = format!("{session_ref}#");
+    let mut out = Vec::with_capacity(all.len());
+    for mut n in all {
+        if n.session_ref == session_ref {
+            out.push(n);
+            continue;
+        }
+        let Some(rest) = n.session_ref.strip_prefix(&turn_prefix) else {
+            continue;
+        };
+        let Ok(turn) = rest.parse::<u32>() else { continue };
+        if turn == 0 || turn <= offset || turn > max_turn_inclusive {
+            continue;
+        }
+        let rebased = turn - offset;
+        n.session_ref = format!("{turn_prefix}{rebased}");
+        out.push(n);
+    }
+    Some(out)
+}
+
 fn export_session(
     providers: &[Box<dyn provider::HistoryProvider>],
     format: export::ExportFormat,
     session_id: &str,
     output: Option<&std::path::Path>,
     turn_range: Option<&str>,
+    include_notes: bool,
 ) -> Result<i32, ErrorEnvelope> {
     let mut all_sessions = Vec::new();
     for p in providers {
@@ -1962,7 +2032,7 @@ fn export_session(
         )
     })?;
 
-    let sliced = match turn_range {
+    let (sliced, turn_offset) = match turn_range {
         Some(spec) => {
             let total = messages.len();
             let (start, end) = parse_turn_range(spec, total).map_err(|msg| {
@@ -1970,12 +2040,20 @@ fn export_session(
                     .with_hint("Use a 1-based range like `12:25`, `:10`, `5:`, or a single turn `7`.")
             })?;
             // start..end are 1-based inclusive bounds; convert to 0-based half-open.
-            &messages[(start - 1)..end]
+            // The slice's first message is turn `start` in the original session, so
+            // we offset turn-keyed notes by `start - 1` to align them.
+            (&messages[(start - 1)..end], start - 1)
         }
-        None => &messages[..],
+        None => (&messages[..], 0usize),
     };
 
-    let content = export::export(format, session, sliced);
+    let notes: Vec<Note> = if include_notes {
+        load_session_notes(session, turn_offset, sliced.len()).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let content = export::export_with_notes(format, session, sliced, &notes);
 
     if let Some(path) = output {
         std::fs::write(path, &content).map_err(|e| {
