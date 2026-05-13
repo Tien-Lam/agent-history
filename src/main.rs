@@ -412,20 +412,26 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Cluster sessions into "threads" of related work (same project, time-adjacent).
+    /// Cluster sessions into "threads" of related work.
     ///
-    /// Heuristic v1: bucket sessions by `project_name`, then walk each bucket
-    /// chronologically — sessions cluster when their gap is within `--gap-hours`
-    /// (default 4h, "picked it back up after lunch"). Useful for "what's the
-    /// history on feature X across multiple sessions?". No LLM; agents can
-    /// post-process or drill into refs with `aghist show`.
+    /// Default heuristic: bucket sessions by `project_name`, then walk each
+    /// bucket chronologically — sessions cluster when their gap is within
+    /// `--gap-hours` (default 4h). Useful for "what's the history on feature
+    /// X across multiple sessions?".
+    ///
+    /// Pass `--llm` to route session digests through a Claude Messages API
+    /// call that groups by semantic topic *across project boundaries*. The
+    /// heuristic can't cross projects; the LLM can. Configured via env
+    /// (`ANTHROPIC_API_KEY` / `AGHIST_LLM_API_KEY`, `AGHIST_LLM_ENDPOINT`,
+    /// `AGHIST_LLM_MODEL`); the system prompt is sent with
+    /// `cache_control: ephemeral` to cap re-invocation cost.
     Threads {
         /// Cluster gap in hours. Sessions in the same project within this gap
-        /// merge into one thread; longer gaps split.
+        /// merge into one thread; longer gaps split. Ignored with `--llm`.
         #[arg(long, default_value_t = aghist::threads::DEFAULT_GAP_HOURS, value_name = "HOURS")]
         gap_hours: i64,
 
-        /// Drop threads with fewer than this many sessions.
+        /// Drop threads with fewer than this many sessions. Ignored with `--llm`.
         #[arg(long, default_value_t = 1, value_name = "N")]
         min_sessions: usize,
 
@@ -436,6 +442,23 @@ enum Command {
         /// Force JSON output (default: JSON on pipe, table on TTY).
         #[arg(long)]
         json: bool,
+
+        /// Route session digests through an LLM for semantic topic clustering
+        /// across project boundaries. Requires `ANTHROPIC_API_KEY` (or
+        /// `AGHIST_LLM_API_KEY`).
+        #[arg(long)]
+        llm: bool,
+
+        /// Override the LLM model id (default: claude-haiku-4-5-20251001 or
+        /// `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
+        #[arg(long, value_name = "MODEL")]
+        llm_model: Option<String>,
+
+        /// Cap on session digests sent to the LLM (most recent kept). One
+        /// digest is ~150 bytes, so 200 ≈ 7.5K input tokens per call. Only
+        /// meaningful with `--llm`.
+        #[arg(long, default_value_t = 200, value_name = "N")]
+        llm_max_sessions: usize,
     },
     /// Manage per-user notes attached to sessions or turns.
     ///
@@ -1344,6 +1367,9 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             min_sessions,
             limit,
             json,
+            llm,
+            llm_model,
+            llm_max_sessions,
         }) => {
             return threads_command(
                 &providers,
@@ -1352,6 +1378,9 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 min_sessions,
                 limit,
                 json,
+                llm,
+                llm_model.as_deref(),
+                llm_max_sessions,
             );
         }
         Some(Command::Sources { command }) => {
@@ -4348,6 +4377,7 @@ fn render_todos_human<W: io::Write>(out: &mut W, todos: &[TodoCandidate]) -> io:
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn threads_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
@@ -4355,7 +4385,13 @@ fn threads_command(
     min_sessions: usize,
     limit: usize,
     force_json: bool,
+    use_llm: bool,
+    llm_model: Option<&str>,
+    llm_max_sessions: usize,
 ) -> Result<i32, ErrorEnvelope> {
+    if !use_llm && llm_model.is_some() {
+        return Err(ErrorEnvelope::new("usage", "--llm-model requires --llm"));
+    }
     if gap_hours < 0 {
         return Err(ErrorEnvelope::new(
             "usage",
@@ -4386,6 +4422,10 @@ fn threads_command(
         }
     }
 
+    if use_llm {
+        return run_llm_threads(sessions, limit, llm_max_sessions, force_json, llm_model);
+    }
+
     let opts = aghist::threads::ClusterOptions {
         gap: chrono::Duration::hours(gap_hours),
         min_sessions: min_sessions.max(1),
@@ -4411,6 +4451,193 @@ fn threads_command(
     .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write threads output: {e}")))?;
 
     Ok(EXIT_OK)
+}
+
+/// LLM-driven topic clustering. Builds one session digest per local
+/// `Session`, caps to the most recent `llm_max_sessions`, and routes
+/// everything through a single Messages API call. Augments each returned
+/// thread with derived metadata (providers / projects / `message_count`)
+/// so the JSON shape stays compatible with the heuristic where possible.
+fn run_llm_threads(
+    sessions: Vec<Session>,
+    limit: usize,
+    llm_max_sessions: usize,
+    force_json: bool,
+    llm_model: Option<&str>,
+) -> Result<i32, ErrorEnvelope> {
+    if sessions.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    // Cap to most-recent `llm_max_sessions` so input tokens stay bounded.
+    // 0 means "no cap"; mirrors the rest of the CLI.
+    let mut sorted = sessions;
+    sorted.sort_by_key(|s| std::cmp::Reverse(s.started_at));
+    if llm_max_sessions > 0 && sorted.len() > llm_max_sessions {
+        sorted.truncate(llm_max_sessions);
+    }
+
+    let digests: Vec<aghist::llm::SessionDigest> = sorted
+        .iter()
+        .map(|s| aghist::llm::SessionDigest {
+            provider: s.provider,
+            session_id: s.id.clone(),
+            project: s.project_name.clone(),
+            started_at: s.started_at,
+            ended_at: s.ended_at,
+            summary: s.summary.clone(),
+        })
+        .collect();
+
+    let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
+    if let Some(model) = llm_model {
+        config = config.with_model(model.to_string());
+    }
+    let transport = aghist::llm::UreqTransport::new(config.timeout);
+
+    let raw = aghist::llm::extract_threads(&transport, &config, &digests)
+        .map_err(|e| map_llm_error(&e))?;
+
+    // Index sessions by `<provider-slug>/<session-id>` so we can stitch
+    // derived metadata (providers, message_count, ...) onto each thread.
+    let mut by_ref: std::collections::HashMap<String, &Session> =
+        std::collections::HashMap::with_capacity(sorted.len());
+    for s in &sorted {
+        by_ref.insert(format!("{}/{}", s.provider.slug(), s.id.0), s);
+    }
+
+    let mut rows: Vec<LlmThreadRow> = Vec::with_capacity(raw.len());
+    for t in raw {
+        let mut providers_set: std::collections::BTreeSet<&'static str> =
+            std::collections::BTreeSet::new();
+        let mut branches_set: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        let mut projects_set: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        let mut message_count: usize = 0;
+        for r in &t.member_refs {
+            if let Some(s) = by_ref.get(r) {
+                providers_set.insert(s.provider.slug());
+                if let Some(b) = s.git_branch.as_deref().filter(|x| !x.is_empty()) {
+                    branches_set.insert(b.to_string());
+                }
+                if let Some(p) = s.project_name.as_deref() {
+                    projects_set.insert(p.to_string());
+                }
+                message_count = message_count.saturating_add(s.message_count);
+            }
+        }
+        let id = llm_thread_id(&t.topic_summary, t.member_refs.first().map(String::as_str));
+        rows.push(LlmThreadRow {
+            id,
+            topic_summary: t.topic_summary,
+            member_refs: t.member_refs,
+            time_span: t.time_span,
+            providers: providers_set.into_iter().map(str::to_string).collect(),
+            projects: projects_set.into_iter().collect(),
+            branches: branches_set.into_iter().collect(),
+            message_count,
+        });
+    }
+
+    rows.sort_by(|a, b| {
+        b.time_span
+            .start
+            .cmp(&a.time_span.start)
+            .then_with(|| a.topic_summary.cmp(&b.topic_summary))
+    });
+    if limit > 0 && rows.len() > limit {
+        rows.truncate(limit);
+    }
+    if rows.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    if want_json {
+        render_llm_threads_json(&mut out, &rows)
+    } else {
+        render_llm_threads_human(&mut out, &rows)
+    }
+    .map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write threads output: {e}"))
+    })?;
+
+    Ok(EXIT_OK)
+}
+
+/// Stable short id for an LLM-grouped thread: FNV-1a over
+/// `<topic_summary>|<first_member_ref>`. Mirrors the heuristic id format
+/// (`th-<hex16>`) so consumers can format-discriminate.
+fn llm_thread_id(topic: &str, first_ref: Option<&str>) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in topic.as_bytes() {
+        h ^= u64::from(*byte);
+        h = h.wrapping_mul(0x100_0000_01b3);
+    }
+    h ^= u64::from(b'|');
+    h = h.wrapping_mul(0x100_0000_01b3);
+    for byte in first_ref.unwrap_or("").as_bytes() {
+        h ^= u64::from(*byte);
+        h = h.wrapping_mul(0x100_0000_01b3);
+    }
+    format!("th-{h:016x}")
+}
+
+#[derive(serde::Serialize)]
+struct LlmThreadRow {
+    id: String,
+    topic_summary: String,
+    member_refs: Vec<String>,
+    time_span: aghist::llm::TimeSpan,
+    providers: Vec<String>,
+    projects: Vec<String>,
+    branches: Vec<String>,
+    message_count: usize,
+}
+
+fn render_llm_threads_json<W: io::Write>(
+    out: &mut W,
+    rows: &[LlmThreadRow],
+) -> io::Result<()> {
+    let payload = serde_json::json!({
+        "threads": rows,
+        "count": rows.len(),
+        "mode": "llm",
+    });
+    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn render_llm_threads_human<W: io::Write>(
+    out: &mut W,
+    rows: &[LlmThreadRow],
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "{:<19}  {:<19}  {:>5}  {:>4}  {:<24}  TOPIC",
+        "START (UTC)", "END (UTC)", "SESS", "MSGS", "ID"
+    )?;
+    for r in rows {
+        let started = r.time_span.start.format("%Y-%m-%d %H:%M:%S").to_string();
+        let ended = r.time_span.end.format("%Y-%m-%d %H:%M:%S").to_string();
+        let topic = truncate(&r.topic_summary, 60);
+        writeln!(
+            out,
+            "{:<19}  {:<19}  {:>5}  {:>4}  {:<24}  {topic}",
+            started,
+            ended,
+            r.member_refs.len(),
+            r.message_count,
+            truncate(&r.id, 24),
+        )?;
+    }
+    writeln!(out)?;
+    writeln!(out, "Total: {} thread(s)", rows.len())?;
+    Ok(())
 }
 
 fn render_threads_json<W: io::Write>(
