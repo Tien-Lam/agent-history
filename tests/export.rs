@@ -341,6 +341,141 @@ fn format_from_str_invalid() {
     assert!("txt".parse::<ExportFormat>().is_err());
 }
 
+// ─── Notes (private annotations) ───────────────────────────────────────────────
+
+fn make_note(id: i64, session_ref: &str, body: &str) -> aghist::metadata::Note {
+    aghist::metadata::Note {
+        id,
+        session_ref: session_ref.to_string(),
+        body: body.to_string(),
+        created_at: "2026-05-13T12:00:00Z".to_string(),
+        updated_at: "2026-05-13T12:00:00Z".to_string(),
+    }
+}
+
+fn sample_session() -> (aghist::model::Session, Vec<aghist::model::Message>) {
+    use aghist::model::*;
+    use chrono::Utc;
+    let session = Session {
+        id: SessionId("abc-123".into()),
+        provider: Provider::ClaudeCode,
+        project_path: None,
+        project_name: Some("Demo".into()),
+        git_branch: None,
+        started_at: Utc::now(),
+        ended_at: None,
+        summary: None,
+        model: None,
+        token_usage: None,
+        message_count: 3,
+        source_path: PathBuf::from("/tmp/test"),
+    };
+    let messages = (1..=3)
+        .map(|i| Message {
+            id: MessageId(format!("m{i}")),
+            role: if i % 2 == 1 { Role::User } else { Role::Assistant },
+            timestamp: Utc::now(),
+            content: vec![ContentBlock::Text(format!("turn-{i} body"))],
+            model: None,
+            token_usage: None,
+        })
+        .collect();
+    (session, messages)
+}
+
+#[test]
+fn markdown_injects_session_and_turn_notes_at_citation_refs() {
+    let (session, messages) = sample_session();
+    let notes = vec![
+        make_note(1, "claude-code/abc-123", "session-wide thought"),
+        make_note(2, "claude-code/abc-123#2", "thought about turn 2"),
+    ];
+    let md = export::to_markdown_with_notes(&session, &messages, &notes);
+
+    assert!(md.contains("Private annotations"), "session-level header present");
+    assert!(md.contains("session-wide thought"));
+    assert!(md.contains("thought about turn 2"));
+
+    // turn-2 note must appear AFTER the turn-2 body but BEFORE turn-3's role header.
+    let turn2_pos = md.find("turn-2 body").expect("turn-2 body");
+    let note_pos = md.find("thought about turn 2").expect("turn-2 note");
+    let turn3_pos = md.find("turn-3 body").expect("turn-3 body");
+    assert!(turn2_pos < note_pos && note_pos < turn3_pos, "note must sit between turn 2 and turn 3");
+
+    // Annotation marker is preserved so readers can't conflate notes with content.
+    assert!(
+        md.contains("Private annotation"),
+        "every inlined note carries the private-annotation marker"
+    );
+}
+
+#[test]
+fn markdown_ignores_notes_for_other_sessions() {
+    let (session, messages) = sample_session();
+    let notes = vec![make_note(1, "claude-code/some-other-session#1", "not mine")];
+    let md = export::to_markdown_with_notes(&session, &messages, &notes);
+    assert!(!md.contains("not mine"));
+    assert!(!md.contains("Private annotations"));
+}
+
+#[test]
+fn json_emits_notes_array_marked_as_private_annotation() {
+    let (session, messages) = sample_session();
+    let notes = vec![
+        make_note(7, "claude-code/abc-123", "session-wide"),
+        make_note(8, "claude-code/abc-123#2", "turn-2"),
+    ];
+    let json_str = export::to_json_with_notes(&session, &messages, &notes);
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("valid JSON");
+    let notes_arr = parsed.get("notes").expect("notes field").as_array().unwrap();
+    assert_eq!(notes_arr.len(), 2);
+    for n in notes_arr {
+        assert_eq!(n.get("kind").and_then(|v| v.as_str()), Some("private-annotation"));
+        assert!(n.get("body").is_some());
+        assert!(n.get("session_ref").is_some());
+    }
+}
+
+#[test]
+fn json_omits_notes_field_when_no_notes_match() {
+    let (session, messages) = sample_session();
+    let json_str = export::to_json_with_notes(&session, &messages, &[]);
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+    assert!(parsed.get("notes").is_none(), "no notes -> no field");
+}
+
+#[test]
+fn html_inlines_notes_with_private_annotation_marker() {
+    let (session, messages) = sample_session();
+    let notes = vec![
+        make_note(1, "claude-code/abc-123", "session note"),
+        make_note(2, "claude-code/abc-123#1", "turn-1 note"),
+    ];
+    let html = export::to_html_with_notes(&session, &messages, &notes);
+    assert!(html.contains("session-notes"), "session-level section rendered");
+    assert!(html.contains("data-kind=\"private-annotation\""));
+    assert!(html.contains("Private annotation"));
+    assert!(html.contains("session note"));
+    assert!(html.contains("turn-1 note"));
+}
+
+#[test]
+fn html_escapes_note_body_to_prevent_xss() {
+    let (session, messages) = sample_session();
+    let notes = vec![make_note(1, "claude-code/abc-123#1", "<script>alert('xss')</script>")];
+    let html = export::to_html_with_notes(&session, &messages, &notes);
+    assert!(!html.contains("<script>alert"), "note body must not break out of escaping");
+    assert!(html.contains("&lt;script&gt;"));
+}
+
+#[test]
+fn export_no_notes_matches_legacy_output() {
+    let (session, messages) = sample_session();
+    let with_empty = export::export_with_notes(ExportFormat::Markdown, &session, &messages, &[]);
+    let legacy = export::export(ExportFormat::Markdown, &session, &messages);
+    assert_eq!(with_empty, legacy);
+}
+
 #[test]
 fn export_dispatch_matches_format() {
     let (session, messages) = load_fixture_session();
