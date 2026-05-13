@@ -40,6 +40,7 @@
 use std::env;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -320,12 +321,23 @@ struct Request<'a> {
 /// Build the JSON request body for one extraction call. Public so callers
 /// (and tests) can inspect what gets sent on the wire.
 pub fn build_request_body(config: &LlmConfig, user: &str) -> Result<String, LlmError> {
+    build_request_body_with_system(config, SYSTEM_PROMPT, user)
+}
+
+/// Like [`build_request_body`] but with a caller-supplied system prompt.
+/// The threads extractor uses this; keep both paths sharing the same
+/// `cache_control: ephemeral` shape so the cache hit-rate logic is uniform.
+fn build_request_body_with_system(
+    config: &LlmConfig,
+    system: &str,
+    user: &str,
+) -> Result<String, LlmError> {
     let req = Request {
         model: &config.model,
         max_tokens: config.max_tokens,
         system: [SystemBlock {
             kind: "text",
-            text: SYSTEM_PROMPT,
+            text: system,
             cache_control: CacheControl { kind: "ephemeral" },
         }],
         messages: [UserMessage {
@@ -463,6 +475,203 @@ pub fn extract_for_session<T: LlmTransport + ?Sized>(
             decision: d,
             source_snippet,
         });
+    }
+    Ok(out)
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Threads extractor
+//
+// Where `decisions --llm` groups *sentences within a single session*,
+// `threads --llm` groups *whole sessions across project boundaries* by
+// semantic topic. The heuristic (`crate::threads`) buckets strictly by
+// project+time-adjacency, so it can never join two sessions that worked
+// on the same feature across different repo checkouts. The LLM path is
+// the opt-in fix for that.
+// ──────────────────────────────────────────────────────────────────────
+
+/// System prompt for thread topic clustering. Same caching contract as
+/// [`SYSTEM_PROMPT`] — the byte sequence must be stable across calls in
+/// a single run so the prompt cache hits on call N>=2.
+pub const SYSTEM_PROMPT_THREADS: &str = "\
+You are a developer-history topic clusterer. Each input lists sessions \
+from a developer's AI-coding-agent history, one session per line, with \
+project, time range, and a short summary if available. Group sessions \
+that worked on the same semantic topic — the same feature, bug, or \
+refactor — even if they live in different projects or are days apart. \
+Singleton sessions are fine; do not invent groupings just to use every \
+input row.
+
+Schema, JSON only, no prose:
+{\"threads\":[{\"topic_summary\":\"<one short noun phrase>\",\"member_refs\":[\"<provider-slug>/<session-id>\"],\"time_span\":{\"start\":\"<RFC3339>\",\"end\":\"<RFC3339>\"}}]}
+
+Rules:
+- topic_summary: short noun phrase (\"BM25 search ranking\", \"thread clustering CLI\"). No verbs, no full sentence.
+- member_refs: each entry must be a `provider/session-id` ref that appears verbatim in the input. Do not invent refs.
+- time_span.start: earliest started_at across the thread's members (copy from input).
+- time_span.end: latest ended_at across the thread's members (copy from input; fall back to started_at if no ended_at given).
+- Every input ref should appear in exactly one thread (singletons included).
+- If the input is empty, return {\"threads\":[]}.";
+
+/// One session as seen by the threads extractor. Compact on purpose:
+/// digests dominate the input token count, so we send only what the LLM
+/// needs to topic-cluster (ref, project, time range, optional summary).
+#[derive(Debug, Clone)]
+pub struct SessionDigest {
+    pub provider: Provider,
+    pub session_id: SessionId,
+    pub project: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    /// Short label hint — usually the session's `summary` field. May be empty.
+    pub summary: Option<String>,
+}
+
+impl SessionDigest {
+    /// `<provider-slug>/<session-id>` — the round-trip identifier used in
+    /// `member_refs`. Matches the format produced by `crate::threads`.
+    #[must_use]
+    pub fn session_ref(&self) -> String {
+        format!("{}/{}", self.provider.slug(), self.session_id.0)
+    }
+}
+
+/// Inclusive time window for a thread, as returned by the model.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TimeSpan {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
+
+/// One LLM-grouped thread.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StructuredThread {
+    pub topic_summary: String,
+    pub member_refs: Vec<String>,
+    pub time_span: TimeSpan,
+}
+
+/// Build the user-message body for the threads extractor. One line per
+/// session keeps the format trivially parseable by the model and keeps
+/// per-row token cost bounded.
+#[must_use]
+pub fn user_message_threads(digests: &[SessionDigest]) -> String {
+    let mut s = String::from("Sessions:\n");
+    for d in digests {
+        s.push_str("- ");
+        s.push_str(&d.session_ref());
+        s.push_str(" | project=");
+        s.push_str(d.project.as_deref().unwrap_or("(unknown)"));
+        s.push_str(" | started_at=");
+        s.push_str(&d.started_at.to_rfc3339());
+        s.push_str(" | ended_at=");
+        match d.ended_at {
+            Some(end) => s.push_str(&end.to_rfc3339()),
+            None => s.push_str("(none)"),
+        }
+        if let Some(summary) = d.summary.as_deref().filter(|x| !x.is_empty()) {
+            s.push_str(" | summary=");
+            // Collapse newlines so each digest stays one line — the model
+            // looks at `\n` as a row delimiter.
+            let mut buf = String::with_capacity(summary.len());
+            for ch in summary.chars() {
+                if ch == '\n' || ch == '\r' {
+                    buf.push(' ');
+                } else {
+                    buf.push(ch);
+                }
+            }
+            s.push_str(&buf);
+        }
+        s.push('\n');
+    }
+    s
+}
+
+/// Build the request body for a threads-extraction API call.
+pub fn build_threads_request_body(
+    config: &LlmConfig,
+    user: &str,
+) -> Result<String, LlmError> {
+    build_request_body_with_system(config, SYSTEM_PROMPT_THREADS, user)
+}
+
+#[derive(Deserialize)]
+struct ThreadsPayload {
+    threads: Vec<StructuredThread>,
+}
+
+/// Parse the Messages API response body into structured threads. Same
+/// JSON-extraction rules as [`parse_response`]: tolerate code fences and
+/// trailing prose.
+pub fn parse_threads_response(body: &str) -> Result<Vec<StructuredThread>, LlmError> {
+    let resp: ApiResponse = serde_json::from_str(body)
+        .map_err(|e| LlmError::Parse(format!("response envelope: {e}")))?;
+    let text = resp
+        .content
+        .into_iter()
+        .find(|b| b.kind == "text")
+        .map(|b| b.text)
+        .unwrap_or_default();
+    if text.trim().is_empty() {
+        return Err(LlmError::NoJson("empty assistant text".into()));
+    }
+    let json_slice = extract_json_object(&text)
+        .ok_or_else(|| LlmError::NoJson(text.chars().take(200).collect()))?;
+    let parsed: ThreadsPayload = serde_json::from_str(json_slice).map_err(|e| {
+        LlmError::Parse(format!(
+            "threads payload: {e} (slice starts: {})",
+            json_slice.chars().take(80).collect::<String>()
+        ))
+    })?;
+    Ok(parsed.threads)
+}
+
+/// Run topic-clustering over all `digests` in a single API call. The
+/// caller is responsible for capping `digests` to a manageable size —
+/// see the `--llm-max-sessions` flag.
+///
+/// Threads whose `member_refs` reference sessions not present in
+/// `digests` are dropped (the model occasionally invents refs). Empty
+/// threads are dropped. Member refs are deduplicated in-order.
+pub fn extract_threads<T: LlmTransport + ?Sized>(
+    transport: &T,
+    config: &LlmConfig,
+    digests: &[SessionDigest],
+) -> Result<Vec<StructuredThread>, LlmError> {
+    if digests.is_empty() {
+        return Ok(Vec::new());
+    }
+    let user = user_message_threads(digests);
+    let body = build_threads_request_body(config, &user)?;
+    let headers: [(&str, &str); 3] = [
+        ("x-api-key", config.api_key.as_str()),
+        ("anthropic-version", config.anthropic_version.as_str()),
+        ("content-type", "application/json"),
+    ];
+    let (status, resp_body) = transport.post_json(&config.endpoint, &headers, &body)?;
+    if !(200..300).contains(&status) {
+        return Err(LlmError::ApiStatus {
+            url: config.endpoint.clone(),
+            status,
+            body: resp_body.chars().take(500).collect(),
+        });
+    }
+    let raw = parse_threads_response(&resp_body)?;
+    let valid_refs: std::collections::HashSet<String> =
+        digests.iter().map(SessionDigest::session_ref).collect();
+    let mut out = Vec::with_capacity(raw.len());
+    for mut t in raw {
+        // Drop refs the model hallucinated; preserve first-seen order; dedup.
+        let mut seen = std::collections::HashSet::new();
+        t.member_refs.retain(|r| valid_refs.contains(r) && seen.insert(r.clone()));
+        if t.member_refs.is_empty() {
+            continue;
+        }
+        if t.topic_summary.trim().is_empty() {
+            continue;
+        }
+        out.push(t);
     }
     Ok(out)
 }
@@ -706,5 +915,215 @@ mod tests {
         let body: serde_json::Value = serde_json::from_str(&req[0].1).unwrap();
         assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
         assert_eq!(body["system"][0]["text"], SYSTEM_PROMPT);
+    }
+
+    // ── threads extractor ────────────────────────────────────────────
+
+    fn ts(secs: i64) -> DateTime<Utc> {
+        DateTime::<Utc>::from_timestamp(secs, 0).expect("valid ts")
+    }
+
+    fn digest(
+        provider: Provider,
+        id: &str,
+        project: Option<&str>,
+        start: i64,
+        end: Option<i64>,
+        summary: Option<&str>,
+    ) -> SessionDigest {
+        SessionDigest {
+            provider,
+            session_id: SessionId(id.to_string()),
+            project: project.map(str::to_string),
+            started_at: ts(start),
+            ended_at: end.map(ts),
+            summary: summary.map(str::to_string),
+        }
+    }
+
+    fn threads_assistant_response(inner: &str) -> String {
+        assistant_response(inner)
+    }
+
+    #[test]
+    fn user_message_threads_one_line_per_session_with_project_and_times() {
+        let digests = vec![
+            digest(Provider::ClaudeCode, "a", Some("foo"), 0, Some(60), Some("seed-foo")),
+            digest(Provider::CodexCli, "b", None, 120, None, None),
+        ];
+        let msg = user_message_threads(&digests);
+        let lines: Vec<&str> = msg.lines().collect();
+        assert_eq!(lines[0], "Sessions:");
+        assert!(lines[1].contains("- claude-code/a"));
+        assert!(lines[1].contains("project=foo"));
+        assert!(lines[1].contains("ended_at=1970-01-01T00:01:00"));
+        assert!(lines[1].contains("summary=seed-foo"));
+        assert!(lines[2].contains("- codex-cli/b"));
+        assert!(lines[2].contains("project=(unknown)"));
+        assert!(lines[2].contains("ended_at=(none)"));
+        assert!(!lines[2].contains("summary="));
+    }
+
+    #[test]
+    fn user_message_threads_strips_embedded_newlines_in_summary() {
+        let digests = vec![digest(
+            Provider::ClaudeCode,
+            "a",
+            Some("foo"),
+            0,
+            None,
+            Some("line one\nline two\rline three"),
+        )];
+        let msg = user_message_threads(&digests);
+        // One session-line; newlines must not split the row.
+        let body_lines: Vec<&str> = msg.lines().filter(|l| l.starts_with("- ")).collect();
+        assert_eq!(body_lines.len(), 1);
+        assert!(body_lines[0].contains("line one line two line three"));
+    }
+
+    #[test]
+    fn build_threads_request_body_includes_cache_control_on_threads_prompt() {
+        let body = build_threads_request_body(&cfg(), "Sessions:\n").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(v["system"][0]["text"], SYSTEM_PROMPT_THREADS);
+        assert_eq!(v["messages"][0]["content"], "Sessions:\n");
+    }
+
+    #[test]
+    fn parse_threads_response_handles_plain_json() {
+        let inner = r#"{"threads":[{"topic_summary":"BM25 ranking","member_refs":["claude-code/a","codex-cli/b"],"time_span":{"start":"2026-01-01T00:00:00Z","end":"2026-01-02T00:00:00Z"}}]}"#;
+        let body = threads_assistant_response(inner);
+        let out = parse_threads_response(&body).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].topic_summary, "BM25 ranking");
+        assert_eq!(out[0].member_refs, vec!["claude-code/a", "codex-cli/b"]);
+        assert_eq!(
+            out[0].time_span,
+            TimeSpan {
+                start: "2026-01-01T00:00:00Z".parse().unwrap(),
+                end: "2026-01-02T00:00:00Z".parse().unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_threads_response_handles_code_fenced_json() {
+        let inner =
+            "```json\n{\"threads\":[]}\n```";
+        let body = threads_assistant_response(inner);
+        let out = parse_threads_response(&body).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn extract_threads_skips_when_no_digests() {
+        let mock = MockTransport::new(vec![]);
+        let out = extract_threads(&mock, &cfg(), &[]).unwrap();
+        assert!(out.is_empty());
+        assert!(mock.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn extract_threads_drops_hallucinated_member_refs() {
+        let digests = vec![
+            digest(Provider::ClaudeCode, "a", Some("foo"), 0, None, None),
+            digest(Provider::ClaudeCode, "b", Some("foo"), 60, None, None),
+        ];
+        // Model returns one valid ref plus one invented one; we keep the
+        // valid ref and drop the rest.
+        let inner = r#"{"threads":[{"topic_summary":"feature x","member_refs":["claude-code/a","claude-code/ghost"],"time_span":{"start":"1970-01-01T00:00:00Z","end":"1970-01-01T00:01:00Z"}}]}"#;
+        let mock =
+            MockTransport::new(vec![(200, threads_assistant_response(inner))]);
+        let out = extract_threads(&mock, &cfg(), &digests).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].member_refs, vec!["claude-code/a"]);
+    }
+
+    #[test]
+    fn extract_threads_drops_thread_with_no_remaining_members() {
+        let digests = vec![digest(
+            Provider::ClaudeCode,
+            "a",
+            Some("foo"),
+            0,
+            None,
+            None,
+        )];
+        let inner = r#"{"threads":[{"topic_summary":"all-hallucinated","member_refs":["claude-code/ghost1","claude-code/ghost2"],"time_span":{"start":"1970-01-01T00:00:00Z","end":"1970-01-01T00:00:00Z"}}]}"#;
+        let mock =
+            MockTransport::new(vec![(200, threads_assistant_response(inner))]);
+        let out = extract_threads(&mock, &cfg(), &digests).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn extract_threads_dedups_member_refs_preserving_order() {
+        let digests = vec![
+            digest(Provider::ClaudeCode, "a", Some("foo"), 0, None, None),
+            digest(Provider::ClaudeCode, "b", Some("foo"), 60, None, None),
+        ];
+        let inner = r#"{"threads":[{"topic_summary":"dup","member_refs":["claude-code/b","claude-code/a","claude-code/b"],"time_span":{"start":"1970-01-01T00:00:00Z","end":"1970-01-01T00:01:00Z"}}]}"#;
+        let mock =
+            MockTransport::new(vec![(200, threads_assistant_response(inner))]);
+        let out = extract_threads(&mock, &cfg(), &digests).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].member_refs, vec!["claude-code/b", "claude-code/a"]);
+    }
+
+    #[test]
+    fn extract_threads_propagates_api_errors() {
+        let digests = vec![digest(
+            Provider::ClaudeCode,
+            "a",
+            Some("foo"),
+            0,
+            None,
+            None,
+        )];
+        let mock =
+            MockTransport::new(vec![(429, r#"{"error":"rate limited"}"#.to_string())]);
+        let err = extract_threads(&mock, &cfg(), &digests).unwrap_err();
+        match err {
+            LlmError::ApiStatus { status, .. } => assert_eq!(status, 429),
+            other => panic!("expected ApiStatus, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn extract_threads_sends_correct_headers_and_caches_system() {
+        let inner = r#"{"threads":[]}"#;
+        let digests = vec![digest(
+            Provider::ClaudeCode,
+            "a",
+            Some("foo"),
+            0,
+            None,
+            None,
+        )];
+        let mock = MockTransport::new(vec![(200, threads_assistant_response(inner))]);
+        let _ = extract_threads(&mock, &cfg(), &digests).unwrap();
+        let req = mock.requests.lock().unwrap();
+        assert_eq!(req.len(), 1);
+        let body: serde_json::Value = serde_json::from_str(&req[0].1).unwrap();
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(body["system"][0]["text"], SYSTEM_PROMPT_THREADS);
+    }
+
+    #[test]
+    fn extract_threads_drops_thread_with_empty_topic_summary() {
+        let digests = vec![digest(
+            Provider::ClaudeCode,
+            "a",
+            Some("foo"),
+            0,
+            None,
+            None,
+        )];
+        let inner = r#"{"threads":[{"topic_summary":"   ","member_refs":["claude-code/a"],"time_span":{"start":"1970-01-01T00:00:00Z","end":"1970-01-01T00:00:00Z"}}]}"#;
+        let mock =
+            MockTransport::new(vec![(200, threads_assistant_response(inner))]);
+        let out = extract_threads(&mock, &cfg(), &digests).unwrap();
+        assert!(out.is_empty());
     }
 }
