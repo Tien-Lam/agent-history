@@ -133,7 +133,7 @@ impl HistoryProvider for ZedAiProvider {
             };
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.extension().is_some_and(|x| x == "json") {
+                if path.extension().is_none_or(|x| x != "json") {
                     continue;
                 }
                 let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());

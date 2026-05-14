@@ -114,11 +114,8 @@ impl Provider {
             // Zed is a GUI editor; the assistant panel cannot be opened to a
             // specific conversation from the CLI, so we just launch the app.
             Self::ZedAi => "zed".to_string(),
-            // Cline is a VS Code extension; open VS Code and the user can
-            // navigate to the task from the Cline panel.
-            Self::Cline => "code".to_string(),
-            // Continue is a VS Code/JetBrains extension; no CLI resume path.
-            Self::ContinueDev => "code".to_string(),
+            // Cline and Continue are VS Code extensions; no CLI resume path.
+            Self::Cline | Self::ContinueDev => "code".to_string(),
         }
     }
 }

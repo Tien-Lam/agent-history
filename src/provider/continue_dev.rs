@@ -21,6 +21,7 @@
 //! The session ID is the JSONL filename stem (UUID or similar). Timestamps are
 //! derived from the index file when available, falling back to file mtime.
 
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -140,10 +141,7 @@ impl HistoryProvider for ContinueDevProvider {
             // Load index for enriched metadata (optional)
             let index = load_index(&sessions_dir);
 
-            let entries = match std::fs::read_dir(&sessions_dir) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
+            let Ok(entries) = std::fs::read_dir(&sessions_dir) else { continue };
 
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -193,7 +191,7 @@ impl HistoryProvider for ContinueDevProvider {
             }
         }
 
-        sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        sessions.sort_by_key(|s| Reverse(s.started_at));
         Ok(sessions)
     }
 
@@ -360,7 +358,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sd = sessions_dir(tmp.path());
         fs::create_dir_all(&sd).unwrap();
-        fs::write(sd.join("index.json"), r#"[]"#).unwrap();
+        fs::write(sd.join("index.json"), "[]").unwrap();
         fs::write(sd.join("session.txt"), "nope").unwrap();
         let sessions = provider_for(&tmp).discover_sessions().unwrap();
         assert!(sessions.is_empty());
