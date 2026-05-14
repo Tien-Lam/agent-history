@@ -5,6 +5,7 @@ pub mod cursor;
 pub mod error;
 pub mod gemini_cli;
 pub mod opencode;
+pub mod zed_ai;
 
 use std::path::PathBuf;
 
@@ -59,6 +60,9 @@ pub fn detect_all_providers() -> Vec<Box<dyn HistoryProvider>> {
         providers.push(Box::new(p));
     }
     if let Some(p) = cursor::CursorProvider::detect() {
+        providers.push(Box::new(p));
+    }
+    if let Some(p) = zed_ai::ZedAiProvider::detect() {
         providers.push(Box::new(p));
     }
     providers
