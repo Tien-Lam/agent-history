@@ -407,6 +407,13 @@ enum Command {
     /// becomes one candidate keyed by a citation ref so the caller can
     /// `aghist show` or quote the originating turn. No LLM, no `bd` lookups —
     /// agents can post-process (e.g. drop refs whose `bd show` reports closed).
+    ///
+    /// Pass `--llm` to route the heuristic candidates through a Claude
+    /// Messages API call that returns structured records of the form
+    /// `{description, raised_at: ref, target_session?, status_inferred}`.
+    /// Configured via env (`ANTHROPIC_API_KEY` / `AGHIST_LLM_API_KEY`,
+    /// `AGHIST_LLM_ENDPOINT`, `AGHIST_LLM_MODEL`); the system prompt is sent
+    /// with `cache_control: ephemeral` to cap re-invocation cost.
     Todos {
         /// Restrict to one or more kinds. Repeat the flag, or comma-separate.
         /// Valid: `todo`, `follow-up`, `come-back-to`, `we-should`, `bd-ref`.
@@ -420,6 +427,17 @@ enum Command {
         /// Force JSON output (default: JSON on pipe, table on TTY).
         #[arg(long)]
         json: bool,
+
+        /// Route heuristic candidates through an LLM for structured extraction
+        /// (description / target_session / status_inferred). Requires
+        /// `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`).
+        #[arg(long)]
+        llm: bool,
+
+        /// Override the LLM model id (default: claude-haiku-4-5-20251001 or
+        /// `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
+        #[arg(long, value_name = "MODEL")]
+        llm_model: Option<String>,
     },
     /// Cluster sessions into "threads" of related work.
     ///
@@ -1388,8 +1406,22 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
                 llm_model.as_deref(),
             );
         }
-        Some(Command::Todos { kind, limit, json }) => {
-            return todos_command(&providers, &cli.filters, &kind, limit, json);
+        Some(Command::Todos {
+            kind,
+            limit,
+            json,
+            llm,
+            llm_model,
+        }) => {
+            return todos_command(
+                &providers,
+                &cli.filters,
+                &kind,
+                limit,
+                json,
+                llm,
+                llm_model.as_deref(),
+            );
         }
         Some(Command::Threads {
             gap_hours,
@@ -4325,7 +4357,13 @@ fn todos_command(
     kinds: &[TodoKind],
     limit: usize,
     force_json: bool,
+    use_llm: bool,
+    llm_model: Option<&str>,
 ) -> Result<i32, ErrorEnvelope> {
+    if !use_llm && llm_model.is_some() {
+        return Err(ErrorEnvelope::new("usage", "--llm-model requires --llm"));
+    }
+
     let project_needle = filters
         .project
         .as_deref()
@@ -4333,6 +4371,13 @@ fn todos_command(
         .filter(|s| !s.is_empty());
 
     let mut all: Vec<TodoCandidate> = Vec::new();
+    // For --llm: per-session metadata (project + started_at) keyed by
+    // (provider, session_id). Built alongside `all` so we don't re-iterate
+    // providers/sessions a second time in the LLM branch.
+    let mut session_meta: std::collections::HashMap<
+        (Provider, aghist::model::SessionId),
+        (Option<String>, DateTime<Utc>),
+    > = std::collections::HashMap::new();
 
     for p in providers {
         if let Some(want) = filters.provider {
@@ -4356,6 +4401,7 @@ fn todos_command(
             };
             let candidates =
                 todos::extract_from_messages(p.provider(), &session.id, &messages, kinds);
+            let mut session_emitted = false;
             for c in candidates {
                 if filters.role.is_some() || filters.has_tool_call {
                     let turn_idx = (c.citation.turn as usize).saturating_sub(1);
@@ -4376,9 +4422,20 @@ fn todos_command(
                         continue;
                     }
                 }
+                if use_llm && !session_emitted {
+                    session_meta.insert(
+                        (p.provider(), session.id.clone()),
+                        (session.project_name.clone(), session.started_at),
+                    );
+                    session_emitted = true;
+                }
                 all.push(c);
             }
         }
+    }
+
+    if use_llm {
+        return run_llm_todos(all, session_meta, limit, force_json, llm_model);
     }
 
     // Newest matches first — most useful for "what's still hanging?".
@@ -4452,6 +4509,165 @@ fn render_todos_human<W: io::Write>(out: &mut W, todos: &[TodoCandidate]) -> io:
     }
     writeln!(out)?;
     writeln!(out, "Total: {} candidate(s)", todos.len())?;
+    Ok(())
+}
+
+/// LLM-mode todo row with full metadata for rendering.
+struct LlmTodoRow {
+    citation: CitationRef,
+    todo: aghist::llm::StructuredTodo,
+    source_snippet: Option<String>,
+    source_kind: Option<String>,
+    project: Option<String>,
+    started_at: DateTime<Utc>,
+}
+
+/// Route heuristic candidates through the LLM and emit structured todos.
+///
+/// Groups candidates by `(provider, session_id)` and issues one Messages
+/// API call per session. The system prompt is cache-controlled so calls
+/// 2..N pay near-zero on the static prompt tokens. Falls through to
+/// `EXIT_EMPTY` when no todos survive.
+fn run_llm_todos(
+    candidates: Vec<TodoCandidate>,
+    session_meta: std::collections::HashMap<
+        (Provider, aghist::model::SessionId),
+        (Option<String>, DateTime<Utc>),
+    >,
+    limit: usize,
+    force_json: bool,
+    llm_model: Option<&str>,
+) -> Result<i32, ErrorEnvelope> {
+    if candidates.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
+    if let Some(model) = llm_model {
+        config = config.with_model(model.to_string());
+    }
+    let transport = aghist::llm::UreqTransport::new(config.timeout);
+
+    // Group candidates by (provider, session_id), preserving first-seen
+    // order so the API call sequence stays predictable across runs.
+    let mut order: Vec<(Provider, aghist::model::SessionId)> = Vec::new();
+    let mut grouped: std::collections::HashMap<
+        (Provider, aghist::model::SessionId),
+        Vec<TodoCandidate>,
+    > = std::collections::HashMap::new();
+    for c in candidates {
+        let key = (c.citation.provider, c.citation.session_id.clone());
+        if !grouped.contains_key(&key) {
+            order.push(key.clone());
+        }
+        grouped.entry(key).or_default().push(c);
+    }
+
+    let mut out: Vec<LlmTodoRow> = Vec::new();
+    for key in order {
+        let group = grouped.remove(&key).unwrap_or_default();
+        let (project, started_at) = session_meta
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| (None, DateTime::<Utc>::from_timestamp(0, 0).unwrap()));
+        let llm_candidates: Vec<aghist::llm::TodoCandidate> = group
+            .iter()
+            .map(|c| aghist::llm::TodoCandidate {
+                turn: c.citation.turn,
+                role: c.role,
+                kind: c.kind.slug(),
+                snippet: c.snippet.as_str(),
+            })
+            .collect();
+        let input = aghist::llm::TodoExtractionInput {
+            provider: key.0,
+            session_id: &key.1,
+            project: project.as_deref(),
+            candidates: llm_candidates,
+        };
+        let extracted = aghist::llm::extract_for_session_todos(&transport, &config, &input)
+            .map_err(|e| map_llm_error(&e))?;
+        for et in extracted {
+            out.push(LlmTodoRow {
+                citation: et.citation,
+                todo: et.todo,
+                source_snippet: et.source_snippet,
+                source_kind: et.source_kind,
+                project: project.clone(),
+                started_at,
+            });
+        }
+    }
+
+    out.sort_by(|a, b| {
+        b.started_at
+            .cmp(&a.started_at)
+            .then_with(|| a.citation.session_id.0.cmp(&b.citation.session_id.0))
+            .then_with(|| a.citation.turn.cmp(&b.citation.turn))
+    });
+    if limit > 0 && out.len() > limit {
+        out.truncate(limit);
+    }
+    if out.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    let stdout = io::stdout();
+    let mut sink = stdout.lock();
+    if want_json {
+        render_llm_todos_json(&mut sink, &out)
+    } else {
+        render_llm_todos_human(&mut sink, &out)
+    }
+    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write todos output: {e}")))?;
+
+    Ok(EXIT_OK)
+}
+
+fn render_llm_todos_json<W: io::Write>(out: &mut W, rows: &[LlmTodoRow]) -> io::Result<()> {
+    let payload = serde_json::json!({
+        "todos": rows.iter().map(|r| serde_json::json!({
+            "ref": r.citation.to_string(),
+            "provider": r.citation.provider,
+            "session_id": r.citation.session_id.0,
+            "turn": r.citation.turn,
+            "description": r.todo.description,
+            "target_session": r.todo.target_session,
+            "status_inferred": r.todo.status_inferred,
+            "source_snippet": r.source_snippet,
+            "source_kind": r.source_kind,
+            "project": r.project,
+            "started_at": r.started_at,
+        })).collect::<Vec<_>>(),
+        "count": rows.len(),
+        "mode": "llm",
+    });
+    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn render_llm_todos_human<W: io::Write>(out: &mut W, rows: &[LlmTodoRow]) -> io::Result<()> {
+    writeln!(
+        out,
+        "{:<8}  {:<46}  {:<48}  TARGET",
+        "STATUS", "REF", "DESCRIPTION"
+    )?;
+    for r in rows {
+        let status = match r.todo.status_inferred {
+            aghist::llm::TodoStatus::Open => "open",
+            aghist::llm::TodoStatus::Done => "done",
+            aghist::llm::TodoStatus::Unclear => "unclear",
+        };
+        let reference = r.citation.to_string();
+        let reference = truncate(&reference, 46);
+        let description = truncate(&r.todo.description, 48);
+        let target = r.todo.target_session.as_deref().unwrap_or("");
+        writeln!(out, "{status:<8}  {reference:<46}  {description:<48}  {target}")?;
+    }
+    writeln!(out)?;
+    writeln!(out, "Total: {} todo(s)", rows.len())?;
     Ok(())
 }
 
