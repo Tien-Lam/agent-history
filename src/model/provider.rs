@@ -7,6 +7,7 @@ pub enum Provider {
     OpenCode,
     Cursor,
     ZedAi,
+    Cline,
 }
 
 /// Serializes as the kebab-case [`Provider::slug`]. This matches the
@@ -39,6 +40,7 @@ impl Provider {
             Self::OpenCode => "OpenCode",
             Self::Cursor => "Cursor",
             Self::ZedAi => "Zed AI",
+            Self::Cline => "Cline",
         }
     }
 
@@ -54,6 +56,7 @@ impl Provider {
             Self::OpenCode => "opencode",
             Self::Cursor => "cursor",
             Self::ZedAi => "zed-ai",
+            Self::Cline => "cline",
         }
     }
 
@@ -67,6 +70,7 @@ impl Provider {
             "opencode" => Some(Self::OpenCode),
             "cursor" => Some(Self::Cursor),
             "zed-ai" => Some(Self::ZedAi),
+            "cline" => Some(Self::Cline),
             _ => None,
         }
     }
@@ -80,6 +84,7 @@ impl Provider {
             Self::OpenCode,
             Self::Cursor,
             Self::ZedAi,
+            Self::Cline,
         ]
     }
 
@@ -104,6 +109,9 @@ impl Provider {
             // Zed is a GUI editor; the assistant panel cannot be opened to a
             // specific conversation from the CLI, so we just launch the app.
             Self::ZedAi => "zed".to_string(),
+            // Cline is a VS Code extension; open VS Code and the user can
+            // navigate to the task from the Cline panel.
+            Self::Cline => "code".to_string(),
         }
     }
 }
@@ -210,6 +218,7 @@ mod tests {
         assert_eq!(Provider::OpenCode.slug(), "opencode");
         assert_eq!(Provider::Cursor.slug(), "cursor");
         assert_eq!(Provider::ZedAi.slug(), "zed-ai");
+        assert_eq!(Provider::Cline.slug(), "cline");
     }
 
     #[test]
@@ -222,6 +231,12 @@ mod tests {
     fn resume_command_zed_ai() {
         let cmd = Provider::ZedAi.resume_command("conversation-abc");
         assert_eq!(cmd, "zed");
+    }
+
+    #[test]
+    fn resume_command_cline() {
+        let cmd = Provider::Cline.resume_command("1698765432000");
+        assert_eq!(cmd, "code");
     }
 
     #[test]

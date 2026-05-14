@@ -1,4 +1,5 @@
 pub mod claude_code;
+pub mod cline;
 pub mod codex_cli;
 pub mod copilot_cli;
 pub mod cursor;
@@ -63,6 +64,9 @@ pub fn detect_all_providers() -> Vec<Box<dyn HistoryProvider>> {
         providers.push(Box::new(p));
     }
     if let Some(p) = zed_ai::ZedAiProvider::detect() {
+        providers.push(Box::new(p));
+    }
+    if let Some(p) = cline::ClineProvider::detect() {
         providers.push(Box::new(p));
     }
     providers
