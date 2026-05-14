@@ -6,6 +6,7 @@ pub enum Provider {
     CodexCli,
     OpenCode,
     Cursor,
+    ZedAi,
 }
 
 /// Serializes as the kebab-case [`Provider::slug`]. This matches the
@@ -37,6 +38,7 @@ impl Provider {
             Self::CodexCli => "Codex CLI",
             Self::OpenCode => "OpenCode",
             Self::Cursor => "Cursor",
+            Self::ZedAi => "Zed AI",
         }
     }
 
@@ -51,6 +53,7 @@ impl Provider {
             Self::CodexCli => "codex-cli",
             Self::OpenCode => "opencode",
             Self::Cursor => "cursor",
+            Self::ZedAi => "zed-ai",
         }
     }
 
@@ -63,6 +66,7 @@ impl Provider {
             "codex-cli" => Some(Self::CodexCli),
             "opencode" => Some(Self::OpenCode),
             "cursor" => Some(Self::Cursor),
+            "zed-ai" => Some(Self::ZedAi),
             _ => None,
         }
     }
@@ -75,6 +79,7 @@ impl Provider {
             Self::CodexCli,
             Self::OpenCode,
             Self::Cursor,
+            Self::ZedAi,
         ]
     }
 
@@ -96,6 +101,9 @@ impl Provider {
             // Cursor is a GUI app without a CLI flag to resume a specific
             // composer session — best we can do is launch the editor.
             Self::Cursor => "cursor".to_string(),
+            // Zed is a GUI editor; the assistant panel cannot be opened to a
+            // specific conversation from the CLI, so we just launch the app.
+            Self::ZedAi => "zed".to_string(),
         }
     }
 }
@@ -201,12 +209,19 @@ mod tests {
         assert_eq!(Provider::CodexCli.slug(), "codex-cli");
         assert_eq!(Provider::OpenCode.slug(), "opencode");
         assert_eq!(Provider::Cursor.slug(), "cursor");
+        assert_eq!(Provider::ZedAi.slug(), "zed-ai");
     }
 
     #[test]
     fn resume_command_cursor() {
         let cmd = Provider::Cursor.resume_command("composer-abc");
         assert_eq!(cmd, "cursor");
+    }
+
+    #[test]
+    fn resume_command_zed_ai() {
+        let cmd = Provider::ZedAi.resume_command("conversation-abc");
+        assert_eq!(cmd, "zed");
     }
 
     #[test]

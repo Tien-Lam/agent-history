@@ -1,0 +1,22 @@
+{
+  "id": "fixture-zed-1",
+  "summary": "Refactor auth handler",
+  "model": "anthropic/claude-sonnet-4",
+  "workspace": "/home/me/projects/myapp",
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:05:00Z",
+  "messages": [
+    {
+      "id": "m1",
+      "role": "User",
+      "text": "How should I split this auth handler?",
+      "timestamp": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "m2",
+      "role": "Assistant",
+      "text": "Pull token validation into its own function:\n\n```rust\nfn validate(token: &str) -> bool {\n    !token.is_empty()\n}\n```\n\nThen wire it into the middleware.",
+      "timestamp": "2026-01-01T00:01:00Z"
+    }
+  ]
+}
