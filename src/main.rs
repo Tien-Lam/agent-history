@@ -357,6 +357,31 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Track how a topic evolved across sessions (LLM-required).
+    ///
+    /// Finds sessions that mention the topic by keyword, extracts relevant
+    /// excerpts, and asks the LLM what *changed* about the topic across them.
+    /// Output is a chronological timeline: `{session_ref, date, event, direction}`.
+    /// Directions: `introduced`, `revised`, `confirmed`, `dropped`.
+    ///
+    /// Requires `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`).
+    Track {
+        /// Free-text topic to track (e.g. "auth middleware", "BM25 scoring").
+        #[arg(value_name = "TOPIC")]
+        topic: String,
+
+        /// Maximum sessions to scan for the topic (0 = no limit, default 50).
+        #[arg(long, short = 'n', default_value_t = 50)]
+        limit: usize,
+
+        /// Force JSON output (default: table on TTY, JSON on pipe).
+        #[arg(long)]
+        json: bool,
+
+        /// Override the LLM model id (default: from `AGHIST_LLM_MODEL` or claude-haiku-4-5).
+        #[arg(long, value_name = "MODEL")]
+        llm_model: Option<String>,
+    },
     /// Heuristic-extract candidate architectural decisions from sessions.
     ///
     /// Default path is the deterministic regex/marker heuristic: scores each
@@ -1419,6 +1444,14 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             json,
         }) => {
             return diff_command(&providers, &session1, &session2, context, json);
+        }
+        Some(Command::Track {
+            topic,
+            limit,
+            json,
+            llm_model,
+        }) => {
+            return track_command(&providers, &cli.filters, &topic, limit, json, llm_model.as_deref());
         }
         Some(Command::Decisions {
             session,
@@ -5977,6 +6010,148 @@ fn render_diff_json(
         .map_err(|e| ErrorEnvelope::new("io-error", format!("json: {e}")))?;
     writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
     Ok(())
+}
+
+// ── track command ─────────────────────────────────────────────────────────────
+
+fn track_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    topic: &str,
+    limit: usize,
+    force_json: bool,
+    llm_model: Option<&str>,
+) -> Result<i32, ErrorEnvelope> {
+    let needle = topic.to_lowercase();
+    let mut matched: Vec<aghist::llm::TrackSession> = Vec::new();
+
+    'outer: for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        let sessions = match p.discover_sessions() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for session in sessions {
+            if limit > 0 && matched.len() >= limit {
+                break 'outer;
+            }
+            if let Some(since) = filters.since {
+                if session.started_at < since {
+                    continue;
+                }
+            }
+            if let Some(until) = filters.until {
+                if session.started_at > until {
+                    continue;
+                }
+            }
+            if let Some(ref project) = filters.project {
+                let name = session.project_name.as_deref().unwrap_or("");
+                if !name.to_lowercase().contains(&project.to_lowercase()) {
+                    continue;
+                }
+            }
+            let messages = match p.load_messages(&session) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let mut excerpts: Vec<String> = Vec::new();
+            for msg in &messages {
+                if excerpts.len() >= 3 {
+                    break;
+                }
+                for block in &msg.content {
+                    if let ContentBlock::Text(t) = block {
+                        if t.to_lowercase().contains(&needle) {
+                            let snippet = t.trim();
+                            let short = if snippet.chars().count() > 200 {
+                                format!("{}…", snippet.chars().take(199).collect::<String>())
+                            } else {
+                                snippet.to_string()
+                            };
+                            excerpts.push(short);
+                            break;
+                        }
+                    }
+                }
+            }
+            if excerpts.is_empty() {
+                continue;
+            }
+            matched.push(aghist::llm::TrackSession {
+                provider: p.provider(),
+                session_id: session.id.clone(),
+                started_at: session.started_at,
+                excerpts,
+            });
+        }
+    }
+
+    if matched.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    // Sort chronologically before sending to LLM
+    matched.sort_by_key(|s| s.started_at);
+
+    let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
+    if let Some(model) = llm_model {
+        config = config.with_model(model.to_string());
+    }
+    let transport = aghist::llm::UreqTransport::new(config.timeout);
+
+    let events = aghist::llm::extract_track(&transport, &config, topic, &matched)
+        .map_err(|e| map_llm_error(&e))?;
+
+    if events.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    if want_json {
+        let payload = serde_json::json!({
+            "topic": topic,
+            "sessions_scanned": matched.len(),
+            "timeline": events,
+        });
+        {
+            use std::io::Write as _;
+            let stdout = io::stdout();
+            let mut out = stdout.lock();
+            serde_json::to_writer(&mut out, &payload)
+                .map_err(|e| ErrorEnvelope::new("io-error", format!("json: {e}")))?;
+            writeln!(out)
+                .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        }
+    } else {
+        use std::io::Write as _;
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+        writeln!(out, "Topic: {topic}")
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(out, "Sessions scanned: {}", matched.len())
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(out)
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(out, "{:<10}  {:<42}  {:<12}  EVENT", "DATE", "REF", "DIRECTION")
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        for ev in &events {
+            let ref_short = truncate(&ev.session_ref, 42);
+            let event_short = truncate(&ev.event, 80);
+            writeln!(out, "{:<10}  {:<42}  {:<12}  {}", ev.date, ref_short, ev.direction, event_short)
+                .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        }
+        writeln!(out)
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(out, "Total: {} event(s)", events.len())
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+    }
+
+    Ok(EXIT_OK)
 }
 
 #[allow(clippy::too_many_arguments)]
