@@ -9,7 +9,7 @@ Gemini, Codex, OpenCode, Cursor, Aider, Zed AI, Cline, Continue.dev).
 cargo build
 cargo build --features embeddings   # opt-in semantic search (ONNX, ~90 MB download)
 cargo test
-cargo clippy                         # pedantic — CI runs with -D warnings
+cargo clippy                         # pedantic lints enabled in Cargo.toml
 cargo insta review                   # after test failures that update snapshots
 ```
 
