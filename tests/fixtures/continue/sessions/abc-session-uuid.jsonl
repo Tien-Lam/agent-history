@@ -1,0 +1,2 @@
+{"role":"user","content":"How do I write a Rust struct with serde?"}
+{"role":"assistant","content":"Here's how to write a Rust struct with serde:\n\n```rust\nuse serde::{Serialize, Deserialize};\n\n#[derive(Serialize, Deserialize)]\nstruct MyStruct {\n    name: String,\n    value: u32,\n}\n```"}

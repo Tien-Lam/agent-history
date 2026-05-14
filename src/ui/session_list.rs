@@ -135,6 +135,7 @@ fn provider_color(provider: crate::model::Provider) -> ratatui::style::Color {
         crate::model::Provider::Cursor => palette::CURSOR,
         crate::model::Provider::ZedAi => palette::ZED,
         crate::model::Provider::Cline => palette::CLINE,
+        crate::model::Provider::ContinueDev => palette::CONTINUE,
     }
 }
 

@@ -8,6 +8,7 @@ pub enum Provider {
     Cursor,
     ZedAi,
     Cline,
+    ContinueDev,
 }
 
 /// Serializes as the kebab-case [`Provider::slug`]. This matches the
@@ -41,6 +42,7 @@ impl Provider {
             Self::Cursor => "Cursor",
             Self::ZedAi => "Zed AI",
             Self::Cline => "Cline",
+            Self::ContinueDev => "Continue.dev",
         }
     }
 
@@ -57,6 +59,7 @@ impl Provider {
             Self::Cursor => "cursor",
             Self::ZedAi => "zed-ai",
             Self::Cline => "cline",
+            Self::ContinueDev => "continue-dev",
         }
     }
 
@@ -71,6 +74,7 @@ impl Provider {
             "cursor" => Some(Self::Cursor),
             "zed-ai" => Some(Self::ZedAi),
             "cline" => Some(Self::Cline),
+            "continue-dev" => Some(Self::ContinueDev),
             _ => None,
         }
     }
@@ -85,6 +89,7 @@ impl Provider {
             Self::Cursor,
             Self::ZedAi,
             Self::Cline,
+            Self::ContinueDev,
         ]
     }
 
@@ -112,6 +117,8 @@ impl Provider {
             // Cline is a VS Code extension; open VS Code and the user can
             // navigate to the task from the Cline panel.
             Self::Cline => "code".to_string(),
+            // Continue is a VS Code/JetBrains extension; no CLI resume path.
+            Self::ContinueDev => "code".to_string(),
         }
     }
 }
@@ -219,6 +226,7 @@ mod tests {
         assert_eq!(Provider::Cursor.slug(), "cursor");
         assert_eq!(Provider::ZedAi.slug(), "zed-ai");
         assert_eq!(Provider::Cline.slug(), "cline");
+        assert_eq!(Provider::ContinueDev.slug(), "continue-dev");
     }
 
     #[test]
@@ -236,6 +244,12 @@ mod tests {
     #[test]
     fn resume_command_cline() {
         let cmd = Provider::Cline.resume_command("1698765432000");
+        assert_eq!(cmd, "code");
+    }
+
+    #[test]
+    fn resume_command_continue_dev() {
+        let cmd = Provider::ContinueDev.resume_command("abc-uuid");
         assert_eq!(cmd, "code");
     }
 

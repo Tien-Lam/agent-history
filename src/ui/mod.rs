@@ -34,6 +34,7 @@ pub mod palette {
     pub const CURSOR: Color = Color::Rgb(139, 213, 202);        // teal
     pub const ZED: Color = Color::Rgb(237, 135, 150);           // pink/red
     pub const CLINE: Color = Color::Rgb(238, 212, 159);         // yellow/amber
+    pub const CONTINUE: Color = Color::Rgb(139, 213, 202);      // teal (distinct from Cursor)
 }
 
 pub fn role_style(role: Role) -> Style {
