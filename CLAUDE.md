@@ -2,8 +2,6 @@
 
 Cross-platform TUI for viewing and searching AI agent conversation history (Claude Code, Copilot CLI, Gemini CLI, Codex CLI, OpenCode).
 
-This project is **bd + gt driven**: tasks live in beads (`bd`), and Gas Town (`gt`) dispatches polecat agents to work them. The full workflow rules are in [`AGENTS.md`](AGENTS.md) — read that before doing any work.
-
 ## Build & Test
 
 ```bash
@@ -30,6 +28,8 @@ Every subcommand has a stable error envelope (single-line JSON on stderr), seman
 - `health` — machine-readable doctor
 - `sources [add | list | remove | pull]` — local provider listing + remote source registry (rsync), federated search across `~/.cache/aghist/sources/<name>/data/`
 - `decisions` / `todos` / `threads` — heuristic cross-session extractors
+- `diff <session1> <session2>` — LCS-based session comparison in unified diff style
+- `track <topic>` — LLM-powered cross-session topic change tracker
 - `schema [--list | --all | <subcmd>]` — JSON-Schema (draft-2020-12) introspection
 - `mcp` — JSON-RPC 2.0 stdio server: tools `search_sessions`, `list_sessions`, `get_session`, `get_message`, `reindex`, `health`; resources `aghist://session/<provider>/<id>` and `aghist://session/<provider>/<id>/turn/<n>`
 
@@ -37,7 +37,7 @@ Global filter flags accepted on most subcommands: `--provider <slug>`, `--since/
 
 ## CLI error envelope and exit codes
 
-See [`AGENTS.md`](AGENTS.md#cli-error-envelope-and-exit-codes) for the full spec — stable `kind` values, exit-code 3 semantics, the JSON shape.
+Stable `kind` values on stderr as single-line JSON: `{kind, message, hint?}`. Exit codes: `0` success, `1` runtime error, `2` usage error, `3` success-but-empty.
 
 ## Code Map
 
@@ -61,9 +61,3 @@ For detailed architecture, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - `clippy::pedantic` enabled
 - `thiserror` for library errors, `anyhow` only at binary boundary
 - Corrupt/missing session files are skipped, never crash
-
-## Tooling
-
-- **bd** (beads) — issue tracker. Prefix: `ahist`. Database mode: dolt server, port pinned via `.beads/config.yaml`.
-- **gt** (Gas Town) — multi-agent orchestrator. HQ at `~/gt/`, this project registered as rig `aghist`.
-- **TodoWrite / TaskCreate are forbidden** — use `bd` for all task tracking. See `AGENTS.md`.

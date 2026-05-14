@@ -1,15 +1,4 @@
 /target
 .aghist-index/
-
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
-.runtime/
-
-# Gas Town polecat overlay — gt drops this in every polecat worktree.
-# Without ignoring it, gt's checkpoint_dog keeps creating "WIP: checkpoint
-# (auto)" commits and refinery strips them back ("chore: strip Gas Town
-# overlay"), spamming main with paired no-op commits per polecat cycle.
 CLAUDE.local.md
 .claude/commands/
