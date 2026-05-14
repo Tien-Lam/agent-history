@@ -1,0 +1,3 @@
+[
+  {"type": "say", "say": "task", "text": "Implement a Rust function that reads a file and returns its contents as a string.", "ts": 1698765432000}
+]
