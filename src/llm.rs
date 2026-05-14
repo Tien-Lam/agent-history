@@ -982,14 +982,16 @@ pub struct TrackEvent {
 pub fn user_message_track(topic: &str, sessions: &[TrackSession]) -> String {
     let mut s = format!("Topic: {topic}\n\nSessions (oldest first):\n");
     for sess in sessions {
-        s.push_str(&format!(
-            "\n[{}]  {}  ({})\n",
+        use std::fmt::Write as _;
+        let _ = writeln!(
+            s,
+            "\n[{}]  {}  ({})",
             sess.session_ref(),
             sess.started_at.format("%Y-%m-%d"),
             sess.started_at.format("%H:%M UTC"),
-        ));
+        );
         for (i, excerpt) in sess.excerpts.iter().enumerate() {
-            s.push_str(&format!("  {}: {}\n", i + 1, excerpt));
+            let _ = writeln!(s, "  {}: {}", i + 1, excerpt);
         }
     }
     s

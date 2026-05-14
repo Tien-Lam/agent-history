@@ -32,6 +32,7 @@
 //! Content blocks may also include `tool_use` / `tool_result` entries.
 //! Unknown block types and unknown roles are silently skipped.
 
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -181,10 +182,7 @@ impl HistoryProvider for ClineProvider {
             if !td.is_dir() {
                 continue;
             }
-            let entries = match std::fs::read_dir(&td) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
+            let Ok(entries) = std::fs::read_dir(&td) else { continue };
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_dir() {
@@ -200,7 +198,7 @@ impl HistoryProvider for ClineProvider {
             }
         }
 
-        sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        sessions.sort_by_key(|s| Reverse(s.started_at));
         Ok(sessions)
     }
 
@@ -272,8 +270,7 @@ fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
 
     path.metadata()
         .and_then(|m| m.modified())
-        .map(DateTime::<Utc>::from)
-        .unwrap_or_else(|_| Utc::now())
+        .map_or_else(|_| Utc::now(), DateTime::<Utc>::from)
 }
 
 /// Extract a human-readable summary from `ui_messages.json` first entry's text.
@@ -421,7 +418,7 @@ mod tests {
     #[test]
     fn discovers_session_from_task_dir() {
         let tmp = TempDir::new().unwrap();
-        make_task(tmp.path(), "1698765432000", r#"[]"#);
+        make_task(tmp.path(), "1698765432000", "[]");
         let sessions = provider_for(&tmp).discover_sessions().unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].id.0, "1698765432000");
@@ -430,9 +427,9 @@ mod tests {
     #[test]
     fn parses_timestamp_from_task_dir_name() {
         let tmp = TempDir::new().unwrap();
-        make_task(tmp.path(), "1698765432000", r#"[]"#);
+        make_task(tmp.path(), "1698765432000", "[]");
         let sessions = provider_for(&tmp).discover_sessions().unwrap();
-        assert_eq!(sessions[0].started_at.timestamp(), 1698765432);
+        assert_eq!(sessions[0].started_at.timestamp(), 1_698_765_432);
     }
 
     #[test]
@@ -440,10 +437,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let task_path = tmp.path().join(EXTENSION_ID).join(TASKS_SUBDIR).join("1698765432000");
         fs::create_dir_all(&task_path).unwrap();
-        write_file(&task_path, API_HISTORY_FILE, r#"[]"#);
-        write_file(&task_path, METADATA_FILE, r#"{"createdAt":1700000000000}"#);
+        write_file(&task_path, API_HISTORY_FILE, "[]");
+        write_file(&task_path, METADATA_FILE, "{\"createdAt\":1700000000000}");
         let sessions = provider_for(&tmp).discover_sessions().unwrap();
-        assert_eq!(sessions[0].started_at.timestamp(), 1700000000);
+        assert_eq!(sessions[0].started_at.timestamp(), 1_700_000_000);
     }
 
     #[test]
@@ -451,11 +448,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let task_path = tmp.path().join(EXTENSION_ID).join(TASKS_SUBDIR).join("123");
         fs::create_dir_all(&task_path).unwrap();
-        write_file(&task_path, API_HISTORY_FILE, r#"[]"#);
+        write_file(&task_path, API_HISTORY_FILE, "[]");
         write_file(
             &task_path,
             UI_MESSAGES_FILE,
-            r#"[{"type":"say","say":"task","text":"Implement feature X"}]"#,
+            "[{\"type\":\"say\",\"say\":\"task\",\"text\":\"Implement feature X\"}]",
         );
         let sessions = provider_for(&tmp).discover_sessions().unwrap();
         assert_eq!(sessions[0].summary.as_deref(), Some("Implement feature X"));
@@ -503,7 +500,7 @@ mod tests {
     #[test]
     fn load_messages_errors_on_corrupt_json() {
         let tmp = TempDir::new().unwrap();
-        make_task(tmp.path(), "1698765432000", r#"not json"#);
+        make_task(tmp.path(), "1698765432000", "not json");
         let p = provider_for(&tmp);
         let sessions = p.discover_sessions().unwrap();
         assert!(p.load_messages(&sessions[0]).is_err());

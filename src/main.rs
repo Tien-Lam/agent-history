@@ -479,7 +479,7 @@ enum Command {
         json: bool,
 
         /// Route heuristic candidates through an LLM for structured extraction
-        /// (description / target_session / status_inferred). Requires
+        /// (`description` / `target_session` / `status_inferred`). Requires
         /// `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`).
         #[arg(long)]
         llm: bool,
@@ -4440,10 +4440,7 @@ fn todos_command(
     // For --llm: per-session metadata (project + started_at) keyed by
     // (provider, session_id). Built alongside `all` so we don't re-iterate
     // providers/sessions a second time in the LLM branch.
-    let mut session_meta: std::collections::HashMap<
-        (Provider, aghist::model::SessionId),
-        (Option<String>, DateTime<Utc>),
-    > = std::collections::HashMap::new();
+    let mut session_meta: SessionMetaMap = std::collections::HashMap::new();
 
     for p in providers {
         if let Some(want) = filters.provider {
@@ -4501,7 +4498,7 @@ fn todos_command(
     }
 
     if use_llm {
-        return run_llm_todos(all, session_meta, limit, force_json, llm_model);
+        return run_llm_todos(all, &session_meta, limit, force_json, llm_model);
     }
 
     // Newest matches first — most useful for "what's still hanging?".
@@ -4590,16 +4587,18 @@ struct LlmTodoRow {
 
 /// Route heuristic candidates through the LLM and emit structured todos.
 ///
+type SessionMetaMap = std::collections::HashMap<
+    (Provider, aghist::model::SessionId),
+    (Option<String>, DateTime<Utc>),
+>;
+
 /// Groups candidates by `(provider, session_id)` and issues one Messages
 /// API call per session. The system prompt is cache-controlled so calls
 /// 2..N pay near-zero on the static prompt tokens. Falls through to
 /// `EXIT_EMPTY` when no todos survive.
 fn run_llm_todos(
     candidates: Vec<TodoCandidate>,
-    session_meta: std::collections::HashMap<
-        (Provider, aghist::model::SessionId),
-        (Option<String>, DateTime<Utc>),
-    >,
+    session_meta: &SessionMetaMap,
     limit: usize,
     force_json: bool,
     llm_model: Option<&str>,
@@ -5791,33 +5790,33 @@ enum DiffOp {
     Insert(usize),
 }
 
-fn lcs_diff(a: &[DiffLine], b: &[DiffLine]) -> Vec<DiffOp> {
-    let m = a.len();
-    let n = b.len();
-    // DP table — O(m*n) space; sessions are short (hundreds of messages at most)
-    let mut dp = vec![vec![0usize; n + 1]; m + 1];
-    for i in (0..m).rev() {
-        for j in (0..n).rev() {
-            dp[i][j] = if a[i].key == b[j].key {
-                dp[i + 1][j + 1] + 1
+fn lcs_diff(left: &[DiffLine], right: &[DiffLine]) -> Vec<DiffOp> {
+    let rows = left.len();
+    let cols = right.len();
+    // DP table — O(rows*cols) space; sessions are short (hundreds of messages at most)
+    let mut dp = vec![vec![0usize; cols + 1]; rows + 1];
+    for row in (0..rows).rev() {
+        for col in (0..cols).rev() {
+            dp[row][col] = if left[row].key == right[col].key {
+                dp[row + 1][col + 1] + 1
             } else {
-                dp[i + 1][j].max(dp[i][j + 1])
+                dp[row + 1][col].max(dp[row][col + 1])
             };
         }
     }
     let mut ops = Vec::new();
-    let (mut i, mut j) = (0, 0);
-    while i < m || j < n {
-        if i < m && j < n && a[i].key == b[j].key {
-            ops.push(DiffOp::Same(i, j));
-            i += 1;
-            j += 1;
-        } else if j < n && (i >= m || dp[i + 1][j] >= dp[i][j + 1]) {
-            ops.push(DiffOp::Insert(j));
-            j += 1;
+    let (mut row, mut col) = (0, 0);
+    while row < rows || col < cols {
+        if row < rows && col < cols && left[row].key == right[col].key {
+            ops.push(DiffOp::Same(row, col));
+            row += 1;
+            col += 1;
+        } else if col < cols && (row >= rows || dp[row + 1][col] >= dp[row][col + 1]) {
+            ops.push(DiffOp::Insert(col));
+            col += 1;
         } else {
-            ops.push(DiffOp::Delete(i));
-            i += 1;
+            ops.push(DiffOp::Delete(row));
+            row += 1;
         }
     }
     ops
@@ -5881,6 +5880,13 @@ fn diff_command(
     Ok(if has_changes { EXIT_OK } else { EXIT_EMPTY })
 }
 
+struct FlatOp {
+    marker: char,
+    side_a: Option<usize>,
+    side_b: Option<usize>,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn render_diff_text(
     raw1: &str,
     raw2: &str,
@@ -5899,12 +5905,7 @@ fn render_diff_text(
     writeln!(out, "+++ {raw2}  ({}  {} msgs)", sess2.started_at.format("%Y-%m-%d"), lines2.len())
         .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
 
-    // Build a flat list of (marker, idx_a, idx_b) for hunk slicing
-    struct FlatOp {
-        marker: char,
-        side_a: Option<usize>,
-        side_b: Option<usize>,
-    }
+    // Build a flat list of (marker, side_a, side_b) for hunk slicing
     let flat: Vec<FlatOp> = ops
         .iter()
         .map(|op| match op {
@@ -5971,6 +5972,7 @@ fn render_diff_json(
     lines2: &[DiffLine],
     ops: &[DiffOp],
 ) -> Result<(), ErrorEnvelope> {
+    use std::io::Write as _;
     let entries: Vec<serde_json::Value> = ops
         .iter()
         .map(|op| match op {
@@ -6003,7 +6005,6 @@ fn render_diff_json(
         "changed": ops.iter().filter(|o| !matches!(o, DiffOp::Same(_, _))).count(),
         "same": ops.iter().filter(|o| matches!(o, DiffOp::Same(_, _))).count(),
     });
-    use std::io::Write as _;
     let stdout = io::stdout();
     let mut out = stdout.lock();
     serde_json::to_writer(&mut out, &payload)
@@ -6014,14 +6015,13 @@ fn render_diff_json(
 
 // ── track command ─────────────────────────────────────────────────────────────
 
-fn track_command(
+/// Scan all providers for sessions mentioning `topic`, returning up to `limit` with excerpts.
+fn scan_topic_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
     topic: &str,
     limit: usize,
-    force_json: bool,
-    llm_model: Option<&str>,
-) -> Result<i32, ErrorEnvelope> {
+) -> Vec<aghist::llm::TrackSession> {
     let needle = topic.to_lowercase();
     let mut matched: Vec<aghist::llm::TrackSession> = Vec::new();
 
@@ -6031,34 +6031,23 @@ fn track_command(
                 continue;
             }
         }
-        let sessions = match p.discover_sessions() {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
+        let Ok(sessions) = p.discover_sessions() else { continue };
         for session in sessions {
             if limit > 0 && matched.len() >= limit {
                 break 'outer;
             }
-            if let Some(since) = filters.since {
-                if session.started_at < since {
-                    continue;
-                }
+            if filters.since.is_some_and(|s| session.started_at < s)
+                || filters.until.is_some_and(|u| session.started_at > u)
+            {
+                continue;
             }
-            if let Some(until) = filters.until {
-                if session.started_at > until {
-                    continue;
-                }
-            }
-            if let Some(ref project) = filters.project {
+            if let Some(ref proj) = filters.project {
                 let name = session.project_name.as_deref().unwrap_or("");
-                if !name.to_lowercase().contains(&project.to_lowercase()) {
+                if !name.to_lowercase().contains(&proj.to_lowercase()) {
                     continue;
                 }
             }
-            let messages = match p.load_messages(&session) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
+            let Ok(messages) = p.load_messages(&session) else { continue };
             let mut excerpts: Vec<String> = Vec::new();
             for msg in &messages {
                 if excerpts.len() >= 3 {
@@ -6090,12 +6079,24 @@ fn track_command(
             });
         }
     }
+    matched
+}
+
+fn track_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    topic: &str,
+    limit: usize,
+    force_json: bool,
+    llm_model: Option<&str>,
+) -> Result<i32, ErrorEnvelope> {
+    use std::io::Write as _;
+    let mut matched = scan_topic_sessions(providers, filters, topic, limit);
 
     if matched.is_empty() {
         return Ok(EXIT_EMPTY);
     }
 
-    // Sort chronologically before sending to LLM
     matched.sort_by_key(|s| s.started_at);
 
     let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
@@ -6118,17 +6119,13 @@ fn track_command(
             "sessions_scanned": matched.len(),
             "timeline": events,
         });
-        {
-            use std::io::Write as _;
-            let stdout = io::stdout();
-            let mut out = stdout.lock();
-            serde_json::to_writer(&mut out, &payload)
-                .map_err(|e| ErrorEnvelope::new("io-error", format!("json: {e}")))?;
-            writeln!(out)
-                .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
-        }
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+        serde_json::to_writer(&mut out, &payload)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("json: {e}")))?;
+        writeln!(out)
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
     } else {
-        use std::io::Write as _;
         let stdout = io::stdout();
         let mut out = stdout.lock();
         writeln!(out, "Topic: {topic}")
