@@ -1,14 +1,16 @@
 # aghist
 
-Cross-platform TUI for viewing and searching AI agent conversation history (Claude Code, Copilot CLI, Gemini CLI, Codex CLI, OpenCode).
+Cross-platform TUI for viewing and searching AI agent conversation history.
+Supports Claude Code, Copilot CLI, Gemini CLI, Codex CLI, OpenCode, Cursor, Aider, Zed AI, Cline, and Continue.dev.
 
 ## Build & Test
 
 ```bash
 cargo build                          # dev build
+cargo build --features embeddings    # include semantic search (pulls ONNX runtime ~90 MB)
 cargo test                           # all tests
 cargo test <name>                    # single test by name
-cargo insta review                   # review snapshot changes
+cargo insta review                   # review snapshot changes (run after tests that update snapshots)
 cargo clippy                         # lint (pedantic enabled)
 cargo run                            # launch TUI
 cargo run -- --list                  # list sessions without TUI
@@ -17,6 +19,18 @@ cargo run -- search <q> --debug-search  # BM25 explanation per hit
 cargo run -- mcp                     # JSON-RPC stdio MCP server
 cargo run -- schema --list           # list subcommands with JSON-Schemas
 ```
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Required for `--llm` flag on `decisions`, `todos`, `threads`, and `track` |
+| `AGHIST_LLM_MODEL` | Override LLM model (default: `claude-haiku-4-5-20251001`) |
+| `AGHIST_LLM_ENDPOINT` | Override API endpoint (default: `api.anthropic.com`) |
+| `AGHIST_LLM_API_KEY` | Alias for `ANTHROPIC_API_KEY` |
+| `AGHIST_HOME` | Override home dir for tests (provider detection, config loading) |
+
+Config file: `~/.config/aghist/config.toml` (Linux/macOS) — use `aghist health` to verify setup.
 
 ## Agent-friendly CLI surface
 
@@ -27,9 +41,9 @@ Every subcommand has a stable error envelope (single-line JSON on stderr), seman
 - `index [--force] [--accept-download]` — idempotent, delta-aware via content-hash manifest; `--accept-download` enables FastEmbed (~90 MB)
 - `health` — machine-readable doctor
 - `sources [add | list | remove | pull]` — local provider listing + remote source registry (rsync), federated search across `~/.cache/aghist/sources/<name>/data/`
-- `decisions` / `todos` / `threads` — heuristic cross-session extractors
-- `diff <session1> <session2>` — LCS-based session comparison in unified diff style
-- `track <topic>` — LLM-powered cross-session topic change tracker
+- `decisions` / `todos` / `threads` — heuristic cross-session extractors (add `--llm` for structured output via Claude)
+- `diff <session1> <session2>` — LCS-based turn-by-turn session comparison
+- `track <topic>` — LLM-powered cross-session topic change tracker (requires `ANTHROPIC_API_KEY`)
 - `schema [--list | --all | <subcmd>]` — JSON-Schema (draft-2020-12) introspection
 - `mcp` — JSON-RPC 2.0 stdio server: tools `search_sessions`, `list_sessions`, `get_session`, `get_message`, `reindex`, `health`; resources `aghist://session/<provider>/<id>` and `aghist://session/<provider>/<id>/turn/<n>`
 
@@ -50,7 +64,8 @@ Stable `kind` values on stderr as single-line JSON: `{kind, message, hint?}`. Ex
 - `src/search.rs` — Tantivy full-text index, incremental rebuild
 - `src/export.rs` — Markdown, JSON, HTML export
 - `src/config.rs` — TOML config loading
-- `src/main.rs` — Clap CLI, terminal setup/teardown
+- `src/lib.rs` — Library surface re-exported for integration tests
+- `src/main.rs` — Clap CLI, command dispatch, all command implementations (~6k lines)
 - `tests/` — Integration and E2E tests with fixture data in `tests/fixtures/`
 
 For detailed architecture, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
