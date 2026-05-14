@@ -332,6 +332,31 @@ enum Command {
         #[arg(long, value_name = "JSON")]
         params: Option<String>,
     },
+    /// Compare two sessions turn-by-turn in diff-hunk style.
+    ///
+    /// Computes the longest-common-subsequence of the two sessions' messages
+    /// (keyed by role + first-64-chars of content) and emits hunks of
+    /// diverging turns, with 2 lines of shared context around each hunk.
+    /// Useful for "compare yesterday's debug session with today's working one".
+    ///
+    /// Session refs: `<provider>/<session-id>` (no turn suffix).
+    Diff {
+        /// First session ref (e.g. `claude-code/abc-123`).
+        #[arg(value_name = "SESSION1")]
+        session1: String,
+
+        /// Second session ref (e.g. `claude-code/def-456`).
+        #[arg(value_name = "SESSION2")]
+        session2: String,
+
+        /// Context lines around each changed hunk (default 2).
+        #[arg(long, short = 'c', default_value_t = 2, value_name = "N")]
+        context: usize,
+
+        /// Force JSON output (default: unified diff text on TTY, JSON on pipe).
+        #[arg(long)]
+        json: bool,
+    },
     /// Heuristic-extract candidate architectural decisions from sessions.
     ///
     /// Default path is the deterministic regex/marker heuristic: scores each
@@ -1386,6 +1411,14 @@ fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             let (reference, format, include_context) =
                 resolve_show_args(reference, format, include_context, params)?;
             return show_command(&providers, &reference, format, include_context);
+        }
+        Some(Command::Diff {
+            session1,
+            session2,
+            context,
+            json,
+        }) => {
+            return diff_command(&providers, &session1, &session2, context, json);
         }
         Some(Command::Decisions {
             session,
@@ -5675,6 +5708,275 @@ fn collect_decision_rows(
         }
     }
     rows
+}
+
+// ── diff command ─────────────────────────────────────────────────────────────
+
+/// A single "line" in the diff: the key used for LCS comparison and the
+/// human-readable summary for rendering.
+struct DiffLine {
+    key: String,
+    role: String,
+    snippet: String,
+}
+
+impl DiffLine {
+    fn from_message(msg: &Message) -> Self {
+        let role = match msg.role {
+            Role::User => "user",
+            Role::Assistant => "assistant",
+            Role::System => "system",
+            Role::Tool => "tool",
+        };
+        let snippet = first_text_snippet(msg, 120);
+        let key = format!("{role}:{}", first_text_snippet(msg, 64));
+        Self {
+            key,
+            role: role.to_string(),
+            snippet,
+        }
+    }
+}
+
+fn first_text_snippet(msg: &Message, max: usize) -> String {
+    for block in &msg.content {
+        if let ContentBlock::Text(t) = block {
+            let trimmed = t.trim();
+            if !trimmed.is_empty() {
+                return truncate(trimmed, max);
+            }
+        }
+    }
+    String::new()
+}
+
+/// LCS-based diff: returns edit-script as a list of `(in_a, in_b, key_idx_a, key_idx_b)`.
+/// `true/false` means the line is present in that side.
+enum DiffOp {
+    Same(usize, usize),
+    Delete(usize),
+    Insert(usize),
+}
+
+fn lcs_diff(a: &[DiffLine], b: &[DiffLine]) -> Vec<DiffOp> {
+    let m = a.len();
+    let n = b.len();
+    // DP table — O(m*n) space; sessions are short (hundreds of messages at most)
+    let mut dp = vec![vec![0usize; n + 1]; m + 1];
+    for i in (0..m).rev() {
+        for j in (0..n).rev() {
+            dp[i][j] = if a[i].key == b[j].key {
+                dp[i + 1][j + 1] + 1
+            } else {
+                dp[i + 1][j].max(dp[i][j + 1])
+            };
+        }
+    }
+    let mut ops = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < m || j < n {
+        if i < m && j < n && a[i].key == b[j].key {
+            ops.push(DiffOp::Same(i, j));
+            i += 1;
+            j += 1;
+        } else if j < n && (i >= m || dp[i + 1][j] >= dp[i][j + 1]) {
+            ops.push(DiffOp::Insert(j));
+            j += 1;
+        } else {
+            ops.push(DiffOp::Delete(i));
+            i += 1;
+        }
+    }
+    ops
+}
+
+/// Load a session by `<provider>/<session-id>` ref (no turn).
+fn load_session_messages(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    raw: &str,
+) -> Result<(Session, Vec<Message>), ErrorEnvelope> {
+    let (slug, session_id) = raw.split_once('/').ok_or_else(|| {
+        ErrorEnvelope::new("usage", format!("invalid session ref '{raw}': expected <provider>/<session-id>"))
+    })?;
+    let provider_kind = Provider::from_slug(slug).ok_or_else(|| {
+        ErrorEnvelope::new("usage", format!("unknown provider slug '{slug}'"))
+    })?;
+    let p = providers
+        .iter()
+        .find(|p| p.provider() == provider_kind)
+        .ok_or_else(|| {
+            ErrorEnvelope::new("provider-unavailable", format!("provider '{slug}' not detected"))
+        })?;
+    let sessions = p.discover_sessions().map_err(|e| {
+        ErrorEnvelope::new("provider-error", format!("discover {slug}: {e}"))
+    })?;
+    let session = sessions
+        .into_iter()
+        .find(|s| s.id.0 == session_id || s.id.0.starts_with(session_id))
+        .ok_or_else(|| {
+            ErrorEnvelope::new("session-not-found", format!("session '{session_id}' not found in {slug}"))
+        })?;
+    let messages = p.load_messages(&session).map_err(|e| {
+        ErrorEnvelope::new("provider-error", format!("load {slug}/{session_id}: {e}"))
+    })?;
+    Ok((session, messages))
+}
+
+fn diff_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    raw1: &str,
+    raw2: &str,
+    context: usize,
+    force_json: bool,
+) -> Result<i32, ErrorEnvelope> {
+    let (sess1, msgs1) = load_session_messages(providers, raw1)?;
+    let (sess2, msgs2) = load_session_messages(providers, raw2)?;
+
+    let lines1: Vec<DiffLine> = msgs1.iter().map(DiffLine::from_message).collect();
+    let lines2: Vec<DiffLine> = msgs2.iter().map(DiffLine::from_message).collect();
+
+    let ops = lcs_diff(&lines1, &lines2);
+    let want_json = force_json || !io::stdout().is_terminal();
+
+    if want_json {
+        render_diff_json(raw1, raw2, &sess1, &sess2, &lines1, &lines2, &ops)?;
+    } else {
+        render_diff_text(raw1, raw2, &sess1, &sess2, &lines1, &lines2, &ops, context)?;
+    }
+
+    let has_changes = ops.iter().any(|o| !matches!(o, DiffOp::Same(_, _)));
+    Ok(if has_changes { EXIT_OK } else { EXIT_EMPTY })
+}
+
+fn render_diff_text(
+    raw1: &str,
+    raw2: &str,
+    sess1: &Session,
+    sess2: &Session,
+    lines1: &[DiffLine],
+    lines2: &[DiffLine],
+    ops: &[DiffOp],
+    context: usize,
+) -> Result<(), ErrorEnvelope> {
+    use std::io::Write as _;
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    writeln!(out, "--- {raw1}  ({}  {} msgs)", sess1.started_at.format("%Y-%m-%d"), lines1.len())
+        .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+    writeln!(out, "+++ {raw2}  ({}  {} msgs)", sess2.started_at.format("%Y-%m-%d"), lines2.len())
+        .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+
+    // Build a flat list of (marker, idx_a, idx_b) for hunk slicing
+    struct FlatOp {
+        marker: char,
+        side_a: Option<usize>,
+        side_b: Option<usize>,
+    }
+    let flat: Vec<FlatOp> = ops
+        .iter()
+        .map(|op| match op {
+            DiffOp::Same(a, b) => FlatOp { marker: ' ', side_a: Some(*a), side_b: Some(*b) },
+            DiffOp::Delete(a) => FlatOp { marker: '-', side_a: Some(*a), side_b: None },
+            DiffOp::Insert(b) => FlatOp { marker: '+', side_a: None, side_b: Some(*b) },
+        })
+        .collect();
+
+    // Identify hunk ranges (changed ops ± context)
+    let changed: Vec<usize> = flat
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.marker != ' ')
+        .map(|(i, _)| i)
+        .collect();
+
+    if changed.is_empty() {
+        writeln!(out, "(sessions are identical)").ok();
+        return Ok(());
+    }
+
+    // Merge overlapping hunk windows
+    let mut hunks: Vec<(usize, usize)> = Vec::new();
+    for &c in &changed {
+        let start = c.saturating_sub(context);
+        let end = (c + context + 1).min(flat.len());
+        if let Some(last) = hunks.last_mut() {
+            if start <= last.1 {
+                last.1 = last.1.max(end);
+                continue;
+            }
+        }
+        hunks.push((start, end));
+    }
+
+    for (hunk_start, hunk_end) in hunks {
+        // Hunk header: count a/b lines
+        let a_start = flat[hunk_start].side_a.unwrap_or(0) + 1;
+        let b_start = flat[hunk_start].side_b.unwrap_or(0) + 1;
+        let a_count = flat[hunk_start..hunk_end].iter().filter(|f| f.side_a.is_some()).count();
+        let b_count = flat[hunk_start..hunk_end].iter().filter(|f| f.side_b.is_some()).count();
+        writeln!(out, "@@ -{a_start},{a_count} +{b_start},{b_count} @@")
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        for f in &flat[hunk_start..hunk_end] {
+            let line = match (f.side_a, f.side_b) {
+                (Some(a), _) => &lines1[a],
+                (None, Some(b)) => &lines2[b],
+                _ => continue,
+            };
+            writeln!(out, "{}{}: {}", f.marker, line.role, line.snippet)
+                .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        }
+    }
+    Ok(())
+}
+
+fn render_diff_json(
+    raw1: &str,
+    raw2: &str,
+    sess1: &Session,
+    sess2: &Session,
+    lines1: &[DiffLine],
+    lines2: &[DiffLine],
+    ops: &[DiffOp],
+) -> Result<(), ErrorEnvelope> {
+    let entries: Vec<serde_json::Value> = ops
+        .iter()
+        .map(|op| match op {
+            DiffOp::Same(a, b) => serde_json::json!({
+                "op": "same",
+                "role": lines1[*a].role,
+                "snippet": lines1[*a].snippet,
+                "turn_a": a + 1,
+                "turn_b": b + 1,
+            }),
+            DiffOp::Delete(a) => serde_json::json!({
+                "op": "delete",
+                "role": lines1[*a].role,
+                "snippet": lines1[*a].snippet,
+                "turn_a": a + 1,
+            }),
+            DiffOp::Insert(b) => serde_json::json!({
+                "op": "insert",
+                "role": lines2[*b].role,
+                "snippet": lines2[*b].snippet,
+                "turn_b": b + 1,
+            }),
+        })
+        .collect();
+
+    let payload = serde_json::json!({
+        "session1": {"ref": raw1, "started_at": sess1.started_at, "turns": lines1.len()},
+        "session2": {"ref": raw2, "started_at": sess2.started_at, "turns": lines2.len()},
+        "ops": entries,
+        "changed": ops.iter().filter(|o| !matches!(o, DiffOp::Same(_, _))).count(),
+        "same": ops.iter().filter(|o| matches!(o, DiffOp::Same(_, _))).count(),
+    });
+    use std::io::Write as _;
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    serde_json::to_writer(&mut out, &payload)
+        .map_err(|e| ErrorEnvelope::new("io-error", format!("json: {e}")))?;
+    writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
