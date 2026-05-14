@@ -1,6 +1,5 @@
 ---
 source: tests/snapshots.rs
-assertion_line: 102
 expression: render_to_text(&terminal)
 ---
 ╭ Sessions (5) ────────────────────╮╭ test-project • claude-sonnet-4-20250514 • 0k tok ────────────────────────────────╮
@@ -13,16 +12,18 @@ expression: render_to_text(&terminal)
 │    myapp                         ││ I'll fix the build error.                                                        │
 │                                  ││ ▶ Read main.rs ✔                                                                 │
 │  Gemini CLI  Apr 08              ││                                                                                  │
-│    test-project                  ││ Assistant   10:00:15                                                             │
-│    Explain how async/await works ││───╭ Filter ──────────────────────────────╮                                       │
-│                                  ││ He│Providers                             │                                       │
-│  Codex CLI  Apr 08               ││ ╭─│  ◉ Claude Code                       │                                       │
-│    (unknown project)             ││ │ │  ◉ Copilot CLI                       │                                       │
-│    Add error handling to the API ││ │ │  ◉ Gemini CLI                        │                                       │
-│                                  ││ │ │  ◉ Codex CLI                         │                                       │
-│  OpenCode  Apr 08                ││ ╰─│  ◉ OpenCode                          │                                       │
-│    dbproject                     ││ Th│  ◉ Cursor                            │                                       │
-│    Refactor database layer       ││   │                                      │                                       │
+│    test-project                  ││ As╭ Filter ──────────────────────────────╮                                       │
+│    Explain how async/await works ││───│Providers                             │                                       │
+│                                  ││ He│  ◉ Claude Code                       │                                       │
+│  Codex CLI  Apr 08               ││ ╭─│  ◉ Copilot CLI                       │                                       │
+│    (unknown project)             ││ │ │  ◉ Gemini CLI                        │                                       │
+│    Add error handling to the API ││ │ │  ◉ Codex CLI                         │                                       │
+│                                  ││ │ │  ◉ OpenCode                          │                                       │
+│  OpenCode  Apr 08                ││ ╰─│  ◉ Cursor                            │                                       │
+│    dbproject                     ││ Th│  ◉ Zed AI                            │                                       │
+│    Refactor database layer       ││   │  ◉ Cline                             │                                       │
+│                                  ││   │  ◉ Continue.dev                      │                                       │
+│                                  ││   │                                      │                                       │
 │                                  ││   │Filters                               │                                       │
 │                                  ││   │  Project: (any)                      │                                       │
 │                                  ││   │  From:    (any)                      │                                       │
@@ -31,8 +32,6 @@ expression: render_to_text(&terminal)
 │                                  ││   │  ◯ Has tool call                     │                                       │
 │                                  ││   │  ◯ Starred only                      │                                       │
 │                                  ││   ╰──────────────────────────────────────╯                                       │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
 │                                  ││                                                                                  │
