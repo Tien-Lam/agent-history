@@ -685,8 +685,9 @@ fn starred_only_filter_hides_unstarred_sessions() {
         // toggle which sits after all providers + 3 text fields + 2
         // message-level toggles (role, has-tool-call).
         KeyCode::Char('G'),    // GoToBottom is unmapped in Filter mode → no-op
-        // Walk down: 6 providers + 3 text fields + 2 message toggles = 11
-        // → press j 11 times.
+        // Walk down: 9 providers + 3 text fields + 2 message toggles = 14
+        // → press j 14 times.
+        KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
         KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
         KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
         KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
