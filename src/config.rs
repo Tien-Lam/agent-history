@@ -19,7 +19,7 @@ pub enum ConfigLoadError {
     Parse {
         path: PathBuf,
         #[source]
-        source: toml::de::Error,
+        source: Box<toml::de::Error>,
     },
 }
 
@@ -155,7 +155,7 @@ impl Config {
         let mut config: Self =
             toml::from_str(&contents).map_err(|source| ConfigLoadError::Parse {
                 path: path.to_path_buf(),
-                source,
+                source: Box::new(source),
             })?;
         config.normalize();
         Ok(config)
