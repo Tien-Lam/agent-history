@@ -1,4 +1,6 @@
 /target
 .aghist-index/
+.beads/
+.runtime/
 CLAUDE.local.md
 .claude/commands/
