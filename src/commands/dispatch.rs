@@ -1,6 +1,6 @@
 use super::super::cli::{
-    resolve_export_args, resolve_index_args, resolve_search_args, resolve_show_args, Cli, Command,
-    FilterArgs, SearchArgs, SourcesCommand,
+    resolve_export_args, resolve_index_args, resolve_show_args, Cli, Command, FilterArgs,
+    SourcesCommand,
 };
 use super::analysis::{
     decisions_command, threads_command, todos_command, track_command, DecisionsCommandRequest,
@@ -15,9 +15,7 @@ use super::install::{self_update, uninstall};
 use super::list::list_sessions;
 use super::metadata::{note_dispatch, star_command, stars_list, tag_dispatch, unstar_command};
 use super::reports::{project_command, report_command, usage_command};
-use super::search::{
-    search_command, search_watch_command, SearchCommandRequest, SearchWatchRequest,
-};
+use super::search_dispatch::{dispatch_search_command, SearchDispatchArgs, SearchDispatchMode};
 use super::show::show_command;
 use super::sources::{
     sources_add_remote, sources_command, sources_list_remote, sources_pull_remote,
@@ -225,7 +223,8 @@ fn dispatch_lookup_command(
             hybrid_weight,
             params,
         } => dispatch_search_command(
-            ctx,
+            ctx.providers,
+            ctx.filters,
             SearchDispatchArgs {
                 query,
                 query_file,
@@ -263,89 +262,6 @@ fn dispatch_lookup_command(
         } => diff_command(ctx.providers, &session1, &session2, context, json),
         _ => unreachable!("lookup dispatch received unrelated command"),
     }
-}
-
-struct SearchDispatchArgs {
-    query: Option<String>,
-    query_file: Option<std::path::PathBuf>,
-    stdin: bool,
-    limit: usize,
-    cursor: Option<String>,
-    json: bool,
-    hybrid_weight: f32,
-    params: Option<String>,
-    mode: SearchDispatchMode,
-}
-
-#[derive(Clone, Copy)]
-enum SearchDispatchMode {
-    Once { debug_search: bool },
-    Watch { interval_ms: u64, iterations: u32 },
-}
-
-fn dispatch_search_command(
-    ctx: &DispatchContext<'_>,
-    args: SearchDispatchArgs,
-) -> Result<i32, ErrorEnvelope> {
-    let filters = ctx.filters.to_search_filters();
-    let metadata_keys = resolve_metadata_filter(ctx.filters)?;
-    match args.mode {
-        SearchDispatchMode::Watch {
-            interval_ms,
-            iterations,
-        } => search_watch_command(
-            ctx.providers,
-            SearchWatchRequest {
-                query: args.query.as_deref(),
-                query_file: args.query_file.as_deref(),
-                stdin: args.stdin,
-                limit: args.limit,
-                interval_ms,
-                max_iterations: iterations,
-                filters: &filters,
-                metadata_keys: metadata_keys.as_ref(),
-            },
-        ),
-        SearchDispatchMode::Once { debug_search } => {
-            dispatch_one_shot_search(ctx, args, &filters, metadata_keys.as_ref(), debug_search)
-        }
-    }
-}
-
-fn dispatch_one_shot_search(
-    ctx: &DispatchContext<'_>,
-    args: SearchDispatchArgs,
-    filters: &aghist::search::SearchFilters,
-    metadata_keys: Option<&std::collections::HashSet<String>>,
-    debug_search: bool,
-) -> Result<i32, ErrorEnvelope> {
-    let resolved = resolve_search_args(
-        SearchArgs {
-            query: args.query,
-            query_file: args.query_file,
-            stdin: args.stdin,
-            limit: args.limit,
-            cursor: args.cursor,
-            json: args.json,
-            hybrid_weight: args.hybrid_weight,
-        },
-        args.params,
-    )?;
-    search_command(
-        ctx.providers,
-        SearchCommandRequest {
-            query: resolved.query.as_deref(),
-            query_file: resolved.query_file.as_deref(),
-            stdin: resolved.stdin,
-            limit: resolved.limit,
-            cursor: resolved.cursor.as_deref(),
-            force_json: resolved.json,
-            filters,
-            debug_search,
-            hybrid_weight: resolved.hybrid_weight,
-            metadata_keys,
-        },
-    )
 }
 
 fn dispatch_analysis_command(

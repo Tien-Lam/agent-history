@@ -10,6 +10,7 @@ pub mod list;
 pub mod metadata;
 pub mod reports;
 pub mod search;
+pub mod search_dispatch;
 pub mod show;
 pub mod sources;
 pub mod system;
