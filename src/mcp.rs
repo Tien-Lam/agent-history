@@ -45,6 +45,7 @@ mod protocol;
 mod resource_handlers;
 mod resources;
 mod server;
+mod tool_handlers;
 
 #[cfg(test)]
 mod tests;
