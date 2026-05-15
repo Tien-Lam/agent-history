@@ -4,6 +4,7 @@ mod document;
 mod fields;
 mod fingerprint;
 mod index;
+mod query;
 mod snippet;
 mod storage;
 pub mod types;
