@@ -40,6 +40,7 @@ const STORE_MAGIC: &[u8; 6] = b"AGEMB\0";
 /// content hash. Older stores must be evicted (caller deletes the file and
 /// builds a fresh one) — readers surface this as `SchemaMismatch`.
 const STORE_VERSION: u32 = 2;
+const MAX_STRING_FIELD_BYTES: usize = u32::MAX as usize;
 
 /// Length of a stored content hash. SHA-256 → 32 bytes.
 pub const HASH_LEN: usize = 32;
@@ -65,6 +66,12 @@ pub enum EmbedError {
     DimMismatch { stored: u32, got: usize },
     #[error("embedding store schema mismatch: file is v{stored}, expected v{expected}")]
     SchemaMismatch { stored: u32, expected: u32 },
+    #[error("embedding store field {field} is too large: {len} bytes exceeds {max}")]
+    FieldTooLarge {
+        field: &'static str,
+        len: usize,
+        max: usize,
+    },
     #[cfg(feature = "embeddings")]
     #[error("fastembed error: {0}")]
     Fastembed(String),
@@ -250,14 +257,14 @@ impl EmbeddingStore {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let bytes = self.encode();
+        let bytes = self.encode()?;
         let tmp = self.path.with_extension("bin.tmp");
         fs::write(&tmp, &bytes)?;
         fs::rename(&tmp, &self.path)?;
         Ok(())
     }
 
-    fn encode(&self) -> Vec<u8> {
+    fn encode(&self) -> Result<Vec<u8>, EmbedError> {
         let per_record = 4 + 32 + HASH_LEN + (self.dim as usize) * 4;
         let mut out = Vec::with_capacity(
             STORE_MAGIC.len() + 4 * 3 + self.model.len() + self.entries.len() * per_record,
@@ -266,7 +273,7 @@ impl EmbeddingStore {
         out.extend_from_slice(&STORE_VERSION.to_le_bytes());
         out.extend_from_slice(&self.dim.to_le_bytes());
         let model_bytes = self.model.as_bytes();
-        out.extend_from_slice(&u32_len(model_bytes).to_le_bytes());
+        out.extend_from_slice(&u32_len("model", model_bytes)?.to_le_bytes());
         out.extend_from_slice(model_bytes);
         // Stable order — sorting lets snapshots and fixture tests be deterministic.
         let mut ids: Vec<&String> = self.entries.keys().collect();
@@ -274,14 +281,14 @@ impl EmbeddingStore {
         for id in ids {
             let entry = &self.entries[id];
             let id_bytes = id.as_bytes();
-            out.extend_from_slice(&u32_len(id_bytes).to_le_bytes());
+            out.extend_from_slice(&u32_len("message key", id_bytes)?.to_le_bytes());
             out.extend_from_slice(id_bytes);
             out.extend_from_slice(&entry.hash);
             for f in &entry.vector {
                 out.extend_from_slice(&f.to_le_bytes());
             }
         }
-        out
+        Ok(out)
     }
 
     fn decode(path: &Path, bytes: &[u8]) -> Result<Self, EmbedError> {
@@ -338,8 +345,16 @@ impl EmbeddingStore {
     }
 }
 
-fn u32_len(bytes: &[u8]) -> u32 {
-    u32::try_from(bytes.len()).expect("string field length fits in u32")
+fn u32_len(field: &'static str, bytes: &[u8]) -> Result<u32, EmbedError> {
+    checked_field_len(field, bytes.len())
+}
+
+fn checked_field_len(field: &'static str, len: usize) -> Result<u32, EmbedError> {
+    u32::try_from(len).map_err(|_| EmbedError::FieldTooLarge {
+        field,
+        len,
+        max: MAX_STRING_FIELD_BYTES,
+    })
 }
 
 struct Cursor<'a> {
@@ -552,6 +567,27 @@ mod tests {
             .upsert("msg", content_hash("x"), vec![0.1, 0.2])
             .unwrap_err();
         assert!(matches!(err, EmbedError::DimMismatch { stored: 4, got: 2 }));
+    }
+
+    #[test]
+    fn checked_field_len_rejects_values_outside_store_format() {
+        assert_eq!(
+            checked_field_len("model", MAX_STRING_FIELD_BYTES).unwrap(),
+            u32::MAX
+        );
+
+        let Some(too_large) = MAX_STRING_FIELD_BYTES.checked_add(1) else {
+            return;
+        };
+        let err = checked_field_len("message key", too_large).unwrap_err();
+        assert!(matches!(
+            err,
+            EmbedError::FieldTooLarge {
+                field: "message key",
+                len,
+                max: MAX_STRING_FIELD_BYTES,
+            } if len == too_large
+        ));
     }
 
     #[test]
