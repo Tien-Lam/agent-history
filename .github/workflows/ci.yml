@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -59,6 +63,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: all-features
+          cache-targets: false
+          save-if: false
 
       - name: Clippy all-features
         run: cargo clippy --all-targets --all-features -- -D warnings
