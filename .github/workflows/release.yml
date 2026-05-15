@@ -47,7 +47,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --features self-update --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'

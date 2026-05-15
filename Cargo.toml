@@ -35,17 +35,18 @@ rusqlite_migration = "2.5.0"
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 
 [target.'cfg(not(windows))'.dependencies]
-self_update = { version = "0.42", default-features = false, features = [
+self_update = { version = "0.42", optional = true, default-features = false, features = [
     "archive-tar", "compression-flate2", "rustls",
 ] }
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.42", default-features = false, features = [
+self_update = { version = "0.42", optional = true, default-features = false, features = [
     "archive-zip", "compression-zip-deflate", "rustls",
 ] }
 
 [features]
 default = []
+self-update = ["dep:self_update"]
 # Opt-in semantic-search support: pulls in fastembed (~ONNX runtime + tokenizers).
 # Off by default to keep clean builds fast and binaries small. The runtime
 # `--accept-download` flag for `aghist index` only works when this is compiled in.

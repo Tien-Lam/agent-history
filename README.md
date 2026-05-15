@@ -68,13 +68,21 @@ Download the latest release for your platform from [GitHub Releases](https://git
 aghist update
 ```
 
+`aghist update` is for GitHub release binaries installed by the shell script or
+manual download. If you installed with `cargo-binstall`, run
+`cargo binstall aghist --force`; if you installed from source, run
+`cargo install --git https://github.com/Tien-Lam/agent-history.git --force`.
+Package-manager installs should be updated with the package manager.
+
 ### Uninstalling
 
 ```sh
 aghist uninstall
 ```
 
-Removes the binary, search index, and configuration.
+Removes a self-managed release binary, search index, and configuration. For
+Cargo or package-manager installs, uninstall the binary with that installer and
+remove the data directories manually if desired.
 
 ## Usage
 

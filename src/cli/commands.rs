@@ -588,9 +588,9 @@ pub(crate) enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Update aghist to the latest release
+    /// Update a self-managed release binary to the latest GitHub release
     Update,
-    /// Remove aghist binary and data
+    /// Remove a self-managed release binary and data
     Uninstall,
 }
 

@@ -39,3 +39,4 @@ jobs:
       - name: Verify binary
         run: |
           "$RUNNER_TEMP/bin/aghist" --version
+          test -f "$RUNNER_TEMP/bin/aghist.install"

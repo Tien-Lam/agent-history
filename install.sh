@@ -89,17 +89,32 @@ case "$EXT" in
 esac
 
 # Install
+case "$TARGET" in
+    *-windows-*) BIN_FILE="$BINARY.exe" ;;
+    *)           BIN_FILE="$BINARY" ;;
+esac
+
+MARKER_TMP="$TMPDIR/$BINARY.install"
+cat > "$MARKER_TMP" <<EOF
+method=github-release
+repo=$REPO
+target=$TARGET
+tag=$TAG
+EOF
+
 mkdir -p "$INSTALL_DIR"
 if [ -w "$INSTALL_DIR" ]; then
-    cp -f "$TMPDIR/$BINARY" "$INSTALL_DIR/$BINARY"
-    chmod +x "$INSTALL_DIR/$BINARY"
+    cp -f "$TMPDIR/$BIN_FILE" "$INSTALL_DIR/$BIN_FILE"
+    chmod +x "$INSTALL_DIR/$BIN_FILE"
+    cp -f "$MARKER_TMP" "$INSTALL_DIR/$BINARY.install"
 else
     echo "Elevating permissions to install to $INSTALL_DIR"
-    sudo cp -f "$TMPDIR/$BINARY" "$INSTALL_DIR/$BINARY"
-    sudo chmod +x "$INSTALL_DIR/$BINARY"
+    sudo cp -f "$TMPDIR/$BIN_FILE" "$INSTALL_DIR/$BIN_FILE"
+    sudo chmod +x "$INSTALL_DIR/$BIN_FILE"
+    sudo cp -f "$MARKER_TMP" "$INSTALL_DIR/$BINARY.install"
 fi
 
-echo "Installed $BINARY $TAG to $INSTALL_DIR/$BINARY"
+echo "Installed $BINARY $TAG to $INSTALL_DIR/$BIN_FILE"
 
 # Check PATH
 case ":${PATH}:" in
