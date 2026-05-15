@@ -42,6 +42,7 @@
 mod args;
 mod payload;
 mod protocol;
+mod resource_handlers;
 mod resources;
 mod server;
 
