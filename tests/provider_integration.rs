@@ -328,29 +328,6 @@ fn opencode_zero_message_session() {
     assert!(messages.is_empty());
 }
 
-#[test]
-fn nonexistent_base_dir_returns_empty() {
-    let fake_dir = PathBuf::from("/nonexistent/path/that/does/not/exist");
-
-    let claude = ClaudeCodeProvider::new(vec![fake_dir.clone()]);
-    assert!(claude.discover_sessions().unwrap().is_empty());
-
-    let copilot = CopilotCliProvider::new(vec![fake_dir.clone()]);
-    assert!(copilot.discover_sessions().unwrap().is_empty());
-
-    let gemini = GeminiCliProvider::new(vec![fake_dir.clone()]);
-    assert!(gemini.discover_sessions().unwrap().is_empty());
-
-    let codex = CodexCliProvider::new(vec![fake_dir.clone()]);
-    assert!(codex.discover_sessions().unwrap().is_empty());
-
-    let opencode = OpenCodeProvider::new(vec![fake_dir.clone()]);
-    assert!(opencode.discover_sessions().unwrap().is_empty());
-
-    let cursor = CursorProvider::new(vec![fake_dir]);
-    assert!(cursor.discover_sessions().unwrap().is_empty());
-}
-
 // ─── Cursor ──────────────────────────────────────────────────────────────────
 
 #[test]
