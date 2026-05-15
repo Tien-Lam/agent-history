@@ -1,4 +1,5 @@
 mod input;
+mod output;
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, IsTerminal, Write};
@@ -13,8 +14,8 @@ use aghist::{config, federated, provider};
 
 use super::filtering::{session_metadata_key, strip_turn_suffix};
 use super::metadata::try_index_notes;
-use super::text::truncate;
 use input::{decode_search_cursor, resolve_nonempty_search_query, resolve_search_query};
+use output::{print_search_json, print_search_table, write_watch_hit};
 
 #[cfg(feature = "embeddings")]
 fn try_hybrid_search(
@@ -429,167 +430,6 @@ pub(crate) fn federated_discovery_for_search(
     result
 }
 
-fn print_search_json(
-    hits: &[(search::SearchHit, Option<search::Explanation>)],
-    sessions: &HashMap<String, &Session>,
-    source_by_session: &HashMap<String, String>,
-    hit_refs: &HashMap<String, String>,
-    total: usize,
-    next_cursor: Option<&str>,
-    engine: &str,
-) -> std::io::Result<()> {
-    #[derive(serde::Serialize)]
-    struct JsonHit<'a> {
-        kind: &'static str,
-        session_id: &'a str,
-        message_id: &'a str,
-        score: f32,
-        snippet: &'a str,
-        provider: Option<aghist::model::Provider>,
-        project: Option<&'a str>,
-        started_at: Option<chrono::DateTime<chrono::Utc>>,
-        source: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        note_id: Option<i64>,
-        #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
-        ref_: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        explanation: Option<&'a search::Explanation>,
-    }
-
-    let rows: Vec<JsonHit> = hits
-        .iter()
-        .map(|(h, explain)| match h.kind {
-            search::HitKind::Note => JsonHit {
-                kind: search::HitKind::Note.slug(),
-                session_id: &h.session_id,
-                message_id: &h.message_id,
-                score: h.score,
-                snippet: &h.snippet,
-                provider: None,
-                project: None,
-                started_at: None,
-                source: federated::LOCAL_SOURCE,
-                note_id: h.note_id,
-                ref_: h.note_session_ref.as_deref(),
-                explanation: explain.as_ref(),
-            },
-            search::HitKind::Message => {
-                let session = sessions.get(h.session_key.as_str()).copied();
-                let source = source_by_session
-                    .get(h.session_key.as_str())
-                    .map_or(federated::LOCAL_SOURCE, String::as_str);
-                JsonHit {
-                    kind: search::HitKind::Message.slug(),
-                    session_id: &h.session_id,
-                    message_id: &h.message_id,
-                    score: h.score,
-                    snippet: &h.snippet,
-                    provider: session.map(|s| s.provider),
-                    project: session.and_then(|s| s.project_name.as_deref()),
-                    started_at: session.map(|s| s.started_at),
-                    source,
-                    note_id: None,
-                    ref_: hit_refs.get(&h.message_key).map(String::as_str),
-                    explanation: explain.as_ref(),
-                }
-            }
-        })
-        .collect();
-
-    let doc = serde_json::json!({
-        "hits": rows,
-        "meta": { "next_cursor": next_cursor, "total": total, "engine": engine },
-    });
-    serde_json::to_writer(io::stdout().lock(), &doc)?;
-    println!();
-    Ok(())
-}
-
-fn print_search_table(
-    hits: &[(search::SearchHit, Option<search::Explanation>)],
-    sessions: &HashMap<String, &Session>,
-    source_by_session: &HashMap<String, String>,
-    next_cursor: Option<&str>,
-) {
-    let any_remote = hits.iter().any(|(h, _)| {
-        source_by_session
-            .get(h.session_key.as_str())
-            .is_some_and(|s| s != federated::LOCAL_SOURCE)
-    });
-
-    if any_remote {
-        println!(
-            "{:<6}  {:<16}  {:<12}  {:<20}  {:<10}  {:<14}  SNIPPET",
-            "SCORE", "STARTED", "PROVIDER", "PROJECT", "SOURCE", "SESSION"
-        );
-    } else {
-        println!(
-            "{:<6}  {:<16}  {:<12}  {:<20}  {:<14}  SNIPPET",
-            "SCORE", "STARTED", "PROVIDER", "PROJECT", "SESSION"
-        );
-    }
-    for (h, explain) in hits {
-        let is_note = matches!(h.kind, search::HitKind::Note);
-        let session = sessions.get(h.session_key.as_str()).copied();
-        let started = if is_note {
-            String::new()
-        } else {
-            session
-                .map(|s| s.started_at.format("%Y-%m-%d %H:%M").to_string())
-                .unwrap_or_default()
-        };
-        let provider = if is_note {
-            "note"
-        } else {
-            session.map_or("", |s| s.provider.as_str())
-        };
-        let project_owned = if is_note {
-            h.note_session_ref
-                .as_deref()
-                .map(|r| strip_turn_suffix(r).to_string())
-                .unwrap_or_default()
-        } else {
-            session
-                .and_then(|s| s.project_name.as_deref())
-                .unwrap_or("")
-                .to_string()
-        };
-        let project = truncate(&project_owned, 20);
-        let session_label = if is_note {
-            h.note_id
-                .map_or_else(String::new, |id| format!("note#{id}"))
-        } else {
-            h.session_id.clone()
-        };
-        let session_short = truncate(&session_label, 14);
-        let snippet = truncate(&h.snippet, 80);
-        if any_remote {
-            let source = source_by_session
-                .get(h.session_key.as_str())
-                .map_or(federated::LOCAL_SOURCE, String::as_str);
-            let source = truncate(source, 10);
-            println!(
-                "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<10}  {:<14}  {}",
-                h.score, started, provider, project, source, session_short, snippet
-            );
-        } else {
-            println!(
-                "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<14}  {}",
-                h.score, started, provider, project, session_short, snippet
-            );
-        }
-        if let Some(explanation) = explain {
-            for line in explanation.to_pretty_json().lines() {
-                println!("    {line}");
-            }
-        }
-    }
-    if let Some(token) = next_cursor {
-        println!("\n(more results — pass --cursor {token} for the next page)");
-    }
-}
-
 pub(crate) fn search_watch_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     request: SearchWatchRequest<'_>,
@@ -692,66 +532,4 @@ pub(crate) struct SearchWatchRequest<'a> {
     pub(crate) max_iterations: u32,
     pub(crate) filters: &'a SearchFilters,
     pub(crate) metadata_keys: Option<&'a HashSet<String>>,
-}
-
-fn write_watch_hit<W: Write>(
-    out: &mut W,
-    hit: &search::SearchHit,
-    sessions: &HashMap<String, &Session>,
-    source_by_session: &HashMap<String, String>,
-) -> std::io::Result<()> {
-    #[derive(serde::Serialize)]
-    struct JsonHit<'a> {
-        kind: &'static str,
-        session_id: &'a str,
-        message_id: &'a str,
-        score: f32,
-        snippet: &'a str,
-        provider: Option<aghist::model::Provider>,
-        project: Option<&'a str>,
-        started_at: Option<chrono::DateTime<chrono::Utc>>,
-        source: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        note_id: Option<i64>,
-        #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
-        ref_: Option<&'a str>,
-    }
-
-    let row = match hit.kind {
-        search::HitKind::Note => JsonHit {
-            kind: search::HitKind::Note.slug(),
-            session_id: &hit.session_id,
-            message_id: &hit.message_id,
-            score: hit.score,
-            snippet: &hit.snippet,
-            provider: None,
-            project: None,
-            started_at: None,
-            source: federated::LOCAL_SOURCE,
-            note_id: hit.note_id,
-            ref_: hit.note_session_ref.as_deref(),
-        },
-        search::HitKind::Message => {
-            let session = sessions.get(hit.session_key.as_str()).copied();
-            let source = source_by_session
-                .get(hit.session_key.as_str())
-                .map_or(federated::LOCAL_SOURCE, String::as_str);
-            JsonHit {
-                kind: search::HitKind::Message.slug(),
-                session_id: &hit.session_id,
-                message_id: &hit.message_id,
-                score: hit.score,
-                snippet: &hit.snippet,
-                provider: session.map(|s| s.provider),
-                project: session.and_then(|s| s.project_name.as_deref()),
-                started_at: session.map(|s| s.started_at),
-                source,
-                note_id: None,
-                ref_: None,
-            }
-        }
-    };
-    serde_json::to_writer(&mut *out, &row)?;
-    out.write_all(b"\n")?;
-    Ok(())
 }
