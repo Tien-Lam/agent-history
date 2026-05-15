@@ -1,0 +1,43 @@
+[graph]
+all-features = true
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+]
+
+[advisories]
+yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2024-0320", reason = "Transitive via syntect; no direct YAML parsing through yaml-rust." },
+    { id = "RUSTSEC-2024-0436", reason = "Transitive via optional fastembed/tokenizers; no patched upstream path yet." },
+    { id = "RUSTSEC-2025-0119", reason = "Transitive via self_update/indicatif; no patched upstream path yet." },
+    { id = "RUSTSEC-2025-0141", reason = "Transitive via syntect; bincode advisory is unmaintained, not a vulnerability." },
+]
+
+[licenses]
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
