@@ -1,0 +1,157 @@
+use std::io::{self, IsTerminal};
+
+use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
+use aghist::model::ContentBlock;
+use aghist::provider;
+
+use crate::cli::FilterArgs;
+use crate::commands::text::truncate;
+
+use super::common::map_llm_error;
+
+// ── track command ─────────────────────────────────────────────────────────────
+
+/// Scan all providers for sessions mentioning `topic`, returning up to `limit` with excerpts.
+fn scan_topic_sessions(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    topic: &str,
+    limit: usize,
+) -> Vec<aghist::llm::TrackSession> {
+    let needle = topic.to_lowercase();
+    let mut matched: Vec<aghist::llm::TrackSession> = Vec::new();
+
+    'outer: for p in providers {
+        if let Some(want) = filters.provider {
+            if p.provider() != want {
+                continue;
+            }
+        }
+        let Ok(sessions) = p.discover_sessions() else {
+            continue;
+        };
+        for session in sessions {
+            if limit > 0 && matched.len() >= limit {
+                break 'outer;
+            }
+            if filters.since.is_some_and(|s| session.started_at < s)
+                || filters.until.is_some_and(|u| session.started_at > u)
+            {
+                continue;
+            }
+            if let Some(ref proj) = filters.project {
+                let name = session.project_name.as_deref().unwrap_or("");
+                if !name.to_lowercase().contains(&proj.to_lowercase()) {
+                    continue;
+                }
+            }
+            let Ok(messages) = p.load_messages(&session) else {
+                continue;
+            };
+            let mut excerpts: Vec<String> = Vec::new();
+            for msg in &messages {
+                if excerpts.len() >= 3 {
+                    break;
+                }
+                for block in &msg.content {
+                    if let ContentBlock::Text(t) = block {
+                        if t.to_lowercase().contains(&needle) {
+                            let snippet = t.trim();
+                            let short = if snippet.chars().count() > 200 {
+                                format!("{}…", snippet.chars().take(199).collect::<String>())
+                            } else {
+                                snippet.to_string()
+                            };
+                            excerpts.push(short);
+                            break;
+                        }
+                    }
+                }
+            }
+            if excerpts.is_empty() {
+                continue;
+            }
+            matched.push(aghist::llm::TrackSession {
+                provider: p.provider(),
+                session_id: session.id.clone(),
+                started_at: session.started_at,
+                excerpts,
+            });
+        }
+    }
+    matched
+}
+
+pub(crate) fn track_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    topic: &str,
+    limit: usize,
+    force_json: bool,
+    llm_model: Option<&str>,
+) -> Result<i32, ErrorEnvelope> {
+    use std::io::Write as _;
+    let mut matched = scan_topic_sessions(providers, filters, topic, limit);
+
+    if matched.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    matched.sort_by_key(|s| s.started_at);
+
+    let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
+    if let Some(model) = llm_model {
+        config = config.with_model(model.to_string());
+    }
+    let transport = aghist::llm::UreqTransport::new(config.timeout);
+
+    let events = aghist::llm::extract_track(&transport, &config, topic, &matched)
+        .map_err(|e| map_llm_error(&e))?;
+
+    if events.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    if want_json {
+        let payload = serde_json::json!({
+            "topic": topic,
+            "sessions_scanned": matched.len(),
+            "timeline": events,
+        });
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+        serde_json::to_writer(&mut out, &payload)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("json: {e}")))?;
+        writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+    } else {
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+        writeln!(out, "Topic: {topic}")
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(out, "Sessions scanned: {}", matched.len())
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(
+            out,
+            "{:<10}  {:<42}  {:<12}  EVENT",
+            "DATE", "REF", "DIRECTION"
+        )
+        .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        for ev in &events {
+            let ref_short = truncate(&ev.session_ref, 42);
+            let event_short = truncate(&ev.event, 80);
+            writeln!(
+                out,
+                "{:<10}  {:<42}  {:<12}  {}",
+                ev.date, ref_short, ev.direction, event_short
+            )
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        }
+        writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(out, "Total: {} event(s)", events.len())
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+    }
+
+    Ok(EXIT_OK)
+}
