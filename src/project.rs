@@ -20,7 +20,7 @@ use crate::decisions::{self, DEFAULT_THRESHOLD as DECISIONS_THRESHOLD};
 use crate::model::{ContentBlock, Message, Provider, Session, ToolCall};
 use crate::threads::{self, ClusterOptions, Thread, DEFAULT_GAP_HOURS};
 use crate::todos::{self, TodoCandidate, TodoKind};
-use crate::usage::pricing_for;
+use crate::usage::{pricing_for, round_cents_4};
 
 /// Per-section caps. Zero means "no cap" for the corresponding section.
 #[derive(Debug, Clone, Copy)]
@@ -287,10 +287,6 @@ pub fn aggregate_tokens(sessions: &[(Session, Vec<Message>)]) -> ProjectTokens {
         Some(round_cents_4(cost))
     };
     t
-}
-
-fn round_cents_4(v: f64) -> f64 {
-    (v * 10_000.0).round() / 10_000.0
 }
 
 fn collect_projects(sessions: &[(Session, Vec<Message>)]) -> Vec<String> {

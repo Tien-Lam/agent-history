@@ -357,7 +357,7 @@ impl BucketAcc {
 /// totals over many sessions accumulate sub-cent fractions — rounding
 /// at emit-time keeps the JSON readable without losing precision a
 /// user would notice.
-fn round_cents_4(v: f64) -> f64 {
+pub(crate) fn round_cents_4(v: f64) -> f64 {
     (v * 10_000.0).round() / 10_000.0
 }
 

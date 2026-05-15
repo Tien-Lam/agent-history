@@ -19,7 +19,7 @@ use crate::project::{
     aggregate_tokens, collect_decisions, collect_todos, DecisionRow, ProjectTokens, TodoRow,
 };
 use crate::threads::{self, ClusterOptions, Thread, DEFAULT_GAP_HOURS};
-use crate::usage::pricing_for;
+use crate::usage::{pricing_for, round_cents_4};
 
 /// Per-section caps. Zero means "no cap" for the corresponding section.
 #[derive(Debug, Clone, Copy)]
@@ -303,10 +303,6 @@ fn activity_for(project: String, group: &[&(Session, Vec<Message>)]) -> ProjectA
             Some(round_cents_4(cost))
         },
     }
-}
-
-fn round_cents_4(v: f64) -> f64 {
-    (v * 10_000.0).round() / 10_000.0
 }
 
 /// Render the report as a Markdown document suitable for pasting into a
