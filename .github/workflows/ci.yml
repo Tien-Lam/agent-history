@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -16,18 +19,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-2025]
         toolchain: [stable]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-          components: clippy
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --check
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
@@ -37,3 +44,24 @@ jobs:
 
       - name: Build release
         run: cargo build --release
+
+  all-features:
+    name: ubuntu-latest / stable / all-features
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: all-features
+
+      - name: Clippy all-features
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test all-features lib and bins
+        run: cargo test --all-features --lib --bins
