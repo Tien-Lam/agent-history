@@ -1,3 +1,6 @@
+#[cfg(feature = "embeddings")]
+use std::{collections::HashSet, path::Path};
+
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 #[cfg(feature = "embeddings")]
 use aghist::embed;
@@ -132,40 +135,15 @@ fn run_embeddings(
         }
     };
 
-    let cache_dir = index_dir.join("models");
-    let mut embedder = embed::Embedder::try_new(&cache_dir).map_err(|e| {
-        ErrorEnvelope::new("embed-error", format!("failed to initialise embedder: {e}"))
-    })?;
-
-    // On a schema bump (STORE_VERSION mismatch), evict the old sidecar and
-    // start fresh - the alternative would be to refuse to reindex, which is
-    // worse UX than transparently rebuilding. We surface the eviction so it's
-    // visible in the JSON summary.
-    let mut evicted_old_schema = false;
-    let mut store = match embed::EmbeddingStore::open(index_dir) {
-        Ok(Some(s)) => s,
-        Ok(None) => embed::EmbeddingStore::create(index_dir, embedder.model_slug(), embedder.dim()),
-        Err(embed::EmbedError::SchemaMismatch { .. }) => {
-            embed::EmbeddingStore::evict(index_dir).map_err(|e| {
-                ErrorEnvelope::new(
-                    "embed-error",
-                    format!("failed to evict outdated embedding store: {e}"),
-                )
-            })?;
-            evicted_old_schema = true;
-            embed::EmbeddingStore::create(index_dir, embedder.model_slug(), embedder.dim())
-        }
-        Err(e) => {
-            return Err(ErrorEnvelope::new(
-                "embed-error",
-                format!("failed to open embedding store: {e}"),
-            ));
-        }
-    };
+    let (mut store, evicted_old_schema) = open_embedding_store(index_dir)?;
 
     let mut errors: Vec<String> = Vec::new();
     let mut messages_embedded = 0usize;
     let mut messages_reused = 0usize;
+    let mut live_keys = HashSet::new();
+    let mut skipped_prune_due_to_load_error = false;
+    let cache_dir = index_dir.join("models");
+    let mut embedder: Option<embed::Embedder> = None;
 
     for session in sessions {
         let Some(provider) = providers.iter().find(|p| p.provider() == session.provider) else {
@@ -175,36 +153,32 @@ fn run_embeddings(
             Ok(m) => m,
             Err(e) => {
                 errors.push(format!("{}: {e}", session.id.0));
+                skipped_prune_due_to_load_error = true;
                 continue;
             }
         };
 
-        // (id, text, content_hash) for messages whose cached vector is stale
-        // or absent. We compute the hash up front so the freshness check is a
-        // cheap byte compare against what's in the store.
-        let pending: Vec<(String, String, [u8; embed::HASH_LEN])> = messages
-            .iter()
-            .enumerate()
-            .filter_map(|(turn_index, m)| {
-                let text = collect_text(m);
-                if text.trim().is_empty() {
-                    return None;
-                }
-                let hash = embed::content_hash(&text);
-                let message_key = session.message_key(turn_index, &m.id.0);
-                if store.get_if_fresh(&message_key, &hash).is_some() {
-                    messages_reused += 1;
-                    return None;
-                }
-                Some((message_key, text, hash))
-            })
-            .collect();
+        let pending = pending_embeddings(
+            session,
+            &messages,
+            &store,
+            &mut live_keys,
+            &mut messages_reused,
+        );
 
         if pending.is_empty() {
             continue;
         }
 
         let texts: Vec<String> = pending.iter().map(|(_, t, _)| t.clone()).collect();
+        if embedder.is_none() {
+            embedder = Some(embed::Embedder::try_new(&cache_dir).map_err(|e| {
+                ErrorEnvelope::new("embed-error", format!("failed to initialise embedder: {e}"))
+            })?);
+        }
+        let Some(embedder) = embedder.as_mut() else {
+            unreachable!("embedder was initialised above");
+        };
         match embedder.embed_batch(&texts) {
             Ok(vectors) => {
                 for ((message_key, _, hash), vec) in pending.into_iter().zip(vectors) {
@@ -219,6 +193,12 @@ fn run_embeddings(
         }
     }
 
+    let messages_pruned_from_store = if skipped_prune_due_to_load_error {
+        0
+    } else {
+        store.retain_keys(&live_keys)
+    };
+
     store.flush().map_err(|e| {
         ErrorEnvelope::new("embed-error", format!("failed to persist embeddings: {e}"))
     })?;
@@ -229,11 +209,76 @@ fn run_embeddings(
         "dim": store.dim(),
         "messages_embedded": messages_embedded,
         "messages_reused_from_cache": messages_reused,
+        "messages_pruned_from_store": messages_pruned_from_store,
         "messages_total_in_store": store.len(),
         "evicted_old_schema": evicted_old_schema,
         "consent_accepted_at": consent.accepted_at,
         "errors": errors,
     }))
+}
+
+#[cfg(feature = "embeddings")]
+type PendingEmbedding = (String, String, [u8; embed::HASH_LEN]);
+
+#[cfg(feature = "embeddings")]
+fn open_embedding_store(index_dir: &Path) -> Result<(embed::EmbeddingStore, bool), ErrorEnvelope> {
+    // On a schema bump (STORE_VERSION mismatch), evict the old sidecar and
+    // start fresh. Refusing to reindex would be worse UX than transparently
+    // rebuilding, and the JSON summary still surfaces the eviction.
+    match embed::EmbeddingStore::open(index_dir) {
+        Ok(Some(store)) => Ok((store, false)),
+        Ok(None) => Ok((
+            embed::EmbeddingStore::create(index_dir, embed::DEFAULT_MODEL, embed::DEFAULT_DIM),
+            false,
+        )),
+        Err(embed::EmbedError::SchemaMismatch { .. }) => {
+            embed::EmbeddingStore::evict(index_dir).map_err(|e| {
+                ErrorEnvelope::new(
+                    "embed-error",
+                    format!("failed to evict outdated embedding store: {e}"),
+                )
+            })?;
+            Ok((
+                embed::EmbeddingStore::create(index_dir, embed::DEFAULT_MODEL, embed::DEFAULT_DIM),
+                true,
+            ))
+        }
+        Err(e) => Err(ErrorEnvelope::new(
+            "embed-error",
+            format!("failed to open embedding store: {e}"),
+        )),
+    }
+}
+
+#[cfg(feature = "embeddings")]
+fn pending_embeddings(
+    session: &Session,
+    messages: &[aghist::model::Message],
+    store: &embed::EmbeddingStore,
+    live_keys: &mut HashSet<String>,
+    messages_reused: &mut usize,
+) -> Vec<PendingEmbedding> {
+    // (id, text, content_hash) for messages whose cached vector is stale or
+    // absent. We compute the hash up front so the freshness check is a cheap
+    // byte compare against what's in the store.
+    messages
+        .iter()
+        .enumerate()
+        .filter_map(|(turn_index, m)| {
+            let text = collect_text(m);
+            if text.trim().is_empty() {
+                return None;
+            }
+            let hash = embed::content_hash(&text);
+            let message_key = session.message_key(turn_index, &m.id.0);
+            live_keys.insert(message_key.clone());
+            if store.get_if_fresh(&message_key, &hash).is_some() {
+                *messages_reused += 1;
+                return None;
+            }
+            Some((message_key, text, hash))
+        })
+        .collect()
 }
 
 #[cfg(feature = "embeddings")]

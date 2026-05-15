@@ -17,7 +17,7 @@
 //! re-embedded on the next index pass. A bumped `STORE_VERSION` evicts the
 //! whole sidecar — readers treat older versions as a schema mismatch.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -235,6 +235,14 @@ impl EmbeddingStore {
         }
     }
 
+    /// Drop entries whose message keys are no longer present in the lexical
+    /// index source set. Returns the number of removed vectors.
+    pub fn retain_keys(&mut self, live_keys: &HashSet<String>) -> usize {
+        let before = self.entries.len();
+        self.entries.retain(|key, _| live_keys.contains(key));
+        before - self.entries.len()
+    }
+
     /// Atomically rewrite the sidecar with the current contents. Writes to a
     /// `.tmp` file first, then renames — so a crash mid-write can't corrupt
     /// an existing store.
@@ -427,13 +435,13 @@ mod feature_gated {
         }
 
         /// Embed a batch of texts. Long inputs are truncated by fastembed's
-        /// tokenizer (~256 tokens for MiniLM); we accept that lossiness for v1.
+        /// tokenizer (~256 tokens for `MiniLM`); we accept that lossiness for v1.
         pub fn embed_batch(&mut self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedError> {
             if texts.is_empty() {
                 return Ok(Vec::new());
             }
             self.inner
-                .embed(texts.to_vec(), None)
+                .embed(texts, None)
                 .map_err(|e| EmbedError::Fastembed(e.to_string()))
         }
     }
@@ -514,6 +522,26 @@ mod tests {
             store.get_if_fresh("msg", &updated),
             Some([0.5f32, 0.6, 0.7, 0.8].as_slice())
         );
+    }
+
+    #[test]
+    fn retain_keys_prunes_stale_vectors() {
+        let dir = tempdir().unwrap();
+        let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
+        let hash = content_hash("same");
+        store
+            .upsert("keep", hash, vec![1.0, 2.0, 3.0, 4.0])
+            .unwrap();
+        store
+            .upsert("drop", hash, vec![5.0, 6.0, 7.0, 8.0])
+            .unwrap();
+
+        let live = HashSet::from(["keep".to_string()]);
+
+        assert_eq!(store.retain_keys(&live), 1);
+        assert!(store.get("keep").is_some());
+        assert!(store.get("drop").is_none());
+        assert_eq!(store.retain_keys(&live), 0);
     }
 
     #[test]

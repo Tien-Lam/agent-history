@@ -2,66 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use aghist::cli_error::ErrorEnvelope;
-#[cfg(feature = "embeddings")]
 use aghist::embed;
 use aghist::model::Session;
 use aghist::search::{self, SearchFilters};
 
 use super::super::filtering::{session_metadata_key, strip_turn_suffix};
 use super::SearchHitRow;
-
-#[cfg(feature = "embeddings")]
-fn try_hybrid_search(
-    index_dir: &Path,
-    index: &search::SearchIndex,
-    query: &str,
-    pool_size: usize,
-    filters: &SearchFilters,
-    hybrid_weight: f32,
-) -> Result<Option<Vec<search::SearchHit>>, ErrorEnvelope> {
-    if embed::Consent::load(index_dir).is_none() {
-        return Ok(None);
-    }
-    let store = match embed::EmbeddingStore::open(index_dir) {
-        Ok(Some(s)) if !s.is_empty() => s,
-        _ => return Ok(None),
-    };
-    let cache_dir = index_dir.join("models");
-    let Ok(mut embedder) = embed::Embedder::try_new(&cache_dir) else {
-        return Ok(None);
-    };
-    let q_vec = match embedder.embed_batch(&[query.to_string()]) {
-        Ok(mut v) if !v.is_empty() => v.swap_remove(0),
-        _ => return Ok(None),
-    };
-
-    let mut ranked: Vec<(String, f32)> = store
-        .iter()
-        .map(|(id, vec)| (id.to_string(), search::cosine_similarity(&q_vec, vec)))
-        .collect();
-    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    ranked.truncate(pool_size);
-    let candidates: Vec<search::SemanticCandidate> = ranked
-        .into_iter()
-        .map(|(message_key, similarity)| search::SemanticCandidate {
-            message_key,
-            message_id: String::new(),
-            similarity,
-        })
-        .collect();
-
-    let hits = index
-        .search_hybrid(
-            query,
-            &candidates,
-            pool_size,
-            filters,
-            hybrid_weight,
-            pool_size,
-        )
-        .map_err(|e| ErrorEnvelope::new("index-error", format!("hybrid search failed: {e}")))?;
-    Ok(Some(hits))
-}
 
 pub(super) fn raw_search_hits(
     index_dir: &Path,
@@ -72,15 +18,9 @@ pub(super) fn raw_search_hits(
     debug_search: bool,
     hybrid_weight: f32,
 ) -> Result<(Vec<SearchHitRow>, &'static str), ErrorEnvelope> {
-    #[cfg(feature = "embeddings")]
-    let hybrid_hits: Option<Vec<search::SearchHit>> = if hybrid_weight > 0.0 {
-        try_hybrid_search(index_dir, index, query, pool_size, filters, hybrid_weight)?
+    let hybrid_hits = if hybrid_weight > 0.0 {
+        embed::try_hybrid_search(index_dir, index, query, pool_size, filters, hybrid_weight)
     } else {
-        None
-    };
-    #[cfg(not(feature = "embeddings"))]
-    let hybrid_hits: Option<Vec<search::SearchHit>> = {
-        let _ = (index_dir, hybrid_weight);
         None
     };
 
