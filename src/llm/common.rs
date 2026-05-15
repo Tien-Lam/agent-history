@@ -126,22 +126,25 @@ impl LlmTransport for UreqTransport {
         headers: &[(&str, &str)],
         body: &str,
     ) -> Result<(u16, String), LlmError> {
-        let agent = ureq::AgentBuilder::new().timeout(self.timeout).build();
-        let mut req = agent.post(url).set("content-type", "application/json");
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(self.timeout))
+            .http_status_as_error(false)
+            .build();
+        let agent = ureq::Agent::from(config);
+        let mut req = agent.post(url).header("content-type", "application/json");
         for (k, v) in headers {
-            req = req.set(k, v);
+            req = req.header(*k, *v);
         }
-        match req.send_string(body) {
-            Ok(resp) => {
-                let status = resp.status();
-                let text = resp.into_string().map_err(|e| LlmError::Http {
-                    url: url.to_string(),
-                    source: Box::new(e),
-                })?;
-                Ok((status, text))
-            }
-            Err(ureq::Error::Status(status, resp)) => {
-                let text = resp.into_string().unwrap_or_default();
+        match req.send(body) {
+            Ok(mut resp) => {
+                let status = resp.status().as_u16();
+                let text = resp
+                    .body_mut()
+                    .read_to_string()
+                    .map_err(|e| LlmError::Http {
+                        url: url.to_string(),
+                        source: Box::new(e),
+                    })?;
                 Ok((status, text))
             }
             Err(e) => Err(LlmError::Http {
