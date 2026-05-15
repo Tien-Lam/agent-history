@@ -84,7 +84,7 @@ struct NoteBuckets<'a> {
 
 impl<'a> NoteBuckets<'a> {
     fn build(session: &Session, notes: &'a [Note]) -> Self {
-        let session_ref = format!("{}/{}", session.provider.slug(), session.id.0);
+        let session_ref = session.session_ref().to_string();
         let turn_prefix = format!("{session_ref}#");
         let mut session_level = Vec::new();
         let mut by_turn: HashMap<u32, Vec<&Note>> = HashMap::new();
@@ -99,7 +99,10 @@ impl<'a> NoteBuckets<'a> {
                 }
             }
         }
-        Self { session_level, by_turn }
+        Self {
+            session_level,
+            by_turn,
+        }
     }
 }
 
@@ -107,11 +110,7 @@ pub fn to_markdown(session: &Session, messages: &[Message]) -> String {
     to_markdown_with_notes(session, messages, &[])
 }
 
-pub fn to_markdown_with_notes(
-    session: &Session,
-    messages: &[Message],
-    notes: &[Note],
-) -> String {
+pub fn to_markdown_with_notes(session: &Session, messages: &[Message], notes: &[Note]) -> String {
     let mut out = String::new();
 
     let title = session.project_name.as_deref().unwrap_or("Conversation");
@@ -182,7 +181,10 @@ fn render_content_md(out: &mut String, blocks: &[ContentBlock]) {
             }
             ContentBlock::ToolResult(result) => {
                 let status = if result.success { "Success" } else { "Error" };
-                let _ = writeln!(out, "<details>\n<summary>Tool Result ({status})</summary>\n");
+                let _ = writeln!(
+                    out,
+                    "<details>\n<summary>Tool Result ({status})</summary>\n"
+                );
                 let _ = writeln!(out, "```\n{}\n```\n", result.output);
                 out.push_str("</details>\n\n");
             }
@@ -264,14 +266,21 @@ pub fn to_html_with_notes(session: &Session, messages: &[Message], notes: &[Note
     let provider = html_escape(session.provider.as_str());
     let date = session.started_at.format("%Y-%m-%d %H:%M UTC").to_string();
 
-    let mut meta = format!(
-        "<strong>Provider:</strong> {provider}<br>\n  <strong>Date:</strong> {date}"
-    );
+    let mut meta =
+        format!("<strong>Provider:</strong> {provider}<br>\n  <strong>Date:</strong> {date}");
     if let Some(branch) = &session.git_branch {
-        let _ = write!(meta, "<br>\n  <strong>Branch:</strong> {}", html_escape(branch));
+        let _ = write!(
+            meta,
+            "<br>\n  <strong>Branch:</strong> {}",
+            html_escape(branch)
+        );
     }
     if let Some(model) = &session.model {
-        let _ = write!(meta, "<br>\n  <strong>Model:</strong> {}", html_escape(model));
+        let _ = write!(
+            meta,
+            "<br>\n  <strong>Model:</strong> {}",
+            html_escape(model)
+        );
     }
 
     let buckets = NoteBuckets::build(session, notes);
@@ -365,9 +374,9 @@ fn render_content_html(out: &mut String, blocks: &[ContentBlock]) {
                 let _ = writeln!(out, "<p>{}</p>", html_escape(text));
             }
             ContentBlock::CodeBlock { language, code } => {
-                let lang_attr = language
-                    .as_deref()
-                    .map_or(String::new(), |l| format!(" class=\"language-{}\"", html_escape(l)));
+                let lang_attr = language.as_deref().map_or(String::new(), |l| {
+                    format!(" class=\"language-{}\"", html_escape(l))
+                });
                 let _ = writeln!(
                     out,
                     "<pre><code{lang_attr}>{}</code></pre>",

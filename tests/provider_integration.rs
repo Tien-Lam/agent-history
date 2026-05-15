@@ -46,21 +46,33 @@ fn claude_load_messages() {
     // First message: user text
     assert_eq!(messages[0].role, Role::User);
     assert_eq!(messages[0].id.0, "msg-001");
-    assert!(matches!(&messages[0].content[0], ContentBlock::Text(t) if t.contains("Fix the build")));
+    assert!(
+        matches!(&messages[0].content[0], ContentBlock::Text(t) if t.contains("Fix the build"))
+    );
 
     // Second message: assistant with text + tool_use
     assert_eq!(messages[1].role, Role::Assistant);
-    assert!(matches!(&messages[1].content[0], ContentBlock::Text(t) if t.contains("fix the build")));
+    assert!(
+        matches!(&messages[1].content[0], ContentBlock::Text(t) if t.contains("fix the build"))
+    );
     assert!(matches!(&messages[1].content[1], ContentBlock::ToolUse(tc) if tc.name == "Read"));
 
     // Third message: user with tool_result
     assert_eq!(messages[2].role, Role::User);
-    assert!(matches!(&messages[2].content[0], ContentBlock::ToolResult(tr) if tr.success && tr.output.contains("fn main")));
+    assert!(
+        matches!(&messages[2].content[0], ContentBlock::ToolResult(tr) if tr.success && tr.output.contains("fn main"))
+    );
 
     // Fourth message: assistant with thinking + text + code block
     assert_eq!(messages[3].role, Role::Assistant);
-    let has_thinking = messages[3].content.iter().any(|c| matches!(c, ContentBlock::Thinking(_)));
-    let has_code = messages[3].content.iter().any(|c| matches!(c, ContentBlock::CodeBlock { .. }));
+    let has_thinking = messages[3]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::Thinking(_)));
+    let has_code = messages[3]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::CodeBlock { .. }));
     assert!(has_thinking, "expected thinking block");
     assert!(has_code, "expected code block from markdown");
 }
@@ -93,11 +105,16 @@ fn copilot_load_messages() {
 
     assert_eq!(messages[1].role, Role::Assistant);
     assert_eq!(messages[1].model.as_deref(), Some("gpt-4o"));
-    let has_code = messages[1].content.iter().any(|c| matches!(c, ContentBlock::CodeBlock { .. }));
+    let has_code = messages[1]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::CodeBlock { .. }));
     assert!(has_code, "expected code block in assistant message");
 
     assert_eq!(messages[2].role, Role::Tool);
-    assert!(matches!(&messages[2].content[0], ContentBlock::ToolUse(tc) if tc.name == "RunCommand"));
+    assert!(
+        matches!(&messages[2].content[0], ContentBlock::ToolUse(tc) if tc.name == "RunCommand")
+    );
 }
 
 // ─── Gemini CLI ──────────────────────────────────────────────────────────────
@@ -133,9 +150,18 @@ fn gemini_load_messages() {
     assert!(matches!(&messages[0].content[0], ContentBlock::Text(t) if t.contains("async/await")));
 
     assert_eq!(messages[1].role, Role::Assistant);
-    let has_code = messages[1].content.iter().any(|c| matches!(c, ContentBlock::CodeBlock { .. }));
-    let has_thinking = messages[1].content.iter().any(|c| matches!(c, ContentBlock::Thinking(_)));
-    let has_tool = messages[1].content.iter().any(|c| matches!(c, ContentBlock::ToolUse(_)));
+    let has_code = messages[1]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::CodeBlock { .. }));
+    let has_thinking = messages[1]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::Thinking(_)));
+    let has_tool = messages[1]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::ToolUse(_)));
     assert!(has_code, "expected code block");
     assert!(has_thinking, "expected thinking block");
     assert!(has_tool, "expected tool call");
@@ -172,7 +198,9 @@ fn codex_load_messages() {
 
     // Error entry becomes System message
     assert_eq!(messages[3].role, Role::System);
-    assert!(matches!(&messages[3].content[0], ContentBlock::Error(e) if e.contains("File not found")));
+    assert!(
+        matches!(&messages[3].content[0], ContentBlock::Error(e) if e.contains("File not found"))
+    );
 
     assert_eq!(messages[4].role, Role::Assistant);
 }
@@ -202,10 +230,15 @@ fn opencode_load_messages() {
     assert_eq!(messages.len(), 2);
 
     assert_eq!(messages[0].role, Role::User);
-    assert!(matches!(&messages[0].content[0], ContentBlock::Text(t) if t.contains("connection pool")));
+    assert!(
+        matches!(&messages[0].content[0], ContentBlock::Text(t) if t.contains("connection pool"))
+    );
 
     assert_eq!(messages[1].role, Role::Assistant);
-    let has_text = messages[1].content.iter().any(|c| matches!(c, ContentBlock::Text(_)));
+    let has_text = messages[1]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::Text(_)));
     let has_diff = messages[1].content.iter().any(|c| {
         matches!(c, ContentBlock::CodeBlock { language, .. } if language.as_deref().unwrap_or("").contains("diff"))
     });
@@ -349,14 +382,19 @@ fn cursor_discover_and_load_from_generated_fixture() {
 fn load_messages_from_deleted_file_returns_error() {
     let fixture = common::fixtures::claude_single_session(2);
     let provider = ClaudeCodeProvider::new(vec![fixture.base_path.clone()]);
-    let sessions = provider.discover_sessions().expect("should discover sessions");
+    let sessions = provider
+        .discover_sessions()
+        .expect("should discover sessions");
     assert!(!sessions.is_empty());
 
     // Delete the session file after discovery
     std::fs::remove_file(&sessions[0].source_path).expect("should delete fixture file");
 
     let result = provider.load_messages(&sessions[0]);
-    assert!(result.is_err(), "should return error when session file is deleted");
+    assert!(
+        result.is_err(),
+        "should return error when session file is deleted"
+    );
 }
 
 #[test]
@@ -378,16 +416,24 @@ fn load_messages_from_empty_file_returns_empty() {
     let provider = ClaudeCodeProvider::new(vec![base]);
     let sessions = provider.discover_sessions().expect("should discover");
     // Empty sessions (0 user/assistant messages) should be filtered out during discovery
-    assert!(sessions.is_empty(), "empty session file should be filtered out");
+    assert!(
+        sessions.is_empty(),
+        "empty session file should be filtered out"
+    );
 }
 
 #[test]
 fn discover_survives_unreadable_session_file() {
     let fixture = common::fixtures::claude_multi_session(3, 2);
     let provider = ClaudeCodeProvider::new(vec![fixture.base_path.clone()]);
-    let sessions = provider.discover_sessions().expect("should discover sessions");
+    let sessions = provider
+        .discover_sessions()
+        .expect("should discover sessions");
     let original_count = sessions.len();
-    assert!(original_count >= 2, "need at least 2 sessions for this test");
+    assert!(
+        original_count >= 2,
+        "need at least 2 sessions for this test"
+    );
 
     // Truncate one session file to invalid content
     std::fs::write(&sessions[0].source_path, "not valid json at all\n").expect("should truncate");

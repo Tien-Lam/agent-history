@@ -41,61 +41,28 @@
 
 use std::io::{self, BufRead, Write};
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+mod args;
+mod payload;
+mod protocol;
+mod resources;
+
+use args::{optional_provider, optional_str, optional_usize, required_str};
+use payload::{message_row, session_row, tool_definitions, tool_error, tool_success};
+pub use protocol::PROTOCOL_VERSION;
+use protocol::{
+    serialize_response, Request, Response, RpcError, ERR_INVALID_PARAMS, ERR_INVALID_REQUEST,
+    ERR_METHOD_NOT_FOUND, ERR_PARSE, SERVER_NAME, SERVER_VERSION,
+};
+use resources::{
+    parse_aghist_uri, resource_descriptor, resource_templates, session_uri, turn_uri, ParsedUri,
+};
+
 use crate::health::run_health_checks;
-use crate::model::{CitationRef, Message, Provider, Session};
+use crate::model::{CitationRef, Provider, Session};
 use crate::provider::HistoryProvider;
 use crate::search::SearchIndex;
-
-/// MCP protocol version we negotiate. The 2024-11-05 revision is the most
-/// widely supported by current clients (Claude Desktop, mcp-inspector, etc.).
-pub const PROTOCOL_VERSION: &str = "2024-11-05";
-
-const SERVER_NAME: &str = "aghist";
-const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-const ERR_PARSE: i32 = -32700;
-const ERR_INVALID_REQUEST: i32 = -32600;
-const ERR_METHOD_NOT_FOUND: i32 = -32601;
-const ERR_INVALID_PARAMS: i32 = -32602;
-
-#[derive(Debug, Deserialize)]
-struct Request {
-    #[serde(default)]
-    jsonrpc: String,
-    /// Absent for notifications. We store the raw `Value` so we can echo it
-    /// back without coercing JSON numbers into Rust ints.
-    id: Option<Value>,
-    method: String,
-    #[serde(default)]
-    params: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct Response {
-    jsonrpc: &'static str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<RpcError>,
-}
-
-#[derive(Debug, Serialize)]
-struct RpcError {
-    code: i32,
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<Value>,
-}
-
-impl RpcError {
-    fn new(code: i32, message: impl Into<String>) -> Self {
-        Self { code, message: message.into(), data: None }
-    }
-}
 
 /// Owns the providers + search index for the lifetime of a server run.
 pub struct McpServer {
@@ -135,10 +102,7 @@ impl McpServer {
                     jsonrpc: "2.0",
                     id: Value::Null,
                     result: None,
-                    error: Some(RpcError::new(
-                        ERR_PARSE,
-                        format!("parse error: {e}"),
-                    )),
+                    error: Some(RpcError::new(ERR_PARSE, format!("parse error: {e}"))),
                 }));
             }
         };
@@ -156,7 +120,10 @@ impl McpServer {
                 result: None,
                 error: Some(RpcError::new(
                     ERR_INVALID_REQUEST,
-                    format!("unsupported jsonrpc version '{}' (expected '2.0')", request.jsonrpc),
+                    format!(
+                        "unsupported jsonrpc version '{}' (expected '2.0')",
+                        request.jsonrpc
+                    ),
                 )),
             }));
         }
@@ -204,7 +171,7 @@ impl McpServer {
             "ping" => Ok(json!({})),
             "tools/list" => Ok(json!({ "tools": tool_definitions() })),
             "tools/call" => self.tools_call(params),
-            "resources/list" => self.resources_list(params),
+            "resources/list" => Ok(self.resources_list(params)),
             "resources/read" => self.resources_read(params),
             "resources/templates/list" => Ok(json!({ "resourceTemplates": resource_templates() })),
             other => Err(RpcError::new(
@@ -229,7 +196,7 @@ impl McpServer {
             "get_session" => self.tool_get_session(&arguments),
             "get_message" => self.tool_get_message(&arguments),
             "reindex" => self.tool_reindex(&arguments),
-            "health" => self.tool_health(&arguments),
+            "health" => Ok(self.tool_health(&arguments)),
             other => {
                 return Ok(tool_error(format!("unknown tool: {other}")));
             }
@@ -277,23 +244,22 @@ impl McpServer {
             .search(&query, limit)
             .map_err(|e| format!("search failed: {e}"))?;
 
-        let session_meta: std::collections::HashMap<&str, &Session> =
-            sessions.iter().map(|s| (s.id.0.as_str(), s)).collect();
+        let session_meta: std::collections::HashMap<String, &Session> =
+            sessions.iter().map(|s| (s.identity_key(), s)).collect();
 
         // Resolve message_id -> 1-based turn by loading messages once per
         // unique session that appears in the hit set. Without this the caller
         // can't construct a citation ref from a search hit. Sessions that
         // can't be loaded are silently dropped from the turn map; their hits
         // get `ref: null` and `turn: null`.
-        let mut turn_lookup: std::collections::HashMap<(String, String), usize> =
+        let mut turn_lookup: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
-        let mut seen_sessions: std::collections::HashSet<&str> =
-            std::collections::HashSet::new();
+        let mut seen_sessions: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for h in &hits {
-            if !seen_sessions.insert(h.session_id.as_str()) {
+            if !seen_sessions.insert(h.session_key.as_str()) {
                 continue;
             }
-            let Some(session) = session_meta.get(h.session_id.as_str()).copied() else {
+            let Some(session) = session_meta.get(h.session_key.as_str()).copied() else {
                 continue;
             };
             let Some(provider) = self
@@ -307,7 +273,7 @@ impl McpServer {
                 continue;
             };
             for (i, m) in messages.iter().enumerate() {
-                turn_lookup.insert((session.id.0.clone(), m.id.0.clone()), i + 1);
+                turn_lookup.insert(session.message_key(i, &m.id.0), i + 1);
             }
         }
 
@@ -326,13 +292,14 @@ impl McpServer {
                     }));
                 }
                 crate::search::HitKind::Message => {
-                    let session = session_meta.get(h.session_id.as_str()).copied();
-                    let turn = turn_lookup
-                        .get(&(h.session_id.clone(), h.message_id.clone()))
-                        .copied();
-                    let citation_ref = session.zip(turn).map(|(s, t)| {
-                        format!("{}/{}#{}", s.provider.slug(), s.id.0, t)
-                    });
+                    let session = session_meta.get(h.session_key.as_str()).copied();
+                    let turn = turn_lookup.get(h.message_key.as_str()).copied();
+                    let citation_ref = session
+                        .zip(turn)
+                        .and_then(|(s, t)| {
+                            u32::try_from(t).ok().and_then(|turn| s.citation_ref(turn))
+                        })
+                        .map(|r| r.to_string());
                     hits_json.push(json!({
                         "kind": crate::search::HitKind::Message.slug(),
                         "ref": citation_ref,
@@ -473,10 +440,7 @@ impl McpServer {
 
     fn tool_reindex(&self, args: &Value) -> Result<Value, String> {
         let provider_filter = optional_provider(args, "provider")?;
-        let force = args
-            .get("force")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
 
         let active: Vec<&Box<dyn HistoryProvider>> = self
             .providers
@@ -536,8 +500,7 @@ impl McpServer {
         }))
     }
 
-    #[allow(clippy::unnecessary_wraps)] // Result<Value,String> shape matches sibling tools.
-    fn tool_health(&self, _args: &Value) -> Result<Value, String> {
+    fn tool_health(&self, _args: &Value) -> Value {
         let checks = run_health_checks(&self.providers);
         let any_failed = checks
             .iter()
@@ -547,11 +510,11 @@ impl McpServer {
             "warn_count": checks.iter().filter(|c| c.status == crate::health::HealthStatus::Warn).count(),
             "fail_count": checks.iter().filter(|c| c.status == crate::health::HealthStatus::Fail).count(),
         });
-        Ok(json!({
+        json!({
             "ok": !any_failed,
             "checks": checks,
             "summary": summary,
-        }))
+        })
     }
 
     // ─── resources ─────────────────────────────────────────────────────────
@@ -560,12 +523,11 @@ impl McpServer {
     /// resource. Per-turn URIs are advertised via the resource template (see
     /// `resources/templates/list`) rather than enumerated, since the turn count
     /// would balloon the listing for large histories.
-    #[allow(clippy::unnecessary_wraps)] // shape matches sibling JSON-RPC handlers.
-    fn resources_list(&self, _params: &Value) -> Result<Value, RpcError> {
+    fn resources_list(&self, _params: &Value) -> Value {
         let mut sessions = self.collect_sessions();
         sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
         let resources: Vec<Value> = sessions.iter().map(resource_descriptor).collect();
-        Ok(json!({ "resources": resources }))
+        json!({ "resources": resources })
     }
 
     fn resources_read(&self, params: &Value) -> Result<Value, RpcError> {
@@ -578,12 +540,15 @@ impl McpServer {
             .map_err(|e| RpcError::new(ERR_INVALID_PARAMS, format!("invalid uri '{uri}': {e}")))?;
 
         let payload = match parsed {
-            ParsedUri::Session { provider, session_id } => {
-                self.read_session_resource(provider, &session_id)
-            }
-            ParsedUri::Turn { provider, session_id, turn } => {
-                self.read_turn_resource(provider, &session_id, turn)
-            }
+            ParsedUri::Session {
+                provider,
+                session_id,
+            } => self.read_session_resource(provider, &session_id),
+            ParsedUri::Turn {
+                provider,
+                session_id,
+                turn,
+            } => self.read_turn_resource(provider, &session_id, turn),
         }
         .map_err(|e| RpcError::new(ERR_INVALID_PARAMS, e))?;
 
@@ -700,7 +665,9 @@ impl McpServer {
         f: impl FnOnce(&Session, &dyn HistoryProvider) -> Result<T, String>,
     ) -> Result<T, String> {
         for p in &self.providers {
-            let Ok(sessions) = p.discover_sessions() else { continue };
+            let Ok(sessions) = p.discover_sessions() else {
+                continue;
+            };
             if let Some(found) = sessions
                 .iter()
                 .find(|s| s.id.0 == session_id || s.id.0.starts_with(session_id))
@@ -710,288 +677,6 @@ impl McpServer {
         }
         Err(format!("session not found: {session_id}"))
     }
-}
-
-fn tool_definitions() -> Value {
-    json!([
-        {
-            "name": "search_sessions",
-            "description": "Full-text search across indexed sessions. Returns hits with stable citation refs (`<provider>/<session-id>#<turn>`). Refreshes the index incrementally before searching.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string", "description": "Tantivy query string. Matches the `content` and `project` fields." },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 20 }
-                },
-                "required": ["query"]
-            }
-        },
-        {
-            "name": "list_sessions",
-            "description": "List sessions across enabled providers, sorted by start time descending.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "provider": { "type": "string", "enum": ["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", "cursor"] },
-                    "project": { "type": "string", "description": "Substring match on session project_name." },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 50 }
-                }
-            }
-        },
-        {
-            "name": "get_session",
-            "description": "Resolve a session by ID (full or unique prefix) and return its metadata plus all turns.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": { "type": "string" }
-                },
-                "required": ["session_id"]
-            }
-        },
-        {
-            "name": "get_message",
-            "description": "Resolve a citation ref `<provider>/<session-id>#<turn>` to the target message, optionally with context turns on each side.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "ref": { "type": "string", "description": "Citation ref. Example: claude-code/abc-123#7" },
-                    "include_context": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0 }
-                },
-                "required": ["ref"]
-            }
-        },
-        {
-            "name": "reindex",
-            "description": "Refresh the search index (incremental by default). Returns counts of added/updated/unchanged sessions.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "provider": { "type": "string", "enum": ["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", "cursor"] },
-                    "force": { "type": "boolean", "default": false, "description": "Clear the index first for a full rebuild." }
-                }
-            }
-        },
-        {
-            "name": "health",
-            "description": "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
-            "inputSchema": { "type": "object", "properties": {} }
-        }
-    ])
-}
-
-fn tool_success(payload: &Value) -> Value {
-    let text = serde_json::to_string_pretty(payload)
-        .unwrap_or_else(|_| "<unserializable>".to_string());
-    json!({
-        "content": [{ "type": "text", "text": text }],
-        "isError": false,
-        "structuredContent": payload,
-    })
-}
-
-fn tool_error(message: impl Into<String>) -> Value {
-    let msg = message.into();
-    json!({
-        "content": [{ "type": "text", "text": msg }],
-        "isError": true,
-    })
-}
-
-fn session_row(s: &Session) -> Value {
-    json!({
-        "id": s.id.0,
-        "uri": session_uri(s.provider, &s.id.0),
-        "provider": s.provider.slug(),
-        "project": s.project_name,
-        "branch": s.git_branch,
-        "summary": s.summary,
-        "model": s.model,
-        "started_at": s.started_at,
-        "ended_at": s.ended_at,
-        "message_count": s.message_count,
-    })
-}
-
-fn message_row(session: &Session, msg: &Message, turn: usize) -> Value {
-    let turn_u32 = u32::try_from(turn).unwrap_or(u32::MAX);
-    json!({
-        "ref": format!("{}/{}#{}", session.provider.slug(), session.id.0, turn),
-        "uri": turn_uri(session.provider, &session.id.0, turn_u32),
-        "turn": turn,
-        "id": msg.id.0,
-        "role": msg.role,
-        "timestamp": msg.timestamp,
-        "model": msg.model,
-        "content": msg.content,
-    })
-}
-
-// ─── URI helpers ───────────────────────────────────────────────────────────
-
-const URI_PREFIX: &str = "aghist://session/";
-
-fn session_uri(provider: Provider, session_id: &str) -> String {
-    format!("{URI_PREFIX}{}/{session_id}", provider.slug())
-}
-
-fn turn_uri(provider: Provider, session_id: &str, turn: u32) -> String {
-    format!("{URI_PREFIX}{}/{session_id}/turn/{turn}", provider.slug())
-}
-
-fn resource_descriptor(s: &Session) -> Value {
-    let title = s
-        .summary
-        .clone()
-        .or_else(|| s.project_name.clone())
-        .unwrap_or_else(|| s.id.0.clone());
-    let description = format!(
-        "{} session ({} messages){}",
-        s.provider.as_str(),
-        s.message_count,
-        s.project_name
-            .as_deref()
-            .map(|p| format!(" — {p}"))
-            .unwrap_or_default(),
-    );
-    json!({
-        "uri": session_uri(s.provider, &s.id.0),
-        "name": title,
-        "description": description,
-        "mimeType": "application/json",
-    })
-}
-
-fn resource_templates() -> Value {
-    json!([
-        {
-            "uriTemplate": "aghist://session/{provider}/{session_id}",
-            "name": "Session",
-            "description": "Full session metadata + ordered turns. \
-                            `provider` is the kebab-case slug \
-                            (claude-code, copilot-cli, gemini-cli, codex-cli, opencode, cursor).",
-            "mimeType": "application/json"
-        },
-        {
-            "uriTemplate": "aghist://session/{provider}/{session_id}/turn/{turn}",
-            "name": "Session turn",
-            "description": "A single 1-based turn within a session. \
-                            The triple `(provider, session_id, turn)` matches \
-                            the citation-ref format.",
-            "mimeType": "application/json"
-        }
-    ])
-}
-
-enum ParsedUri {
-    Session { provider: Provider, session_id: String },
-    Turn { provider: Provider, session_id: String, turn: u32 },
-}
-
-/// Parses `aghist://session/<provider>/<session-id>[/turn/<n>]`.
-///
-/// Session IDs are taken verbatim — the same convention citation refs use —
-/// so anything past the provider segment up to an optional `/turn/<n>` tail
-/// is the session id. We don't URL-decode: provider slugs are kebab-case
-/// ASCII, and every session id we discover today is filesystem-safe.
-fn parse_aghist_uri(uri: &str) -> Result<ParsedUri, String> {
-    let rest = uri
-        .strip_prefix(URI_PREFIX)
-        .ok_or_else(|| format!("uri must start with '{URI_PREFIX}'"))?;
-    if rest.is_empty() {
-        return Err("missing provider segment".to_string());
-    }
-
-    let (provider_slug, after_provider) = rest
-        .split_once('/')
-        .ok_or_else(|| "missing session id".to_string())?;
-    if provider_slug.is_empty() {
-        return Err("missing provider segment".to_string());
-    }
-    let provider = Provider::from_slug(provider_slug)
-        .ok_or_else(|| format!("unknown provider slug '{provider_slug}'"))?;
-    if after_provider.is_empty() {
-        return Err("missing session id".to_string());
-    }
-
-    if let Some((session_id, turn_str)) = after_provider.rsplit_once("/turn/") {
-        if session_id.is_empty() {
-            return Err("missing session id".to_string());
-        }
-        if turn_str.is_empty() {
-            return Err("missing turn number".to_string());
-        }
-        let turn: u32 = turn_str
-            .parse()
-            .map_err(|_| format!("invalid turn '{turn_str}' (must be a positive integer)"))?;
-        if turn == 0 {
-            return Err("turn must be >= 1".to_string());
-        }
-        return Ok(ParsedUri::Turn {
-            provider,
-            session_id: session_id.to_string(),
-            turn,
-        });
-    }
-
-    Ok(ParsedUri::Session {
-        provider,
-        session_id: after_provider.to_string(),
-    })
-}
-
-fn serialize_response(resp: &Response) -> String {
-    serde_json::to_string(resp).unwrap_or_else(|_| {
-        // Last-ditch envelope so the client gets *something* parseable.
-        r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"failed to serialize response"}}"#.to_string()
-    })
-}
-
-// ─── argument parsing helpers ──────────────────────────────────────────────
-
-fn required_str(args: &Value, key: &str) -> Result<String, String> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| format!("missing required string argument: {key}"))
-}
-
-fn optional_str(args: &Value, key: &str) -> Result<Option<String>, String> {
-    match args.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(s)) => Ok(Some(s.clone())),
-        Some(other) => Err(format!("argument '{key}' must be a string, got: {other}")),
-    }
-}
-
-fn optional_usize(
-    args: &Value,
-    key: &str,
-    default: usize,
-    min: usize,
-    max: usize,
-) -> Result<usize, String> {
-    let raw = match args.get(key) {
-        None | Some(Value::Null) => return Ok(default),
-        Some(v) => v,
-    };
-    let n = raw
-        .as_u64()
-        .ok_or_else(|| format!("argument '{key}' must be a non-negative integer"))?;
-    let n = usize::try_from(n).map_err(|_| format!("argument '{key}' is too large"))?;
-    if n < min || n > max {
-        return Err(format!("argument '{key}' must be in [{min}, {max}], got {n}"));
-    }
-    Ok(n)
-}
-
-fn optional_provider(args: &Value, key: &str) -> Result<Option<Provider>, String> {
-    let Some(slug) = optional_str(args, key)? else {
-        return Ok(None);
-    };
-    Provider::from_slug(&slug)
-        .map(Some)
-        .ok_or_else(|| format!("unknown provider slug '{slug}'"))
 }
 
 #[cfg(test)]
@@ -1032,8 +717,7 @@ mod tests {
         server()
             .serve(
                 Cursor::new(
-                    b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
-                        .as_slice(),
+                    b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n".as_slice(),
                 ),
                 &mut output,
             )
@@ -1061,7 +745,10 @@ mod tests {
             "reindex",
             "health",
         ] {
-            assert!(names.contains(&expected), "missing tool {expected} in {names:?}");
+            assert!(
+                names.contains(&expected),
+                "missing tool {expected} in {names:?}"
+            );
         }
     }
 
@@ -1150,7 +837,10 @@ mod tests {
             r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
         );
         let caps = &resp["result"]["capabilities"];
-        assert!(caps["resources"].is_object(), "missing resources cap: {caps}");
+        assert!(
+            caps["resources"].is_object(),
+            "missing resources cap: {caps}"
+        );
         assert_eq!(caps["resources"]["subscribe"], false);
         assert_eq!(caps["resources"]["listChanged"], false);
     }
@@ -1235,7 +925,10 @@ mod tests {
     fn parse_uri_session_form() {
         let p = parse_aghist_uri("aghist://session/claude-code/abc-123").unwrap();
         match p {
-            ParsedUri::Session { provider, session_id } => {
+            ParsedUri::Session {
+                provider,
+                session_id,
+            } => {
                 assert_eq!(provider, Provider::ClaudeCode);
                 assert_eq!(session_id, "abc-123");
             }
@@ -1247,7 +940,11 @@ mod tests {
     fn parse_uri_turn_form() {
         let p = parse_aghist_uri("aghist://session/codex-cli/ses_abc/turn/7").unwrap();
         match p {
-            ParsedUri::Turn { provider, session_id, turn } => {
+            ParsedUri::Turn {
+                provider,
+                session_id,
+                turn,
+            } => {
                 assert_eq!(provider, Provider::CodexCli);
                 assert_eq!(session_id, "ses_abc");
                 assert_eq!(turn, 7);
@@ -1262,7 +959,9 @@ mod tests {
         // a `/`, anything before `/turn/<n>` should still parse as the id.
         let p = parse_aghist_uri("aghist://session/claude-code/foo/bar/turn/3").unwrap();
         match p {
-            ParsedUri::Turn { session_id, turn, .. } => {
+            ParsedUri::Turn {
+                session_id, turn, ..
+            } => {
                 assert_eq!(session_id, "foo/bar");
                 assert_eq!(turn, 3);
             }
@@ -1287,7 +986,10 @@ mod tests {
         assert_eq!(uri, "aghist://session/opencode/session-xyz");
         let parsed = parse_aghist_uri(&uri).unwrap();
         match parsed {
-            ParsedUri::Session { provider, session_id } => {
+            ParsedUri::Session {
+                provider,
+                session_id,
+            } => {
                 assert_eq!(provider, Provider::OpenCode);
                 assert_eq!(session_id, "session-xyz");
             }
@@ -1301,7 +1003,11 @@ mod tests {
         assert_eq!(uri, "aghist://session/gemini-cli/g-1/turn/42");
         let parsed = parse_aghist_uri(&uri).unwrap();
         match parsed {
-            ParsedUri::Turn { provider, session_id, turn } => {
+            ParsedUri::Turn {
+                provider,
+                session_id,
+                turn,
+            } => {
                 assert_eq!(provider, Provider::GeminiCli);
                 assert_eq!(session_id, "g-1");
                 assert_eq!(turn, 42);
@@ -1312,10 +1018,7 @@ mod tests {
 
     #[test]
     fn ping_returns_empty_object() {
-        let resp = run_one(
-            &server(),
-            r#"{"jsonrpc":"2.0","id":10,"method":"ping"}"#,
-        );
+        let resp = run_one(&server(), r#"{"jsonrpc":"2.0","id":10,"method":"ping"}"#);
         assert!(resp["result"].is_object());
         assert!(resp["error"].is_null());
     }

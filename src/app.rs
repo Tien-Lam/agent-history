@@ -20,152 +20,22 @@ use ratatui::Terminal;
 
 use crate::action::Action;
 use crate::config::Config;
+use crate::embed;
 use crate::event::{map_key_event, CrosstermEventSource, EventSource};
 use crate::export::ExportFormat;
-use crate::model::{Message, Provider, Role, Session, SessionId};
+use crate::model::{Message, Provider, Session, SessionId};
 use crate::provider::HistoryProvider;
-use crate::embed;
 use crate::search::{SearchFilters, SearchHit, SearchIndex};
 use crate::stars::StarStore;
 use crate::ui::message_view::MessageViewComponent;
 use crate::ui::session_list::SessionListComponent;
 use crate::ui::status_bar::StatusBarComponent;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AppMode {
-    Browse,
-    ViewSession,
-    Search,
-    Help,
-    Filter,
-    ExportMenu,
-}
-
-#[derive(Debug, Clone)]
-pub struct FilterState {
-    pub provider_enabled: std::collections::HashMap<Provider, bool>,
-    pub project_query: String,
-    pub date_from: Option<chrono::NaiveDate>,
-    pub date_to: Option<chrono::NaiveDate>,
-    /// `None` = any role; cycles None → User → Assistant → Tool → None.
-    /// Filters the session list to sessions containing at least one message
-    /// with this role (resolved via the search index).
-    pub role: Option<Role>,
-    /// When true, restrict to sessions that have at least one tool-call
-    /// message (resolved via the search index).
-    pub has_tool_call: bool,
-    pub starred_only: bool,
-    pub cursor: usize,
-    pub editing_field: Option<FilterField>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FilterField {
-    Project,
-    DateFrom,
-    DateTo,
-}
-
-impl FilterState {
-    fn new() -> Self {
-        let mut provider_enabled = std::collections::HashMap::new();
-        for p in Provider::all() {
-            provider_enabled.insert(*p, true);
-        }
-        Self {
-            provider_enabled,
-            project_query: String::new(),
-            date_from: None,
-            date_to: None,
-            role: None,
-            has_tool_call: false,
-            starred_only: false,
-            cursor: 0,
-            editing_field: None,
-        }
-    }
-
-    fn is_active(&self) -> bool {
-        self.provider_enabled.values().any(|v| !v)
-            || !self.project_query.is_empty()
-            || self.date_from.is_some()
-            || self.date_to.is_some()
-            || self.role.is_some()
-            || self.has_tool_call
-            || self.starred_only
-    }
-
-    /// True when at least one message-level filter is active. Message-level
-    /// filters (role, has-tool-call) require the search index to resolve to
-    /// session IDs and are applied as a separate set-intersection step.
-    pub fn has_message_filter(&self) -> bool {
-        self.role.is_some() || self.has_tool_call
-    }
-
-    fn matches(&self, session: &Session) -> bool {
-        if !self.provider_enabled.get(&session.provider).copied().unwrap_or(true) {
-            return false;
-        }
-
-        if !self.project_query.is_empty() {
-            let query = self.project_query.to_lowercase();
-            let name_match = session
-                .project_name
-                .as_deref()
-                .is_some_and(|n| n.to_lowercase().contains(&query));
-            let path_match = session
-                .project_path
-                .as_ref()
-                .and_then(|p| p.to_str())
-                .is_some_and(|p| p.to_lowercase().contains(&query));
-            if !name_match && !path_match {
-                return false;
-            }
-        }
-
-        if let Some(from) = self.date_from {
-            if session.started_at.date_naive() < from {
-                return false;
-            }
-        }
-        if let Some(to) = self.date_to {
-            if session.started_at.date_naive() > to {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn item_count() -> usize {
-        // providers + project + date_from + date_to + role + has_tool_call + starred_only
-        Provider::all().len() + 6
-    }
-
-    fn role_idx() -> usize {
-        Provider::all().len() + 3
-    }
-
-    fn tool_call_idx() -> usize {
-        Provider::all().len() + 4
-    }
-
-    fn starred_idx() -> usize {
-        Provider::all().len() + 5
-    }
-}
-
-/// Cycle through the role filter: None → User → Assistant → Tool → None.
-/// Skips `System` because session-list filtering treats system messages as
-/// noise (not user-facing turns).
-fn cycle_role(role: Option<Role>) -> Option<Role> {
-    match role {
-        None => Some(Role::User),
-        Some(Role::User) => Some(Role::Assistant),
-        Some(Role::Assistant) => Some(Role::Tool),
-        Some(Role::Tool | Role::System) => None,
-    }
-}
+mod overlays;
+mod state;
+use overlays::{push_date_char, render_export_overlay, render_filter_overlay, render_help_overlay};
+pub use state::AppMode;
+use state::{cycle_role, FilterField, FilterState};
 
 #[allow(clippy::struct_excessive_bools)]
 pub struct App {
@@ -222,15 +92,14 @@ impl App {
     }
 
     /// Construct an `App` with an explicit `StarStore`. Tests use this to
-    /// avoid touching the user's real `~/.config/aghist/stars.toml`.
+    /// avoid touching the user's real metadata sidecar.
     pub fn with_stars(
         providers: Vec<Box<dyn HistoryProvider>>,
         config: Config,
         stars: StarStore,
     ) -> Self {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
-        let cache_size = NonZeroUsize::new(config.cache_size)
-            .unwrap_or(NonZeroUsize::MIN);
+        let cache_size = NonZeroUsize::new(config.cache_size).unwrap_or(NonZeroUsize::MIN);
 
         let mut message_view = MessageViewComponent::new();
         message_view.show_tool_calls = config.show_tool_calls;
@@ -404,22 +273,22 @@ impl App {
         let providers = Arc::clone(&self.providers);
         let tx = self.action_tx.clone();
 
-        std::thread::spawn(move || {
-            match index.build_index(&sessions, &providers, &tx) {
+        std::thread::spawn(
+            move || match index.build_index(&sessions, &providers, &tx) {
                 Ok(_) => {
                     let _ = tx.send(Action::IndexReady);
                 }
                 Err(e) => {
                     let _ = tx.send(Action::LoadError(format!("Index error: {e}")));
                 }
-            }
-        });
+            },
+        );
     }
 
     fn display_sessions(&self) -> Vec<&Session> {
         let base: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
             ids.iter()
-                .filter_map(|id| self.sessions.iter().find(|s| s.id.0 == *id))
+                .filter_map(|id| self.sessions.iter().find(|s| s.identity_key() == *id))
                 .collect()
         } else {
             self.sessions.iter().collect()
@@ -431,7 +300,7 @@ impl App {
             base.into_iter()
                 .filter(|s| self.filter.matches(s))
                 .filter(|s| !starred_only || self.stars.is_starred(s.provider, &s.id.0))
-                .filter(|s| msg_ids.is_none_or(|ids| ids.contains(&s.id.0)))
+                .filter(|s| msg_ids.is_none_or(|ids| ids.contains(&s.identity_key())))
                 .collect()
         } else {
             base
@@ -445,7 +314,9 @@ impl App {
     fn resolve_selected_session(&self) -> Option<(String, std::path::PathBuf, Provider)> {
         let idx = self.session_list.selected_index()?;
         let display = self.display_sessions();
-        display.get(idx).map(|s| (s.id.0.clone(), s.source_path.clone(), s.provider))
+        display
+            .get(idx)
+            .map(|s| (s.id.0.clone(), s.source_path.clone(), s.provider))
     }
 
     /// Ensure the selection index sits within the displayed-session range.
@@ -483,8 +354,7 @@ impl App {
 
         let Some(ref index) = self.search_index else {
             self.msg_filter_session_ids = None;
-            self.status_message =
-                Some("Filter unavailable — search index missing".to_string());
+            self.status_message = Some("Filter unavailable — search index missing".to_string());
             return;
         };
         if !self.index_ready {
@@ -530,7 +400,11 @@ impl App {
             } else {
                 "lexical"
             };
-            self.session_list.state.select(if self.sessions.is_empty() { None } else { Some(0) });
+            self.session_list.state.select(if self.sessions.is_empty() {
+                None
+            } else {
+                Some(0)
+            });
             return;
         }
 
@@ -568,8 +442,8 @@ impl App {
             let mut seen = HashSet::new();
             let ids: Vec<String> = hits
                 .iter()
-                .filter(|h| seen.insert(h.session_id.clone()))
-                .map(|h| h.session_id.clone())
+                .filter(|h| seen.insert(h.session_key.clone()))
+                .map(|h| h.session_key.clone())
                 .collect();
             self.filtered_session_ids = Some(ids);
             self.search_results = hits;
@@ -583,13 +457,96 @@ impl App {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     pub fn dispatch(&mut self, action: Action) {
         match action {
             Action::Quit => {
                 self.should_quit = true;
             }
 
+            Action::NextItem
+            | Action::PrevItem
+            | Action::SelectSession
+            | Action::SearchSubmit
+            | Action::BackToList
+            | Action::GoToTop
+            | Action::GoToBottom
+            | Action::ScrollUp
+            | Action::ScrollDown
+            | Action::PageUp
+            | Action::PageDown
+            | Action::ToggleToolCalls
+            | Action::ToggleRawToolOutput
+            | Action::ToggleHelp => self.dispatch_navigation(&action),
+
+            Action::SearchStart
+            | Action::SearchInput(_)
+            | Action::SearchBackspace
+            | Action::ToggleHybrid
+            | Action::SearchCancel => self.dispatch_search(&action),
+
+            Action::IndexProgress(_, _) | Action::IndexReady => self.dispatch_index(&action),
+
+            Action::ToggleFilter
+            | Action::FilterNext
+            | Action::FilterPrev
+            | Action::FilterToggle
+            | Action::FilterEdit
+            | Action::FilterEditDone
+            | Action::FilterInput(_)
+            | Action::FilterBackspace
+            | Action::FilterClearAll => self.dispatch_filter(&action),
+
+            // Stars / bookmarks
+            Action::ToggleStar => {
+                if let Some((session_id, _, provider)) = self.resolve_selected_session() {
+                    match self.stars.toggle(provider, &session_id) {
+                        Ok(true) => {
+                            self.status_message = Some("Starred".to_string());
+                        }
+                        Ok(false) => {
+                            self.status_message = Some("Unstarred".to_string());
+                            // If we just unstarred while filtering by starred-only,
+                            // the selection may now point past the end of the list.
+                            self.clamp_selection();
+                        }
+                        Err(e) => {
+                            self.warnings.push(format!("Failed to save stars: {e}"));
+                        }
+                    }
+                }
+            }
+
+            // Resume
+            Action::CopyResumeCommand => {
+                if let Some((session_id, _, provider)) = self.resolve_selected_session() {
+                    let cmd = provider.resume_command(&session_id);
+                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(&cmd)) {
+                        Ok(()) => {
+                            self.status_message = Some(format!("Copied: {cmd}"));
+                        }
+                        Err(_) => {
+                            self.status_message = Some(format!("Resume: {cmd}"));
+                        }
+                    }
+                }
+            }
+
+            Action::ExportStart
+            | Action::ExportNext
+            | Action::ExportPrev
+            | Action::ExportConfirm
+            | Action::ExportCancel => self.dispatch_export(&action),
+
+            Action::SessionsLoaded(_) | Action::MessagesLoaded(_, _) | Action::LoadError(_) => {
+                self.dispatch_data(action);
+            }
+
+            Action::Resize(_, _) | Action::SwitchFocus => {}
+        }
+    }
+
+    fn dispatch_navigation(&mut self, action: &Action) {
+        match action {
             Action::NextItem => {
                 if let Some(selected) = self.session_list.selected_index() {
                     let count = self.display_count();
@@ -611,9 +568,7 @@ impl App {
                 if self.search_pending_at.take().is_some() {
                     self.execute_search();
                 }
-                if let Some((session_id, source_path, provider)) =
-                    self.resolve_selected_session()
-                {
+                if let Some((session_id, source_path, provider)) = self.resolve_selected_session() {
                     self.load_messages_cached(&session_id, &source_path, provider);
                     self.message_view.reset_scroll();
                     self.mode = AppMode::ViewSession;
@@ -660,7 +615,6 @@ impl App {
             Action::PageDown => {
                 self.message_view.scroll_down(20);
             }
-
             Action::ToggleToolCalls => {
                 self.message_view.show_tool_calls = !self.message_view.show_tool_calls;
             }
@@ -677,7 +631,6 @@ impl App {
                     "Raw tool output: OFF".to_string()
                 });
             }
-
             Action::ToggleHelp => {
                 if self.mode == AppMode::Help {
                     self.mode = self.pre_help_mode;
@@ -686,8 +639,12 @@ impl App {
                     self.mode = AppMode::Help;
                 }
             }
+            _ => {}
+        }
+    }
 
-            // Search
+    fn dispatch_search(&mut self, action: &Action) {
+        match action {
             Action::SearchStart => {
                 self.search_query.clear();
                 self.search_results.clear();
@@ -696,7 +653,7 @@ impl App {
                 self.mode = AppMode::Search;
             }
             Action::SearchInput(c) => {
-                self.search_query.push(c);
+                self.search_query.push(*c);
                 self.search_pending_at = Some(Instant::now());
             }
             Action::SearchBackspace => {
@@ -735,15 +692,21 @@ impl App {
                 self.search_results.clear();
                 self.filtered_session_ids = None;
                 self.search_pending_at = None;
-                self.session_list
-                    .state
-                    .select(if self.sessions.is_empty() { None } else { Some(0) });
+                self.session_list.state.select(if self.sessions.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                });
                 self.mode = AppMode::Browse;
             }
+            _ => {}
+        }
+    }
 
-            // Index
+    fn dispatch_index(&mut self, action: &Action) {
+        match action {
             Action::IndexProgress(done, total) => {
-                self.index_progress = Some((done, total));
+                self.index_progress = Some((*done, *total));
             }
             Action::IndexReady => {
                 self.index_ready = true;
@@ -754,8 +717,12 @@ impl App {
                     self.recompute_message_filter();
                 }
             }
+            _ => {}
+        }
+    }
 
-            // Filter
+    fn dispatch_filter(&mut self, action: &Action) {
+        match action {
             Action::ToggleFilter => {
                 if self.mode == AppMode::Filter {
                     self.apply_filters();
@@ -771,11 +738,9 @@ impl App {
                     self.filter.cursor += 1;
                 }
             }
-            Action::FilterPrev => {
-                if self.filter.cursor > 0 {
-                    self.filter.editing_field = None;
-                    self.filter.cursor -= 1;
-                }
+            Action::FilterPrev if self.filter.cursor > 0 => {
+                self.filter.editing_field = None;
+                self.filter.cursor -= 1;
             }
             Action::FilterToggle => {
                 let providers = Provider::all();
@@ -806,86 +771,53 @@ impl App {
             Action::FilterEditDone => {
                 self.filter.editing_field = None;
             }
-            Action::FilterInput(c) => {
-                match self.filter.editing_field {
-                    Some(FilterField::Project) => self.filter.project_query.push(c),
-                    Some(FilterField::DateFrom) => {
-                        push_date_char(&mut self.filter.date_from, c);
-                    }
-                    Some(FilterField::DateTo) => {
-                        push_date_char(&mut self.filter.date_to, c);
-                    }
-                    None => {
-                        // Space toggles provider checkboxes
-                        if c == ' ' {
-                            self.dispatch(Action::FilterToggle);
-                        }
+            Action::FilterInput(c) => match self.filter.editing_field {
+                Some(FilterField::Project) => self.filter.project_query.push(*c),
+                Some(FilterField::DateFrom) => {
+                    push_date_char(&mut self.filter.date_from, *c);
+                }
+                Some(FilterField::DateTo) => {
+                    push_date_char(&mut self.filter.date_to, *c);
+                }
+                None => {
+                    // Space toggles provider checkboxes.
+                    if *c == ' ' {
+                        self.dispatch(Action::FilterToggle);
                     }
                 }
-            }
-            Action::FilterBackspace => {
-                match self.filter.editing_field {
-                    Some(FilterField::Project) => { self.filter.project_query.pop(); }
-                    Some(FilterField::DateFrom) => { self.filter.date_from = None; }
-                    Some(FilterField::DateTo) => { self.filter.date_to = None; }
-                    None => {}
+            },
+            Action::FilterBackspace => match self.filter.editing_field {
+                Some(FilterField::Project) => {
+                    self.filter.project_query.pop();
                 }
-            }
+                Some(FilterField::DateFrom) => {
+                    self.filter.date_from = None;
+                }
+                Some(FilterField::DateTo) => {
+                    self.filter.date_to = None;
+                }
+                None => {}
+            },
             Action::FilterClearAll => {
                 self.filter = FilterState::new();
                 self.msg_filter_session_ids = None;
             }
+            _ => {}
+        }
+    }
 
-            // Stars / bookmarks
-            Action::ToggleStar => {
-                if let Some((session_id, _, provider)) = self.resolve_selected_session() {
-                    match self.stars.toggle(provider, &session_id) {
-                        Ok(true) => {
-                            self.status_message = Some("Starred".to_string());
-                        }
-                        Ok(false) => {
-                            self.status_message = Some("Unstarred".to_string());
-                            // If we just unstarred while filtering by starred-only,
-                            // the selection may now point past the end of the list.
-                            self.clamp_selection();
-                        }
-                        Err(e) => {
-                            self.warnings.push(format!("Failed to save stars: {e}"));
-                        }
-                    }
-                }
-            }
-
-            // Resume
-            Action::CopyResumeCommand => {
-                if let Some((session_id, _, provider)) = self.resolve_selected_session() {
-                    let cmd = provider.resume_command(&session_id);
-                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(&cmd)) {
-                        Ok(()) => {
-                            self.status_message = Some(format!("Copied: {cmd}"));
-                        }
-                        Err(_) => {
-                            self.status_message = Some(format!("Resume: {cmd}"));
-                        }
-                    }
-                }
-            }
-
-            // Export
+    fn dispatch_export(&mut self, action: &Action) {
+        match action {
             Action::ExportStart => {
                 self.export_cursor = 0;
                 self.status_message = None;
                 self.mode = AppMode::ExportMenu;
             }
-            Action::ExportNext => {
-                if self.export_cursor + 1 < ExportFormat::all().len() {
-                    self.export_cursor += 1;
-                }
+            Action::ExportNext if self.export_cursor + 1 < ExportFormat::all().len() => {
+                self.export_cursor += 1;
             }
-            Action::ExportPrev => {
-                if self.export_cursor > 0 {
-                    self.export_cursor -= 1;
-                }
+            Action::ExportPrev if self.export_cursor > 0 => {
+                self.export_cursor -= 1;
             }
             Action::ExportConfirm => {
                 let format = ExportFormat::all()[self.export_cursor];
@@ -895,8 +827,12 @@ impl App {
             Action::ExportCancel => {
                 self.mode = AppMode::ViewSession;
             }
+            _ => {}
+        }
+    }
 
-            // Data events
+    fn dispatch_data(&mut self, action: Action) {
+        match action {
             Action::SessionsLoaded(sessions) => {
                 self.sessions = sessions;
                 self.loading = false;
@@ -913,8 +849,7 @@ impl App {
             Action::LoadError(msg) => {
                 self.warnings.push(msg);
             }
-
-            Action::Resize(_, _) | Action::SwitchFocus => {}
+            _ => {}
         }
     }
 
@@ -951,7 +886,10 @@ impl App {
             source_path: source_path.to_path_buf(),
         };
 
-        let provider = self.providers.iter().find(|p| p.provider() == provider_type);
+        let provider = self
+            .providers
+            .iter()
+            .find(|p| p.provider() == provider_type);
 
         if let Some(provider) = provider {
             match provider.load_messages(&tmp_session) {
@@ -1030,7 +968,13 @@ impl App {
         let id_short = session.id.0.get(..8).unwrap_or(&session.id.0);
         let sanitized: String = id_short
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let filename = format!("aghist-{sanitized}.{}", format.extension());
 
@@ -1068,7 +1012,7 @@ impl App {
         // and `self.message_cache` free to be borrowed independently below.
         let base: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
             ids.iter()
-                .filter_map(|id| self.sessions.iter().find(|s| s.id.0 == *id))
+                .filter_map(|id| self.sessions.iter().find(|s| s.identity_key() == *id))
                 .collect()
         } else {
             self.sessions.iter().collect()
@@ -1088,8 +1032,13 @@ impl App {
         let list_focused = self.mode == AppMode::Browse || self.mode == AppMode::Search;
         let stars = &self.stars;
         let is_starred = |s: &Session| stars.is_starred(s.provider, &s.id.0);
-        self.session_list
-            .render(&display, list_focused, &is_starred, frame, content_layout[0]);
+        self.session_list.render(
+            &display,
+            list_focused,
+            &is_starred,
+            frame,
+            content_layout[0],
+        );
 
         // Message view
         let selected_idx = self.session_list.selected_index();
@@ -1099,8 +1048,13 @@ impl App {
             .map(|m: &Vec<Message>| m.as_slice());
 
         let view_focused = self.mode == AppMode::ViewSession;
-        self.message_view
-            .render(selected_session, messages, view_focused, frame, content_layout[1]);
+        self.message_view.render(
+            selected_session,
+            messages,
+            view_focused,
+            frame,
+            content_layout[1],
+        );
 
         // Status bar
         let warning_count = self.warnings.len();
@@ -1140,333 +1094,4 @@ impl App {
             render_export_overlay(frame, size, self.export_cursor);
         }
     }
-}
-
-fn push_date_char(date: &mut Option<chrono::NaiveDate>, c: char) {
-    if !c.is_ascii_digit() && c != '-' {
-        return;
-    }
-    let mut buf = date.map_or_else(String::new, |d| d.format("%Y-%m-%d").to_string());
-    buf.push(c);
-    *date = chrono::NaiveDate::parse_from_str(&buf, "%Y-%m-%d").ok();
-}
-
-fn render_help_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
-    use ratatui::style::{Modifier, Style};
-    use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
-
-    use crate::ui::palette;
-
-    let header = Style::default()
-        .fg(palette::ACCENT)
-        .add_modifier(Modifier::BOLD);
-    let key = Style::default().fg(palette::PEACH);
-    let desc = Style::default().fg(palette::TEXT);
-
-    let lines = vec![
-        Line::from(Span::styled("Browse Mode", header)),
-        Line::from(vec![Span::styled("  j / Down  ", key), Span::styled("Next session", desc)]),
-        Line::from(vec![Span::styled("  k / Up    ", key), Span::styled("Previous session", desc)]),
-        Line::from(vec![Span::styled("  Enter     ", key), Span::styled("Open session", desc)]),
-        Line::from(vec![Span::styled("  g         ", key), Span::styled("Go to top", desc)]),
-        Line::from(vec![Span::styled("  G         ", key), Span::styled("Go to bottom", desc)]),
-        Line::from(vec![Span::styled("  y         ", key), Span::styled("Show resume command", desc)]),
-        Line::from(vec![Span::styled("  s         ", key), Span::styled("Toggle star (bookmark)", desc)]),
-        Line::from(vec![Span::styled("  /         ", key), Span::styled("Search conversations", desc)]),
-        Line::from(vec![Span::styled("  H         ", key), Span::styled("Toggle hybrid (semantic) search", desc)]),
-        Line::from(vec![Span::styled("  f         ", key), Span::styled("Open filter panel", desc)]),
-        Line::from(vec![Span::styled("  Tab       ", key), Span::styled("Switch focus", desc)]),
-        Line::raw(""),
-        Line::from(Span::styled("View Mode", header)),
-        Line::from(vec![Span::styled("  j / Down  ", key), Span::styled("Scroll down", desc)]),
-        Line::from(vec![Span::styled("  k / Up    ", key), Span::styled("Scroll up", desc)]),
-        Line::from(vec![Span::styled("  Ctrl+D    ", key), Span::styled("Page down", desc)]),
-        Line::from(vec![Span::styled("  Ctrl+U    ", key), Span::styled("Page up", desc)]),
-        Line::from(vec![Span::styled("  g / G     ", key), Span::styled("Top / bottom", desc)]),
-        Line::from(vec![Span::styled("  t         ", key), Span::styled("Toggle tool calls", desc)]),
-        Line::from(vec![Span::styled("  r         ", key), Span::styled("Toggle raw tool output", desc)]),
-        Line::from(vec![Span::styled("  e         ", key), Span::styled("Export session", desc)]),
-        Line::from(vec![Span::styled("  y         ", key), Span::styled("Show resume command", desc)]),
-        Line::from(vec![Span::styled("  Esc       ", key), Span::styled("Back to list", desc)]),
-        Line::raw(""),
-        Line::from(Span::styled("Search Mode", header)),
-        Line::from(vec![Span::styled("  Type      ", key), Span::styled("Filter sessions", desc)]),
-        Line::from(vec![Span::styled("  Tab       ", key), Span::styled("Toggle hybrid engine", desc)]),
-        Line::from(vec![Span::styled("  Enter     ", key), Span::styled("Open selected", desc)]),
-        Line::from(vec![Span::styled("  Esc       ", key), Span::styled("Cancel search", desc)]),
-        Line::raw(""),
-        Line::from(Span::styled("Filter Panel", header)),
-        Line::from(vec![Span::styled("  j / k     ", key), Span::styled("Navigate items", desc)]),
-        Line::from(vec![Span::styled("  Space     ", key), Span::styled("Toggle / cycle row", desc)]),
-        Line::from(vec![Span::styled("  e         ", key), Span::styled("Edit text field", desc)]),
-        Line::from(vec![Span::styled("  Ctrl+C    ", key), Span::styled("Clear all filters", desc)]),
-        Line::from(vec![Span::styled("  Esc / f   ", key), Span::styled("Close panel", desc)]),
-        Line::raw(""),
-        Line::from(Span::styled("Global", header)),
-        Line::from(vec![Span::styled("  ?         ", key), Span::styled("Toggle this help", desc)]),
-        Line::from(vec![Span::styled("  q         ", key), Span::styled("Quit", desc)]),
-        Line::from(vec![Span::styled("  Ctrl+C    ", key), Span::styled("Force quit", desc)]),
-    ];
-
-    let help_width = 48;
-    let help_height = u16::try_from(lines.len() + 2).unwrap_or(38).min(area.height.saturating_sub(2));
-    let x = area.width.saturating_sub(help_width) / 2;
-    let y = area.height.saturating_sub(help_height) / 2;
-
-    let help_area = ratatui::layout::Rect::new(x, y, help_width, help_height);
-
-    frame.render_widget(Clear, help_area);
-    frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .title(" Help ")
-                .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(palette::ACCENT)),
-        ),
-        help_area,
-    );
-}
-
-#[allow(clippy::too_many_lines)]
-fn render_filter_overlay(
-    frame: &mut ratatui::Frame,
-    area: ratatui::layout::Rect,
-    filter: &FilterState,
-) {
-    use ratatui::style::{Modifier, Style};
-    use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
-
-    use crate::ui::palette;
-
-    let providers = Provider::all();
-    let mut lines: Vec<Line> = Vec::new();
-
-    let header = Style::default()
-        .fg(palette::ACCENT)
-        .add_modifier(Modifier::BOLD);
-    let selected_style = Style::default().bg(palette::OVERLAY);
-
-    lines.push(Line::from(Span::styled("Providers", header)));
-    for (i, p) in providers.iter().enumerate() {
-        let enabled = filter.provider_enabled.get(p).copied().unwrap_or(true);
-        let checkbox = if enabled { "\u{25c9}" } else { "\u{25ef}" };
-        let mut line = Line::from(vec![
-            Span::styled(
-                format!("  {checkbox} "),
-                Style::default().fg(if enabled {
-                    palette::GREEN
-                } else {
-                    palette::TEXT_FAINT
-                }),
-            ),
-            Span::styled(
-                p.as_str(),
-                Style::default().fg(palette::TEXT),
-            ),
-        ]);
-        if filter.cursor == i {
-            line = line.style(selected_style);
-        }
-        lines.push(line);
-    }
-
-    lines.push(Line::raw(""));
-    lines.push(Line::from(Span::styled("Filters", header)));
-
-    let proj_idx = providers.len();
-    let proj_value = if filter.project_query.is_empty() {
-        "(any)".to_string()
-    } else {
-        filter.project_query.clone()
-    };
-    let editing_proj = filter.editing_field == Some(FilterField::Project);
-    let proj_suffix = if editing_proj { "\u{2588}" } else { "" };
-    let mut proj_line = Line::from(vec![
-        Span::styled("  Project: ", Style::default().fg(palette::PEACH)),
-        Span::styled(
-            format!("{proj_value}{proj_suffix}"),
-            Style::default().fg(palette::TEXT),
-        ),
-    ]);
-    if filter.cursor == proj_idx {
-        proj_line = proj_line.style(selected_style);
-    }
-    lines.push(proj_line);
-
-    let from_idx = proj_idx + 1;
-    let from_value = filter
-        .date_from
-        .map_or_else(|| "(any)".to_string(), |d| d.format("%Y-%m-%d").to_string());
-    let editing_from = filter.editing_field == Some(FilterField::DateFrom);
-    let from_suffix = if editing_from { "\u{2588}" } else { "" };
-    let mut from_line = Line::from(vec![
-        Span::styled("  From:    ", Style::default().fg(palette::PEACH)),
-        Span::styled(
-            format!("{from_value}{from_suffix}"),
-            Style::default().fg(palette::TEXT),
-        ),
-    ]);
-    if filter.cursor == from_idx {
-        from_line = from_line.style(selected_style);
-    }
-    lines.push(from_line);
-
-    let to_idx = from_idx + 1;
-    let to_value = filter
-        .date_to
-        .map_or_else(|| "(any)".to_string(), |d| d.format("%Y-%m-%d").to_string());
-    let editing_to = filter.editing_field == Some(FilterField::DateTo);
-    let to_suffix = if editing_to { "\u{2588}" } else { "" };
-    let mut to_line = Line::from(vec![
-        Span::styled("  To:      ", Style::default().fg(palette::PEACH)),
-        Span::styled(
-            format!("{to_value}{to_suffix}"),
-            Style::default().fg(palette::TEXT),
-        ),
-    ]);
-    if filter.cursor == to_idx {
-        to_line = to_line.style(selected_style);
-    }
-    lines.push(to_line);
-
-    let role_idx = FilterState::role_idx();
-    let role_value = filter
-        .role
-        .map_or_else(|| "(any)".to_string(), |r| r.slug().to_string());
-    let mut role_line = Line::from(vec![
-        Span::styled("  Role:    ", Style::default().fg(palette::PEACH)),
-        Span::styled(role_value, Style::default().fg(palette::TEXT)),
-    ]);
-    if filter.cursor == role_idx {
-        role_line = role_line.style(selected_style);
-    }
-    lines.push(role_line);
-
-    let tool_idx = FilterState::tool_call_idx();
-    let tool_marker = if filter.has_tool_call {
-        "\u{25c9}"
-    } else {
-        "\u{25ef}"
-    };
-    let mut tool_line = Line::from(vec![
-        Span::styled(
-            format!("  {tool_marker} "),
-            Style::default().fg(if filter.has_tool_call {
-                palette::GREEN
-            } else {
-                palette::TEXT_FAINT
-            }),
-        ),
-        Span::styled("Has tool call", Style::default().fg(palette::TEXT)),
-    ]);
-    if filter.cursor == tool_idx {
-        tool_line = tool_line.style(selected_style);
-    }
-    lines.push(tool_line);
-
-    let starred_idx = FilterState::starred_idx();
-    let starred_marker = if filter.starred_only {
-        "\u{25c9}"
-    } else {
-        "\u{25ef}"
-    };
-    let mut starred_line = Line::from(vec![
-        Span::styled(
-            format!("  {starred_marker} "),
-            Style::default().fg(if filter.starred_only {
-                palette::YELLOW
-            } else {
-                palette::TEXT_FAINT
-            }),
-        ),
-        Span::styled(
-            "Starred only",
-            Style::default().fg(palette::TEXT),
-        ),
-    ]);
-    if filter.cursor == starred_idx {
-        starred_line = starred_line.style(selected_style);
-    }
-    lines.push(starred_line);
-
-    let panel_width = 40;
-    let panel_height = u16::try_from(lines.len() + 2).unwrap_or(20).min(area.height.saturating_sub(2));
-    let x = area.width.saturating_sub(panel_width) / 2;
-    let y = area.height.saturating_sub(panel_height) / 2;
-
-    let panel_area = ratatui::layout::Rect::new(x, y, panel_width, panel_height);
-
-    frame.render_widget(Clear, panel_area);
-    frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .title(" Filter ")
-                .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(palette::YELLOW)),
-        ),
-        panel_area,
-    );
-}
-
-fn render_export_overlay(
-    frame: &mut ratatui::Frame,
-    area: ratatui::layout::Rect,
-    cursor: usize,
-) {
-    use ratatui::style::{Modifier, Style};
-    use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
-
-    use crate::ui::palette;
-
-    let formats = ExportFormat::all();
-    let selected_style = Style::default().bg(palette::OVERLAY);
-
-    let mut lines: Vec<Line> = Vec::new();
-    for (i, fmt) in formats.iter().enumerate() {
-        let marker = if i == cursor { "\u{25b8}" } else { " " };
-        let mut line = Line::from(vec![
-            Span::styled(
-                format!(" {marker} "),
-                Style::default()
-                    .fg(palette::ACCENT)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!("{} (.{})", fmt.label(), fmt.extension()),
-                Style::default().fg(palette::TEXT),
-            ),
-        ]);
-        if i == cursor {
-            line = line.style(selected_style);
-        }
-        lines.push(line);
-    }
-
-    let panel_width = 28;
-    let panel_height =
-        u16::try_from(lines.len() + 2).unwrap_or(6).min(area.height.saturating_sub(2));
-    let x = area.width.saturating_sub(panel_width) / 2;
-    let y = area.height.saturating_sub(panel_height) / 2;
-
-    let panel_area = ratatui::layout::Rect::new(x, y, panel_width, panel_height);
-
-    frame.render_widget(Clear, panel_area);
-    frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .title(" Export As ")
-                .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(palette::GREEN)),
-        ),
-        panel_area,
-    );
 }

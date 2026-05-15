@@ -11,6 +11,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
+use std::fmt::Write as _;
 
 use crate::decisions::DEFAULT_THRESHOLD as DECISIONS_THRESHOLD;
 use crate::model::{Message, Session};
@@ -312,14 +313,23 @@ fn round_cents_4(v: f64) -> f64 {
 /// journal or weekly review. The shape is stable; tests assert on
 /// distinctive substrings.
 #[must_use]
-#[allow(clippy::too_many_lines)]
 pub fn render_markdown(env: &ReportEnvelope) -> String {
-    use std::fmt::Write;
     let mut out = String::new();
+    write_report_heading(&mut out, env);
+    write_top_projects(&mut out, env);
+    write_decisions(&mut out, env);
+    write_todos(&mut out, env);
+    write_threads(&mut out, env);
+    out
+}
+
+fn write_report_heading(out: &mut String, env: &ReportEnvelope) {
     let start = env.window.started_at.format("%Y-%m-%d");
     let end = env.window.ended_at.format("%Y-%m-%d");
     let days = env.window.days;
-    let _ = writeln!(out, "# Weekly summary — {start} → {end} ({days} day{plural})",
+    let _ = writeln!(
+        out,
+        "# Weekly summary — {start} → {end} ({days} day{plural})",
         plural = if days == 1 { "" } else { "s" },
     );
     let _ = writeln!(out);
@@ -339,7 +349,9 @@ pub fn render_markdown(env: &ReportEnvelope) -> String {
         env.token_usage.total_tokens,
     );
     let _ = writeln!(out);
+}
 
+fn write_top_projects(out: &mut String, env: &ReportEnvelope) {
     let _ = writeln!(
         out,
         "## Top projects ({} of {})",
@@ -366,7 +378,9 @@ pub fn render_markdown(env: &ReportEnvelope) -> String {
         }
     }
     let _ = writeln!(out);
+}
 
+fn write_decisions(out: &mut String, env: &ReportEnvelope) {
     let _ = writeln!(
         out,
         "## Decisions ({} of {})",
@@ -374,8 +388,11 @@ pub fn render_markdown(env: &ReportEnvelope) -> String {
         env.meta.decisions_total,
     );
     if env.decisions.is_empty() {
-        let _ = writeln!(out, "_No decision candidates above threshold {:.1}._",
-            env.meta.decisions_threshold);
+        let _ = writeln!(
+            out,
+            "_No decision candidates above threshold {:.1}._",
+            env.meta.decisions_threshold
+        );
     } else {
         for d in &env.decisions {
             let _ = writeln!(
@@ -388,7 +405,9 @@ pub fn render_markdown(env: &ReportEnvelope) -> String {
         }
     }
     let _ = writeln!(out);
+}
 
+fn write_todos(out: &mut String, env: &ReportEnvelope) {
     let _ = writeln!(
         out,
         "## Open TODOs ({} of {})",
@@ -409,7 +428,9 @@ pub fn render_markdown(env: &ReportEnvelope) -> String {
         }
     }
     let _ = writeln!(out);
+}
 
+fn write_threads(out: &mut String, env: &ReportEnvelope) {
     let _ = writeln!(
         out,
         "## Threads ({} of {}; gap {}h)",
@@ -432,8 +453,6 @@ pub fn render_markdown(env: &ReportEnvelope) -> String {
             );
         }
     }
-
-    out
 }
 
 fn strip_newlines(s: &str) -> String {
@@ -446,9 +465,7 @@ fn strip_newlines(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{
-        ContentBlock, MessageId, Provider, Role, SessionId, TokenUsage,
-    };
+    use crate::model::{ContentBlock, MessageId, Provider, Role, SessionId, TokenUsage};
     use chrono::TimeZone;
     use std::path::PathBuf;
 
@@ -710,7 +727,10 @@ mod tests {
         let window = ReportWindow::last_days(ts(2026, 5, 10), 1);
         let env = aggregate(window, &[], ReportLimits::DEFAULTS);
         let md = render_markdown(&env);
-        assert!(md.contains("(1 day)"), "expected singular `1 day`, got: {md}");
+        assert!(
+            md.contains("(1 day)"),
+            "expected singular `1 day`, got: {md}"
+        );
     }
 
     #[test]

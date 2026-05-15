@@ -7,21 +7,17 @@
 //!
 //! The result tags every session with the source it came from — `"local"` for
 //! the host running aghist, or the registered source name for remote mirrors —
-//! so search results can surface a `source` marker. The Session struct itself
-//! is unchanged; instead, callers consult [`FederatedDiscovery::source_of`] to
-//! map a `SessionId` back to its source.
+//! so search results can surface a `source` marker. Callers consult
+//! [`FederatedDiscovery::source_of_session`] to map a session back to its
+//! source.
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::config::RemoteSource;
-use crate::model::{Session, SessionId};
-use crate::provider::{
-    claude_code::ClaudeCodeProvider, codex_cli::CodexCliProvider,
-    copilot_cli::CopilotCliProvider, gemini_cli::GeminiCliProvider, opencode::OpenCodeProvider,
-    HistoryProvider,
-};
+use crate::model::{Provider, Session};
+use crate::provider::{self, HistoryProvider};
 
 /// Source tag for sessions discovered from local provider dirs.
 pub const LOCAL_SOURCE: &str = "local";
@@ -32,9 +28,9 @@ pub const LOCAL_SOURCE: &str = "local";
 /// caller for diagnostics, never fatal.
 pub struct FederatedDiscovery {
     pub sessions: Vec<Session>,
-    /// Maps `SessionId.0` to the source tag (`"local"` or a registered source
-    /// name). Sessions with no entry default to `"local"` — useful for code
-    /// paths that did not go through federated discovery.
+    /// Maps `Session::identity_key()` to the source tag (`"local"` or a
+    /// registered source name). Sessions with no entry default to `"local"` —
+    /// useful for code paths that did not go through federated discovery.
     pub source_by_session: HashMap<String, String>,
     pub failures: Vec<SourceFailure>,
 }
@@ -45,12 +41,14 @@ pub struct SourceFailure {
     pub message: String,
 }
 
+type DiscoveryOutcome = (String, Vec<Session>, Option<SourceFailure>);
+
 impl FederatedDiscovery {
     /// Returns the source tag for a session, defaulting to `"local"` when the
     /// session was never seen by federated discovery.
-    pub fn source_of(&self, session_id: &SessionId) -> &str {
+    pub fn source_of_session(&self, session: &Session) -> &str {
         self.source_by_session
-            .get(session_id.0.as_str())
+            .get(session.identity_key().as_str())
             .map_or(LOCAL_SOURCE, String::as_str)
     }
 }
@@ -66,43 +64,96 @@ impl FederatedDiscovery {
 pub fn providers_rooted_at(root: &Path) -> Vec<Box<dyn HistoryProvider>> {
     let mut providers: Vec<Box<dyn HistoryProvider>> = Vec::new();
 
-    let push_if_exists = |dirs: Vec<PathBuf>| -> Option<Vec<PathBuf>> {
+    for &kind in Provider::all() {
+        let dirs = provider::registry::remote_candidate_dirs(kind, root);
         if dirs.iter().any(|d| d.exists()) {
-            Some(dirs)
-        } else {
-            None
+            providers.push(provider::registry::provider_from_dirs(kind, dirs));
         }
-    };
-
-    if let Some(dirs) = push_if_exists(vec![root.to_path_buf(), root.join(".claude")]) {
-        providers.push(Box::new(ClaudeCodeProvider::new(dirs)));
-    }
-    if let Some(dirs) = push_if_exists(vec![root.to_path_buf(), root.join(".gemini")]) {
-        providers.push(Box::new(GeminiCliProvider::new(dirs)));
-    }
-    if let Some(dirs) = push_if_exists(vec![
-        root.to_path_buf(),
-        root.join(".copilot").join("session-state"),
-    ]) {
-        providers.push(Box::new(CopilotCliProvider::new(dirs)));
-    }
-    if let Some(dirs) = push_if_exists(vec![
-        root.to_path_buf(),
-        root.join(".codex").join("sessions"),
-    ]) {
-        providers.push(Box::new(CodexCliProvider::new(dirs)));
-    }
-    if let Some(dirs) = push_if_exists(vec![
-        root.to_path_buf(),
-        root.join(".local")
-            .join("share")
-            .join("opencode")
-            .join("storage"),
-    ]) {
-        providers.push(Box::new(OpenCodeProvider::new(dirs)));
     }
 
     providers
+}
+
+fn discover_local(local_providers: &[Box<dyn HistoryProvider>]) -> DiscoveryOutcome {
+    let mut sessions = Vec::new();
+    for p in local_providers {
+        if let Ok(found) = p.discover_sessions() {
+            sessions.extend(found);
+        }
+    }
+    (LOCAL_SOURCE.to_string(), sessions, None)
+}
+
+fn discover_remote(src: &RemoteSource, cache_root: &Path) -> DiscoveryOutcome {
+    if let Err(message) = src.validate() {
+        return (
+            src.name.clone(),
+            Vec::new(),
+            Some(SourceFailure {
+                source: src.name.clone(),
+                message,
+            }),
+        );
+    }
+    let data_dir = src.data_dir(cache_root);
+    if !data_dir.exists() {
+        return (
+            src.name.clone(),
+            Vec::new(),
+            Some(SourceFailure {
+                source: src.name.clone(),
+                message: format!(
+                    "cache missing at {} — run `aghist sources pull {}` first",
+                    data_dir.display(),
+                    src.name
+                ),
+            }),
+        );
+    }
+    let providers = providers_rooted_at(&data_dir);
+    let mut sessions = Vec::new();
+    let mut first_err: Option<String> = None;
+    for p in &providers {
+        match p.discover_sessions() {
+            Ok(found) => sessions.extend(found),
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(e.to_string());
+                }
+            }
+        }
+    }
+    let failure = first_err.map(|message| SourceFailure {
+        source: src.name.clone(),
+        message,
+    });
+    (src.name.clone(), sessions, failure)
+}
+
+fn merge_discovery_outcomes(outcomes: Vec<DiscoveryOutcome>) -> FederatedDiscovery {
+    // Outcomes are ordered local-first. Deduplicate only exact identities
+    // rather than raw provider session ids: different providers or remote
+    // sources can legitimately reuse the same id.
+    let mut sessions = Vec::new();
+    let mut source_by_session: HashMap<String, String> = HashMap::new();
+    let mut failures = Vec::new();
+    for (tag, batch, failure) in outcomes {
+        for s in batch {
+            if let Entry::Vacant(v) = source_by_session.entry(s.identity_key()) {
+                v.insert(tag.clone());
+                sessions.push(s);
+            }
+        }
+        if let Some(f) = failure {
+            failures.push(f);
+        }
+    }
+
+    FederatedDiscovery {
+        sessions,
+        source_by_session,
+        failures,
+    }
 }
 
 /// Discover sessions concurrently from local providers + every registered
@@ -118,67 +169,16 @@ pub fn discover_federated(
     sources: &[RemoteSource],
     cache_root: &Path,
 ) -> FederatedDiscovery {
-    // Each closure produces (source_tag, sessions, optional_failure). We run
-    // them in parallel via std::thread::scope — providers are Send + Sync per
-    // the trait, and discovery is IO-bound so threads pay off even on the
-    // small N here.
-    type Outcome = (String, Vec<Session>, Option<SourceFailure>);
-
-    let local_outcome = || -> Outcome {
-        let mut sessions = Vec::new();
-        for p in local_providers {
-            if let Ok(found) = p.discover_sessions() {
-                sessions.extend(found);
-            }
-        }
-        (LOCAL_SOURCE.to_string(), sessions, None)
-    };
-
-    let remote_outcome = |src: &RemoteSource| -> Outcome {
-        let data_dir = src.data_dir(cache_root);
-        if !data_dir.exists() {
-            return (
-                src.name.clone(),
-                Vec::new(),
-                Some(SourceFailure {
-                    source: src.name.clone(),
-                    message: format!(
-                        "cache missing at {} — run `aghist sources pull {}` first",
-                        data_dir.display(),
-                        src.name
-                    ),
-                }),
-            );
-        }
-        let providers = providers_rooted_at(&data_dir);
-        let mut sessions = Vec::new();
-        let mut first_err: Option<String> = None;
-        for p in &providers {
-            match p.discover_sessions() {
-                Ok(found) => sessions.extend(found),
-                Err(e) => {
-                    if first_err.is_none() {
-                        first_err = Some(e.to_string());
-                    }
-                }
-            }
-        }
-        let failure = first_err.map(|message| SourceFailure {
-            source: src.name.clone(),
-            message,
-        });
-        (src.name.clone(), sessions, failure)
-    };
-
-    let outcomes: Vec<Outcome> = std::thread::scope(|scope| {
+    // Discovery is IO-bound; fan out across local plus each remote source.
+    let outcomes: Vec<DiscoveryOutcome> = std::thread::scope(|scope| {
         // Spawn one thread per source (local counts as one). Local goes first
         // so its handle is joined first and its sessions land at the front of
         // the merged vec — keeps deterministic ordering for callers that don't
         // sort.
-        let local_handle = scope.spawn(local_outcome);
+        let local_handle = scope.spawn(|| discover_local(local_providers));
         let remote_handles: Vec<_> = sources
             .iter()
-            .map(|src| scope.spawn(move || remote_outcome(src)))
+            .map(|src| scope.spawn(move || discover_remote(src, cache_root)))
             .collect();
 
         let mut out = Vec::with_capacity(remote_handles.len() + 1);
@@ -211,37 +211,14 @@ pub fn discover_federated(
         out
     });
 
-    // Outcomes are ordered local-first; preserve that precedence when sessions
-    // collide. Without this, a remote source mirroring the same provider dirs
-    // (e.g. a backup of this host) would overwrite the `"local"` tag with the
-    // remote source name and double-index the session under two different
-    // source_paths.
-    let mut sessions = Vec::new();
-    let mut source_by_session: HashMap<String, String> = HashMap::new();
-    let mut failures = Vec::new();
-    for (tag, batch, failure) in outcomes {
-        for s in batch {
-            if let Entry::Vacant(v) = source_by_session.entry(s.id.0.clone()) {
-                v.insert(tag.clone());
-                sessions.push(s);
-            }
-        }
-        if let Some(f) = failure {
-            failures.push(f);
-        }
-    }
-
-    FederatedDiscovery {
-        sessions,
-        source_by_session,
-        failures,
-    }
+    merge_discovery_outcomes(outcomes)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::Transport;
+    use crate::provider::claude_code::ClaudeCodeProvider;
 
     fn write_claude_fixture(home: &Path, session_id: &str) {
         let projects = home.join(".claude").join("projects").join("proj");
@@ -271,7 +248,7 @@ mod tests {
         let cache = tmp.path().join("cache");
         let result = discover_federated(&providers, &[], &cache);
         assert_eq!(result.sessions.len(), 1);
-        assert_eq!(result.source_of(&result.sessions[0].id), LOCAL_SOURCE);
+        assert_eq!(result.source_of_session(&result.sessions[0]), LOCAL_SOURCE);
         assert!(result.failures.is_empty());
     }
 
@@ -306,7 +283,7 @@ mod tests {
         let by_id: HashMap<_, _> = result
             .sessions
             .iter()
-            .map(|s| (s.id.0.clone(), result.source_of(&s.id).to_string()))
+            .map(|s| (s.id.0.clone(), result.source_of_session(s).to_string()))
             .collect();
         assert_eq!(by_id.get("local-1").map(String::as_str), Some(LOCAL_SOURCE));
         assert_eq!(by_id.get("remote-1").map(String::as_str), Some("laptop"));
@@ -314,11 +291,9 @@ mod tests {
     }
 
     #[test]
-    fn local_tag_wins_when_remote_mirrors_overlap_with_local_session_id() {
-        // Same session_id present locally and on a remote mirror (e.g. a backup
-        // of this host). The local tag must win so callers know the session
-        // came from the host's own dirs, and the session must appear only once
-        // so we don't double-index it under two source_paths.
+    fn raw_session_id_overlap_across_sources_is_preserved() {
+        // Same session_id present locally and on a remote mirror. Both rows
+        // must survive because source path is part of the internal identity.
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
@@ -347,10 +322,13 @@ mod tests {
             .collect();
         assert_eq!(
             shared.len(),
-            1,
-            "duplicate session ids across sources must dedupe; got {shared:?}"
+            2,
+            "duplicate raw session ids across sources must both survive; got {shared:?}"
         );
-        assert_eq!(result.source_of(&shared[0].id), LOCAL_SOURCE);
+        let sources: std::collections::HashSet<&str> =
+            shared.iter().map(|s| result.source_of_session(s)).collect();
+        assert!(sources.contains(LOCAL_SOURCE), "{sources:?}");
+        assert!(sources.contains("backup"), "{sources:?}");
         assert!(result.failures.is_empty());
     }
 

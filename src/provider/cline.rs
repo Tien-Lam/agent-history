@@ -182,7 +182,9 @@ impl HistoryProvider for ClineProvider {
             if !td.is_dir() {
                 continue;
             }
-            let Ok(entries) = std::fs::read_dir(&td) else { continue };
+            let Ok(entries) = std::fs::read_dir(&td) else {
+                continue;
+            };
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_dir() {
@@ -290,8 +292,7 @@ fn task_summary(path: &Path) -> Option<String> {
 
 fn parse_api_history(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Message>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read: {e}"))?;
-    let raw: Vec<ApiMessage> =
-        serde_json::from_slice(&bytes).map_err(|e| format!("parse: {e}"))?;
+    let raw: Vec<ApiMessage> = serde_json::from_slice(&bytes).map_err(|e| format!("parse: {e}"))?;
 
     let mut messages = Vec::with_capacity(raw.len());
     for (idx, msg) in raw.into_iter().enumerate() {
@@ -353,7 +354,11 @@ fn api_block_to_content(block: ApiBlock) -> Vec<ContentBlock> {
                     }
                 })
                 .unwrap_or_default();
-            vec![ContentBlock::ToolUse(ToolCall { id, name, arguments })]
+            vec![ContentBlock::ToolUse(ToolCall {
+                id,
+                name,
+                arguments,
+            })]
         }
         "tool_result" => {
             let tool_call_id = block.tool_use_id.unwrap_or_default();
@@ -435,7 +440,11 @@ mod tests {
     #[test]
     fn uses_task_metadata_created_at_over_dir_name() {
         let tmp = TempDir::new().unwrap();
-        let task_path = tmp.path().join(EXTENSION_ID).join(TASKS_SUBDIR).join("1698765432000");
+        let task_path = tmp
+            .path()
+            .join(EXTENSION_ID)
+            .join(TASKS_SUBDIR)
+            .join("1698765432000");
         fs::create_dir_all(&task_path).unwrap();
         write_file(&task_path, API_HISTORY_FILE, "[]");
         write_file(&task_path, METADATA_FILE, "{\"createdAt\":1700000000000}");
@@ -509,7 +518,11 @@ mod tests {
     #[test]
     fn skips_directory_without_api_history() {
         let tmp = TempDir::new().unwrap();
-        let task = tmp.path().join(EXTENSION_ID).join(TASKS_SUBDIR).join("1698765432000");
+        let task = tmp
+            .path()
+            .join(EXTENSION_ID)
+            .join(TASKS_SUBDIR)
+            .join("1698765432000");
         fs::create_dir_all(&task).unwrap();
         let sessions = provider_for(&tmp).discover_sessions().unwrap();
         assert!(sessions.is_empty());

@@ -58,7 +58,7 @@ impl HistoryProvider for CodexCliProvider {
             }
 
             // Scan {YYYY}/{MM}/{DD}/rollout-*.jsonl
-            collect_rollout_files(base, &mut sessions)?;
+            collect_rollout_files(base, &mut sessions);
         }
 
         sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
@@ -70,41 +70,42 @@ impl HistoryProvider for CodexCliProvider {
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn collect_rollout_files(
-    base: &Path,
-    sessions: &mut Vec<Session>,
-) -> Result<(), ProviderError> {
+fn collect_rollout_files(base: &Path, sessions: &mut Vec<Session>) {
     // Walk year/month/day directories
-    let Ok(years) = std::fs::read_dir(base) else { return Ok(()) };
+    let Ok(years) = std::fs::read_dir(base) else {
+        return;
+    };
 
     for year_entry in years.flatten() {
         if !year_entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
 
-        let Ok(months) = std::fs::read_dir(year_entry.path()) else { continue };
+        let Ok(months) = std::fs::read_dir(year_entry.path()) else {
+            continue;
+        };
 
         for month_entry in months.flatten() {
             if !month_entry.file_type().is_ok_and(|t| t.is_dir()) {
                 continue;
             }
 
-            let Ok(days) = std::fs::read_dir(month_entry.path()) else { continue };
+            let Ok(days) = std::fs::read_dir(month_entry.path()) else {
+                continue;
+            };
 
             for day_entry in days.flatten() {
                 if !day_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
-                let Ok(files) = std::fs::read_dir(day_entry.path()) else { continue };
+                let Ok(files) = std::fs::read_dir(day_entry.path()) else {
+                    continue;
+                };
 
                 for file_entry in files.flatten() {
                     let path = file_entry.path();
-                    let fname = path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+                    let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                     if fname.starts_with("rollout-")
                         && std::path::Path::new(fname)
@@ -119,8 +120,6 @@ fn collect_rollout_files(
             }
         }
     }
-
-    Ok(())
 }
 
 fn build_session_from_rollout(path: &Path) -> Option<Session> {
@@ -154,11 +153,8 @@ fn build_session_from_rollout(path: &Path) -> Option<Session> {
         match entry.entry_type.as_deref() {
             Some("user" | "assistant") => {
                 message_count += 1;
-                if entry.entry_type.as_deref() == Some("user")
-                    && first_user_message.is_none()
-                {
-                    first_user_message =
-                        entry.content.map(|c| c.chars().take(80).collect());
+                if entry.entry_type.as_deref() == Some("user") && first_user_message.is_none() {
+                    first_user_message = entry.content.map(|c| c.chars().take(80).collect());
                 }
             }
             Some("event_msg") => {
@@ -207,7 +203,6 @@ fn build_session_from_rollout(path: &Path) -> Option<Session> {
     })
 }
 
-#[allow(clippy::too_many_lines)]
 fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Codex CLI messages");
     let file = std::fs::File::open(path)?;
@@ -235,127 +230,25 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
         };
 
         let entry_type = entry.entry_type.as_deref().unwrap_or("");
-
-        // Try legacy flat format first (type = "user"/"assistant"/"tool_use"/"error")
-        // then newer event_msg format (type = "event_msg", payload.type = "user_message"/"agent_message")
         let role = match entry_type {
             "user" => Role::User,
             "assistant" => Role::Assistant,
             "tool_use" => Role::Tool,
             "error" => {
-                if let Some(error_msg) = entry.error {
-                    messages.push(Message {
-                        id: MessageId(String::new()),
-                        role: Role::System,
-                        timestamp: entry
-                            .timestamp
-                            .as_deref()
-                            .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-                            .unwrap_or_else(Utc::now),
-                        content: vec![ContentBlock::Error(error_msg)],
-                        model: None,
-                        token_usage: None,
-                    });
+                if let Some(error_msg) = entry.error.as_deref() {
+                    messages.push(error_message(
+                        entry_timestamp(&entry),
+                        error_msg.to_string(),
+                    ));
                 }
                 continue;
             }
             "event_msg" => {
-                // Newer Codex format: type="event_msg" with payload.type
-                if let Some(ref payload) = entry.payload {
-                    let payload_type = payload.entry_type.as_deref().unwrap_or("");
-                    let timestamp = entry
-                        .timestamp
-                        .as_deref()
-                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-                        .unwrap_or_else(Utc::now);
-                    match payload_type {
-                        "user_message" => {
-                            if let Some(ref msg_text) = payload.message {
-                                if !msg_text.is_empty() {
-                                    messages.push(Message {
-                                        id: MessageId(String::new()),
-                                        role: Role::User,
-                                        timestamp,
-                                        content: parse_text_with_code_blocks(msg_text),
-                                        model: None,
-                                        token_usage: None,
-                                    });
-                                }
-                            }
-                        }
-                        "agent_message" => {
-                            if let Some(ref msg_text) = payload.message {
-                                if !msg_text.is_empty() {
-                                    messages.push(Message {
-                                        id: MessageId(String::new()),
-                                        role: Role::Assistant,
-                                        timestamp,
-                                        content: parse_text_with_code_blocks(msg_text),
-                                        model: None,
-                                        token_usage: None,
-                                    });
-                                }
-                            }
-                        }
-                        _ => {
-                            tracing::trace!(payload_type, "skipping event_msg");
-                        }
-                    }
-                }
+                push_event_msg(&mut messages, &entry);
                 continue;
             }
             "response_item" => {
-                // Newer Codex format: type="response_item" with payload.type
-                if let Some(ref payload) = entry.payload {
-                    let payload_type = payload.entry_type.as_deref().unwrap_or("");
-                    let timestamp = entry
-                        .timestamp
-                        .as_deref()
-                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-                        .unwrap_or_else(Utc::now);
-                    match payload_type {
-                        "function_call" => {
-                            let name = payload.name.clone().unwrap_or_else(|| "unknown".to_string());
-                            let call_id = payload.call_id.clone().unwrap_or_default();
-                            let arguments = payload.arguments.clone().unwrap_or_default();
-                            messages.push(Message {
-                                id: MessageId(String::new()),
-                                role: Role::Tool,
-                                timestamp,
-                                content: vec![ContentBlock::ToolUse(ToolCall {
-                                    id: call_id,
-                                    name,
-                                    arguments,
-                                })],
-                                model: None,
-                                token_usage: None,
-                            });
-                        }
-                        "function_call_output" => {
-                            let call_id = payload.call_id.clone().unwrap_or_default();
-                            let output = payload.output.clone().unwrap_or_default();
-                            if !output.is_empty() {
-                                messages.push(Message {
-                                    id: MessageId(String::new()),
-                                    role: Role::Tool,
-                                    timestamp,
-                                    content: vec![ContentBlock::ToolResult(
-                                        crate::model::ToolResult {
-                                            tool_call_id: call_id,
-                                            success: true,
-                                            output,
-                                        },
-                                    )],
-                                    model: None,
-                                    token_usage: None,
-                                });
-                            }
-                        }
-                        _ => {
-                            tracing::trace!(payload_type, "skipping response_item");
-                        }
-                    }
-                }
+                push_response_item(&mut messages, &entry);
                 continue;
             }
             _ => {
@@ -365,31 +258,8 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
             }
         };
 
-        let timestamp = entry
-            .timestamp
-            .as_deref()
-            .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-            .unwrap_or_else(Utc::now);
-
-        let mut content = Vec::new();
-
-        if let Some(text) = &entry.content {
-            if !text.is_empty() {
-                if role == Role::Tool {
-                    content.push(ContentBlock::ToolUse(ToolCall {
-                        id: String::new(),
-                        name: text.clone(),
-                        arguments: entry
-                            .tool_calls
-                            .as_ref()
-                            .map(|tc| serde_json::to_string_pretty(tc).unwrap_or_default())
-                            .unwrap_or_default(),
-                    }));
-                } else {
-                    content.extend(parse_text_with_code_blocks(text));
-                }
-            }
-        }
+        let timestamp = entry_timestamp(&entry);
+        let content = legacy_content(&entry, role);
 
         if content.is_empty() {
             empty_content += 1;
@@ -397,14 +267,7 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
             continue;
         }
 
-        messages.push(Message {
-            id: MessageId(String::new()),
-            role,
-            timestamp,
-            content,
-            model: None,
-            token_usage: None,
-        });
+        messages.push(message(role, timestamp, content));
     }
 
     tracing::info!(
@@ -418,6 +281,123 @@ fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
     );
 
     Ok(messages)
+}
+
+fn entry_timestamp(entry: &RawEntry) -> DateTime<Utc> {
+    entry
+        .timestamp
+        .as_deref()
+        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+        .unwrap_or_else(Utc::now)
+}
+
+fn message(role: Role, timestamp: DateTime<Utc>, content: Vec<ContentBlock>) -> Message {
+    Message {
+        id: MessageId(String::new()),
+        role,
+        timestamp,
+        content,
+        model: None,
+        token_usage: None,
+    }
+}
+
+fn error_message(timestamp: DateTime<Utc>, error_msg: String) -> Message {
+    message(
+        Role::System,
+        timestamp,
+        vec![ContentBlock::Error(error_msg)],
+    )
+}
+
+fn push_text_message(
+    messages: &mut Vec<Message>,
+    role: Role,
+    timestamp: DateTime<Utc>,
+    text: &str,
+) {
+    if !text.is_empty() {
+        messages.push(message(role, timestamp, parse_text_with_code_blocks(text)));
+    }
+}
+
+fn push_event_msg(messages: &mut Vec<Message>, entry: &RawEntry) {
+    let Some(payload) = entry.payload.as_ref() else {
+        return;
+    };
+    let payload_type = payload.entry_type.as_deref().unwrap_or("");
+    let timestamp = entry_timestamp(entry);
+    match payload_type {
+        "user_message" => {
+            if let Some(msg_text) = payload.message.as_deref() {
+                push_text_message(messages, Role::User, timestamp, msg_text);
+            }
+        }
+        "agent_message" => {
+            if let Some(msg_text) = payload.message.as_deref() {
+                push_text_message(messages, Role::Assistant, timestamp, msg_text);
+            }
+        }
+        _ => tracing::trace!(payload_type, "skipping event_msg"),
+    }
+}
+
+fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
+    let Some(payload) = entry.payload.as_ref() else {
+        return;
+    };
+    let payload_type = payload.entry_type.as_deref().unwrap_or("");
+    let timestamp = entry_timestamp(entry);
+    match payload_type {
+        "function_call" => messages.push(message(
+            Role::Tool,
+            timestamp,
+            vec![ContentBlock::ToolUse(ToolCall {
+                id: payload.call_id.clone().unwrap_or_default(),
+                name: payload
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
+                arguments: payload.arguments.clone().unwrap_or_default(),
+            })],
+        )),
+        "function_call_output" => {
+            let output = payload.output.clone().unwrap_or_default();
+            if !output.is_empty() {
+                messages.push(message(
+                    Role::Tool,
+                    timestamp,
+                    vec![ContentBlock::ToolResult(crate::model::ToolResult {
+                        tool_call_id: payload.call_id.clone().unwrap_or_default(),
+                        success: true,
+                        output,
+                    })],
+                ));
+            }
+        }
+        _ => tracing::trace!(payload_type, "skipping response_item"),
+    }
+}
+
+fn legacy_content(entry: &RawEntry, role: Role) -> Vec<ContentBlock> {
+    let mut content = Vec::new();
+    let Some(text) = entry.content.as_ref().filter(|text| !text.is_empty()) else {
+        return content;
+    };
+    if role == Role::Tool {
+        content.push(ContentBlock::ToolUse(ToolCall {
+            id: String::new(),
+            name: text.clone(),
+            arguments: entry
+                .tool_calls
+                .as_ref()
+                .map(|tc| serde_json::to_string_pretty(tc).unwrap_or_default())
+                .unwrap_or_default(),
+        }));
+    } else {
+        content.extend(parse_text_with_code_blocks(text));
+    }
+    content
 }
 
 #[derive(Deserialize)]

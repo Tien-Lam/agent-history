@@ -38,10 +38,7 @@ impl SessionListComponent {
             .map(|s| {
                 let time = format_relative_time(s.started_at);
                 let provider = s.provider.as_str();
-                let project = s
-                    .project_name
-                    .as_deref()
-                    .unwrap_or("(unknown project)");
+                let project = s.project_name.as_deref().unwrap_or("(unknown project)");
                 let branch = s.git_branch.as_deref().unwrap_or("");
                 let starred = is_starred(s);
                 let star_marker = if starred { "\u{2605} " } else { "" };
@@ -109,7 +106,11 @@ impl SessionListComponent {
             .block(
                 Block::default()
                     .title(format!(" Sessions ({}) ", sessions.len()))
-                    .title_style(Style::default().fg(palette::TEXT).add_modifier(Modifier::BOLD))
+                    .title_style(
+                        Style::default()
+                            .fg(palette::TEXT)
+                            .add_modifier(Modifier::BOLD),
+                    )
                     .borders(Borders::ALL)
                     .border_type(ratatui::widgets::BorderType::Rounded)
                     .border_style(border_style(focused)),
@@ -133,6 +134,7 @@ fn provider_color(provider: crate::model::Provider) -> ratatui::style::Color {
         crate::model::Provider::CodexCli => palette::CODEX,
         crate::model::Provider::OpenCode => palette::OPENCODE,
         crate::model::Provider::Cursor => palette::CURSOR,
+        crate::model::Provider::Aider => palette::GREEN,
         crate::model::Provider::ZedAi => palette::ZED,
         crate::model::Provider::Cline => palette::CLINE,
         crate::model::Provider::ContinueDev => palette::CONTINUE,

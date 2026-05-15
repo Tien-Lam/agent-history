@@ -135,13 +135,34 @@ fn scan_line(
     if want(kinds, TodoKind::FollowUp)
         && (lower.contains("follow-up") || lower.contains("follow up"))
     {
-        push(out, citation, msg, TodoKind::FollowUp, snippet.clone(), None);
+        push(
+            out,
+            citation,
+            msg,
+            TodoKind::FollowUp,
+            snippet.clone(),
+            None,
+        );
     }
     if want(kinds, TodoKind::ComeBackTo) && lower.contains("come back to") {
-        push(out, citation, msg, TodoKind::ComeBackTo, snippet.clone(), None);
+        push(
+            out,
+            citation,
+            msg,
+            TodoKind::ComeBackTo,
+            snippet.clone(),
+            None,
+        );
     }
     if want(kinds, TodoKind::WeShould) && lower.contains("we should") {
-        push(out, citation, msg, TodoKind::WeShould, snippet.clone(), None);
+        push(
+            out,
+            citation,
+            msg,
+            TodoKind::WeShould,
+            snippet.clone(),
+            None,
+        );
     }
     if want(kinds, TodoKind::BdRef) {
         for id in find_bd_refs(trimmed) {
@@ -360,7 +381,10 @@ mod tests {
     fn bd_ref_ignores_prose_hyphenates() {
         // "follow-up" must not match as a bd ref — no digits in suffix.
         let hits = extract("Need a follow-up but no bd id");
-        assert!(hits.iter().all(|h| h.kind != TodoKind::BdRef), "got: {hits:?}");
+        assert!(
+            hits.iter().all(|h| h.kind != TodoKind::BdRef),
+            "got: {hits:?}"
+        );
     }
 
     #[test]
@@ -376,12 +400,7 @@ mod tests {
             make_msg("nothing here", Role::User),
             make_msg("TODO second", Role::Assistant),
         ];
-        let hits = extract_from_messages(
-            Provider::ClaudeCode,
-            &SessionId("s".into()),
-            &msgs,
-            &[],
-        );
+        let hits = extract_from_messages(Provider::ClaudeCode, &SessionId("s".into()), &msgs, &[]);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].citation.turn, 2);
     }

@@ -107,9 +107,7 @@ impl ClaudeFixtureBuilder {
                 escape_json(&session.session_id),
             ));
 
-            let project_dir = base
-                .join("projects")
-                .join(&session.project_name);
+            let project_dir = base.join("projects").join(&session.project_name);
             fs::create_dir_all(&project_dir).unwrap();
 
             let mut session_lines = Vec::new();
@@ -120,11 +118,7 @@ impl ClaudeFixtureBuilder {
             fs::write(&session_file, session_lines.join("\n") + "\n").unwrap();
         }
 
-        fs::write(
-            base.join("history.jsonl"),
-            history_lines.join("\n") + "\n",
-        )
-        .unwrap();
+        fs::write(base.join("history.jsonl"), history_lines.join("\n") + "\n").unwrap();
 
         FixtureDir {
             base_path: base,
@@ -266,10 +260,9 @@ impl ClaudeSessionBuilder {
 }
 
 fn render_claude_message(msg: &ClaudeMessageSpec, session: &ClaudeSessionSpec) -> String {
-    let branch = session
-        .git_branch
-        .as_deref()
-        .map_or(String::new(), |b| format!(r#","gitBranch":"{}""#, escape_json(b)));
+    let branch = session.git_branch.as_deref().map_or(String::new(), |b| {
+        format!(r#","gitBranch":"{}""#, escape_json(b))
+    });
     let cwd = session
         .cwd
         .as_deref()
@@ -356,9 +349,23 @@ struct CopilotSessionSpec {
 }
 
 enum CopilotEventSpec {
-    UserMessage { id: String, timestamp: String, content: String },
-    AssistantMessage { id: String, timestamp: String, content: String, model: String },
-    ToolInvoke { id: String, timestamp: String, tool_name: String, tool_call_id: String },
+    UserMessage {
+        id: String,
+        timestamp: String,
+        content: String,
+    },
+    AssistantMessage {
+        id: String,
+        timestamp: String,
+        content: String,
+        model: String,
+    },
+    ToolInvoke {
+        id: String,
+        timestamp: String,
+        tool_name: String,
+        tool_call_id: String,
+    },
     Raw(String),
 }
 
@@ -538,7 +545,11 @@ struct GeminiSessionSpec {
 }
 
 enum GeminiMessageSpec {
-    User { id: String, timestamp: String, content: String },
+    User {
+        id: String,
+        timestamp: String,
+        content: String,
+    },
     Gemini {
         id: String,
         timestamp: String,
@@ -591,10 +602,7 @@ impl GeminiFixtureBuilder {
         );
         fs::write(base.join("projects.json"), projects_json).unwrap();
 
-        let chats_dir = base
-            .join("tmp")
-            .join(&self.project_slug)
-            .join("chats");
+        let chats_dir = base.join("tmp").join(&self.project_slug).join("chats");
         fs::create_dir_all(&chats_dir).unwrap();
 
         for session in &self.sessions {
@@ -651,29 +659,25 @@ impl GeminiSessionBuilder {
     pub fn user(mut self, text: &str) -> Self {
         let id = self.next_id();
         let timestamp = self.next_timestamp();
-        self.session_mut()
-            .messages
-            .push(GeminiMessageSpec::User {
-                id,
-                timestamp,
-                content: text.to_string(),
-            });
+        self.session_mut().messages.push(GeminiMessageSpec::User {
+            id,
+            timestamp,
+            content: text.to_string(),
+        });
         self
     }
 
     pub fn gemini(mut self, text: &str) -> Self {
         let id = self.next_id();
         let timestamp = self.next_timestamp();
-        self.session_mut()
-            .messages
-            .push(GeminiMessageSpec::Gemini {
-                id,
-                timestamp,
-                text: text.to_string(),
-                model: "gemini-2.5-pro".to_string(),
-                input_tokens: 30,
-                output_tokens: 150,
-            });
+        self.session_mut().messages.push(GeminiMessageSpec::Gemini {
+            id,
+            timestamp,
+            text: text.to_string(),
+            model: "gemini-2.5-pro".to_string(),
+            input_tokens: 30,
+            output_tokens: 150,
+        });
         self
     }
 
@@ -799,34 +803,28 @@ impl CodexSessionBuilder {
 
     pub fn user(mut self, text: &str) -> Self {
         let timestamp = self.next_timestamp();
-        self.session_mut()
-            .entries
-            .push(CodexEntrySpec::User {
-                content: text.to_string(),
-                timestamp,
-            });
+        self.session_mut().entries.push(CodexEntrySpec::User {
+            content: text.to_string(),
+            timestamp,
+        });
         self
     }
 
     pub fn assistant(mut self, text: &str) -> Self {
         let timestamp = self.next_timestamp();
-        self.session_mut()
-            .entries
-            .push(CodexEntrySpec::Assistant {
-                content: text.to_string(),
-                timestamp,
-            });
+        self.session_mut().entries.push(CodexEntrySpec::Assistant {
+            content: text.to_string(),
+            timestamp,
+        });
         self
     }
 
     pub fn error(mut self, error: &str) -> Self {
         let timestamp = self.next_timestamp();
-        self.session_mut()
-            .entries
-            .push(CodexEntrySpec::Error {
-                error: error.to_string(),
-                timestamp,
-            });
+        self.session_mut().entries.push(CodexEntrySpec::Error {
+            error: error.to_string(),
+            timestamp,
+        });
         self
     }
 
@@ -889,8 +887,16 @@ struct OpenCodeSessionSpec {
 }
 
 enum OpenCodeMessageSpec {
-    User { id: String, timestamp: String, content: String },
-    Assistant { id: String, timestamp: String, content: String },
+    User {
+        id: String,
+        timestamp: String,
+        content: String,
+    },
+    Assistant {
+        id: String,
+        timestamp: String,
+        content: String,
+    },
 }
 
 impl OpenCodeFixtureBuilder {
@@ -924,9 +930,7 @@ impl OpenCodeFixtureBuilder {
         let base = dir.path().to_path_buf();
 
         for session in &self.sessions {
-            let session_dir = base
-                .join("session")
-                .join(&session.project_hash);
+            let session_dir = base.join("session").join(&session.project_hash);
             fs::create_dir_all(&session_dir).unwrap();
 
             let session_json = format!(
@@ -991,13 +995,11 @@ impl OpenCodeSessionBuilder {
     pub fn user(mut self, text: &str) -> Self {
         let id = self.next_id();
         let timestamp = self.next_timestamp();
-        self.session_mut()
-            .messages
-            .push(OpenCodeMessageSpec::User {
-                id,
-                timestamp,
-                content: text.to_string(),
-            });
+        self.session_mut().messages.push(OpenCodeMessageSpec::User {
+            id,
+            timestamp,
+            content: text.to_string(),
+        });
         self
     }
 
@@ -1083,8 +1085,7 @@ pub fn claude_multi_session(n_sessions: usize, msgs_per_session: usize) -> Fixtu
 }
 
 pub fn copilot_single_session(n_messages: usize) -> FixtureDir {
-    let mut builder = CopilotFixtureBuilder::new()
-        .add_session("copilot-gen-001");
+    let mut builder = CopilotFixtureBuilder::new().add_session("copilot-gen-001");
     for i in 0..n_messages {
         if i % 2 == 0 {
             builder = builder.user(&format!("User message {i}"));
@@ -1096,8 +1097,7 @@ pub fn copilot_single_session(n_messages: usize) -> FixtureDir {
 }
 
 pub fn gemini_single_session(n_messages: usize) -> FixtureDir {
-    let mut builder = GeminiFixtureBuilder::new()
-        .add_session("gemini-gen-001");
+    let mut builder = GeminiFixtureBuilder::new().add_session("gemini-gen-001");
     for i in 0..n_messages {
         if i % 2 == 0 {
             builder = builder.user(&format!("User message {i}"));
@@ -1109,8 +1109,7 @@ pub fn gemini_single_session(n_messages: usize) -> FixtureDir {
 }
 
 pub fn codex_single_session(n_messages: usize) -> FixtureDir {
-    let mut builder = CodexFixtureBuilder::new()
-        .add_session("codex-gen");
+    let mut builder = CodexFixtureBuilder::new().add_session("codex-gen");
     for i in 0..n_messages {
         if i % 2 == 0 {
             builder = builder.user(&format!("User message {i}"));
@@ -1137,8 +1136,16 @@ struct CursorSessionSpec {
 }
 
 enum CursorMessageSpec {
-    User { bubble_id: String, text: String, ts_ms: i64 },
-    Assistant { bubble_id: String, text: String, ts_ms: i64 },
+    User {
+        bubble_id: String,
+        text: String,
+        ts_ms: i64,
+    },
+    Assistant {
+        bubble_id: String,
+        text: String,
+        ts_ms: i64,
+    },
 }
 
 pub struct CursorSessionBuilder {
@@ -1223,11 +1230,19 @@ impl CursorFixtureBuilder {
 
             for msg in &session.messages {
                 let (key, json) = match msg {
-                    CursorMessageSpec::User { bubble_id, text, ts_ms } => (
+                    CursorMessageSpec::User {
+                        bubble_id,
+                        text,
+                        ts_ms,
+                    } => (
                         format!("bubbleId:{}:{}", session.composer_id, bubble_id),
                         serde_json::json!({"type": 1, "text": text, "createdAt": ts_ms}),
                     ),
-                    CursorMessageSpec::Assistant { bubble_id, text, ts_ms } => (
+                    CursorMessageSpec::Assistant {
+                        bubble_id,
+                        text,
+                        ts_ms,
+                    } => (
                         format!("bubbleId:{}:{}", session.composer_id, bubble_id),
                         serde_json::json!({"type": 2, "text": text, "createdAt": ts_ms}),
                     ),
@@ -1282,8 +1297,7 @@ impl CursorSessionBuilder {
 }
 
 pub fn cursor_single_session(n_messages: usize) -> FixtureDir {
-    let mut builder = CursorFixtureBuilder::new()
-        .add_session("comp-gen-001");
+    let mut builder = CursorFixtureBuilder::new().add_session("comp-gen-001");
     for i in 0..n_messages {
         if i % 2 == 0 {
             builder = builder.user(&format!("User message {i}"));
@@ -1295,8 +1309,7 @@ pub fn cursor_single_session(n_messages: usize) -> FixtureDir {
 }
 
 pub fn opencode_single_session(n_messages: usize) -> FixtureDir {
-    let mut builder = OpenCodeFixtureBuilder::new()
-        .add_session("oc-gen-001");
+    let mut builder = OpenCodeFixtureBuilder::new().add_session("oc-gen-001");
     for i in 0..n_messages {
         if i % 2 == 0 {
             builder = builder.user(&format!("User message {i}"));
@@ -1310,21 +1323,31 @@ pub fn opencode_single_session(n_messages: usize) -> FixtureDir {
 pub fn all_generated_providers(
     n_sessions: usize,
     msgs_per_session: usize,
-) -> (Vec<TempDir>, Vec<Box<dyn aghist::provider::HistoryProvider>>) {
+) -> (
+    Vec<TempDir>,
+    Vec<Box<dyn aghist::provider::HistoryProvider>>,
+) {
+    vec![
+        generated_claude_provider(n_sessions, msgs_per_session),
+        generated_copilot_provider(n_sessions, msgs_per_session),
+        generated_gemini_provider(n_sessions, msgs_per_session),
+        generated_codex_provider(n_sessions, msgs_per_session),
+        generated_opencode_provider(n_sessions, msgs_per_session),
+        generated_cursor_provider(n_sessions, msgs_per_session),
+    ]
+    .into_iter()
+    .unzip()
+}
+
+type GeneratedProvider = (TempDir, Box<dyn aghist::provider::HistoryProvider>);
+
+fn generated_claude_provider(n_sessions: usize, msgs_per_session: usize) -> GeneratedProvider {
     use aghist::provider::claude_code::ClaudeCodeProvider;
-    use aghist::provider::codex_cli::CodexCliProvider;
-    use aghist::provider::copilot_cli::CopilotCliProvider;
-    use aghist::provider::cursor::CursorProvider;
-    use aghist::provider::gemini_cli::GeminiCliProvider;
-    use aghist::provider::opencode::OpenCodeProvider;
 
-    let mut dirs = Vec::new();
-    let mut providers: Vec<Box<dyn aghist::provider::HistoryProvider>> = Vec::new();
-
-    // Claude
     let mut claude = ClaudeFixtureBuilder::new();
     for s in 0..n_sessions {
-        let mut sb = claude.add_session(&format!("session-{s:03}"))
+        let mut sb = claude
+            .add_session(&format!("session-{s:03}"))
             .project(&format!("project-{s}"));
         for m in 0..msgs_per_session {
             if m % 2 == 0 {
@@ -1335,11 +1358,17 @@ pub fn all_generated_providers(
         }
         claude = sb.done();
     }
-    let cf = claude.build();
-    providers.push(Box::new(ClaudeCodeProvider::new(vec![cf.base_path.clone()])));
-    dirs.push(cf.dir);
 
-    // Copilot
+    let cf = claude.build();
+    (
+        cf.dir,
+        Box::new(ClaudeCodeProvider::new(vec![cf.base_path.clone()])),
+    )
+}
+
+fn generated_copilot_provider(n_sessions: usize, msgs_per_session: usize) -> GeneratedProvider {
+    use aghist::provider::copilot_cli::CopilotCliProvider;
+
     let mut copilot = CopilotFixtureBuilder::new();
     for s in 0..n_sessions {
         let mut sb = copilot.add_session(&format!("copilot-{s:03}"));
@@ -1352,11 +1381,17 @@ pub fn all_generated_providers(
         }
         copilot = sb.done();
     }
-    let cpf = copilot.build();
-    providers.push(Box::new(CopilotCliProvider::new(vec![cpf.base_path.clone()])));
-    dirs.push(cpf.dir);
 
-    // Gemini
+    let cpf = copilot.build();
+    (
+        cpf.dir,
+        Box::new(CopilotCliProvider::new(vec![cpf.base_path.clone()])),
+    )
+}
+
+fn generated_gemini_provider(n_sessions: usize, msgs_per_session: usize) -> GeneratedProvider {
+    use aghist::provider::gemini_cli::GeminiCliProvider;
+
     let mut gemini = GeminiFixtureBuilder::new();
     for s in 0..n_sessions {
         let mut sb = gemini.add_session(&format!("gemini-{s:03}"));
@@ -1369,11 +1404,17 @@ pub fn all_generated_providers(
         }
         gemini = sb.done();
     }
-    let gf = gemini.build();
-    providers.push(Box::new(GeminiCliProvider::new(vec![gf.base_path.clone()])));
-    dirs.push(gf.dir);
 
-    // Codex
+    let gf = gemini.build();
+    (
+        gf.dir,
+        Box::new(GeminiCliProvider::new(vec![gf.base_path.clone()])),
+    )
+}
+
+fn generated_codex_provider(n_sessions: usize, msgs_per_session: usize) -> GeneratedProvider {
+    use aghist::provider::codex_cli::CodexCliProvider;
+
     let mut codex = CodexFixtureBuilder::new();
     for s in 0..n_sessions {
         let mut sb = codex.add_session(&format!("codex-{s:03}"));
@@ -1386,11 +1427,17 @@ pub fn all_generated_providers(
         }
         codex = sb.done();
     }
-    let cxf = codex.build();
-    providers.push(Box::new(CodexCliProvider::new(vec![cxf.base_path.clone()])));
-    dirs.push(cxf.dir);
 
-    // OpenCode
+    let cxf = codex.build();
+    (
+        cxf.dir,
+        Box::new(CodexCliProvider::new(vec![cxf.base_path.clone()])),
+    )
+}
+
+fn generated_opencode_provider(n_sessions: usize, msgs_per_session: usize) -> GeneratedProvider {
+    use aghist::provider::opencode::OpenCodeProvider;
+
     let mut opencode = OpenCodeFixtureBuilder::new();
     for s in 0..n_sessions {
         let mut sb = opencode.add_session(&format!("oc-{s:03}"));
@@ -1403,11 +1450,17 @@ pub fn all_generated_providers(
         }
         opencode = sb.done();
     }
-    let ocf = opencode.build();
-    providers.push(Box::new(OpenCodeProvider::new(vec![ocf.base_path.clone()])));
-    dirs.push(ocf.dir);
 
-    // Cursor
+    let ocf = opencode.build();
+    (
+        ocf.dir,
+        Box::new(OpenCodeProvider::new(vec![ocf.base_path.clone()])),
+    )
+}
+
+fn generated_cursor_provider(n_sessions: usize, msgs_per_session: usize) -> GeneratedProvider {
+    use aghist::provider::cursor::CursorProvider;
+
     let mut cursor = CursorFixtureBuilder::new();
     for s in 0..n_sessions {
         let mut sb = cursor.add_session(&format!("comp-{s:03}"));
@@ -1420,11 +1473,12 @@ pub fn all_generated_providers(
         }
         cursor = sb.done();
     }
-    let crf = cursor.build();
-    providers.push(Box::new(CursorProvider::new(vec![crf.base_path.clone()])));
-    dirs.push(crf.dir);
 
-    (dirs, providers)
+    let crf = cursor.build();
+    (
+        crf.dir,
+        Box::new(CursorProvider::new(vec![crf.base_path.clone()])),
+    )
 }
 
 // ─── Utilities ──────────────────────────────────────────────────────────────

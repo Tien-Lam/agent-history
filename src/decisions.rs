@@ -82,11 +82,7 @@ fn live_patterns() -> impl Iterator<Item = &'static (&'static str, f32, &'static
 /// Extract candidates from one message, scoping the citation turn so the
 /// caller can fan out to many messages without the per-message helper
 /// needing the full session.
-pub fn extract_from_message(
-    msg: &Message,
-    turn: u32,
-    threshold: f32,
-) -> Vec<DecisionCandidate> {
+pub fn extract_from_message(msg: &Message, turn: u32, threshold: f32) -> Vec<DecisionCandidate> {
     let mut out = Vec::new();
     for block in &msg.content {
         let text = match block {
@@ -115,10 +111,7 @@ pub fn extract_from_message(
 
 /// Extract candidates across an entire session in one shot. `messages` is
 /// expected in load order — turn numbers are assigned by index.
-pub fn extract_from_messages(
-    messages: &[Message],
-    threshold: f32,
-) -> Vec<DecisionCandidate> {
+pub fn extract_from_messages(messages: &[Message], threshold: f32) -> Vec<DecisionCandidate> {
     let mut out = Vec::new();
     for (i, m) in messages.iter().enumerate() {
         let turn = u32::try_from(i + 1).unwrap_or(u32::MAX);
@@ -245,7 +238,10 @@ mod tests {
     fn lone_soft_marker_is_dropped() {
         let m = assistant("It works because of caching.");
         let candidates = extract_from_message(&m, 1, DEFAULT_THRESHOLD);
-        assert!(candidates.is_empty(), "lone 'because' should not pass: {candidates:?}");
+        assert!(
+            candidates.is_empty(),
+            "lone 'because' should not pass: {candidates:?}"
+        );
     }
 
     #[test]

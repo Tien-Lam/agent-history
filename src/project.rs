@@ -316,7 +316,10 @@ pub fn collect_decisions(sessions: &[(Session, Vec<Message>)]) -> Vec<DecisionRo
         for (idx, msg) in msgs.iter().enumerate() {
             let turn = u32::try_from(idx + 1).unwrap_or(u32::MAX);
             for c in decisions::extract_from_message(msg, turn, DECISIONS_THRESHOLD) {
-                let reference = format!("{}/{}#{}", s.provider.slug(), s.id.0, c.turn);
+                let reference = s.citation_ref(c.turn).map_or_else(
+                    || format!("{}/{}#{}", s.provider.slug(), s.id.0, c.turn),
+                    |r| r.to_string(),
+                );
                 out.push(DecisionRow {
                     reference,
                     provider: s.provider,
@@ -370,10 +373,7 @@ const FILE_PATH_KEYS: &[&str] = &[
     "target_file",
 ];
 
-fn top_files(
-    sessions: &[(Session, Vec<Message>)],
-    limit: usize,
-) -> (usize, Vec<FileTouch>) {
+fn top_files(sessions: &[(Session, Vec<Message>)], limit: usize) -> (usize, Vec<FileTouch>) {
     let mut counts: HashMap<String, u64> = HashMap::new();
     for (_, msgs) in sessions {
         for msg in msgs {
@@ -429,7 +429,7 @@ fn time_of_day_histogram(sessions: &[(Session, Vec<Message>)]) -> [u64; 24] {
 mod tests {
     use super::*;
     use crate::model::{
-        ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, ToolCall, TokenUsage,
+        ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
     };
     use chrono::TimeZone;
     use std::path::PathBuf;
@@ -518,11 +518,7 @@ mod tests {
         );
         let m2 = vec![assistant("late afternoon", ts(2025, 14))];
 
-        let report = aggregate(
-            "alpha",
-            &[(s1, m1), (s2, m2)],
-            ProjectLimits::DEFAULTS,
-        );
+        let report = aggregate("alpha", &[(s1, m1), (s2, m2)], ProjectLimits::DEFAULTS);
 
         assert_eq!(report.query, "alpha");
         assert_eq!(report.matched_projects, vec!["alpha".to_string()]);
@@ -578,7 +574,10 @@ mod tests {
             assistant("We decided to use BM25 instead of cosine.", ts(2025, 10)),
         ];
         let report = aggregate("alpha", &[(s, m)], ProjectLimits::DEFAULTS);
-        assert!(!report.decisions.is_empty(), "expected at least one decision");
+        assert!(
+            !report.decisions.is_empty(),
+            "expected at least one decision"
+        );
         let d = &report.decisions[0];
         assert_eq!(d.turn, 2);
         assert_eq!(d.session_id, "s");

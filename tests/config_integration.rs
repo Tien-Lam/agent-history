@@ -3,6 +3,7 @@ mod common;
 use std::fs;
 
 use aghist::config::Config;
+use aghist::config::{validate_rsync_endpoint, validate_source_name};
 use aghist::model::Provider;
 
 #[test]
@@ -77,6 +78,15 @@ fn corrupt_toml_falls_back_to_defaults() {
 
     assert_eq!(config.cache_size, 20);
     assert_eq!(config.providers.enabled.len(), Provider::all().len());
+}
+
+#[test]
+fn strict_config_rejects_corrupt_toml() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, "this is [[[not valid toml!!!").unwrap();
+
+    assert!(Config::try_load_from(&path).is_err());
 }
 
 #[test]
@@ -208,4 +218,20 @@ fn mcp_exposed_unknown_slugs_are_ignored() {
     let exposed = config.mcp_exposed_providers();
     assert_eq!(exposed.len(), 1);
     assert!(exposed.contains(&Provider::ClaudeCode));
+}
+
+#[test]
+fn remote_source_name_validation_rejects_path_components() {
+    assert!(validate_source_name("laptop_1").is_ok());
+    assert!(validate_source_name("../escape").is_err());
+    assert!(validate_source_name("a/b").is_err());
+    assert!(validate_source_name("-option").is_err());
+}
+
+#[test]
+fn remote_endpoint_validation_rejects_option_like_values() {
+    assert!(validate_rsync_endpoint("user@host", "--host").is_ok());
+    assert!(validate_rsync_endpoint("/home/me/.claude", "--path").is_ok());
+    assert!(validate_rsync_endpoint("-server", "--host").is_err());
+    assert!(validate_rsync_endpoint(" /tmp", "--path").is_err());
 }

@@ -3,8 +3,25 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::model::Provider;
+
+#[derive(Debug, Error)]
+pub enum ConfigLoadError {
+    #[error("failed to read {path}: {source}")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to parse {path}: {source}")]
+    Parse {
+        path: PathBuf,
+        #[source]
+        source: toml::de::Error,
+    },
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -82,7 +99,10 @@ impl Default for Config {
 impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
-            enabled: Provider::all().iter().map(|p| p.slug().to_string()).collect(),
+            enabled: Provider::all()
+                .iter()
+                .map(|p| p.slug().to_string())
+                .collect(),
             mcp_exposed: None,
         }
     }
@@ -114,6 +134,33 @@ impl Config {
         Self::load_from(&path)
     }
 
+    pub fn try_load() -> Result<Self, ConfigLoadError> {
+        let Some(path) = Self::resolved_path() else {
+            return Ok(Self::default());
+        };
+        Self::try_load_from(&path)
+    }
+
+    pub fn try_load_from(path: &Path) -> Result<Self, ConfigLoadError> {
+        let contents = match std::fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
+            Err(source) => {
+                return Err(ConfigLoadError::Read {
+                    path: path.to_path_buf(),
+                    source,
+                });
+            }
+        };
+        let mut config: Self =
+            toml::from_str(&contents).map_err(|source| ConfigLoadError::Parse {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        config.normalize();
+        Ok(config)
+    }
+
     pub fn load_from(path: &Path) -> Self {
         let mut config: Self = match std::fs::read_to_string(path) {
             Ok(contents) => match toml::from_str(&contents) {
@@ -128,10 +175,14 @@ impl Config {
             },
             Err(_) => Self::default(),
         };
-        if config.cache_size == 0 {
-            config.cache_size = 1;
-        }
+        config.normalize();
         config
+    }
+
+    fn normalize(&mut self) {
+        if self.cache_size == 0 {
+            self.cache_size = 1;
+        }
     }
 
     /// Serialize to TOML and write atomically to `path`. Creates the parent
@@ -180,6 +231,13 @@ impl Config {
 }
 
 impl RemoteSource {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_source_name(&self.name)?;
+        validate_rsync_endpoint(&self.host, "--host")?;
+        validate_rsync_endpoint(&self.path, "--path")?;
+        Ok(())
+    }
+
     /// Cache directory for this source, e.g. `<root>/<name>/`.
     pub fn cache_dir(&self, root: &Path) -> PathBuf {
         root.join(&self.name)
@@ -197,6 +255,49 @@ impl RemoteSource {
     }
 }
 
+pub fn validate_source_name(name: &str) -> Result<(), String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("source name must not be empty".to_string());
+    }
+    if trimmed != name {
+        return Err("source name must not contain leading or trailing whitespace".to_string());
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err("source name must not be '.' or '..'".to_string());
+    }
+    let mut chars = trimmed.chars();
+    let Some(first) = chars.next() else {
+        return Err("source name must not be empty".to_string());
+    };
+    if !first.is_ascii_alphanumeric() {
+        return Err("source name must start with an ASCII letter or digit".to_string());
+    }
+    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("source name may contain only ASCII letters, digits, '-' and '_'".to_string());
+    }
+    Ok(())
+}
+
+pub fn validate_rsync_endpoint(value: &str, label: &str) -> Result<(), String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if trimmed != value {
+        return Err(format!(
+            "{label} must not contain leading or trailing whitespace"
+        ));
+    }
+    if trimmed.starts_with('-') {
+        return Err(format!("{label} must not start with '-'"));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(format!("{label} must not contain control characters"));
+    }
+    Ok(())
+}
+
 /// Default sources cache root, e.g. `<aghist cache_dir>/sources/`. Respects
 /// `AGHIST_SOURCES_CACHE_DIR` for tests. Returns `None` when no home/XDG dirs
 /// exist and the env var is unset.
@@ -206,8 +307,7 @@ pub fn sources_cache_root() -> Option<PathBuf> {
             return Some(PathBuf::from(p));
         }
     }
-    directories::ProjectDirs::from("", "", "aghist")
-        .map(|dirs| dirs.cache_dir().join("sources"))
+    directories::ProjectDirs::from("", "", "aghist").map(|dirs| dirs.cache_dir().join("sources"))
 }
 
 /// Manifest written under `<cache>/<name>/.aghist-source.json` after each

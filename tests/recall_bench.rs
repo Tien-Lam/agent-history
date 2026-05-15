@@ -204,8 +204,8 @@ struct QueryFile {
 }
 
 fn load_queries() -> Vec<LabeledQuery> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/bench_recall/queries.json");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bench_recall/queries.json");
     let raw = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
     let file: QueryFile = serde_json::from_str(&raw)
@@ -536,9 +536,7 @@ fn render_report(reports: &[StrategyReport], n_queries: usize, n_sessions: usize
     }
 
     out.push_str("\n## Methodology notes\n\n");
-    out.push_str(
-        "- **lexical** is the production Tantivy BM25 index (`SearchIndex::search`).\n",
-    );
+    out.push_str("- **lexical** is the production Tantivy BM25 index (`SearchIndex::search`).\n");
     out.push_str(
         "- **semantic** is a deterministic hashed-bag-of-words IDF cosine ranker baked into the ",
     );
@@ -663,7 +661,11 @@ fn search_recall_benchmark() {
         );
     }
 
-    let reports = vec![lexical_report.clone(), semantic_report.clone(), hybrid_report.clone()];
+    let reports = vec![
+        lexical_report.clone(),
+        semantic_report.clone(),
+        hybrid_report.clone(),
+    ];
     let report = render_report(&reports, queries.len(), TOPICS.len());
     eprintln!("\n{report}");
 

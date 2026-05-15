@@ -1,8 +1,11 @@
 //! Stable citation references for individual messages within a session.
 //!
-//! A [`CitationRef`] identifies one message via the triple
-//! `(provider, session_id, turn)`, formatted as
-//! `<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`).
+//! A [`SessionRef`] identifies a session via `(provider, session_id)`,
+//! formatted as `<provider-slug>/<session-id>`.
+//!
+//! A [`CitationRef`] identifies one message via the triple `(provider,
+//! session_id, turn)`, formatted as `<provider-slug>/<session-id>#<turn>`
+//! (e.g. `claude-code/abc-123#7`).
 //!
 //! Refs are designed to be:
 //! - **Opaque-stable across reindex**: rebuilding the search index does not
@@ -24,6 +27,35 @@ use thiserror::Error;
 use super::provider::Provider;
 use super::session::SessionId;
 
+/// A stable reference to a session: `<provider-slug>/<session-id>`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct SessionRef {
+    pub provider: Provider,
+    pub session_id: SessionId,
+}
+
+impl SessionRef {
+    pub fn new(provider: Provider, session_id: SessionId) -> Option<Self> {
+        if session_id.0.is_empty() {
+            return None;
+        }
+        Some(Self {
+            provider,
+            session_id,
+        })
+    }
+
+    pub fn turn(&self, turn: u32) -> Option<CitationRef> {
+        CitationRef::new(self.provider, self.session_id.clone(), turn)
+    }
+}
+
+impl fmt::Display for SessionRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.provider.slug(), self.session_id)
+    }
+}
+
 /// A stable reference to a single message: `<provider-slug>/<session-id>#<turn>`.
 ///
 /// See the [module docs](self) for format guarantees.
@@ -44,13 +76,30 @@ impl CitationRef {
         if turn == 0 || session_id.0.is_empty() {
             return None;
         }
-        Some(Self { provider, session_id, turn })
+        Some(Self {
+            provider,
+            session_id,
+            turn,
+        })
+    }
+
+    pub fn session_ref(&self) -> SessionRef {
+        SessionRef {
+            provider: self.provider,
+            session_id: self.session_id.clone(),
+        }
     }
 }
 
 impl fmt::Display for CitationRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}#{}", self.provider.slug(), self.session_id, self.turn)
+        write!(
+            f,
+            "{}/{}#{}",
+            self.provider.slug(),
+            self.session_id,
+            self.turn
+        )
     }
 }
 
@@ -70,6 +119,45 @@ pub enum CitationParseError {
     InvalidTurn(String),
 }
 
+fn parse_session_head(s: &str) -> Result<(Provider, SessionId), CitationParseError> {
+    if s.is_empty() {
+        return Err(CitationParseError::Empty);
+    }
+    let (provider_slug, session_str) = s
+        .split_once('/')
+        .ok_or(CitationParseError::MissingSessionId)?;
+    if provider_slug.is_empty() {
+        return Err(CitationParseError::MissingProvider);
+    }
+    if session_str.is_empty() {
+        return Err(CitationParseError::MissingSessionId);
+    }
+
+    let provider = Provider::from_slug(provider_slug)
+        .ok_or_else(|| CitationParseError::UnknownProvider(provider_slug.to_string()))?;
+    Ok((provider, SessionId(session_str.to_string())))
+}
+
+impl FromStr for SessionRef {
+    type Err = CitationParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(CitationParseError::Empty);
+        }
+        if s.contains('#') {
+            return Err(CitationParseError::InvalidTurn(
+                s.rsplit_once('#').map_or("", |(_, turn)| turn).to_string(),
+            ));
+        }
+        let (provider, session_id) = parse_session_head(s)?;
+        Ok(Self {
+            provider,
+            session_id,
+        })
+    }
+}
+
 impl FromStr for CitationRef {
     type Err = CitationParseError;
 
@@ -77,29 +165,14 @@ impl FromStr for CitationRef {
         if s.is_empty() {
             return Err(CitationParseError::Empty);
         }
-
         // Split on '#' first so a session id containing '/' (none today, but
         // be defensive) does not interfere with locating the turn.
-        let (head, turn_str) = s
-            .rsplit_once('#')
-            .ok_or(CitationParseError::MissingTurn)?;
+        let (head, turn_str) = s.rsplit_once('#').ok_or(CitationParseError::MissingTurn)?;
         if turn_str.is_empty() {
             return Err(CitationParseError::MissingTurn);
         }
 
-        let (provider_slug, session_str) = head
-            .split_once('/')
-            .ok_or(CitationParseError::MissingSessionId)?;
-        if provider_slug.is_empty() {
-            return Err(CitationParseError::MissingProvider);
-        }
-        if session_str.is_empty() {
-            return Err(CitationParseError::MissingSessionId);
-        }
-
-        let provider = Provider::from_slug(provider_slug)
-            .ok_or_else(|| CitationParseError::UnknownProvider(provider_slug.to_string()))?;
-
+        let (provider, session_id) = parse_session_head(head)?;
         let turn: u32 = turn_str
             .parse()
             .map_err(|_| CitationParseError::InvalidTurn(turn_str.to_string()))?;
@@ -109,9 +182,91 @@ impl FromStr for CitationRef {
 
         Ok(Self {
             provider,
-            session_id: SessionId(session_str.to_string()),
+            session_id,
             turn,
         })
+    }
+}
+
+/// A metadata ref accepts either a session ref or a turn-level citation ref.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub enum SessionOrTurnRef {
+    Session(SessionRef),
+    Turn(CitationRef),
+}
+
+impl SessionOrTurnRef {
+    pub fn session_ref(&self) -> SessionRef {
+        match self {
+            Self::Session(session) => session.clone(),
+            Self::Turn(citation) => citation.session_ref(),
+        }
+    }
+
+    pub fn turn(&self) -> Option<u32> {
+        match self {
+            Self::Session(_) => None,
+            Self::Turn(citation) => Some(citation.turn),
+        }
+    }
+}
+
+impl fmt::Display for SessionOrTurnRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Session(session) => session.fmt(f),
+            Self::Turn(citation) => citation.fmt(f),
+        }
+    }
+}
+
+impl FromStr for SessionOrTurnRef {
+    type Err = CitationParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.contains('#') {
+            s.parse::<CitationRef>().map(Self::Turn)
+        } else {
+            s.parse::<SessionRef>().map(Self::Session)
+        }
+    }
+}
+
+/// A citation ref optionally qualified with a federated source name:
+/// `<source>:<provider>/<session-id>#<turn>`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct QualifiedCitationRef {
+    pub source: Option<String>,
+    pub citation: CitationRef,
+}
+
+impl QualifiedCitationRef {
+    pub fn new(source: Option<String>, citation: CitationRef) -> Self {
+        Self { source, citation }
+    }
+}
+
+impl fmt::Display for QualifiedCitationRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(source) = &self.source {
+            write!(f, "{source}:{}", self.citation)
+        } else {
+            self.citation.fmt(f)
+        }
+    }
+}
+
+impl FromStr for QualifiedCitationRef {
+    type Err = CitationParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (source, raw_ref) = match s.split_once(':') {
+            Some((source, rest)) if !source.is_empty() => (Some(source.to_string()), rest),
+            Some((_source, rest)) => (None, rest),
+            None => (None, s),
+        };
+        let citation = raw_ref.parse::<CitationRef>()?;
+        Ok(Self { source, citation })
     }
 }
 
@@ -139,6 +294,38 @@ mod tests {
         assert_eq!(r.provider, Provider::ClaudeCode);
         assert_eq!(r.session_id, sid("abc-123"));
         assert_eq!(r.turn, 7);
+    }
+
+    #[test]
+    fn session_ref_round_trips() {
+        let r: SessionRef = "claude-code/abc-123".parse().unwrap();
+        assert_eq!(r.provider, Provider::ClaudeCode);
+        assert_eq!(r.session_id, sid("abc-123"));
+        assert_eq!(r.to_string(), "claude-code/abc-123");
+        assert_eq!(r.turn(7).unwrap().to_string(), "claude-code/abc-123#7");
+    }
+
+    #[test]
+    fn session_or_turn_ref_round_trips_both_shapes() {
+        let session: SessionOrTurnRef = "claude-code/abc-123".parse().unwrap();
+        assert_eq!(session.to_string(), "claude-code/abc-123");
+        assert_eq!(session.turn(), None);
+
+        let turn: SessionOrTurnRef = "claude-code/abc-123#7".parse().unwrap();
+        assert_eq!(turn.to_string(), "claude-code/abc-123#7");
+        assert_eq!(turn.session_ref().to_string(), "claude-code/abc-123");
+        assert_eq!(turn.turn(), Some(7));
+    }
+
+    #[test]
+    fn qualified_citation_ref_round_trips_source_prefix() {
+        let local: QualifiedCitationRef = "claude-code/abc-123#7".parse().unwrap();
+        assert_eq!(local.source, None);
+        assert_eq!(local.to_string(), "claude-code/abc-123#7");
+
+        let remote: QualifiedCitationRef = "workbox:claude-code/abc-123#7".parse().unwrap();
+        assert_eq!(remote.source.as_deref(), Some("workbox"));
+        assert_eq!(remote.to_string(), "workbox:claude-code/abc-123#7");
     }
 
     #[test]

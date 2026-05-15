@@ -244,14 +244,11 @@ fn read_session(path: &Path) -> Result<Option<Session>, ProviderError> {
     };
 
     // Recover an ID: explicit field → file stem → skip.
-    let id = raw
-        .id
-        .clone()
-        .or_else(|| {
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_string)
-        });
+    let id = raw.id.clone().or_else(|| {
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+    });
     let Some(id) = id else { return Ok(None) };
 
     // Started_at: created_at → earliest message timestamp → file mtime → skip.
@@ -431,7 +428,10 @@ mod tests {
         let has_code = messages[1].content.iter().any(|c| {
             matches!(c, ContentBlock::CodeBlock { language, .. } if language.as_deref() == Some("rust"))
         });
-        assert!(has_code, "expected fenced rust block to surface as CodeBlock");
+        assert!(
+            has_code,
+            "expected fenced rust block to surface as CodeBlock"
+        );
     }
 
     #[test]
@@ -470,12 +470,17 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let conv_dir = tmp.path().join(CONVERSATIONS_SUBDIR);
         std::fs::create_dir_all(&conv_dir).unwrap();
-        std::fs::write(conv_dir.join("good.json"), serde_json::to_vec(&serde_json::json!({
-            "id": "good",
-            "summary": "ok",
-            "created_at": "2026-01-01T00:00:00Z",
-            "messages": [{"role": "user", "text": "hi", "timestamp": "2026-01-01T00:00:00Z"}],
-        })).unwrap()).unwrap();
+        std::fs::write(
+            conv_dir.join("good.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "id": "good",
+                "summary": "ok",
+                "created_at": "2026-01-01T00:00:00Z",
+                "messages": [{"role": "user", "text": "hi", "timestamp": "2026-01-01T00:00:00Z"}],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         std::fs::write(conv_dir.join("bad.json"), b"not-json{").unwrap();
 
         let provider = ZedAiProvider::new(vec![tmp.path().to_path_buf()]);

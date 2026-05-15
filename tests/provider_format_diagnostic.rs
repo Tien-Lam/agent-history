@@ -58,7 +58,10 @@ fn copilot_v2_load_messages() {
     );
 
     // Verify assistant messages
-    let asst_msgs: Vec<_> = messages.iter().filter(|m| m.role == Role::Assistant).collect();
+    let asst_msgs: Vec<_> = messages
+        .iter()
+        .filter(|m| m.role == Role::Assistant)
+        .collect();
     assert!(
         !asst_msgs.is_empty(),
         "should have at least one assistant message"
@@ -144,7 +147,10 @@ fn codex_v2_load_messages() {
     );
 
     // Verify assistant/agent messages
-    let asst_msgs: Vec<_> = messages.iter().filter(|m| m.role == Role::Assistant).collect();
+    let asst_msgs: Vec<_> = messages
+        .iter()
+        .filter(|m| m.role == Role::Assistant)
+        .collect();
     assert_eq!(asst_msgs.len(), 3, "should have 3 assistant messages");
 
     // Verify code blocks are parsed from agent messages
@@ -153,7 +159,10 @@ fn codex_v2_load_messages() {
             .iter()
             .any(|c| matches!(c, ContentBlock::CodeBlock { .. }))
     });
-    assert!(has_code, "agent messages with code fences should produce CodeBlock content");
+    assert!(
+        has_code,
+        "agent messages with code fences should produce CodeBlock content"
+    );
 }
 
 #[test]
@@ -215,19 +224,24 @@ fn opencode_v2_load_messages() {
     );
 
     // Verify assistant message loaded from parts
-    let asst_msgs: Vec<_> = messages.iter().filter(|m| m.role == Role::Assistant).collect();
+    let asst_msgs: Vec<_> = messages
+        .iter()
+        .filter(|m| m.role == Role::Assistant)
+        .collect();
     assert_eq!(asst_msgs.len(), 1, "should have 1 assistant message");
 
     // Check for text from parts
-    let has_text = asst_msgs[0].content.iter().any(|c| {
-        matches!(c, ContentBlock::Text(t) if t.contains("error handling"))
-    });
+    let has_text = asst_msgs[0]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::Text(t) if t.contains("error handling")));
     assert!(has_text, "assistant should have text from part files");
 
     // Check for tool use from parts
-    let has_tool = asst_msgs[0].content.iter().any(|c| {
-        matches!(c, ContentBlock::ToolUse(tc) if tc.name == "read")
-    });
+    let has_tool = asst_msgs[0]
+        .content
+        .iter()
+        .any(|c| matches!(c, ContentBlock::ToolUse(tc) if tc.name == "read"));
     assert!(has_tool, "assistant should have tool calls from part files");
 
     // Check model and tokens
@@ -283,11 +297,15 @@ fn all_fixture_providers_roundtrip() {
         ),
         (
             "copilot",
-            Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot")])),
+            Box::new(CopilotCliProvider::new(
+                vec![fixtures_dir().join("copilot")],
+            )),
         ),
         (
             "copilot_v2",
-            Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot_v2")])),
+            Box::new(CopilotCliProvider::new(vec![
+                fixtures_dir().join("copilot_v2")
+            ])),
         ),
         (
             "codex",
@@ -303,7 +321,9 @@ fn all_fixture_providers_roundtrip() {
         ),
         (
             "opencode_v2",
-            Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")])),
+            Box::new(OpenCodeProvider::new(vec![
+                fixtures_dir().join("opencode_v2")
+            ])),
         ),
         (
             "gemini",
@@ -317,9 +337,9 @@ fn all_fixture_providers_roundtrip() {
             .unwrap_or_else(|e| panic!("{label}: discover_sessions failed: {e}"));
 
         for session in &sessions {
-            let messages = provider
-                .load_messages(session)
-                .unwrap_or_else(|e| panic!("{label}: load_messages failed for {}: {e}", session.id.0));
+            let messages = provider.load_messages(session).unwrap_or_else(|e| {
+                panic!("{label}: load_messages failed for {}: {e}", session.id.0)
+            });
 
             eprintln!(
                 "[{label}] session={} discovered_count={} loaded_count={}",
@@ -363,7 +383,11 @@ fn live_data_diagnostic() {
             }
         };
 
-        eprintln!("[{}] discovered {} sessions", provider.provider(), sessions.len());
+        eprintln!(
+            "[{}] discovered {} sessions",
+            provider.provider(),
+            sessions.len()
+        );
 
         let mut loaded = 0;
         let mut empty = 0;
@@ -393,10 +417,7 @@ fn live_data_diagnostic() {
                 }
                 Err(e) => {
                     errors += 1;
-                    eprintln!(
-                        "  ERROR: session={} error={e}",
-                        session.id.0
-                    );
+                    eprintln!("  ERROR: session={} error={e}", session.id.0);
                 }
             }
         }
@@ -418,11 +439,15 @@ fn fixture_provider_set() -> Vec<(&'static str, Box<dyn HistoryProvider>)> {
         ),
         (
             "copilot",
-            Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot")])),
+            Box::new(CopilotCliProvider::new(
+                vec![fixtures_dir().join("copilot")],
+            )),
         ),
         (
             "copilot_v2",
-            Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot_v2")])),
+            Box::new(CopilotCliProvider::new(vec![
+                fixtures_dir().join("copilot_v2")
+            ])),
         ),
         (
             "codex",
@@ -438,7 +463,9 @@ fn fixture_provider_set() -> Vec<(&'static str, Box<dyn HistoryProvider>)> {
         ),
         (
             "opencode_v2",
-            Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode_v2")])),
+            Box::new(OpenCodeProvider::new(vec![
+                fixtures_dir().join("opencode_v2")
+            ])),
         ),
         (
             "gemini",

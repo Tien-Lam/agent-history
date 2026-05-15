@@ -17,7 +17,7 @@ use rusqlite_migration::{Migrations, M};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::model::Provider;
+use crate::model::{CitationParseError, SessionOrTurnRef};
 
 const ENV_PATH: &str = "AGHIST_METADATA_DB";
 
@@ -73,8 +73,7 @@ pub fn default_path() -> Option<PathBuf> {
             return Some(PathBuf::from(p));
         }
     }
-    directories::ProjectDirs::from("", "", "aghist")
-        .map(|dirs| dirs.data_dir().join("metadata.db"))
+    directories::ProjectDirs::from("", "", "aghist").map(|dirs| dirs.data_dir().join("metadata.db"))
 }
 
 /// Schema migrations. Append new migrations; never edit or reorder existing
@@ -132,28 +131,17 @@ pub struct Note {
 /// present it must parse as a positive integer.
 pub fn validate_session_ref(raw: &str) -> std::result::Result<&str, MetadataError> {
     let invalid = |reason: &'static str| MetadataError::InvalidSessionRef(raw.to_string(), reason);
-    if raw.is_empty() {
-        return Err(invalid("empty"));
-    }
-    let (head, turn_opt) = match raw.rsplit_once('#') {
-        Some((h, t)) => (h, Some(t)),
-        None => (raw, None),
-    };
-    let (provider_slug, session_id) = head
-        .split_once('/')
-        .ok_or_else(|| invalid("expected '<provider>/<session-id>[#<turn>]'"))?;
-    if Provider::from_slug(provider_slug).is_none() {
-        return Err(invalid("unknown provider slug"));
-    }
-    if session_id.is_empty() {
-        return Err(invalid("empty session id"));
-    }
-    if let Some(turn) = turn_opt {
-        let n: u32 = turn.parse().map_err(|_| invalid("turn must be a positive integer"))?;
-        if n == 0 {
-            return Err(invalid("turn must be a positive integer"));
-        }
-    }
+    raw.parse::<SessionOrTurnRef>().map_err(|e| {
+        let reason = match e {
+            CitationParseError::Empty => "empty",
+            CitationParseError::MissingProvider
+            | CitationParseError::MissingSessionId
+            | CitationParseError::MissingTurn => "expected '<provider>/<session-id>[#<turn>]'",
+            CitationParseError::UnknownProvider(_) => "unknown provider slug",
+            CitationParseError::InvalidTurn(_) => "turn must be a positive integer",
+        };
+        invalid(reason)
+    })?;
     Ok(raw)
 }
 
@@ -189,9 +177,7 @@ pub fn note_add(conn: &Connection, session_ref: &str, body: &str) -> Result<Note
 /// Fetch a single note by id. Returns `Ok(None)` for a non-existent id.
 pub fn note_get(conn: &Connection, id: i64) -> Result<Option<Note>> {
     let sql = format!("SELECT {NOTE_COLUMNS} FROM notes WHERE id = ?1");
-    let note = conn
-        .query_row(&sql, params![id], row_to_note)
-        .optional()?;
+    let note = conn.query_row(&sql, params![id], row_to_note).optional()?;
     Ok(note)
 }
 
@@ -324,9 +310,7 @@ pub fn tag_add(conn: &Connection, session_ref: &str, tag: &str) -> Result<Tag> {
 
 fn tag_get_by_id(conn: &Connection, id: i64) -> Result<Option<Tag>> {
     let sql = format!("SELECT {TAG_COLUMNS} FROM tags WHERE id = ?1");
-    let tag = conn
-        .query_row(&sql, params![id], row_to_tag)
-        .optional()?;
+    let tag = conn.query_row(&sql, params![id], row_to_tag).optional()?;
     Ok(tag)
 }
 
@@ -372,7 +356,10 @@ pub fn tag_list(
     let sql = if clauses.is_empty() {
         format!("SELECT {columns} FROM tags {order}")
     } else {
-        format!("SELECT {columns} FROM tags WHERE {} {order}", clauses.join(" AND "))
+        format!(
+            "SELECT {columns} FROM tags WHERE {} {order}",
+            clauses.join(" AND ")
+        )
     };
 
     let mut stmt = conn.prepare(&sql)?;
@@ -470,8 +457,7 @@ pub fn star_list(conn: &Connection, filter: Option<&str>) -> Result<Vec<Star>> {
         Some(raw) => {
             validate_session_ref(raw)?;
             if raw.contains('#') {
-                let sql =
-                    format!("SELECT {columns} FROM stars WHERE session_ref = ?1 {order}");
+                let sql = format!("SELECT {columns} FROM stars WHERE session_ref = ?1 {order}");
                 let mut stmt = conn.prepare(&sql)?;
                 let rows = stmt.query_map(params![raw], row_to_star)?;
                 rows.collect::<rusqlite::Result<Vec<_>>>()?
@@ -515,9 +501,8 @@ pub fn filter_session_keys(
             return Err(MetadataError::EmptyBody);
         }
         let pattern = format!("%{needle}%");
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT session_ref FROM notes WHERE body LIKE ?1 COLLATE NOCASE",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT session_ref FROM notes WHERE body LIKE ?1 COLLATE NOCASE")?;
         let refs = stmt
             .query_map(params![pattern], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -569,7 +554,10 @@ pub fn star_remove(conn: &Connection, session_ref: &str) -> Result<Star> {
     let existing = star_get(conn, session_ref)?.ok_or_else(|| MetadataError::StarNotFound {
         session_ref: session_ref.to_string(),
     })?;
-    conn.execute("DELETE FROM stars WHERE session_ref = ?1", params![session_ref])?;
+    conn.execute(
+        "DELETE FROM stars WHERE session_ref = ?1",
+        params![session_ref],
+    )?;
     Ok(existing)
 }
 
@@ -672,7 +660,10 @@ mod tests {
             "INSERT INTO tags(session_ref, tag) VALUES (?1, ?2)",
             ("claude-code/abc", "review"),
         );
-        assert!(dup.is_err(), "duplicate (session_ref,tag) should violate UNIQUE");
+        assert!(
+            dup.is_err(),
+            "duplicate (session_ref,tag) should violate UNIQUE"
+        );
 
         // Same session_ref with a different tag is allowed.
         conn.execute(

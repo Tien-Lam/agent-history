@@ -83,8 +83,8 @@ pub fn cluster(sessions: &[Session], opts: ClusterOptions) -> Vec<Thread> {
         let mut cur_end: Option<DateTime<Utc>> = None;
 
         for s in group {
-            let close_to_prev = cur_end
-                .is_some_and(|end| s.started_at.signed_duration_since(end) <= opts.gap);
+            let close_to_prev =
+                cur_end.is_some_and(|end| s.started_at.signed_duration_since(end) <= opts.gap);
             if cur.is_empty() || close_to_prev {
                 cur.push(s);
                 let s_end = s.ended_at.unwrap_or(s.started_at);
@@ -111,7 +111,10 @@ pub fn cluster(sessions: &[Session], opts: ClusterOptions) -> Vec<Thread> {
 }
 
 fn make_thread(project: Option<&str>, sessions: &[&Session]) -> Thread {
-    debug_assert!(!sessions.is_empty(), "thread must have at least one session");
+    debug_assert!(
+        !sessions.is_empty(),
+        "thread must have at least one session"
+    );
 
     // Sessions are pre-sorted by started_at ascending in `cluster`.
     let started_at = sessions[0].started_at;
@@ -138,7 +141,7 @@ fn make_thread(project: Option<&str>, sessions: &[&Session]) -> Thread {
 
     let session_refs: Vec<String> = sessions
         .iter()
-        .map(|s| format!("{}/{}", s.provider.slug(), s.id.0))
+        .map(|s| s.session_ref().to_string())
         .collect();
 
     let summary_seed = sessions
@@ -219,7 +222,13 @@ mod tests {
     fn close_in_time_same_project_groups_into_one_thread() {
         let sessions = vec![
             mk_session("a", Provider::ClaudeCode, Some("foo"), ts(0), Some(ts(60))),
-            mk_session("b", Provider::ClaudeCode, Some("foo"), ts(120), Some(ts(180))),
+            mk_session(
+                "b",
+                Provider::ClaudeCode,
+                Some("foo"),
+                ts(120),
+                Some(ts(180)),
+            ),
         ];
         let threads = cluster(&sessions, ClusterOptions::default());
         assert_eq!(threads.len(), 1);

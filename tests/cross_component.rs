@@ -40,7 +40,10 @@ fn claude_full_pipeline_content_blocks() {
                     assert!(!tc.name.is_empty(), "tool call name must not be empty");
                 }
                 ContentBlock::ToolResult(tr) => {
-                    assert!(!tr.tool_call_id.is_empty(), "tool result must reference a call");
+                    assert!(
+                        !tr.tool_call_id.is_empty(),
+                        "tool result must reference a call"
+                    );
                 }
                 ContentBlock::Error(e) => assert!(!e.is_empty()),
             }
@@ -66,11 +69,18 @@ fn claude_full_pipeline_content_blocks() {
 
     // 2. Tool use input → pretty-printed JSON arguments
     let tool_msg = &messages[1];
-    let tool_block = tool_msg.content.iter().find_map(|c| match c {
-        ContentBlock::ToolUse(tc) => Some(tc),
-        _ => None,
-    }).unwrap();
-    assert!(tool_block.arguments.contains("main.rs"), "tool args should contain path");
+    let tool_block = tool_msg
+        .content
+        .iter()
+        .find_map(|c| match c {
+            ContentBlock::ToolUse(tc) => Some(tc),
+            _ => None,
+        })
+        .unwrap();
+    assert!(
+        tool_block.arguments.contains("main.rs"),
+        "tool args should contain path"
+    );
 
     // 3. Token usage flows from raw JSON through to Message
     assert!(assistant_msg.token_usage.is_some());
@@ -99,7 +109,10 @@ fn gemini_full_pipeline_content_blocks() {
         .collect();
 
     assert!(block_types.contains(&"text"), "should have text");
-    assert!(block_types.contains(&"code"), "should have code block from markdown");
+    assert!(
+        block_types.contains(&"code"),
+        "should have code block from markdown"
+    );
     assert!(block_types.contains(&"thinking"), "should have thinking");
     assert!(block_types.contains(&"tool_use"), "should have tool call");
 
@@ -129,8 +142,14 @@ fn opencode_full_pipeline_code_changes() {
     });
 
     let (lang, code) = diff_block.expect("should have diff block");
-    assert!(lang.as_deref().unwrap().contains("src/db.rs"), "language label should contain file path");
-    assert!(code.contains("Pool::singleton"), "diff should contain new code");
+    assert!(
+        lang.as_deref().unwrap().contains("src/db.rs"),
+        "language label should contain file path"
+    );
+    assert!(
+        code.contains("Pool::singleton"),
+        "diff should contain new code"
+    );
 }
 
 // ─── Multi-provider aggregation ──────────────────────────────────────────────
@@ -138,7 +157,9 @@ fn opencode_full_pipeline_code_changes() {
 fn all_providers() -> Vec<Box<dyn HistoryProvider>> {
     vec![
         Box::new(ClaudeCodeProvider::new(vec![fixtures_dir().join("claude")])),
-        Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot")])),
+        Box::new(CopilotCliProvider::new(
+            vec![fixtures_dir().join("copilot")],
+        )),
         Box::new(GeminiCliProvider::new(vec![fixtures_dir().join("gemini")])),
         Box::new(CodexCliProvider::new(vec![fixtures_dir().join("codex")])),
         Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode")])),
@@ -234,8 +255,7 @@ fn cache_hit_returns_same_messages() {
     let sessions = provider.discover_sessions().unwrap();
     let session = &sessions[0];
 
-    let mut cache: LruCache<String, Vec<Message>> =
-        LruCache::new(NonZeroUsize::new(20).unwrap());
+    let mut cache: LruCache<String, Vec<Message>> = LruCache::new(NonZeroUsize::new(20).unwrap());
 
     // First load: cache miss
     assert!(!cache.contains(&session.id.0));
@@ -251,8 +271,7 @@ fn cache_hit_returns_same_messages() {
 
 #[test]
 fn cache_eviction_at_capacity() {
-    let mut cache: LruCache<String, Vec<Message>> =
-        LruCache::new(NonZeroUsize::new(3).unwrap());
+    let mut cache: LruCache<String, Vec<Message>> = LruCache::new(NonZeroUsize::new(3).unwrap());
 
     let providers = all_providers();
     let mut all_sessions = Vec::new();
@@ -285,8 +304,7 @@ fn cache_eviction_at_capacity() {
 
 #[test]
 fn cache_lru_access_prevents_eviction() {
-    let mut cache: LruCache<String, Vec<Message>> =
-        LruCache::new(NonZeroUsize::new(2).unwrap());
+    let mut cache: LruCache<String, Vec<Message>> = LruCache::new(NonZeroUsize::new(2).unwrap());
 
     let providers = all_providers();
     let mut all_sessions = Vec::new();
@@ -315,9 +333,18 @@ fn cache_lru_access_prevents_eviction() {
     let messages = provider.load_messages(&all_sessions[2]).unwrap();
     cache.put(all_sessions[2].id.0.clone(), messages);
 
-    assert!(cache.contains(&all_sessions[0].id.0), "recently accessed should survive");
-    assert!(!cache.contains(&all_sessions[1].id.0), "LRU entry should be evicted");
-    assert!(cache.contains(&all_sessions[2].id.0), "newest entry should be present");
+    assert!(
+        cache.contains(&all_sessions[0].id.0),
+        "recently accessed should survive"
+    );
+    assert!(
+        !cache.contains(&all_sessions[1].id.0),
+        "LRU entry should be evicted"
+    );
+    assert!(
+        cache.contains(&all_sessions[2].id.0),
+        "newest entry should be present"
+    );
 }
 
 // ─── Search index ───────────────────────────────────────────────────────────
@@ -339,7 +366,10 @@ fn search_index_build_and_query() {
 
     // Search for content we know exists in Claude fixture
     let hits = index.search("build error", 10).unwrap();
-    assert!(!hits.is_empty(), "should find 'build error' in Claude fixture");
+    assert!(
+        !hits.is_empty(),
+        "should find 'build error' in Claude fixture"
+    );
     assert_eq!(hits[0].session_id, "session-abc123");
     assert!(!hits[0].snippet.is_empty());
 
@@ -368,16 +398,26 @@ fn search_index_incremental_rebuild() {
     // First build indexes everything
     let stats1 = index.build_index(&sessions, &providers, &tx).unwrap();
     assert!(stats1.sessions_indexed > 0);
-    assert_eq!(stats1.added, stats1.sessions_indexed, "first run is all 'added'");
+    assert_eq!(
+        stats1.added, stats1.sessions_indexed,
+        "first run is all 'added'"
+    );
     assert_eq!(stats1.updated, 0);
     assert_eq!(stats1.unchanged, 0);
 
     // Second build should skip (mtime unchanged)
     let stats2 = index.build_index(&sessions, &providers, &tx).unwrap();
-    assert_eq!(stats2.sessions_indexed, 0, "no sessions should need re-indexing");
+    assert_eq!(
+        stats2.sessions_indexed, 0,
+        "no sessions should need re-indexing"
+    );
     assert_eq!(stats2.added, 0);
     assert_eq!(stats2.updated, 0);
-    assert_eq!(stats2.unchanged, sessions.len(), "all sessions reported as unchanged");
+    assert_eq!(
+        stats2.unchanged,
+        sessions.len(),
+        "all sessions reported as unchanged"
+    );
 
     // Search still works after incremental rebuild
     let hits = index.search("build error", 10).unwrap();
@@ -454,7 +494,10 @@ fn search_roundtrip_verifies_message_ids() {
 
     // "missing semicolon" appears in msg-004 (thinking block)
     let hits = index.search("missing semicolon", 10).unwrap();
-    assert!(!hits.is_empty(), "should find 'missing semicolon' in thinking block");
+    assert!(
+        !hits.is_empty(),
+        "should find 'missing semicolon' in thinking block"
+    );
     let claude_hit = hits
         .iter()
         .find(|h| h.session_id == "session-abc123")
@@ -476,9 +519,10 @@ fn search_index_finds_tool_output() {
         .done()
         .build();
 
-    let providers: Vec<Box<dyn HistoryProvider>> = vec![Box::new(ClaudeCodeProvider::new(vec![
-        fixture.base_path.clone(),
-    ]))];
+    let providers: Vec<Box<dyn HistoryProvider>> =
+        vec![Box::new(ClaudeCodeProvider::new(vec![fixture
+            .base_path
+            .clone()]))];
     let mut sessions = Vec::new();
     for p in &providers {
         sessions.extend(p.discover_sessions().unwrap());
@@ -532,6 +576,48 @@ fn search_index_rebuilds_when_schema_changes() {
 
     let hits = index.search("build error", 10).unwrap();
     assert!(!hits.is_empty(), "rebuilt index should be queryable");
+}
+
+#[test]
+fn search_index_schema_reset_refuses_unknown_files() {
+    use tantivy::schema::{Schema, STORED, STRING};
+    use tantivy::Index;
+
+    let index_dir = tempfile::tempdir().unwrap();
+    {
+        let mut builder = Schema::builder();
+        builder.add_text_field("session_id", STRING | STORED);
+        let schema = builder.build();
+        Index::create_in_dir(index_dir.path(), schema).unwrap();
+    }
+    let keep = index_dir.path().join("keep.txt");
+    fs::write(&keep, "do not delete").unwrap();
+
+    let Err(err) = SearchIndex::open_or_create(index_dir.path()) else {
+        panic!("schema reset should reject dir with unknown files");
+    };
+    assert!(
+        err.to_string()
+            .contains("refusing to reset index directory"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(fs::read_to_string(&keep).unwrap(), "do not delete");
+}
+
+#[test]
+fn search_index_does_not_delete_arbitrary_meta_json() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let meta = index_dir.path().join("meta.json");
+    fs::write(&meta, r#"{"not":"tantivy"}"#).unwrap();
+
+    let Err(err) = SearchIndex::open_or_create(index_dir.path()) else {
+        panic!("arbitrary meta.json should not be treated as an aghist cache");
+    };
+    assert!(
+        err.to_string().contains("index error"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(fs::read_to_string(&meta).unwrap(), r#"{"not":"tantivy"}"#);
 }
 
 #[test]
@@ -644,7 +730,10 @@ fn search_incremental_reindex_after_file_change() {
         stats2.sessions_indexed > 0,
         "changed file should be re-indexed"
     );
-    assert!(stats2.updated >= 1, "modified session must be classified as 'updated'");
+    assert!(
+        stats2.updated >= 1,
+        "modified session must be classified as 'updated'"
+    );
     assert_eq!(stats2.added, 0, "no new sessions, none should be 'added'");
 
     // New content should now be searchable

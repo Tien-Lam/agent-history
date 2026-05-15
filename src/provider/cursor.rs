@@ -60,7 +60,11 @@ fn base_dirs() -> Vec<PathBuf> {
         // Linux: ~/.config/Cursor
         result.push(home.join(".config").join("Cursor"));
         // macOS: ~/Library/Application Support/Cursor
-        result.push(home.join("Library").join("Application Support").join("Cursor"));
+        result.push(
+            home.join("Library")
+                .join("Application Support")
+                .join("Cursor"),
+        );
         // Windows: %APPDATA%\Cursor (mirrored under home for AGHIST_HOME tests)
         result.push(home.join("AppData").join("Roaming").join("Cursor"));
     }
@@ -219,9 +223,7 @@ fn read_sessions(db_path: &Path) -> Result<Vec<Session>, ProviderError> {
     }
 
     let mut stmt = conn
-        .prepare(
-            "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'",
-        )
+        .prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
         .map_err(sql_err(db_path))?;
 
     let rows = stmt
@@ -305,10 +307,7 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
     })
 }
 
-fn load_messages_from_db(
-    db_path: &Path,
-    composer_id: &str,
-) -> Result<Vec<Message>, ProviderError> {
+fn load_messages_from_db(db_path: &Path, composer_id: &str) -> Result<Vec<Message>, ProviderError> {
     if !db_path.exists() {
         return Ok(Vec::new());
     }
@@ -343,7 +342,9 @@ fn load_messages_from_db(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (idx, h) in headers.iter().enumerate() {
-        let Some(bid) = h.bubble_id.as_deref() else { continue };
+        let Some(bid) = h.bubble_id.as_deref() else {
+            continue;
+        };
         let key = format!("bubbleId:{composer_id}:{bid}");
         if let Some(bytes) = read_value(&conn, &key)? {
             if let Some(msg) = build_message(bid, h.bubble_type, &bytes, idx) {
@@ -370,7 +371,9 @@ fn load_messages_from_db(
     for row in rows.flatten() {
         let (key, value) = row;
         let prefix = format!("bubbleId:{composer_id}:");
-        let Some(bid) = key.strip_prefix(&prefix) else { continue };
+        let Some(bid) = key.strip_prefix(&prefix) else {
+            continue;
+        };
         if seen.contains(bid) {
             continue;
         }
@@ -399,7 +402,12 @@ fn read_value(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>, ProviderE
     }
 }
 
-fn build_message(bubble_id: &str, header_type: Option<u8>, value: &[u8], idx: usize) -> Option<Message> {
+fn build_message(
+    bubble_id: &str,
+    header_type: Option<u8>,
+    value: &[u8],
+    idx: usize,
+) -> Option<Message> {
     let raw: BubbleData = serde_json::from_slice(value).ok()?;
 
     let role = match raw.bubble_type.or(header_type)? {
@@ -430,11 +438,7 @@ fn build_message(bubble_id: &str, header_type: Option<u8>, value: &[u8], idx: us
     }
 
     for cb in &raw.code_blocks {
-        let body = cb
-            .code
-            .as_deref()
-            .or(cb.content.as_deref())
-            .unwrap_or("");
+        let body = cb.code.as_deref().or(cb.content.as_deref()).unwrap_or("");
         if body.is_empty() {
             continue;
         }
@@ -697,7 +701,11 @@ mod tests {
         });
         insert(&conn, "composerData:comp-x", &composer);
         // Bubble 1 valid, bubble 2 garbage.
-        insert(&conn, "bubbleId:comp-x:b1", &serde_json::json!({"type": 1, "text": "ok"}));
+        insert(
+            &conn,
+            "bubbleId:comp-x:b1",
+            &serde_json::json!({"type": 1, "text": "ok"}),
+        );
         conn.execute(
             "INSERT INTO cursorDiskKV (key, value) VALUES (?1, ?2)",
             rusqlite::params!["bubbleId:comp-x:b2", b"not-json"],

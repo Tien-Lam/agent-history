@@ -49,10 +49,7 @@ fn browse_select_enters_view_mode() {
     let mut terminal = make_terminal();
 
     // Select session, then quit from ViewSession mode
-    let events = ScriptedEventSource::from_keys(vec![
-        KeyCode::Enter,
-        KeyCode::Char('q'),
-    ]);
+    let events = ScriptedEventSource::from_keys(vec![KeyCode::Enter, KeyCode::Char('q')]);
     app.run_with_event_source(&mut terminal, events).unwrap();
 
     assert_eq!(app.mode(), AppMode::ViewSession);
@@ -252,7 +249,10 @@ fn filter_toggle_changes_rendered_output() {
 
     assert!(total > 0, "should have sessions");
     assert_eq!(app2.mode(), AppMode::Browse);
-    assert_ne!(before, after, "filtering a provider should change the displayed sessions");
+    assert_ne!(
+        before, after,
+        "filtering a provider should change the displayed sessions"
+    );
 }
 
 #[test]
@@ -409,13 +409,13 @@ fn search_type_and_cancel_returns_to_browse() {
     let mut terminal = make_terminal();
 
     let events = ScriptedEventSource::from_keys(vec![
-        KeyCode::Char('/'),     // enter search
-        KeyCode::Char('h'),     // type query
+        KeyCode::Char('/'), // enter search
+        KeyCode::Char('h'), // type query
         KeyCode::Char('e'),
         KeyCode::Char('l'),
         KeyCode::Char('l'),
         KeyCode::Char('o'),
-        KeyCode::Esc,           // cancel search
+        KeyCode::Esc, // cancel search
         KeyCode::Char('q'),
     ]);
     app.run_with_event_source(&mut terminal, events).unwrap();
@@ -483,8 +483,12 @@ fn export_menu_opens_from_session_view() {
 
     let text = render_to_text(&terminal);
     assert!(
-        text.contains("Markdown") || text.contains("JSON") || text.contains("HTML")
-            || text.contains("md") || text.contains("json") || text.contains("html"),
+        text.contains("Markdown")
+            || text.contains("JSON")
+            || text.contains("HTML")
+            || text.contains("md")
+            || text.contains("json")
+            || text.contains("html"),
         "export menu should show format options, got:\n{text}"
     );
 }
@@ -549,7 +553,11 @@ fn export_confirm_writes_file_and_returns() {
     // Clean up the exported file
     for entry in std::fs::read_dir(".").unwrap().flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with("aghist-") && std::path::Path::new(&name).extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) {
+        if name.starts_with("aghist-")
+            && std::path::Path::new(&name)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+        {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -617,29 +625,28 @@ fn make_app_with_stars(
     providers: Vec<Box<dyn HistoryProvider>>,
     stars_path: &std::path::Path,
 ) -> App {
-    App::with_stars(providers, Config::default(), StarStore::load_from(stars_path))
+    App::with_stars(
+        providers,
+        Config::default(),
+        StarStore::load_from(stars_path),
+    )
 }
 
 #[test]
 fn toggle_star_persists_across_runs() {
     let dir = tempfile::tempdir().unwrap();
-    let stars_path = dir.path().join("stars.toml");
+    let stars_path = dir.path().join("metadata.db");
 
     // Run 1: load sessions, focus first one, press 's' to star, then quit.
     let (dirs1, providers1) = fixtures::all_generated_providers(1, 2);
     let mut app1 = make_app_with_stars(providers1, &stars_path);
     let mut terminal1 = make_terminal();
-    let events = ScriptedEventSource::from_keys(vec![
-        KeyCode::Char('s'),
-        KeyCode::Char('q'),
-    ]);
+    let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('s'), KeyCode::Char('q')]);
     app1.run_with_event_source(&mut terminal1, events).unwrap();
     drop(dirs1);
 
     // The star should now be on disk.
-    assert!(stars_path.exists(), "stars.toml should be written");
-    let on_disk = std::fs::read_to_string(&stars_path).unwrap();
-    assert!(on_disk.contains("[[stars]]"), "should serialize one entry: {on_disk}");
+    assert!(stars_path.exists(), "metadata.db should be written");
 
     // Run 2: confirm the persisted star reloads.
     let store = StarStore::load_from(&stars_path);
@@ -649,7 +656,7 @@ fn toggle_star_persists_across_runs() {
 #[test]
 fn toggle_star_twice_unstars() {
     let dir = tempfile::tempdir().unwrap();
-    let stars_path = dir.path().join("stars.toml");
+    let stars_path = dir.path().join("metadata.db");
 
     let (dirs, providers) = fixtures::all_generated_providers(1, 2);
     let mut app = make_app_with_stars(providers, &stars_path);
@@ -669,7 +676,7 @@ fn toggle_star_twice_unstars() {
 #[test]
 fn starred_only_filter_hides_unstarred_sessions() {
     let dir = tempfile::tempdir().unwrap();
-    let stars_path = dir.path().join("stars.toml");
+    let stars_path = dir.path().join("metadata.db");
 
     let (dirs, providers) = fixtures::all_generated_providers(1, 2);
     let mut app = make_app_with_stars(providers, &stars_path);
@@ -679,21 +686,31 @@ fn starred_only_filter_hides_unstarred_sessions() {
     // starred-only filter and verify the rendered list shrinks
     // to a single entry.
     let events = ScriptedEventSource::from_keys(vec![
-        KeyCode::Char('s'),    // star session 0
-        KeyCode::Char('f'),    // open filter
+        KeyCode::Char('s'), // star session 0
+        KeyCode::Char('f'), // open filter
         // Cursor lands on the first provider; jump to the starred-only
         // toggle which sits after all providers + 3 text fields + 2
         // message-level toggles (role, has-tool-call).
-        KeyCode::Char('G'),    // GoToBottom is unmapped in Filter mode → no-op
-        // Walk down: 9 providers + 3 text fields + 2 message toggles = 14
-        // → press j 14 times.
-        KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
-        KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
-        KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
-        KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j'),
-        KeyCode::Char('j'), KeyCode::Char('j'),
-        KeyCode::Char(' '),    // toggle "starred only"
-        KeyCode::Char('f'),    // close filter (applies it)
+        KeyCode::Char('G'), // GoToBottom is unmapped in Filter mode → no-op
+        // Walk down: 10 providers + 3 text fields + 2 message toggles = 15
+        // -> press j 15 times.
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char('j'),
+        KeyCode::Char(' '), // toggle "starred only"
+        KeyCode::Char('f'), // close filter (applies it)
         KeyCode::Char('q'),
     ]);
     app.run_with_event_source(&mut terminal, events).unwrap();
@@ -721,7 +738,7 @@ fn starred_only_filter_hides_unstarred_sessions() {
 #[test]
 fn star_marker_appears_in_session_list() {
     let dir = tempfile::tempdir().unwrap();
-    let stars_path = dir.path().join("stars.toml");
+    let stars_path = dir.path().join("metadata.db");
 
     let fixture = fixtures::claude_single_session(2);
     let mut app = make_app_with_stars(claude_providers(&fixture), &stars_path);
@@ -736,10 +753,7 @@ fn star_marker_appears_in_session_list() {
     // Toggle star, then render again.
     let mut app2 = make_app_with_stars(claude_providers(&fixture), &stars_path);
     let mut terminal2 = make_terminal();
-    let events = ScriptedEventSource::from_keys(vec![
-        KeyCode::Char('s'),
-        KeyCode::Char('q'),
-    ]);
+    let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('s'), KeyCode::Char('q')]);
     app2.run_with_event_source(&mut terminal2, events).unwrap();
     let after = render_to_text(&terminal2);
     assert!(
@@ -766,7 +780,10 @@ fn hybrid_toggle_dispatch_is_inert_when_unavailable() {
     assert!(!app.hybrid_enabled());
 
     app.dispatch(Action::ToggleHybrid);
-    assert!(!app.hybrid_enabled(), "toggle must not flip while unavailable");
+    assert!(
+        !app.hybrid_enabled(),
+        "toggle must not flip while unavailable"
+    );
     assert_eq!(app.last_engine(), "lexical");
     assert!(
         app.status_message

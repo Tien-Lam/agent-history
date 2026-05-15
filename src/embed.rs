@@ -208,11 +208,7 @@ impl EmbeddingStore {
     /// Returns the stored vector iff its hash matches `expected_hash`. A
     /// `None` here means "either never embedded, or the message text has
     /// changed since" — both cases require a fresh embedding pass.
-    pub fn get_if_fresh(
-        &self,
-        message_id: &str,
-        expected_hash: &[u8; HASH_LEN],
-    ) -> Option<&[f32]> {
+    pub fn get_if_fresh(&self, message_id: &str, expected_hash: &[u8; HASH_LEN]) -> Option<&[f32]> {
         let entry = self.entries.get(message_id)?;
         if &entry.hash == expected_hash {
             Some(entry.vector.as_slice())
@@ -346,7 +342,11 @@ struct Cursor<'a> {
 
 impl<'a> Cursor<'a> {
     fn new(path: &'a Path, bytes: &'a [u8]) -> Self {
-        Self { path, bytes, offset: 0 }
+        Self {
+            path,
+            bytes,
+            offset: 0,
+        }
     }
 
     fn is_eof(&self) -> bool {
@@ -433,21 +433,26 @@ pub fn try_hybrid_search(
         .iter()
         .map(|(id, vec)| (id.to_string(), search::cosine_similarity(&q_vec, vec)))
         .collect();
-    ranked.sort_by(|a, b| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     ranked.truncate(pool_size);
     let candidates: Vec<search::SemanticCandidate> = ranked
         .into_iter()
-        .map(|(message_id, similarity)| search::SemanticCandidate {
-            message_id,
+        .map(|(message_key, similarity)| search::SemanticCandidate {
+            message_key,
+            message_id: String::new(),
             similarity,
         })
         .collect();
 
     index
-        .search_hybrid(query, &candidates, pool_size, filters, hybrid_weight, pool_size)
+        .search_hybrid(
+            query,
+            &candidates,
+            pool_size,
+            filters,
+            hybrid_weight,
+            pool_size,
+        )
         .ok()
 }
 
@@ -543,8 +548,12 @@ mod tests {
         let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
         let hash_a = content_hash("hello world");
         let hash_b = content_hash("goodbye world");
-        store.upsert("msg-a", hash_a, vec![0.1, -0.2, 0.3, 0.4]).unwrap();
-        store.upsert("msg-b", hash_b, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        store
+            .upsert("msg-a", hash_a, vec![0.1, -0.2, 0.3, 0.4])
+            .unwrap();
+        store
+            .upsert("msg-b", hash_b, vec![1.0, 2.0, 3.0, 4.0])
+            .unwrap();
         store.flush().unwrap();
 
         let loaded = EmbeddingStore::open(dir.path()).unwrap().unwrap();
@@ -568,7 +577,9 @@ mod tests {
         let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
         let original = content_hash("v1 text");
         let updated = content_hash("v2 text");
-        store.upsert("msg", original, vec![0.1, 0.2, 0.3, 0.4]).unwrap();
+        store
+            .upsert("msg", original, vec![0.1, 0.2, 0.3, 0.4])
+            .unwrap();
 
         // Same id but different content hash: caller should see a miss and
         // re-embed rather than serve a stale vector.
@@ -594,10 +605,7 @@ mod tests {
         let err = store
             .upsert("msg", content_hash("x"), vec![0.1, 0.2])
             .unwrap_err();
-        assert!(matches!(
-            err,
-            EmbedError::DimMismatch { stored: 4, got: 2 }
-        ));
+        assert!(matches!(err, EmbedError::DimMismatch { stored: 4, got: 2 }));
     }
 
     #[test]
@@ -627,7 +635,10 @@ mod tests {
         fs::write(&path, &bytes).unwrap();
 
         match EmbeddingStore::open(dir.path()) {
-            Err(EmbedError::SchemaMismatch { stored: 1, expected }) => {
+            Err(EmbedError::SchemaMismatch {
+                stored: 1,
+                expected,
+            }) => {
                 assert_eq!(expected, STORE_VERSION);
             }
             Ok(_) => panic!("expected SchemaMismatch, got Ok"),

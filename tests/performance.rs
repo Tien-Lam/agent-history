@@ -46,11 +46,7 @@ fn message_loading_large_session() {
     let messages = provider.load_messages(&sessions[0]).unwrap();
     let elapsed = start.elapsed();
 
-    println!(
-        "Loaded {} messages in {:?}",
-        messages.len(),
-        elapsed,
-    );
+    println!("Loaded {} messages in {:?}", messages.len(), elapsed);
     assert_eq!(messages.len(), 200);
     assert!(
         elapsed.as_secs() < 5,
@@ -60,8 +56,8 @@ fn message_loading_large_session() {
 
 #[test]
 fn lru_cache_under_pressure() {
-    use std::num::NonZeroUsize;
     use lru::LruCache;
+    use std::num::NonZeroUsize;
 
     let cache_size = NonZeroUsize::new(10).unwrap();
     let mut cache: LruCache<String, Vec<String>> = LruCache::new(cache_size);

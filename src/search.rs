@@ -2,84 +2,37 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use tantivy::collector::{DocSetCollector, TopDocs};
 use tantivy::query::{BooleanQuery, Occur, Query, QueryParser, RangeQuery, TermQuery};
-use tantivy::schema::{Field, IndexRecordOption, Schema, Value, INDEXED, STORED, STRING, TEXT};
+use tantivy::schema::IndexRecordOption;
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
 pub use tantivy::query::Explanation;
 
 use crate::action::Action;
 use crate::metadata::Note;
-use crate::model::{ContentBlock, Message, Provider, Role, Session};
+use crate::model::{Role, Session};
 use crate::provider::HistoryProvider;
 
-#[derive(Debug, thiserror::Error)]
-pub enum SearchError {
-    #[error("index error: {0}")]
-    Tantivy(#[from] tantivy::TantivyError),
-    #[error("query parse error: {0}")]
-    QueryParse(#[from] tantivy::query::QueryParserError),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("serialization error: {0}")]
-    Json(#[from] serde_json::Error),
-}
-
-/// What kind of indexed document a [`SearchHit`] points at. Drives the JSON
-/// output shape (`kind="message"` vs `kind="note"`) and tells callers which of
-/// the optional note fields are populated.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HitKind {
-    /// A session message — `session_id`/`message_id` identify the source turn.
-    Message,
-    /// A user note from the metadata sidecar — `note_id`/`note_session_ref`
-    /// identify the row; `session_id`/`message_id` are empty.
-    Note,
-}
-
-impl HitKind {
-    /// Stable lowercase slug used in JSON output and the indexed `kind` field.
-    pub fn slug(self) -> &'static str {
-        match self {
-            HitKind::Message => "message",
-            HitKind::Note => "note",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SearchHit {
-    pub kind: HitKind,
-    pub session_id: String,
-    pub message_id: String,
-    pub snippet: String,
-    pub score: f32,
-    /// `Some` when `kind == HitKind::Note`: the metadata.db row id.
-    pub note_id: Option<i64>,
-    /// `Some` when `kind == HitKind::Note`: the note's `session_ref`
-    /// (`<provider>/<session-id>[#<turn>]`), as stored in the sidecar.
-    pub note_session_ref: Option<String>,
-}
-
-/// One semantic candidate sourced from cosine similarity over the embedding
-/// store. Callers rank the full store and pass the top-N here; `search.rs`
-/// stays ignorant of the embedding pipeline.
-#[derive(Debug, Clone)]
-pub struct SemanticCandidate {
-    pub message_id: String,
-    pub similarity: f32,
-}
-
-/// Reciprocal Rank Fusion smoothing constant. 60 is the value from Cormack
-/// et al.'s original paper and the one most production hybrid-search systems
-/// use; large enough to dampen the penalty for rank-1 vs rank-2 differences,
-/// small enough that rank still matters.
-pub const RRF_K: f32 = 60.0;
+mod document;
+mod fields;
+mod fingerprint;
+mod snippet;
+mod storage;
+pub mod types;
+use document::{
+    extract_content, extract_tool_output, field_i64, field_text, message_has_tool_call,
+};
+use fields::SearchFields;
+use fingerprint::{file_fingerprint, manifest_has_legacy_path_keys};
+use snippet::best_snippet;
+use storage::{reset_index_dir, write_index_sentinel};
+use types::Manifest;
+pub use types::{
+    HitKind, IndexStats, NotesIndexStats, SearchError, SearchFilters, SearchHit, SemanticCandidate,
+    RRF_K,
+};
 
 /// Cosine similarity in [-1, 1]. Returns 0.0 for mismatched / empty / zero-norm
 /// vectors — those can't yield a useful hybrid signal anyway.
@@ -103,114 +56,28 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct IndexStats {
-    /// Sessions written this pass (added + updated).
-    pub sessions_indexed: usize,
-    /// Messages written this pass.
-    pub messages_indexed: usize,
-    /// Sessions never seen by the manifest before.
-    pub added: usize,
-    /// Sessions that existed in the manifest but had a newer source mtime.
-    pub updated: usize,
-    /// Sessions that the manifest already had at the current mtime — skipped.
-    pub unchanged: usize,
-}
-
-/// Outcome of a single [`SearchIndex::index_notes`] pass. Mirrors [`IndexStats`]
-/// in spirit but counts metadata.db note rows instead of session files.
-#[derive(Debug, Default, Clone)]
-pub struct NotesIndexStats {
-    /// Notes never seen by the manifest before.
-    pub added: usize,
-    /// Notes whose `updated_at` advanced since the manifest snapshot.
-    pub updated: usize,
-    /// Notes already present at the current `updated_at` — skipped.
-    pub unchanged: usize,
-    /// Notes present in the manifest but absent from the input list — pruned
-    /// from the index so deletes in the sidecar propagate to search.
-    pub removed: usize,
-}
-
 pub struct SearchIndex {
     index: Index,
     reader: IndexReader,
-    f_session_id: Field,
-    f_message_id: Field,
-    f_provider: Field,
-    f_project: Field,
-    f_project_raw: Field,
-    f_role: Field,
-    f_content: Field,
-    f_tool_output: Field,
-    f_timestamp: Field,
-    f_has_tool_call: Field,
-    f_kind: Field,
-    f_note_id: Field,
-    f_note_session_ref: Field,
+    fields: SearchFields,
     index_dir: PathBuf,
-}
-
-/// Server-side filters applied alongside a `search` query. Empty fields mean
-/// "do not filter on this dimension". `since`/`until` are inclusive bounds on
-/// the message timestamp; `project` is a case-insensitive substring match.
-#[derive(Debug, Default, Clone)]
-pub struct SearchFilters {
-    pub provider: Option<Provider>,
-    pub since: Option<DateTime<Utc>>,
-    pub until: Option<DateTime<Utc>>,
-    pub project: Option<String>,
-    pub role: Option<Role>,
-    pub has_tool_call: bool,
-}
-
-impl SearchFilters {
-    pub fn is_empty(&self) -> bool {
-        self.provider.is_none()
-            && self.since.is_none()
-            && self.until.is_none()
-            && self.project.is_none()
-            && self.role.is_none()
-            && !self.has_tool_call
-    }
-}
-
-#[derive(Serialize, Deserialize, Default)]
-struct Manifest {
-    sessions: HashMap<String, u64>,
-    /// Note id → `updated_at` snapshot from the metadata sidecar. `#[serde(default)]`
-    /// keeps pre-q3o.6 manifests deserializable; on schema-mismatch wipes the
-    /// whole manifest is recreated from scratch anyway.
-    #[serde(default)]
-    notes: HashMap<String, String>,
 }
 
 impl SearchIndex {
     pub fn open_or_create(index_dir: &Path) -> Result<Self, SearchError> {
         fs::create_dir_all(index_dir)?;
 
-        let mut builder = Schema::builder();
-        let f_session_id = builder.add_text_field("session_id", STRING | STORED);
-        let f_message_id = builder.add_text_field("message_id", STRING | STORED);
-        let f_provider = builder.add_text_field("provider", STRING | STORED);
-        let f_project = builder.add_text_field("project", TEXT | STORED);
-        let f_project_raw = builder.add_text_field("project_raw", STRING | STORED);
-        let f_role = builder.add_text_field("role", STRING | STORED);
-        let f_content = builder.add_text_field("content", TEXT | STORED);
-        let f_tool_output = builder.add_text_field("tool_output", TEXT | STORED);
-        let f_timestamp = builder.add_i64_field("timestamp", INDEXED | STORED);
-        let f_has_tool_call = builder.add_i64_field("has_tool_call", INDEXED | STORED);
-        let f_kind = builder.add_text_field("kind", STRING | STORED);
-        let f_note_id = builder.add_i64_field("note_id", INDEXED | STORED);
-        let f_note_session_ref = builder.add_text_field("note_session_ref", STRING | STORED);
-        let schema = builder.build();
+        let (schema, fields) = SearchFields::build_schema();
 
         let meta_path = index_dir.join("meta.json");
-        // The on-disk index is a cache; if its schema predates a field we now
-        // need (e.g. tool_output was added), rebuild from scratch instead of
-        // failing to open.
-        if meta_path.exists() && !schema_matches(index_dir, &schema) {
-            wipe_index_dir(index_dir)?;
+        // The on-disk index is a cache; if Tantivy can open it but its schema
+        // predates fields we now need, rebuild from scratch. A random or
+        // corrupt `meta.json` is not treated as our cache and is never reset.
+        if meta_path.exists() {
+            let existing = Index::open_in_dir(index_dir)?;
+            if existing.schema() != schema {
+                reset_index_dir(index_dir)?;
+            }
         }
 
         let index = if meta_path.exists() {
@@ -223,23 +90,12 @@ impl SearchIndex {
             .reader_builder()
             .reload_policy(ReloadPolicy::Manual)
             .try_into()?;
+        write_index_sentinel(index_dir)?;
 
         Ok(Self {
             index,
             reader,
-            f_session_id,
-            f_message_id,
-            f_provider,
-            f_project,
-            f_project_raw,
-            f_role,
-            f_content,
-            f_tool_output,
-            f_timestamp,
-            f_has_tool_call,
-            f_kind,
-            f_note_id,
-            f_note_session_ref,
+            fields,
             index_dir: index_dir.to_path_buf(),
         })
     }
@@ -253,16 +109,23 @@ impl SearchIndex {
         let mut manifest = self.load_manifest();
         let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
 
+        if manifest_has_legacy_path_keys(&manifest) {
+            writer.delete_all_documents()?;
+            manifest = Manifest::default();
+        }
+
         let total = sessions.len();
         let mut stats = IndexStats::default();
+        let mut current_session_keys = HashSet::with_capacity(sessions.len());
 
         for (i, session) in sessions.iter().enumerate() {
-            let path_key = session.source_path.to_string_lossy().into_owned();
-            let current_mtime = file_mtime(&session.source_path);
+            let current_fingerprint = file_fingerprint(&session.source_path);
+            let session_key = session.identity_key();
+            current_session_keys.insert(session_key.clone());
 
-            let existing_mtime = manifest.sessions.get(&path_key).copied();
-            match existing_mtime {
-                Some(cached) if cached == current_mtime => {
+            let existing_fingerprint = manifest.sessions.get(&session_key);
+            match existing_fingerprint {
+                Some(cached) if cached == &current_fingerprint => {
                     stats.unchanged += 1;
                     let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
                     continue;
@@ -272,41 +135,60 @@ impl SearchIndex {
             }
 
             writer.delete_term(tantivy::Term::from_field_text(
-                self.f_session_id,
-                &session.id.0,
+                self.fields.session_key,
+                &session_key,
             ));
 
-            if let Some(provider) = providers.iter().find(|p| p.provider() == session.provider) {
-                if let Ok(messages) = provider.load_messages(session) {
-                    for msg in &messages {
-                        let content = extract_content(msg);
-                        let tool_output = extract_tool_output(msg);
-                        if content.is_empty() && tool_output.is_empty() {
-                            continue;
-                        }
-                        let project = session.project_name.as_deref().unwrap_or("");
-                        let has_tool_call = i64::from(message_has_tool_call(msg));
-                        let mut doc = TantivyDocument::default();
-                        doc.add_text(self.f_kind, HitKind::Message.slug());
-                        doc.add_text(self.f_session_id, &session.id.0);
-                        doc.add_text(self.f_message_id, &msg.id.0);
-                        doc.add_text(self.f_provider, session.provider.slug());
-                        doc.add_text(self.f_project, project);
-                        doc.add_text(self.f_project_raw, project);
-                        doc.add_text(self.f_role, msg.role.slug());
-                        doc.add_text(self.f_content, &content);
-                        doc.add_text(self.f_tool_output, &tool_output);
-                        doc.add_i64(self.f_timestamp, msg.timestamp.timestamp());
-                        doc.add_i64(self.f_has_tool_call, has_tool_call);
-                        writer.add_document(doc)?;
-                        stats.messages_indexed += 1;
+            if let Ok(messages) = crate::provider::load_messages_for_session(session, providers) {
+                for (turn_index, msg) in messages.iter().enumerate() {
+                    let content = extract_content(msg);
+                    let tool_output = extract_tool_output(msg);
+                    if content.is_empty() && tool_output.is_empty() {
+                        continue;
                     }
+                    let project = session.project_name.as_deref().unwrap_or("");
+                    let has_tool_call = i64::from(message_has_tool_call(msg));
+                    let message_key = session.message_key(turn_index, &msg.id.0);
+                    let mut doc = TantivyDocument::default();
+                    doc.add_text(self.fields.kind, HitKind::Message.slug());
+                    doc.add_text(self.fields.session_key, &session_key);
+                    doc.add_text(self.fields.session_id, &session.id.0);
+                    doc.add_text(self.fields.message_key, &message_key);
+                    doc.add_text(self.fields.message_id, &msg.id.0);
+                    doc.add_text(self.fields.provider, session.provider.slug());
+                    doc.add_text(self.fields.project, project);
+                    doc.add_text(self.fields.project_raw, project);
+                    doc.add_text(self.fields.role, msg.role.slug());
+                    doc.add_text(self.fields.content, &content);
+                    doc.add_text(self.fields.tool_output, &tool_output);
+                    doc.add_i64(self.fields.timestamp, msg.timestamp.timestamp());
+                    doc.add_i64(self.fields.has_tool_call, has_tool_call);
+                    writer.add_document(doc)?;
+                    stats.messages_indexed += 1;
                 }
+            } else {
+                let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
+                continue;
             }
 
-            manifest.sessions.insert(path_key, current_mtime);
+            manifest.sessions.insert(session_key, current_fingerprint);
             stats.sessions_indexed += 1;
             let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
+        }
+
+        let stale: Vec<String> = manifest
+            .sessions
+            .keys()
+            .filter(|key| !current_session_keys.contains(*key))
+            .cloned()
+            .collect();
+        for session_key in stale {
+            writer.delete_term(tantivy::Term::from_field_text(
+                self.fields.session_key,
+                &session_key,
+            ));
+            manifest.sessions.remove(&session_key);
+            stats.removed += 1;
         }
 
         writer.commit()?;
@@ -353,13 +235,13 @@ impl SearchIndex {
 
             // delete-by-term keys on the i64 note_id field — message docs
             // don't carry note_id so they're untouched.
-            writer.delete_term(Term::from_field_i64(self.f_note_id, note.id));
+            writer.delete_term(Term::from_field_i64(self.fields.note_id, note.id));
 
             let mut doc = TantivyDocument::default();
-            doc.add_text(self.f_kind, HitKind::Note.slug());
-            doc.add_i64(self.f_note_id, note.id);
-            doc.add_text(self.f_note_session_ref, &note.session_ref);
-            doc.add_text(self.f_content, &note.body);
+            doc.add_text(self.fields.kind, HitKind::Note.slug());
+            doc.add_i64(self.fields.note_id, note.id);
+            doc.add_text(self.fields.note_session_ref, &note.session_ref);
+            doc.add_text(self.fields.content, &note.body);
             writer.add_document(doc)?;
 
             manifest.notes.insert(key, note.updated_at.clone());
@@ -373,7 +255,7 @@ impl SearchIndex {
             .filter_map(|k| k.parse::<i64>().ok().map(|id| (k.clone(), id)))
             .collect();
         for (key, id) in stale {
-            writer.delete_term(Term::from_field_i64(self.f_note_id, id));
+            writer.delete_term(Term::from_field_i64(self.fields.note_id, id));
             manifest.notes.remove(&key);
             stats.removed += 1;
         }
@@ -483,24 +365,23 @@ impl SearchIndex {
             .map(|(h, _)| h)
             .collect();
 
-        let sem_ids: Vec<&str> = semantic_ranked
+        let sem_keys: Vec<&str> = semantic_ranked
             .iter()
             .take(pool)
-            .map(|c| c.message_id.as_str())
+            .map(|c| c.message_key.as_str())
             .collect();
         let semantic: Vec<SearchHit> =
-            self.fetch_filtered_by_message_ids(query_str, &sem_ids, filters)?;
+            self.fetch_filtered_by_message_keys(query_str, &sem_keys, filters)?;
 
         // Tuple is (lexical rank 1-based, semantic rank 1-based, hit). A None
         // rank means "absent from that pool" → that side contributes 0 to RRF.
-        let mut by_id: HashMap<String, (Option<usize>, Option<usize>, SearchHit)> =
-            HashMap::new();
+        let mut by_id: HashMap<String, (Option<usize>, Option<usize>, SearchHit)> = HashMap::new();
         for (i, hit) in lexical.into_iter().enumerate() {
-            by_id.insert(hit.message_id.clone(), (Some(i + 1), None, hit));
+            by_id.insert(hit.message_key.clone(), (Some(i + 1), None, hit));
         }
         for (i, hit) in semantic.into_iter().enumerate() {
             by_id
-                .entry(hit.message_id.clone())
+                .entry(hit.message_key.clone())
                 .and_modify(|entry| entry.1 = Some(i + 1))
                 .or_insert((None, Some(i + 1), hit));
         }
@@ -525,27 +406,27 @@ impl SearchIndex {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.session_id.cmp(&b.session_id))
-                .then_with(|| a.message_id.cmp(&b.message_id))
+                .then_with(|| a.session_key.cmp(&b.session_key))
+                .then_with(|| a.message_key.cmp(&b.message_key))
         });
         fused.truncate(limit);
         Ok(fused)
     }
 
-    /// Look up indexed messages by `message_id`, applying the same filter
+    /// Look up indexed messages by internal `message_key`, applying the same filter
     /// clauses as [`Self::search_inner`]. Used by hybrid search to validate
     /// semantic candidates against server-side filters before fusing.
     ///
     /// The returned vector preserves the input order (typically similarity
     /// DESC), with non-matching ids dropped — so callers can use position as
     /// the semantic rank.
-    fn fetch_filtered_by_message_ids(
+    fn fetch_filtered_by_message_keys(
         &self,
         query_str: &str,
-        ids: &[&str],
+        keys: &[&str],
         filters: &SearchFilters,
     ) -> Result<Vec<SearchHit>, SearchError> {
-        if ids.is_empty() {
+        if keys.is_empty() {
             return Ok(Vec::new());
         }
 
@@ -554,10 +435,10 @@ impl SearchIndex {
 
         // OR of message_id terms — Tantivy doesn't have an IN query, so we
         // build a Should-clause boolean.
-        let id_clauses: Vec<(Occur, Box<dyn Query>)> = ids
+        let id_clauses: Vec<(Occur, Box<dyn Query>)> = keys
             .iter()
-            .map(|id| {
-                let term = Term::from_field_text(self.f_message_id, id);
+            .map(|key| {
+                let term = Term::from_field_text(self.fields.message_key, key);
                 (
                     Occur::Should,
                     Box::new(TermQuery::new(term, IndexRecordOption::Basic)) as Box<dyn Query>,
@@ -568,71 +449,36 @@ impl SearchIndex {
 
         let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(5);
         clauses.push((Occur::Must, id_query));
-
-        if let Some(provider) = filters.provider {
-            let term = Term::from_field_text(self.f_provider, provider.slug());
-            clauses.push((
-                Occur::Must,
-                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
-            ));
-        }
-        if let Some(role) = filters.role {
-            let term = Term::from_field_text(self.f_role, role.slug());
-            clauses.push((
-                Occur::Must,
-                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
-            ));
-        }
-        if filters.has_tool_call {
-            let term = Term::from_field_i64(self.f_has_tool_call, 1);
-            clauses.push((
-                Occur::Must,
-                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
-            ));
-        }
-        if filters.since.is_some() || filters.until.is_some() {
-            let lower = filters.since.map_or(Bound::Unbounded, |t| {
-                Bound::Included(Term::from_field_i64(self.f_timestamp, t.timestamp()))
-            });
-            let upper = filters.until.map_or(Bound::Unbounded, |t| {
-                Bound::Included(Term::from_field_i64(self.f_timestamp, t.timestamp()))
-            });
-            clauses.push((Occur::Must, Box::new(RangeQuery::new(lower, upper))));
-        }
+        self.add_filter_clauses(&mut clauses, filters);
 
         let combined: Box<dyn Query> = Box::new(BooleanQuery::new(clauses));
 
-        // Cap at the input length — we have at most one hit per requested id.
-        let top_docs = searcher.search(
-            &combined,
-            &TopDocs::with_limit(ids.len()).order_by_score(),
-        )?;
+        // Cap at the input length — we have at most one hit per requested key.
+        let top_docs =
+            searcher.search(&combined, &TopDocs::with_limit(keys.len()).order_by_score())?;
 
-        let project_needle = filters
-            .project
-            .as_deref()
-            .map(str::to_lowercase)
-            .filter(|s| !s.is_empty());
+        let project_needle = Self::project_filter_needle(filters);
 
-        let mut by_msg_id: HashMap<String, SearchHit> = HashMap::new();
+        let mut by_msg_key: HashMap<String, SearchHit> = HashMap::new();
         for (_score, addr) in top_docs {
             let doc: TantivyDocument = searcher.doc(addr)?;
-            if let Some(needle) = &project_needle {
-                let project = field_text(&doc, self.f_project_raw);
-                if !project.to_lowercase().contains(needle) {
-                    continue;
-                }
+            if !self.matches_project_filter(&doc, project_needle.as_deref()) {
+                continue;
             }
-            let session_id = field_text(&doc, self.f_session_id);
-            let message_id = field_text(&doc, self.f_message_id);
-            let content = field_text(&doc, self.f_content);
-            let tool_output = field_text(&doc, self.f_tool_output);
+            let session_key = field_text(&doc, self.fields.session_key);
+            let session_id = field_text(&doc, self.fields.session_id);
+            let message_key = field_text(&doc, self.fields.message_key);
+            let message_id = field_text(&doc, self.fields.message_id);
+            let content = field_text(&doc, self.fields.content);
+            let tool_output = field_text(&doc, self.fields.tool_output);
             let snippet = best_snippet(&content, &tool_output, query_str, 120);
-            by_msg_id.insert(
-                message_id.clone(),
+            by_msg_key.insert(
+                message_key.clone(),
                 SearchHit {
                     kind: HitKind::Message,
+                    session_key,
                     session_id,
+                    message_key,
                     message_id,
                     snippet,
                     score: 0.0,
@@ -643,10 +489,64 @@ impl SearchIndex {
         }
 
         // Drain in input order. Matches positionally to similarity rank.
-        Ok(ids
+        Ok(keys
             .iter()
-            .filter_map(|id| by_msg_id.remove(*id))
+            .filter_map(|key| by_msg_key.remove(*key))
             .collect())
+    }
+
+    fn add_filter_clauses(
+        &self,
+        clauses: &mut Vec<(Occur, Box<dyn Query>)>,
+        filters: &SearchFilters,
+    ) {
+        if let Some(provider) = filters.provider {
+            let term = Term::from_field_text(self.fields.provider, provider.slug());
+            clauses.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        if let Some(role) = filters.role {
+            let term = Term::from_field_text(self.fields.role, role.slug());
+            clauses.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        if filters.has_tool_call {
+            let term = Term::from_field_i64(self.fields.has_tool_call, 1);
+            clauses.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        if filters.since.is_some() || filters.until.is_some() {
+            let lower = filters.since.map_or(Bound::Unbounded, |t| {
+                Bound::Included(Term::from_field_i64(self.fields.timestamp, t.timestamp()))
+            });
+            let upper = filters.until.map_or(Bound::Unbounded, |t| {
+                Bound::Included(Term::from_field_i64(self.fields.timestamp, t.timestamp()))
+            });
+            clauses.push((Occur::Must, Box::new(RangeQuery::new(lower, upper))));
+        }
+    }
+
+    fn project_filter_needle(filters: &SearchFilters) -> Option<String> {
+        filters
+            .project
+            .as_deref()
+            .map(str::to_lowercase)
+            .filter(|s| !s.is_empty())
+    }
+
+    fn matches_project_filter(&self, doc: &TantivyDocument, needle: Option<&str>) -> bool {
+        let Some(needle) = needle else {
+            return true;
+        };
+        field_text(doc, self.fields.project_raw)
+            .to_lowercase()
+            .contains(needle)
     }
 
     fn search_inner(
@@ -665,43 +565,17 @@ impl SearchIndex {
 
         let parser = QueryParser::for_index(
             &self.index,
-            vec![self.f_content, self.f_project, self.f_tool_output],
+            vec![
+                self.fields.content,
+                self.fields.project,
+                self.fields.tool_output,
+            ],
         );
         let user_query = parser.parse_query(query_str)?;
 
         let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(6);
         clauses.push((Occur::Must, user_query));
-
-        if let Some(provider) = filters.provider {
-            let term = Term::from_field_text(self.f_provider, provider.slug());
-            clauses.push((
-                Occur::Must,
-                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
-            ));
-        }
-        if let Some(role) = filters.role {
-            let term = Term::from_field_text(self.f_role, role.slug());
-            clauses.push((
-                Occur::Must,
-                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
-            ));
-        }
-        if filters.has_tool_call {
-            let term = Term::from_field_i64(self.f_has_tool_call, 1);
-            clauses.push((
-                Occur::Must,
-                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
-            ));
-        }
-        if filters.since.is_some() || filters.until.is_some() {
-            let lower = filters.since.map_or(Bound::Unbounded, |t| {
-                Bound::Included(Term::from_field_i64(self.f_timestamp, t.timestamp()))
-            });
-            let upper = filters.until.map_or(Bound::Unbounded, |t| {
-                Bound::Included(Term::from_field_i64(self.f_timestamp, t.timestamp()))
-            });
-            clauses.push((Occur::Must, Box::new(RangeQuery::new(lower, upper))));
-        }
+        self.add_filter_clauses(&mut clauses, filters);
 
         let combined: Box<dyn Query> = if clauses.len() == 1 {
             clauses.into_iter().next().expect("one clause").1
@@ -711,19 +585,17 @@ impl SearchIndex {
 
         // Project is post-filtered; over-fetch to keep results stable when a
         // restrictive project filter would otherwise prune the limit-N window.
-        let project_needle = filters
-            .project
-            .as_deref()
-            .map(str::to_lowercase)
-            .filter(|s| !s.is_empty());
+        let project_needle = Self::project_filter_needle(filters);
         let fetch_limit = if project_needle.is_some() {
             limit.saturating_mul(8).max(limit)
         } else {
             limit
         };
 
-        let top_docs =
-            searcher.search(&combined, &TopDocs::with_limit(fetch_limit).order_by_score())?;
+        let top_docs = searcher.search(
+            &combined,
+            &TopDocs::with_limit(fetch_limit).order_by_score(),
+        )?;
 
         let mut hits = Vec::with_capacity(top_docs.len().min(limit));
         for (score, addr) in top_docs {
@@ -731,11 +603,8 @@ impl SearchIndex {
                 break;
             }
             let doc: TantivyDocument = searcher.doc(addr)?;
-            if let Some(needle) = &project_needle {
-                let project = field_text(&doc, self.f_project_raw);
-                if !project.to_lowercase().contains(needle) {
-                    continue;
-                }
+            if !self.matches_project_filter(&doc, project_needle.as_deref()) {
+                continue;
             }
             let hit = self.doc_to_hit(&doc, query_str, score);
             let explanation = if explain {
@@ -770,14 +639,14 @@ impl SearchIndex {
 
         let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
         if let Some(role) = role {
-            let term = Term::from_field_text(self.f_role, role.slug());
+            let term = Term::from_field_text(self.fields.role, role.slug());
             clauses.push((
                 Occur::Must,
                 Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
             ));
         }
         if has_tool_call {
-            let term = Term::from_field_i64(self.f_has_tool_call, 1);
+            let term = Term::from_field_i64(self.fields.has_tool_call, 1);
             clauses.push((
                 Occur::Must,
                 Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
@@ -789,7 +658,7 @@ impl SearchIndex {
             Box::new(BooleanQuery::new(clauses))
         };
 
-        // Walk every matching message and collect distinct session_ids.
+        // Walk every matching message and collect distinct internal session keys.
         // Ranking is irrelevant here — `DocSetCollector` is cheaper than
         // `TopDocs` because it skips score tracking and has no top-N cap.
         let docs = searcher.search(&combined, &DocSetCollector)?;
@@ -797,7 +666,7 @@ impl SearchIndex {
         let mut session_ids = HashSet::new();
         for addr in docs {
             let doc: TantivyDocument = searcher.doc(addr)?;
-            session_ids.insert(field_text(&doc, self.f_session_id));
+            session_ids.insert(field_text(&doc, self.fields.session_key));
         }
         Ok(session_ids)
     }
@@ -810,39 +679,54 @@ impl SearchIndex {
         Ok(())
     }
 
+    pub fn num_docs(&self) -> Result<usize, SearchError> {
+        self.reader.reload()?;
+        Ok(usize::try_from(self.reader.searcher().num_docs()).unwrap_or(usize::MAX))
+    }
+
     pub fn default_index_dir() -> PathBuf {
         if let Ok(dir) = std::env::var("AGHIST_INDEX_DIR") {
             return PathBuf::from(dir);
         }
-        directories::ProjectDirs::from("", "", "aghist")
-            .map_or_else(|| PathBuf::from(".aghist-index"), |d| d.cache_dir().join("search-index"))
+        directories::ProjectDirs::from("", "", "aghist").map_or_else(
+            || PathBuf::from(".aghist-index"),
+            |d| d.cache_dir().join("search-index"),
+        )
     }
 
     /// Materialize a stored Tantivy doc into a [`SearchHit`], reading the
     /// `kind` field to drive whether note metadata is populated. Centralized
     /// so message-only and hybrid paths both produce a uniformly-shaped hit.
     fn doc_to_hit(&self, doc: &TantivyDocument, query_str: &str, score: f32) -> SearchHit {
-        let kind = if field_text(doc, self.f_kind) == HitKind::Note.slug() {
+        let kind = if field_text(doc, self.fields.kind) == HitKind::Note.slug() {
             HitKind::Note
         } else {
             HitKind::Message
         };
-        let session_id = field_text(doc, self.f_session_id);
-        let message_id = field_text(doc, self.f_message_id);
-        let content = field_text(doc, self.f_content);
-        let tool_output = field_text(doc, self.f_tool_output);
+        let session_key = field_text(doc, self.fields.session_key);
+        let session_id = field_text(doc, self.fields.session_id);
+        let mut message_key = field_text(doc, self.fields.message_key);
+        let message_id = field_text(doc, self.fields.message_id);
+        let content = field_text(doc, self.fields.content);
+        let tool_output = field_text(doc, self.fields.tool_output);
         let snippet = best_snippet(&content, &tool_output, query_str, 120);
         let (note_id, note_session_ref) = match kind {
             HitKind::Note => {
-                let r = field_text(doc, self.f_note_session_ref);
+                let r = field_text(doc, self.fields.note_session_ref);
                 let r = if r.is_empty() { None } else { Some(r) };
-                (field_i64(doc, self.f_note_id), r)
+                let id = field_i64(doc, self.fields.note_id);
+                if let Some(id) = id {
+                    message_key = format!("note:{id}");
+                }
+                (id, r)
             }
             HitKind::Message => (None, None),
         };
         SearchHit {
             kind,
+            session_key,
             session_id,
+            message_key,
             message_id,
             snippet,
             score,
@@ -866,117 +750,10 @@ impl SearchIndex {
     }
 }
 
-fn extract_content(message: &Message) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for block in &message.content {
-        match block {
-            ContentBlock::Text(t) | ContentBlock::Thinking(t) | ContentBlock::Error(t) => {
-                parts.push(t.as_str());
-            }
-            ContentBlock::CodeBlock { code, .. } => parts.push(code.as_str()),
-            ContentBlock::ToolUse(tc) => parts.push(tc.arguments.as_str()),
-            ContentBlock::ToolResult(_) => {}
-        }
-    }
-    parts.join("\n")
-}
-
-fn message_has_tool_call(message: &Message) -> bool {
-    message
-        .content
-        .iter()
-        .any(|block| matches!(block, ContentBlock::ToolUse(_)))
-}
-
-fn extract_tool_output(message: &Message) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for block in &message.content {
-        if let ContentBlock::ToolResult(tr) = block {
-            parts.push(tr.output.as_str());
-        }
-    }
-    parts.join("\n")
-}
-
-fn schema_matches(index_dir: &Path, expected: &Schema) -> bool {
-    Index::open_in_dir(index_dir).is_ok_and(|idx| &idx.schema() == expected)
-}
-
-fn wipe_index_dir(index_dir: &Path) -> Result<(), SearchError> {
-    for entry in fs::read_dir(index_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            fs::remove_dir_all(&path)?;
-        } else {
-            fs::remove_file(&path)?;
-        }
-    }
-    Ok(())
-}
-
-fn best_snippet(content: &str, tool_output: &str, query: &str, max_len: usize) -> String {
-    // Prefer whichever stored field actually contains the query, so a hit on
-    // tool_output doesn't return an empty/unrelated snippet from content.
-    let q_lower = query.to_lowercase();
-    if tool_output.to_lowercase().contains(&q_lower) {
-        make_snippet(tool_output, query, max_len)
-    } else if !content.is_empty() {
-        make_snippet(content, query, max_len)
-    } else {
-        make_snippet(tool_output, query, max_len)
-    }
-}
-
-fn field_text(doc: &TantivyDocument, field: Field) -> String {
-    doc.get_first(field)
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string()
-}
-
-fn field_i64(doc: &TantivyDocument, field: Field) -> Option<i64> {
-    doc.get_first(field).and_then(|v| v.as_i64())
-}
-
-fn file_mtime(path: &Path) -> u64 {
-    path.metadata()
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_secs())
-}
-
-fn make_snippet(content: &str, query: &str, max_len: usize) -> String {
-    let lower = content.to_lowercase();
-    let q = query.to_lowercase();
-
-    let pos = lower.find(&q).unwrap_or(0);
-    let mut start = pos.saturating_sub(max_len / 2);
-    let mut end = (start + max_len).min(content.len());
-
-    while start > 0 && !content.is_char_boundary(start) {
-        start -= 1;
-    }
-    while end < content.len() && !content.is_char_boundary(end) {
-        end += 1;
-    }
-
-    let mut snippet = String::new();
-    if start > 0 {
-        snippet.push_str("...");
-    }
-    snippet.push_str(&content[start..end]);
-    if end < content.len() {
-        snippet.push_str("...");
-    }
-    snippet.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ContentBlock, MessageId, Provider, Role, SessionId};
+    use crate::model::{ContentBlock, Message, MessageId, Provider, Role, SessionId};
     use chrono::TimeZone;
     use std::path::PathBuf;
     use std::sync::Mutex;
@@ -1008,7 +785,7 @@ mod tests {
             self.messages
                 .lock()
                 .unwrap()
-                .insert(session.id.0.clone(), messages);
+                .insert(session.identity_key(), messages);
             self.sessions.lock().unwrap().push(session);
         }
     }
@@ -1031,7 +808,7 @@ mod tests {
                 .messages
                 .lock()
                 .unwrap()
-                .get(&session.id.0)
+                .get(&session.identity_key())
                 .cloned()
                 .unwrap_or_default())
         }
@@ -1101,6 +878,124 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_raw_session_ids_do_not_overwrite_each_other() {
+        let dir = tempdir().unwrap();
+        let index = SearchIndex::open_or_create(dir.path()).unwrap();
+        let stub = StubProvider::new(Provider::ClaudeCode);
+
+        let mut first = make_session("shared-id", "alpha");
+        first.source_path = dir.path().join("first.jsonl");
+        std::fs::write(&first.source_path, "first").unwrap();
+        let mut second = make_session("shared-id", "beta");
+        second.source_path = dir.path().join("second.jsonl");
+        std::fs::write(&second.source_path, "second").unwrap();
+
+        stub.add(
+            first.clone(),
+            vec![make_message("msg", "alpha unique overwrite guard")],
+        );
+        stub.add(
+            second.clone(),
+            vec![make_message("msg", "beta unique overwrite guard")],
+        );
+
+        let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+        let sessions = vec![first, second];
+        let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+        index.build_index(&sessions, &providers, &tx).unwrap();
+
+        let alpha = index.search("alpha", 10).unwrap();
+        let beta = index.search("beta", 10).unwrap();
+        assert_eq!(
+            alpha.len(),
+            1,
+            "first duplicate-id session was lost: {alpha:?}"
+        );
+        assert_eq!(
+            beta.len(),
+            1,
+            "second duplicate-id session was lost: {beta:?}"
+        );
+        assert_eq!(alpha[0].session_id, "shared-id");
+        assert_eq!(beta[0].session_id, "shared-id");
+        assert_ne!(alpha[0].session_key, beta[0].session_key);
+        assert_ne!(alpha[0].message_key, beta[0].message_key);
+    }
+
+    #[test]
+    fn sessions_sharing_one_source_path_are_all_indexed() {
+        let dir = tempdir().unwrap();
+        let index = SearchIndex::open_or_create(dir.path()).unwrap();
+        let stub = StubProvider::new(Provider::Cursor);
+
+        let shared_db = dir.path().join("state.vscdb");
+        std::fs::write(&shared_db, "cursor db snapshot").unwrap();
+        let mut first = make_session("composer-a", "alpha");
+        first.provider = Provider::Cursor;
+        first.source_path = shared_db.clone();
+        let mut second = make_session("composer-b", "beta");
+        second.provider = Provider::Cursor;
+        second.source_path = shared_db;
+
+        stub.add(
+            first.clone(),
+            vec![make_message("msg-a", "alpha cursor composer")],
+        );
+        stub.add(
+            second.clone(),
+            vec![make_message("msg-b", "beta cursor composer")],
+        );
+
+        let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+        let sessions = vec![first, second];
+        let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+        index.build_index(&sessions, &providers, &tx).unwrap();
+
+        assert_eq!(index.search("alpha", 10).unwrap().len(), 1);
+        assert_eq!(index.search("beta", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn build_index_prunes_sessions_no_longer_discovered() {
+        let dir = tempdir().unwrap();
+        let index = SearchIndex::open_or_create(dir.path()).unwrap();
+        let stub = StubProvider::new(Provider::ClaudeCode);
+
+        let mut first = make_session("sess-a", "alpha");
+        first.source_path = dir.path().join("a.jsonl");
+        std::fs::write(&first.source_path, "a").unwrap();
+        let mut second = make_session("sess-b", "beta");
+        second.source_path = dir.path().join("b.jsonl");
+        std::fs::write(&second.source_path, "b").unwrap();
+
+        stub.add(first.clone(), vec![make_message("a", "alpha survives")]);
+        stub.add(second.clone(), vec![make_message("b", "beta removed")]);
+
+        let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+        let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+        index
+            .build_index(&[first.clone(), second], &providers, &tx)
+            .unwrap();
+
+        let stats = index.build_index(&[first], &providers, &tx).unwrap();
+        assert_eq!(stats.removed, 1);
+        assert_eq!(index.search("alpha", 10).unwrap().len(), 1);
+        assert!(index.search("beta", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn file_fingerprint_includes_content_hash() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("session.jsonl");
+        std::fs::write(&path, "first").unwrap();
+        let first = file_fingerprint(&path);
+        std::fs::write(&path, "second").unwrap();
+        let second = file_fingerprint(&path);
+
+        assert_ne!(first.sha256, second.sha256);
+    }
+
+    #[test]
     fn session_ids_with_messages_filters_by_role() {
         let dir = tempdir().unwrap();
         let index = SearchIndex::open_or_create(dir.path()).unwrap();
@@ -1114,6 +1009,7 @@ mod tests {
         stub.add(s_mixed.clone(), vec![make_message("u-2", "user msg"), asst]);
 
         let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+        let s_mixed_key = s_mixed.identity_key();
         let sessions = vec![s_user, s_mixed];
         let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
         index.build_index(&sessions, &providers, &tx).unwrap();
@@ -1122,7 +1018,7 @@ mod tests {
             .session_ids_with_messages(Some(Role::Assistant), false)
             .unwrap();
         assert_eq!(only_assistant.len(), 1);
-        assert!(only_assistant.contains("sess-mixed"));
+        assert!(only_assistant.contains(&s_mixed_key));
 
         let any_user = index
             .session_ids_with_messages(Some(Role::User), false)
@@ -1145,28 +1041,31 @@ mod tests {
         stub.add(s_plain.clone(), vec![make_message("p-1", "no tool here")]);
         let mut tool_msg = make_message("t-1", "calling tool");
         tool_msg.role = Role::Assistant;
-        tool_msg.content.push(ContentBlock::ToolUse(crate::model::ToolCall {
-            id: "tc-1".to_string(),
-            name: "fs.read".to_string(),
-            arguments: "{\"path\":\"/x\"}".to_string(),
-        }));
+        tool_msg
+            .content
+            .push(ContentBlock::ToolUse(crate::model::ToolCall {
+                id: "tc-1".to_string(),
+                name: "fs.read".to_string(),
+                arguments: "{\"path\":\"/x\"}".to_string(),
+            }));
         stub.add(s_with_tool.clone(), vec![tool_msg]);
 
         let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+        let s_with_tool_key = s_with_tool.identity_key();
         let sessions = vec![s_plain, s_with_tool];
         let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
         index.build_index(&sessions, &providers, &tx).unwrap();
 
         let with_tools = index.session_ids_with_messages(None, true).unwrap();
         assert_eq!(with_tools.len(), 1);
-        assert!(with_tools.contains("sess-with-tool"));
+        assert!(with_tools.contains(&s_with_tool_key));
 
         // Combined: assistant role AND has-tool-call → still just the tool session.
         let combined = index
             .session_ids_with_messages(Some(Role::Assistant), true)
             .unwrap();
         assert_eq!(combined.len(), 1);
-        assert!(combined.contains("sess-with-tool"));
+        assert!(combined.contains(&s_with_tool_key));
     }
 
     #[test]
@@ -1192,11 +1091,14 @@ mod tests {
     #[test]
     fn search_hybrid_falls_back_to_lexical_when_weight_is_zero() {
         let (_dir, index) = build_tiny_index();
-        let lex = index.search_with_filters("tantivy", 10, &SearchFilters::default()).unwrap();
+        let lex = index
+            .search_with_filters("tantivy", 10, &SearchFilters::default())
+            .unwrap();
         let hybrid = index
             .search_hybrid(
                 "tantivy",
                 &[SemanticCandidate {
+                    message_key: make_session("sess-2", "beta").message_key(1, "m-4"),
                     message_id: "m-4".to_string(),
                     similarity: 0.9,
                 }],
@@ -1218,7 +1120,9 @@ mod tests {
     #[test]
     fn search_hybrid_falls_back_to_lexical_when_semantic_pool_is_empty() {
         let (_dir, index) = build_tiny_index();
-        let lex = index.search_with_filters("tantivy", 10, &SearchFilters::default()).unwrap();
+        let lex = index
+            .search_with_filters("tantivy", 10, &SearchFilters::default())
+            .unwrap();
         let hybrid = index
             .search_hybrid("tantivy", &[], 10, &SearchFilters::default(), 0.5, 50)
             .unwrap();
@@ -1236,15 +1140,26 @@ mod tests {
         // lexical pass alone wouldn't.
         let (_dir, index) = build_tiny_index();
         let semantic = vec![
-            SemanticCandidate { message_id: "m-4".to_string(), similarity: 0.95 },
-            SemanticCandidate { message_id: "m-3".to_string(), similarity: 0.80 },
+            SemanticCandidate {
+                message_key: make_session("sess-2", "beta").message_key(1, "m-4"),
+                message_id: "m-4".to_string(),
+                similarity: 0.95,
+            },
+            SemanticCandidate {
+                message_key: make_session("sess-2", "beta").message_key(0, "m-3"),
+                message_id: "m-3".to_string(),
+                similarity: 0.80,
+            },
         ];
         let hybrid = index
             .search_hybrid("tantivy", &semantic, 10, &SearchFilters::default(), 0.5, 50)
             .unwrap();
         let ids: Vec<&str> = hybrid.iter().map(|h| h.message_id.as_str()).collect();
         assert!(ids.contains(&"m-3"), "lexical hit must survive: {ids:?}");
-        assert!(ids.contains(&"m-4"), "semantic-only hit must surface: {ids:?}");
+        assert!(
+            ids.contains(&"m-4"),
+            "semantic-only hit must surface: {ids:?}"
+        );
         // m-3 appears in both pools → its fused score should beat m-4 (which
         // is semantic-only) when weight=0.5.
         let m3_score = hybrid.iter().find(|h| h.message_id == "m-3").unwrap().score;
@@ -1374,8 +1289,16 @@ mod tests {
             ..SearchFilters::default()
         };
         let semantic = vec![
-            SemanticCandidate { message_id: "m-4".to_string(), similarity: 0.95 },
-            SemanticCandidate { message_id: "m-1".to_string(), similarity: 0.70 },
+            SemanticCandidate {
+                message_key: make_session("sess-2", "beta").message_key(1, "m-4"),
+                message_id: "m-4".to_string(),
+                similarity: 0.95,
+            },
+            SemanticCandidate {
+                message_key: make_session("sess-1", "alpha").message_key(0, "m-1"),
+                message_id: "m-1".to_string(),
+                similarity: 0.70,
+            },
         ];
         let hybrid = index
             .search_hybrid("rust", &semantic, 10, &filters, 0.5, 50)

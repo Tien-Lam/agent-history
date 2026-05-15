@@ -12,34 +12,21 @@
 
 use serde_json::{json, Value};
 
+use crate::command_spec::{command_names, command_spec};
+use crate::model::Provider;
+
 const SCHEMA_DRAFT: &str = "https://json-schema.org/draft/2020-12/schema";
+const SESSION_REF_PATTERN: &str =
+    "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
 
 /// Subcommands that expose a schema. Order matches the help output.
-pub const SUBCOMMANDS: &[&str] = &[
-    "list",
-    "search",
-    "show",
-    "export",
-    "index",
-    "sources",
-    "health",
-    "mcp",
-    "schema",
-    "decisions",
-    "todos",
-    "threads",
-    "note",
-    "tag",
-    "star",
-    "unstar",
-    "stars",
-    "usage",
-    "project",
-    "report",
-];
+pub fn subcommands() -> Vec<&'static str> {
+    command_names().collect()
+}
 
 /// Return the schema for a subcommand, or `None` if the name is unknown.
 pub fn schema_for(subcmd: &str) -> Option<Value> {
+    command_spec(subcmd)?;
     match subcmd {
         "list" => Some(list_schema()),
         "search" => Some(search_schema()),
@@ -69,9 +56,9 @@ pub fn schema_for(subcmd: &str) -> Option<Value> {
 /// keyed by name. Useful for one-shot discovery.
 pub fn all_schemas() -> Value {
     let mut map = serde_json::Map::new();
-    for name in SUBCOMMANDS {
+    for name in subcommands() {
         if let Some(schema) = schema_for(name) {
-            map.insert((*name).to_string(), schema);
+            map.insert(name.to_string(), schema);
         }
     }
     Value::Object(map)
@@ -80,14 +67,20 @@ pub fn all_schemas() -> Value {
 /// JSON list of subcommand names, suitable for `aghist schema --list`.
 pub fn subcommand_index() -> Value {
     json!({
-        "subcommands": SUBCOMMANDS,
+        "subcommands": subcommands(),
     })
 }
 
 // ─── shared fragments ──────────────────────────────────────────────────────
 
 fn provider_slug_enum() -> Value {
-    json!(["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", "cursor"])
+    json!(Provider::all().iter().map(|p| p.slug()).collect::<Vec<_>>())
+}
+
+fn provider_slug_enum_nullable() -> Value {
+    let mut slugs: Vec<Value> = Provider::all().iter().map(|p| json!(p.slug())).collect();
+    slugs.push(Value::Null);
+    Value::Array(slugs)
 }
 
 fn exit_codes() -> Value {
@@ -186,6 +179,23 @@ fn session_row_schema() -> Value {
             "message_count": { "type": "integer", "minimum": 0 }
         },
         "required": ["id", "provider", "started_at", "message_count"]
+    })
+}
+
+fn count_array_response(field: &str, item_ref: &str) -> Value {
+    let mut props = serde_json::Map::new();
+    props.insert(
+        field.to_string(),
+        json!({ "type": "array", "items": { "$ref": item_ref } }),
+    );
+    props.insert(
+        "count".to_string(),
+        json!({ "type": "integer", "minimum": 0 }),
+    );
+    json!({
+        "type": "object",
+        "properties": Value::Object(props),
+        "required": [field, "count"]
     })
 }
 
@@ -313,9 +323,7 @@ fn search_schema() -> Value {
                     "message_id": { "type": "string" },
                     "score": { "type": "number" },
                     "snippet": { "type": "string" },
-                    "provider": { "type": ["string", "null"], "enum": [
-                        "claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode", "cursor", null
-                    ] },
+                    "provider": { "type": ["string", "null"], "enum": provider_slug_enum_nullable() },
                     "project": { "type": ["string", "null"] },
                     "started_at": { "type": ["string", "null"], "format": "date-time" }
                 },
@@ -704,7 +712,7 @@ fn schema_schema() -> Value {
             "properties": {
                 "subcommand": {
                     "type": "string",
-                    "enum": SUBCOMMANDS,
+                    "enum": subcommands(),
                     "description": "Subcommand whose schema to emit. Use 'all' or '--list' on the CLI for index/dump."
                 },
                 "list": { "type": "boolean", "description": "List available schema subcommand names." },
@@ -954,16 +962,14 @@ fn threads_schema() -> Value {
     })
 }
 
-#[allow(clippy::too_many_lines)]
-fn note_schema() -> Value {
-    let session_ref_pattern = "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
-    let note_row = json!({
+fn note_row_schema() -> Value {
+    json!({
         "type": "object",
         "properties": {
             "id": { "type": "integer", "minimum": 1 },
             "session_ref": {
                 "type": "string",
-                "pattern": session_ref_pattern,
+                "pattern": SESSION_REF_PATTERN,
                 "description": "<provider>/<session-id>[#<turn>]"
             },
             "body": { "type": "string", "minLength": 1 },
@@ -971,8 +977,81 @@ fn note_schema() -> Value {
             "updated_at": { "type": "string", "description": "ISO-8601 UTC, sub-second precision." }
         },
         "required": ["id", "session_ref", "body", "created_at", "updated_at"]
-    });
+    })
+}
 
+fn note_subcommands_schema() -> Value {
+    json!({
+        "add": {
+            "description": "Attach a new note. Body comes from --body, --body-file, or --stdin.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "body": { "type": "string", "description": "Literal body text. Mutually exclusive with body_file/stdin." },
+                    "body_file": { "type": "string", "description": "Path to read body from ('-' for stdin)." },
+                    "stdin": { "type": "boolean", "description": "Read body from standard input." }
+                },
+                "required": ["reference"],
+                "additionalProperties": false
+            },
+            "response": {
+                "type": "object",
+                "properties": { "added": { "$ref": "#/definitions/Note" } },
+                "required": ["added"]
+            }
+        },
+        "list": {
+            "description": "List notes, optionally filtered by session ref. Session-level filter matches the session row plus all of its turns; turn-level filter matches that turn exactly.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "json": { "type": "boolean" }
+                },
+                "additionalProperties": false
+            },
+            "response": count_array_response("notes", "#/definitions/Note")
+        },
+        "edit": {
+            "description": "Replace an existing note's body. Bumps updated_at.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer", "minimum": 1 },
+                    "body": { "type": "string" },
+                    "body_file": { "type": "string" },
+                    "stdin": { "type": "boolean" }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            },
+            "response": {
+                "type": "object",
+                "properties": { "updated": { "$ref": "#/definitions/Note" } },
+                "required": ["updated"]
+            }
+        },
+        "remove": {
+            "description": "Delete a note by id. Returns the deleted row.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            },
+            "response": {
+                "type": "object",
+                "properties": { "removed": { "$ref": "#/definitions/Note" } },
+                "required": ["removed"]
+            }
+        }
+    })
+}
+
+fn note_schema() -> Value {
     json!({
         "$schema": SCHEMA_DRAFT,
         "$id": "aghist:schema/note",
@@ -991,104 +1070,82 @@ fn note_schema() -> Value {
             "type": "object",
             "description": "Shape varies by subcommand — see `subcommands.<name>.response`."
         },
-        "subcommands": {
-            "add": {
-                "description": "Attach a new note. Body comes from --body, --body-file, or --stdin.",
-                "params": {
-                    "type": "object",
-                    "properties": {
-                        "reference": { "type": "string", "pattern": session_ref_pattern },
-                        "body": { "type": "string", "description": "Literal body text. Mutually exclusive with body_file/stdin." },
-                        "body_file": { "type": "string", "description": "Path to read body from ('-' for stdin)." },
-                        "stdin": { "type": "boolean", "description": "Read body from standard input." }
-                    },
-                    "required": ["reference"],
-                    "additionalProperties": false
-                },
-                "response": {
-                    "type": "object",
-                    "properties": { "added": { "$ref": "#/definitions/Note" } },
-                    "required": ["added"]
-                }
-            },
-            "list": {
-                "description": "List notes, optionally filtered by session ref. Session-level filter matches the session row plus all of its turns; turn-level filter matches that turn exactly.",
-                "params": {
-                    "type": "object",
-                    "properties": {
-                        "reference": { "type": "string", "pattern": session_ref_pattern },
-                        "json": { "type": "boolean" }
-                    },
-                    "additionalProperties": false
-                },
-                "response": {
-                    "type": "object",
-                    "properties": {
-                        "notes": { "type": "array", "items": { "$ref": "#/definitions/Note" } },
-                        "count": { "type": "integer", "minimum": 0 }
-                    },
-                    "required": ["notes", "count"]
-                }
-            },
-            "edit": {
-                "description": "Replace an existing note's body. Bumps updated_at.",
-                "params": {
-                    "type": "object",
-                    "properties": {
-                        "id": { "type": "integer", "minimum": 1 },
-                        "body": { "type": "string" },
-                        "body_file": { "type": "string" },
-                        "stdin": { "type": "boolean" }
-                    },
-                    "required": ["id"],
-                    "additionalProperties": false
-                },
-                "response": {
-                    "type": "object",
-                    "properties": { "updated": { "$ref": "#/definitions/Note" } },
-                    "required": ["updated"]
-                }
-            },
-            "remove": {
-                "description": "Delete a note by id. Returns the deleted row.",
-                "params": {
-                    "type": "object",
-                    "properties": {
-                        "id": { "type": "integer", "minimum": 1 }
-                    },
-                    "required": ["id"],
-                    "additionalProperties": false
-                },
-                "response": {
-                    "type": "object",
-                    "properties": { "removed": { "$ref": "#/definitions/Note" } },
-                    "required": ["removed"]
-                }
-            }
-        },
-        "definitions": { "Note": note_row },
+        "subcommands": note_subcommands_schema(),
+        "definitions": { "Note": note_row_schema() },
         "exit_codes": exit_codes()
     })
 }
 
-#[allow(clippy::too_many_lines)]
-fn tag_schema() -> Value {
-    let session_ref_pattern = "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
-    let tag_row = json!({
+fn tag_row_schema() -> Value {
+    json!({
         "type": "object",
         "properties": {
             "id": { "type": "integer", "minimum": 1 },
             "session_ref": {
                 "type": "string",
-                "pattern": session_ref_pattern,
+                "pattern": SESSION_REF_PATTERN,
                 "description": "<provider>/<session-id>[#<turn>]"
             },
             "tag": { "type": "string", "minLength": 1 },
             "created_at": { "type": "string", "description": "ISO-8601 UTC, sub-second precision." }
         },
         "required": ["id", "session_ref", "tag", "created_at"]
-    });
+    })
+}
 
+fn tag_subcommands_schema() -> Value {
+    json!({
+        "add": {
+            "description": "Attach a tag to a session ref. Adding the same (ref, tag) pair twice raises a `tag-conflict` error.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "tag": { "type": "string", "minLength": 1 }
+                },
+                "required": ["reference", "tag"],
+                "additionalProperties": false
+            },
+            "response": {
+                "type": "object",
+                "properties": { "added": { "$ref": "#/definitions/Tag" } },
+                "required": ["added"]
+            }
+        },
+        "list": {
+            "description": "List tags, optionally filtered by session ref and/or tag value. Session-level filter matches the session row plus all of its turns; turn-level filter matches that turn exactly. `tag` filter narrows to a specific tag value and combines with the ref filter.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "tag": { "type": "string", "minLength": 1 },
+                    "json": { "type": "boolean" }
+                },
+                "additionalProperties": false
+            },
+            "response": count_array_response("tags", "#/definitions/Tag")
+        },
+        "remove": {
+            "description": "Detach a tag from a session ref. Returns the deleted row, or `tag-not-found` if no matching pair exists.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "tag": { "type": "string", "minLength": 1 }
+                },
+                "required": ["reference", "tag"],
+                "additionalProperties": false
+            },
+            "response": {
+                "type": "object",
+                "properties": { "removed": { "$ref": "#/definitions/Tag" } },
+                "required": ["removed"]
+            }
+        }
+    })
+}
+
+fn tag_schema() -> Value {
     json!({
         "$schema": SCHEMA_DRAFT,
         "$id": "aghist:schema/tag",
@@ -1107,76 +1164,19 @@ fn tag_schema() -> Value {
             "type": "object",
             "description": "Shape varies by subcommand — see `subcommands.<name>.response`."
         },
-        "subcommands": {
-            "add": {
-                "description": "Attach a tag to a session ref. Adding the same (ref, tag) pair twice raises a `tag-conflict` error.",
-                "params": {
-                    "type": "object",
-                    "properties": {
-                        "reference": { "type": "string", "pattern": session_ref_pattern },
-                        "tag": { "type": "string", "minLength": 1 }
-                    },
-                    "required": ["reference", "tag"],
-                    "additionalProperties": false
-                },
-                "response": {
-                    "type": "object",
-                    "properties": { "added": { "$ref": "#/definitions/Tag" } },
-                    "required": ["added"]
-                }
-            },
-            "list": {
-                "description": "List tags, optionally filtered by session ref and/or tag value. Session-level filter matches the session row plus all of its turns; turn-level filter matches that turn exactly. `tag` filter narrows to a specific tag value and combines with the ref filter.",
-                "params": {
-                    "type": "object",
-                    "properties": {
-                        "reference": { "type": "string", "pattern": session_ref_pattern },
-                        "tag": { "type": "string", "minLength": 1 },
-                        "json": { "type": "boolean" }
-                    },
-                    "additionalProperties": false
-                },
-                "response": {
-                    "type": "object",
-                    "properties": {
-                        "tags": { "type": "array", "items": { "$ref": "#/definitions/Tag" } },
-                        "count": { "type": "integer", "minimum": 0 }
-                    },
-                    "required": ["tags", "count"]
-                }
-            },
-            "remove": {
-                "description": "Detach a tag from a session ref. Returns the deleted row, or `tag-not-found` if no matching pair exists.",
-                "params": {
-                    "type": "object",
-                    "properties": {
-                        "reference": { "type": "string", "pattern": session_ref_pattern },
-                        "tag": { "type": "string", "minLength": 1 }
-                    },
-                    "required": ["reference", "tag"],
-                    "additionalProperties": false
-                },
-                "response": {
-                    "type": "object",
-                    "properties": { "removed": { "$ref": "#/definitions/Tag" } },
-                    "required": ["removed"]
-                }
-            }
-        },
-        "definitions": { "Tag": tag_row },
+        "subcommands": tag_subcommands_schema(),
+        "definitions": { "Tag": tag_row_schema() },
         "exit_codes": exit_codes()
     })
 }
 
 fn star_row() -> Value {
-    let session_ref_pattern =
-        "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
     json!({
         "type": "object",
         "properties": {
             "session_ref": {
                 "type": "string",
-                "pattern": session_ref_pattern,
+                "pattern": SESSION_REF_PATTERN,
                 "description": "<provider>/<session-id>[#<turn>]"
             },
             "starred_at": {
@@ -1189,8 +1189,6 @@ fn star_row() -> Value {
 }
 
 fn star_schema() -> Value {
-    let session_ref_pattern =
-        "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
     json!({
         "$schema": SCHEMA_DRAFT,
         "$id": "aghist:schema/star",
@@ -1200,7 +1198,7 @@ fn star_schema() -> Value {
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": session_ref_pattern }
+                "reference": { "type": "string", "pattern": SESSION_REF_PATTERN }
             },
             "required": ["reference"],
             "additionalProperties": false
@@ -1216,8 +1214,6 @@ fn star_schema() -> Value {
 }
 
 fn unstar_schema() -> Value {
-    let session_ref_pattern =
-        "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
     json!({
         "$schema": SCHEMA_DRAFT,
         "$id": "aghist:schema/unstar",
@@ -1227,7 +1223,7 @@ fn unstar_schema() -> Value {
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": session_ref_pattern }
+                "reference": { "type": "string", "pattern": SESSION_REF_PATTERN }
             },
             "required": ["reference"],
             "additionalProperties": false
@@ -1243,8 +1239,6 @@ fn unstar_schema() -> Value {
 }
 
 fn stars_schema() -> Value {
-    let session_ref_pattern =
-        "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
     json!({
         "$schema": SCHEMA_DRAFT,
         "$id": "aghist:schema/stars",
@@ -1254,7 +1248,7 @@ fn stars_schema() -> Value {
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": session_ref_pattern },
+                "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
                 "json": { "type": "boolean" }
             },
             "additionalProperties": false
@@ -1272,8 +1266,7 @@ fn stars_schema() -> Value {
     })
 }
 
-#[allow(clippy::too_many_lines)]
-fn usage_schema() -> Value {
+fn usage_params_properties() -> Value {
     let mut props = serde_json::Map::new();
     props.insert(
         "by".to_string(),
@@ -1300,8 +1293,11 @@ fn usage_schema() -> Value {
     for (name, schema) in filter_params_fragment() {
         props.insert(name.to_string(), schema);
     }
+    Value::Object(props)
+}
 
-    let row = json!({
+fn usage_row_schema() -> Value {
+    json!({
         "type": "object",
         "properties": {
             "key": {
@@ -1321,8 +1317,56 @@ fn usage_schema() -> Value {
             }
         },
         "required": ["key", "session_count", "message_count", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
-    });
+    })
+}
 
+fn usage_totals_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "session_count": { "type": "integer", "minimum": 0 },
+            "message_count": { "type": "integer", "minimum": 0 },
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "cache_read_tokens": { "type": "integer", "minimum": 0 },
+            "cache_write_tokens": { "type": "integer", "minimum": 0 },
+            "total_tokens": { "type": "integer", "minimum": 0 },
+            "cost_usd": { "type": ["number", "null"] }
+        },
+        "required": ["session_count", "message_count", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
+    })
+}
+
+fn usage_response_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "JSON output (when --json or stdout is not a TTY).",
+        "properties": {
+            "rows": {
+                "type": "array",
+                "description": "Rows sorted by total_tokens descending, key ascending as tiebreaker.",
+                "items": { "$ref": "#/definitions/UsageRow" }
+            },
+            "totals": { "$ref": "#/definitions/UsageTotals" },
+            "meta": {
+                "type": "object",
+                "properties": {
+                    "group_by": { "type": "string", "enum": ["model", "provider", "project"] },
+                    "row_count": { "type": "integer", "minimum": 0 },
+                    "total_row_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Total bucket count before --limit truncation."
+                    }
+                },
+                "required": ["group_by", "row_count", "total_row_count"]
+            }
+        },
+        "required": ["rows", "totals", "meta"]
+    })
+}
+
+fn usage_schema() -> Value {
     json!({
         "$schema": SCHEMA_DRAFT,
         "$id": "aghist:schema/usage",
@@ -1331,57 +1375,178 @@ fn usage_schema() -> Value {
         "description": "Aggregate token usage and (when pricing is known) USD cost across sessions. Pricing comes from a hand-curated table — unpriced sessions report cost_usd:null and null any total they roll into.",
         "params": {
             "type": "object",
-            "properties": Value::Object(props),
+            "properties": usage_params_properties(),
             "additionalProperties": false
         },
-        "response": {
-            "type": "object",
-            "description": "JSON output (when --json or stdout is not a TTY).",
-            "properties": {
-                "rows": {
-                    "type": "array",
-                    "description": "Rows sorted by total_tokens descending, key ascending as tiebreaker.",
-                    "items": { "$ref": "#/definitions/UsageRow" }
-                },
-                "totals": { "$ref": "#/definitions/UsageTotals" },
-                "meta": {
-                    "type": "object",
-                    "properties": {
-                        "group_by": { "type": "string", "enum": ["model", "provider", "project"] },
-                        "row_count": { "type": "integer", "minimum": 0 },
-                        "total_row_count": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "Total bucket count before --limit truncation."
-                        }
-                    },
-                    "required": ["group_by", "row_count", "total_row_count"]
-                }
-            },
-            "required": ["rows", "totals", "meta"]
-        },
+        "response": usage_response_schema(),
         "definitions": {
-            "UsageRow": row,
-            "UsageTotals": json!({
-                "type": "object",
-                "properties": {
-                    "session_count": { "type": "integer", "minimum": 0 },
-                    "message_count": { "type": "integer", "minimum": 0 },
-                    "input_tokens": { "type": "integer", "minimum": 0 },
-                    "output_tokens": { "type": "integer", "minimum": 0 },
-                    "cache_read_tokens": { "type": "integer", "minimum": 0 },
-                    "cache_write_tokens": { "type": "integer", "minimum": 0 },
-                    "total_tokens": { "type": "integer", "minimum": 0 },
-                    "cost_usd": { "type": ["number", "null"] }
-                },
-                "required": ["session_count", "message_count", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
-            })
+            "UsageRow": usage_row_schema(),
+            "UsageTotals": usage_totals_schema()
         },
         "exit_codes": exit_codes()
     })
 }
 
-#[allow(clippy::too_many_lines)]
+fn token_usage_summary_schema(scope: &str) -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "cache_read_tokens": { "type": "integer", "minimum": 0 },
+            "cache_write_tokens": { "type": "integer", "minimum": 0 },
+            "total_tokens": { "type": "integer", "minimum": 0 },
+            "cost_usd": {
+                "type": ["number", "null"],
+                "description": format!("USD across the {scope}, or null if any session uses an unpriced model.")
+            }
+        },
+        "required": ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
+    })
+}
+
+fn decision_candidate_item_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "ref": { "type": "string" },
+            "provider": { "type": "string", "enum": provider_slug_enum() },
+            "session_id": { "type": "string" },
+            "turn": { "type": "integer", "minimum": 1 },
+            "score": { "type": "number" },
+            "markers": { "type": "array", "items": { "type": "string" } },
+            "snippet": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" }
+        },
+        "required": ["ref", "provider", "session_id", "turn", "score", "markers", "snippet", "timestamp"]
+    })
+}
+
+fn todo_candidate_item_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "ref": { "type": "string" },
+            "provider": { "type": "string", "enum": provider_slug_enum() },
+            "session_id": { "type": "string" },
+            "turn": { "type": "integer", "minimum": 1 },
+            "kind": {
+                "type": "string",
+                "enum": ["todo", "follow_up", "come_back_to", "we_should", "bd_ref"]
+            },
+            "snippet": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "bd_id": { "type": ["string", "null"] }
+        },
+        "required": ["ref", "provider", "session_id", "turn", "kind", "snippet", "timestamp"]
+    })
+}
+
+fn decisions_array_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "Top-scoring decision candidates, sorted by score desc.",
+        "items": decision_candidate_item_schema()
+    })
+}
+
+fn todos_array_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "Open TODOs / follow-ups / bd refs, newest first.",
+        "items": todo_candidate_item_schema()
+    })
+}
+
+fn top_files_array_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "Files most often referenced by tool calls. Counts derive from top-level `file_path`/`path`/`notebook_path`/`filename`/`target_file` keys in tool-call JSON.",
+        "items": {
+            "type": "object",
+            "properties": {
+                "path": { "type": "string" },
+                "count": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["path", "count"]
+        }
+    })
+}
+
+fn time_of_day_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "24-element UTC histogram of message counts. Index = hour (0..23).",
+        "minItems": 24,
+        "maxItems": 24,
+        "items": { "type": "integer", "minimum": 0 }
+    })
+}
+
+fn limits_schema(names: &[&str]) -> Value {
+    let mut props = serde_json::Map::new();
+    for name in names {
+        props.insert(
+            (*name).to_string(),
+            json!({ "type": "integer", "minimum": 0 }),
+        );
+    }
+    json!({
+        "type": "object",
+        "properties": Value::Object(props),
+        "required": names
+    })
+}
+
+fn project_meta_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "limits": limits_schema(&["decisions", "todos", "threads", "files"]),
+            "decisions_total": { "type": "integer", "minimum": 0 },
+            "todos_total": { "type": "integer", "minimum": 0 },
+            "threads_total": { "type": "integer", "minimum": 0 },
+            "files_total": { "type": "integer", "minimum": 0 },
+            "thread_gap_hours": { "type": "integer", "minimum": 0 },
+            "decisions_threshold": { "type": "number" }
+        },
+        "required": ["limits", "decisions_total", "todos_total", "threads_total", "files_total", "thread_gap_hours", "decisions_threshold"]
+    })
+}
+
+fn project_response_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "JSON output (when --json or stdout is not a TTY).",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The literal `<name>` query, after trimming."
+            },
+            "matched_projects": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Distinct project names whose sessions matched the query."
+            },
+            "session_count": { "type": "integer", "minimum": 0 },
+            "message_count": { "type": "integer", "minimum": 0 },
+            "started_at": { "type": ["string", "null"], "format": "date-time" },
+            "ended_at": { "type": ["string", "null"], "format": "date-time" },
+            "token_usage": token_usage_summary_schema("project"),
+            "decisions": decisions_array_schema(),
+            "todos": todos_array_schema(),
+            "threads": {
+                "type": "array",
+                "description": "Cross-session work threads (`aghist threads` output, scoped to this project)."
+            },
+            "top_files": top_files_array_schema(),
+            "time_of_day": time_of_day_schema(),
+            "meta": project_meta_schema()
+        },
+        "required": ["query", "matched_projects", "session_count", "message_count", "token_usage", "decisions", "todos", "threads", "top_files", "time_of_day", "meta"]
+    })
+}
+
 fn project_schema() -> Value {
     let mut props = serde_json::Map::new();
     props.insert(
@@ -1451,130 +1616,78 @@ fn project_schema() -> Value {
             "required": ["name"],
             "additionalProperties": false
         },
-        "response": {
-            "type": "object",
-            "description": "JSON output (when --json or stdout is not a TTY).",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The literal `<name>` query, after trimming."
-                },
-                "matched_projects": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Distinct project names whose sessions matched the query."
-                },
-                "session_count": { "type": "integer", "minimum": 0 },
-                "message_count": { "type": "integer", "minimum": 0 },
-                "started_at": { "type": ["string", "null"], "format": "date-time" },
-                "ended_at": { "type": ["string", "null"], "format": "date-time" },
-                "token_usage": {
-                    "type": "object",
-                    "properties": {
-                        "input_tokens": { "type": "integer", "minimum": 0 },
-                        "output_tokens": { "type": "integer", "minimum": 0 },
-                        "cache_read_tokens": { "type": "integer", "minimum": 0 },
-                        "cache_write_tokens": { "type": "integer", "minimum": 0 },
-                        "total_tokens": { "type": "integer", "minimum": 0 },
-                        "cost_usd": {
-                            "type": ["number", "null"],
-                            "description": "USD across the project, or null if any session uses an unpriced model."
-                        }
-                    },
-                    "required": ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
-                },
-                "decisions": {
-                    "type": "array",
-                    "description": "Top-scoring decision candidates, sorted by score desc.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "ref": { "type": "string" },
-                            "provider": { "type": "string", "enum": provider_slug_enum() },
-                            "session_id": { "type": "string" },
-                            "turn": { "type": "integer", "minimum": 1 },
-                            "score": { "type": "number" },
-                            "markers": { "type": "array", "items": { "type": "string" } },
-                            "snippet": { "type": "string" },
-                            "timestamp": { "type": "string", "format": "date-time" }
-                        },
-                        "required": ["ref", "provider", "session_id", "turn", "score", "markers", "snippet", "timestamp"]
-                    }
-                },
-                "todos": {
-                    "type": "array",
-                    "description": "Open TODOs / follow-ups / bd refs, newest first.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "ref": { "type": "string" },
-                            "provider": { "type": "string", "enum": provider_slug_enum() },
-                            "session_id": { "type": "string" },
-                            "turn": { "type": "integer", "minimum": 1 },
-                            "kind": {
-                                "type": "string",
-                                "enum": ["todo", "follow_up", "come_back_to", "we_should", "bd_ref"]
-                            },
-                            "snippet": { "type": "string" },
-                            "timestamp": { "type": "string", "format": "date-time" },
-                            "bd_id": { "type": ["string", "null"] }
-                        },
-                        "required": ["ref", "provider", "session_id", "turn", "kind", "snippet", "timestamp"]
-                    }
-                },
-                "threads": {
-                    "type": "array",
-                    "description": "Cross-session work threads (`aghist threads` output, scoped to this project)."
-                },
-                "top_files": {
-                    "type": "array",
-                    "description": "Files most often referenced by tool calls. Counts derive from top-level `file_path`/`path`/`notebook_path`/`filename`/`target_file` keys in tool-call JSON.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "path": { "type": "string" },
-                            "count": { "type": "integer", "minimum": 1 }
-                        },
-                        "required": ["path", "count"]
-                    }
-                },
-                "time_of_day": {
-                    "type": "array",
-                    "description": "24-element UTC histogram of message counts. Index = hour (0..23).",
-                    "minItems": 24,
-                    "maxItems": 24,
-                    "items": { "type": "integer", "minimum": 0 }
-                },
-                "meta": {
-                    "type": "object",
-                    "properties": {
-                        "limits": {
-                            "type": "object",
-                            "properties": {
-                                "decisions": { "type": "integer", "minimum": 0 },
-                                "todos": { "type": "integer", "minimum": 0 },
-                                "threads": { "type": "integer", "minimum": 0 },
-                                "files": { "type": "integer", "minimum": 0 }
-                            },
-                            "required": ["decisions", "todos", "threads", "files"]
-                        },
-                        "decisions_total": { "type": "integer", "minimum": 0 },
-                        "todos_total": { "type": "integer", "minimum": 0 },
-                        "threads_total": { "type": "integer", "minimum": 0 },
-                        "files_total": { "type": "integer", "minimum": 0 },
-                        "thread_gap_hours": { "type": "integer", "minimum": 0 },
-                        "decisions_threshold": { "type": "number" }
-                    },
-                    "required": ["limits", "decisions_total", "todos_total", "threads_total", "files_total", "thread_gap_hours", "decisions_threshold"]
-                }
-            },
-            "required": ["query", "matched_projects", "session_count", "message_count", "token_usage", "decisions", "todos", "threads", "top_files", "time_of_day", "meta"]
-        },
+        "response": project_response_schema(),
         "exit_codes": exit_codes()
     })
 }
 
-#[allow(clippy::too_many_lines)]
+fn top_projects_array_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "Most active projects in the window, sorted by message_count desc.",
+        "items": {
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "session_count": { "type": "integer", "minimum": 0 },
+                "message_count": { "type": "integer", "minimum": 0 },
+                "input_tokens": { "type": "integer", "minimum": 0 },
+                "output_tokens": { "type": "integer", "minimum": 0 },
+                "total_tokens": { "type": "integer", "minimum": 0 },
+                "cost_usd": { "type": ["number", "null"] }
+            },
+            "required": ["project", "session_count", "message_count", "input_tokens", "output_tokens", "total_tokens", "cost_usd"]
+        }
+    })
+}
+
+fn report_meta_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "limits": limits_schema(&["top_projects", "decisions", "todos", "threads"]),
+            "projects_total": { "type": "integer", "minimum": 0 },
+            "decisions_total": { "type": "integer", "minimum": 0 },
+            "todos_total": { "type": "integer", "minimum": 0 },
+            "threads_total": { "type": "integer", "minimum": 0 },
+            "thread_gap_hours": { "type": "integer", "minimum": 0 },
+            "decisions_threshold": { "type": "number" }
+        },
+        "required": ["limits", "projects_total", "decisions_total", "todos_total", "threads_total", "thread_gap_hours", "decisions_threshold"]
+    })
+}
+
+fn report_response_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "JSON envelope (when `json:true`). Without `json`, the response is a Markdown document.",
+        "properties": {
+            "window": {
+                "type": "object",
+                "properties": {
+                    "started_at": { "type": "string", "format": "date-time" },
+                    "ended_at": { "type": "string", "format": "date-time" },
+                    "days": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["started_at", "ended_at", "days"]
+            },
+            "session_count": { "type": "integer", "minimum": 0 },
+            "message_count": { "type": "integer", "minimum": 0 },
+            "project_count": { "type": "integer", "minimum": 0 },
+            "token_usage": token_usage_summary_schema("window"),
+            "top_projects": top_projects_array_schema(),
+            "decisions": decisions_array_schema(),
+            "todos": todos_array_schema(),
+            "threads": {
+                "type": "array",
+                "description": "Cross-session work threads in the window (`aghist threads` output, scoped to the window)."
+            },
+            "meta": report_meta_schema()
+        },
+        "required": ["window", "session_count", "message_count", "project_count", "token_usage", "top_projects", "decisions", "todos", "threads", "meta"]
+    })
+}
+
 fn report_schema() -> Value {
     let mut props = serde_json::Map::new();
     props.insert(
@@ -1659,122 +1772,7 @@ fn report_schema() -> Value {
             "required": [],
             "additionalProperties": false
         },
-        "response": {
-            "type": "object",
-            "description": "JSON envelope (when `json:true`). Without `json`, the response is a Markdown document.",
-            "properties": {
-                "window": {
-                    "type": "object",
-                    "properties": {
-                        "started_at": { "type": "string", "format": "date-time" },
-                        "ended_at": { "type": "string", "format": "date-time" },
-                        "days": { "type": "integer", "minimum": 1 }
-                    },
-                    "required": ["started_at", "ended_at", "days"]
-                },
-                "session_count": { "type": "integer", "minimum": 0 },
-                "message_count": { "type": "integer", "minimum": 0 },
-                "project_count": { "type": "integer", "minimum": 0 },
-                "token_usage": {
-                    "type": "object",
-                    "properties": {
-                        "input_tokens": { "type": "integer", "minimum": 0 },
-                        "output_tokens": { "type": "integer", "minimum": 0 },
-                        "cache_read_tokens": { "type": "integer", "minimum": 0 },
-                        "cache_write_tokens": { "type": "integer", "minimum": 0 },
-                        "total_tokens": { "type": "integer", "minimum": 0 },
-                        "cost_usd": {
-                            "type": ["number", "null"],
-                            "description": "USD across the window, or null if any session uses an unpriced model."
-                        }
-                    },
-                    "required": ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd"]
-                },
-                "top_projects": {
-                    "type": "array",
-                    "description": "Most active projects in the window, sorted by message_count desc.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "project": { "type": "string" },
-                            "session_count": { "type": "integer", "minimum": 0 },
-                            "message_count": { "type": "integer", "minimum": 0 },
-                            "input_tokens": { "type": "integer", "minimum": 0 },
-                            "output_tokens": { "type": "integer", "minimum": 0 },
-                            "total_tokens": { "type": "integer", "minimum": 0 },
-                            "cost_usd": { "type": ["number", "null"] }
-                        },
-                        "required": ["project", "session_count", "message_count", "input_tokens", "output_tokens", "total_tokens", "cost_usd"]
-                    }
-                },
-                "decisions": {
-                    "type": "array",
-                    "description": "Top-scoring decision candidates, sorted by score desc.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "ref": { "type": "string" },
-                            "provider": { "type": "string", "enum": provider_slug_enum() },
-                            "session_id": { "type": "string" },
-                            "turn": { "type": "integer", "minimum": 1 },
-                            "score": { "type": "number" },
-                            "markers": { "type": "array", "items": { "type": "string" } },
-                            "snippet": { "type": "string" },
-                            "timestamp": { "type": "string", "format": "date-time" }
-                        },
-                        "required": ["ref", "provider", "session_id", "turn", "score", "markers", "snippet", "timestamp"]
-                    }
-                },
-                "todos": {
-                    "type": "array",
-                    "description": "Open TODOs / follow-ups / bd refs, newest first.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "ref": { "type": "string" },
-                            "provider": { "type": "string", "enum": provider_slug_enum() },
-                            "session_id": { "type": "string" },
-                            "turn": { "type": "integer", "minimum": 1 },
-                            "kind": {
-                                "type": "string",
-                                "enum": ["todo", "follow_up", "come_back_to", "we_should", "bd_ref"]
-                            },
-                            "snippet": { "type": "string" },
-                            "timestamp": { "type": "string", "format": "date-time" },
-                            "bd_id": { "type": ["string", "null"] }
-                        },
-                        "required": ["ref", "provider", "session_id", "turn", "kind", "snippet", "timestamp"]
-                    }
-                },
-                "threads": {
-                    "type": "array",
-                    "description": "Cross-session work threads in the window (`aghist threads` output, scoped to the window)."
-                },
-                "meta": {
-                    "type": "object",
-                    "properties": {
-                        "limits": {
-                            "type": "object",
-                            "properties": {
-                                "top_projects": { "type": "integer", "minimum": 0 },
-                                "decisions": { "type": "integer", "minimum": 0 },
-                                "todos": { "type": "integer", "minimum": 0 },
-                                "threads": { "type": "integer", "minimum": 0 }
-                            },
-                            "required": ["top_projects", "decisions", "todos", "threads"]
-                        },
-                        "projects_total": { "type": "integer", "minimum": 0 },
-                        "decisions_total": { "type": "integer", "minimum": 0 },
-                        "todos_total": { "type": "integer", "minimum": 0 },
-                        "threads_total": { "type": "integer", "minimum": 0 },
-                        "thread_gap_hours": { "type": "integer", "minimum": 0 },
-                        "decisions_threshold": { "type": "number" }
-                    },
-                    "required": ["limits", "projects_total", "decisions_total", "todos_total", "threads_total", "thread_gap_hours", "decisions_threshold"]
-                }
-            },
-            "required": ["window", "session_count", "message_count", "project_count", "token_usage", "top_projects", "decisions", "todos", "threads", "meta"]
-        },
+        "response": report_response_schema(),
         "exit_codes": exit_codes()
     })
 }
@@ -1785,7 +1783,7 @@ mod tests {
 
     #[test]
     fn every_listed_subcommand_has_a_schema() {
-        for name in SUBCOMMANDS {
+        for name in subcommands() {
             assert!(
                 schema_for(name).is_some(),
                 "missing schema for subcommand '{name}'"
@@ -1800,7 +1798,7 @@ mod tests {
 
     #[test]
     fn schemas_declare_draft_2020_12() {
-        for name in SUBCOMMANDS {
+        for name in subcommands() {
             let schema = schema_for(name).unwrap();
             assert_eq!(
                 schema["$schema"], SCHEMA_DRAFT,
@@ -1821,15 +1819,15 @@ mod tests {
     fn index_returns_subcommands_array() {
         let idx = subcommand_index();
         let arr = idx["subcommands"].as_array().unwrap();
-        assert_eq!(arr.len(), SUBCOMMANDS.len());
+        assert_eq!(arr.len(), subcommands().len());
     }
 
     #[test]
     fn all_schemas_keyed_by_name() {
         let all = all_schemas();
         let map = all.as_object().unwrap();
-        for name in SUBCOMMANDS {
-            assert!(map.contains_key(*name), "missing key {name} in all_schemas");
+        for name in subcommands() {
+            assert!(map.contains_key(name), "missing key {name} in all_schemas");
         }
     }
 
@@ -1852,6 +1850,19 @@ mod tests {
         assert!(re, "show ref pattern should match canonical example");
     }
 
+    #[test]
+    fn provider_enum_tracks_provider_registry() {
+        let expected: Vec<&str> = Provider::all().iter().map(|p| p.slug()).collect();
+        let provider_enum = provider_slug_enum();
+        let actual: Vec<&str> = provider_enum
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
     /// Tiny helper: we don't pull a regex crate just for tests, so check a few
     /// known anchors without full regex matching.
     fn regex_lite_check(pattern: &str, sample: &str) -> bool {
@@ -1860,5 +1871,4 @@ mod tests {
         assert!(pattern.contains('#'));
         sample.contains('/') && sample.contains('#')
     }
-
 }

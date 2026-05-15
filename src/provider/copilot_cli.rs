@@ -159,7 +159,9 @@ fn build_session(session_dir: &Path, workspace_path: &Path) -> Option<Session> {
 }
 
 fn count_message_events(path: &Path) -> usize {
-    let Ok(file) = std::fs::File::open(path) else { return 0 };
+    let Ok(file) = std::fs::File::open(path) else {
+        return 0;
+    };
     let reader = BufReader::new(file);
     reader
         .lines()
@@ -175,7 +177,6 @@ fn count_message_events(path: &Path) -> usize {
         .count()
 }
 
-#[allow(clippy::too_many_lines)]
 fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Copilot CLI messages");
     let file = std::fs::File::open(path)?;
@@ -208,68 +209,11 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
             t if t.contains("user") => Role::User,
             t if t.contains("assistant.message") => Role::Assistant,
             "tool.execution_start" => {
-                // Tool invocation: data.toolName + data.arguments
-                if let Some(ref data) = event.data {
-                    let tool_name = data.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
-                    let call_id = data.tool_call_id.clone().unwrap_or_default();
-                    let arguments = data
-                        .arguments
-                        .as_ref()
-                        .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
-                        .unwrap_or_default();
-                    let timestamp = event
-                        .timestamp
-                        .as_deref()
-                        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-                        .unwrap_or_else(Utc::now);
-                    messages.push(Message {
-                        id: MessageId(event.id.unwrap_or_default()),
-                        role: Role::Tool,
-                        timestamp,
-                        content: vec![ContentBlock::ToolUse(ToolCall {
-                            id: call_id,
-                            name: tool_name,
-                            arguments,
-                        })],
-                        model: None,
-                        token_usage: None,
-                    });
-                }
+                push_tool_execution_start(&mut messages, &event);
                 continue;
             }
             "tool.execution_complete" | "tool.result" => {
-                // Tool result. Two shapes seen in real Copilot CLI data:
-                //   - tool.execution_complete: data.result is an object
-                //     with content/detailedContent fields, plus data.success
-                //   - tool.result: data.result is a plain string
-                if let Some(ref data) = event.data {
-                    let call_id = data.tool_call_id.clone().unwrap_or_default();
-                    let success = data.success.unwrap_or(true);
-                    let output = data
-                        .result
-                        .as_ref()
-                        .map(extract_result_text)
-                        .unwrap_or_default();
-                    if !output.is_empty() {
-                        let timestamp = event
-                            .timestamp
-                            .as_deref()
-                            .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-                            .unwrap_or_else(Utc::now);
-                        messages.push(Message {
-                            id: MessageId(event.id.unwrap_or_default()),
-                            role: Role::Tool,
-                            timestamp,
-                            content: vec![ContentBlock::ToolResult(ToolResult {
-                                tool_call_id: call_id,
-                                success,
-                                output,
-                            })],
-                            model: None,
-                            token_usage: None,
-                        });
-                    }
-                }
+                push_tool_result(&mut messages, &event);
                 continue;
             }
             t if t.contains("tool") => Role::Tool,
@@ -280,49 +224,8 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
             }
         };
 
-        let timestamp = event
-            .timestamp
-            .as_deref()
-            .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-            .unwrap_or_else(Utc::now);
-
-        let mut content = Vec::new();
-
-        // Try top-level content first, then data.content (newer format)
-        let text = event.content.as_deref()
-            .or_else(|| event.data.as_ref().and_then(|d| d.content.as_deref()));
-        if let Some(text) = text {
-            if !text.is_empty() {
-                content.extend(parse_text_with_code_blocks(text));
-            }
-        }
-
-        // Try top-level tool fields first, then data.toolRequests (newer format)
-        if let Some(tool_name) = &event.tool_name {
-            content.push(ContentBlock::ToolUse(ToolCall {
-                id: event.tool_call_id.clone().unwrap_or_default(),
-                name: tool_name.clone(),
-                arguments: event
-                    .tool_args
-                    .as_ref()
-                    .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
-                    .unwrap_or_default(),
-            }));
-        } else if let Some(ref data) = event.data {
-            if let Some(ref tool_requests) = data.tool_requests {
-                for tr in tool_requests {
-                    content.push(ContentBlock::ToolUse(ToolCall {
-                        id: tr.tool_call_id.clone().unwrap_or_default(),
-                        name: tr.name.clone().unwrap_or_else(|| "unknown".to_string()),
-                        arguments: tr
-                            .arguments
-                            .as_ref()
-                            .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
-                            .unwrap_or_default(),
-                    }));
-                }
-            }
-        }
+        let timestamp = event_timestamp(&event);
+        let content = event_content(&event);
 
         if content.is_empty() {
             empty_content += 1;
@@ -335,21 +238,7 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
             continue;
         }
 
-        let token_usage = event.usage.as_ref().map(|u| TokenUsage {
-            input_tokens: u.input_tokens.unwrap_or(0),
-            output_tokens: u.output_tokens.unwrap_or(0),
-            cache_read_tokens: None,
-            cache_write_tokens: None,
-        });
-
-        messages.push(Message {
-            id: MessageId(event.id.unwrap_or_default()),
-            role,
-            timestamp,
-            content,
-            model: event.model,
-            token_usage,
-        });
+        messages.push(event_message(&event, role, timestamp, content));
     }
 
     tracing::info!(
@@ -365,10 +254,140 @@ fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
     Ok(messages)
 }
 
+fn event_timestamp(event: &RawEvent) -> DateTime<Utc> {
+    event
+        .timestamp
+        .as_deref()
+        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+        .unwrap_or_else(Utc::now)
+}
+
+fn event_message(
+    event: &RawEvent,
+    role: Role,
+    timestamp: DateTime<Utc>,
+    content: Vec<ContentBlock>,
+) -> Message {
+    Message {
+        id: MessageId(event.id.clone().unwrap_or_default()),
+        role,
+        timestamp,
+        content,
+        model: event.model.clone(),
+        token_usage: event.usage.as_ref().map(|u| TokenUsage {
+            input_tokens: u.input_tokens.unwrap_or(0),
+            output_tokens: u.output_tokens.unwrap_or(0),
+            cache_read_tokens: None,
+            cache_write_tokens: None,
+        }),
+    }
+}
+
+fn tool_message(event: &RawEvent, content: Vec<ContentBlock>) -> Message {
+    Message {
+        id: MessageId(event.id.clone().unwrap_or_default()),
+        role: Role::Tool,
+        timestamp: event_timestamp(event),
+        content,
+        model: None,
+        token_usage: None,
+    }
+}
+
+fn push_tool_execution_start(messages: &mut Vec<Message>, event: &RawEvent) {
+    let Some(data) = event.data.as_ref() else {
+        return;
+    };
+    messages.push(tool_message(
+        event,
+        vec![ContentBlock::ToolUse(ToolCall {
+            id: data.tool_call_id.clone().unwrap_or_default(),
+            name: data
+                .tool_name
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+            arguments: data
+                .arguments
+                .as_ref()
+                .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
+                .unwrap_or_default(),
+        })],
+    ));
+}
+
+fn push_tool_result(messages: &mut Vec<Message>, event: &RawEvent) {
+    let Some(data) = event.data.as_ref() else {
+        return;
+    };
+    let output = data
+        .result
+        .as_ref()
+        .map(extract_result_text)
+        .unwrap_or_default();
+    if output.is_empty() {
+        return;
+    }
+    messages.push(tool_message(
+        event,
+        vec![ContentBlock::ToolResult(ToolResult {
+            tool_call_id: data.tool_call_id.clone().unwrap_or_default(),
+            success: data.success.unwrap_or(true),
+            output,
+        })],
+    ));
+}
+
+fn event_content(event: &RawEvent) -> Vec<ContentBlock> {
+    let mut content = Vec::new();
+    let text = event
+        .content
+        .as_deref()
+        .or_else(|| event.data.as_ref().and_then(|d| d.content.as_deref()));
+    if let Some(text) = text.filter(|text| !text.is_empty()) {
+        content.extend(parse_text_with_code_blocks(text));
+    }
+    push_top_level_tool_use(&mut content, event);
+    push_nested_tool_requests(&mut content, event.data.as_ref());
+    content
+}
+
+fn push_top_level_tool_use(content: &mut Vec<ContentBlock>, event: &RawEvent) {
+    if let Some(tool_name) = &event.tool_name {
+        content.push(ContentBlock::ToolUse(ToolCall {
+            id: event.tool_call_id.clone().unwrap_or_default(),
+            name: tool_name.clone(),
+            arguments: event
+                .tool_args
+                .as_ref()
+                .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
+                .unwrap_or_default(),
+        }));
+    }
+}
+
+fn push_nested_tool_requests(content: &mut Vec<ContentBlock>, data: Option<&RawEventData>) {
+    let Some(tool_requests) = data.and_then(|d| d.tool_requests.as_ref()) else {
+        return;
+    };
+    for tr in tool_requests {
+        content.push(ContentBlock::ToolUse(ToolCall {
+            id: tr.tool_call_id.clone().unwrap_or_default(),
+            name: tr.name.clone().unwrap_or_else(|| "unknown".to_string()),
+            arguments: tr
+                .arguments
+                .as_ref()
+                .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
+                .unwrap_or_default(),
+        }));
+    }
+}
+
 fn parse_checkpoint_md(path: &Path) -> Result<Vec<Message>, ProviderError> {
     let content = std::fs::read_to_string(path)?;
     if content.trim().is_empty()
-        || content.lines().all(|l| l.starts_with('#') || l.starts_with('|') || l.trim().is_empty())
+        || content
+            .lines()
+            .all(|l| l.starts_with('#') || l.starts_with('|') || l.trim().is_empty())
     {
         return Ok(Vec::new());
     }

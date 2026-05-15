@@ -11,30 +11,30 @@ use crate::model::Role;
 pub mod palette {
     use ratatui::style::Color;
 
-    pub const ACCENT: Color = Color::Rgb(138, 173, 244);       // soft blue
-    pub const ACCENT_DIM: Color = Color::Rgb(91, 118, 166);    // muted blue
-    pub const TEXT: Color = Color::Rgb(205, 214, 244);          // light text
-    pub const TEXT_DIM: Color = Color::Rgb(147, 153, 178);      // secondary text
-    pub const TEXT_FAINT: Color = Color::Rgb(88, 91, 112);      // subtle text
-    pub const SURFACE: Color = Color::Rgb(36, 39, 58);          // panel bg
-    pub const OVERLAY: Color = Color::Rgb(49, 50, 68);          // highlight bg
-    pub const GREEN: Color = Color::Rgb(166, 218, 149);         // success
-    pub const RED: Color = Color::Rgb(237, 135, 150);           // error
-    pub const YELLOW: Color = Color::Rgb(238, 212, 159);        // warning
-    pub const PEACH: Color = Color::Rgb(245, 169, 127);         // warm accent
-    pub const MAUVE: Color = Color::Rgb(198, 160, 246);         // purple accent
-    pub const TEAL: Color = Color::Rgb(139, 213, 202);          // teal accent
+    pub const ACCENT: Color = Color::Rgb(138, 173, 244); // soft blue
+    pub const ACCENT_DIM: Color = Color::Rgb(91, 118, 166); // muted blue
+    pub const TEXT: Color = Color::Rgb(205, 214, 244); // light text
+    pub const TEXT_DIM: Color = Color::Rgb(147, 153, 178); // secondary text
+    pub const TEXT_FAINT: Color = Color::Rgb(88, 91, 112); // subtle text
+    pub const SURFACE: Color = Color::Rgb(36, 39, 58); // panel bg
+    pub const OVERLAY: Color = Color::Rgb(49, 50, 68); // highlight bg
+    pub const GREEN: Color = Color::Rgb(166, 218, 149); // success
+    pub const RED: Color = Color::Rgb(237, 135, 150); // error
+    pub const YELLOW: Color = Color::Rgb(238, 212, 159); // warning
+    pub const PEACH: Color = Color::Rgb(245, 169, 127); // warm accent
+    pub const MAUVE: Color = Color::Rgb(198, 160, 246); // purple accent
+    pub const TEAL: Color = Color::Rgb(139, 213, 202); // teal accent
 
     // Provider-specific
-    pub const CLAUDE: Color = Color::Rgb(245, 169, 127);        // peach/orange
-    pub const COPILOT: Color = Color::Rgb(166, 218, 149);       // green
-    pub const GEMINI: Color = Color::Rgb(138, 173, 244);        // blue
-    pub const CODEX: Color = Color::Rgb(205, 214, 244);         // white
-    pub const OPENCODE: Color = Color::Rgb(198, 160, 246);      // purple
-    pub const CURSOR: Color = Color::Rgb(139, 213, 202);        // teal
-    pub const ZED: Color = Color::Rgb(237, 135, 150);           // pink/red
-    pub const CLINE: Color = Color::Rgb(238, 212, 159);         // yellow/amber
-    pub const CONTINUE: Color = Color::Rgb(139, 213, 202);      // teal (distinct from Cursor)
+    pub const CLAUDE: Color = Color::Rgb(245, 169, 127); // peach/orange
+    pub const COPILOT: Color = Color::Rgb(166, 218, 149); // green
+    pub const GEMINI: Color = Color::Rgb(138, 173, 244); // blue
+    pub const CODEX: Color = Color::Rgb(205, 214, 244); // white
+    pub const OPENCODE: Color = Color::Rgb(198, 160, 246); // purple
+    pub const CURSOR: Color = Color::Rgb(139, 213, 202); // teal
+    pub const ZED: Color = Color::Rgb(237, 135, 150); // pink/red
+    pub const CLINE: Color = Color::Rgb(238, 212, 159); // yellow/amber
+    pub const CONTINUE: Color = Color::Rgb(139, 213, 202); // teal (distinct from Cursor)
 }
 
 pub fn role_style(role: Role) -> Style {

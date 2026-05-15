@@ -33,7 +33,11 @@ macro_rules! assert_empty_list {
             .env("AGHIST_HOME", $dir)
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(3), "--list with no sessions must exit 3");
+        assert_eq!(
+            output.status.code(),
+            Some(3),
+            "--list with no sessions must exit 3"
+        );
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert!(
             !stderr.contains("\"error\""),
@@ -49,7 +53,10 @@ macro_rules! assert_empty_list {
             .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
             .filter(|v| v.get("id").is_some())
             .count();
-        assert_eq!(session_rows, 0, "NDJSON should have no session rows, got: {stdout:?}");
+        assert_eq!(
+            session_rows, 0,
+            "NDJSON should have no session rows, got: {stdout:?}"
+        );
     }};
 }
 

@@ -6,10 +6,101 @@ pub enum Provider {
     CodexCli,
     OpenCode,
     Cursor,
+    Aider,
     ZedAi,
     Cline,
     ContinueDev,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProviderSpec {
+    pub provider: Provider,
+    pub slug: &'static str,
+    pub display_name: &'static str,
+    resume: fn(&str) -> String,
+}
+
+impl ProviderSpec {
+    pub fn resume_command(self, session_id: &str) -> String {
+        (self.resume)(session_id)
+    }
+}
+
+pub const PROVIDER_SPECS: &[ProviderSpec] = &[
+    ProviderSpec {
+        provider: Provider::ClaudeCode,
+        slug: "claude-code",
+        display_name: "Claude Code",
+        resume: resume_claude_code,
+    },
+    ProviderSpec {
+        provider: Provider::CopilotCli,
+        slug: "copilot-cli",
+        display_name: "Copilot CLI",
+        resume: resume_copilot_cli,
+    },
+    ProviderSpec {
+        provider: Provider::GeminiCli,
+        slug: "gemini-cli",
+        display_name: "Gemini CLI",
+        resume: resume_gemini_cli,
+    },
+    ProviderSpec {
+        provider: Provider::CodexCli,
+        slug: "codex-cli",
+        display_name: "Codex CLI",
+        resume: resume_codex_cli,
+    },
+    ProviderSpec {
+        provider: Provider::OpenCode,
+        slug: "opencode",
+        display_name: "OpenCode",
+        resume: resume_opencode,
+    },
+    ProviderSpec {
+        provider: Provider::Cursor,
+        slug: "cursor",
+        display_name: "Cursor",
+        resume: resume_cursor,
+    },
+    ProviderSpec {
+        provider: Provider::Aider,
+        slug: "aider",
+        display_name: "Aider",
+        resume: resume_aider,
+    },
+    ProviderSpec {
+        provider: Provider::ZedAi,
+        slug: "zed-ai",
+        display_name: "Zed AI",
+        resume: resume_zed_ai,
+    },
+    ProviderSpec {
+        provider: Provider::Cline,
+        slug: "cline",
+        display_name: "Cline",
+        resume: resume_vscode_extension,
+    },
+    ProviderSpec {
+        provider: Provider::ContinueDev,
+        slug: "continue-dev",
+        display_name: "Continue.dev",
+        resume: resume_vscode_extension,
+    },
+];
+
+const ALL_PROVIDERS: &[Provider] = &[
+    Provider::ClaudeCode,
+    Provider::CopilotCli,
+    Provider::GeminiCli,
+    Provider::CodexCli,
+    Provider::OpenCode,
+    Provider::Cursor,
+    Provider::Aider,
+    Provider::ZedAi,
+    Provider::Cline,
+    Provider::ContinueDev,
+];
 
 /// Serializes as the kebab-case [`Provider::slug`]. This matches the
 /// CLI input contract (`--provider claude-code`) and citation refs, so
@@ -25,105 +116,94 @@ impl serde::Serialize for Provider {
 impl<'de> serde::Deserialize<'de> for Provider {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         let s = <&str as serde::Deserialize>::deserialize(de)?;
-        Self::from_slug(s).ok_or_else(|| {
-            serde::de::Error::custom(format!("unknown provider slug {s:?}"))
-        })
+        Self::from_slug(s)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown provider slug {s:?}")))
     }
 }
 
 impl Provider {
+    pub fn spec(self) -> ProviderSpec {
+        PROVIDER_SPECS
+            .iter()
+            .copied()
+            .find(|spec| spec.provider == self)
+            .expect("every Provider variant has a ProviderSpec")
+    }
+
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "Claude Code",
-            Self::CopilotCli => "Copilot CLI",
-            Self::GeminiCli => "Gemini CLI",
-            Self::CodexCli => "Codex CLI",
-            Self::OpenCode => "OpenCode",
-            Self::Cursor => "Cursor",
-            Self::ZedAi => "Zed AI",
-            Self::Cline => "Cline",
-            Self::ContinueDev => "Continue.dev",
-        }
+        self.spec().display_name
     }
 
     /// Stable kebab-case slug used in citation refs, config, and any
     /// other machine-readable context. Must remain stable across releases —
     /// citation refs depend on it for round-tripping.
     pub fn slug(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "claude-code",
-            Self::CopilotCli => "copilot-cli",
-            Self::GeminiCli => "gemini-cli",
-            Self::CodexCli => "codex-cli",
-            Self::OpenCode => "opencode",
-            Self::Cursor => "cursor",
-            Self::ZedAi => "zed-ai",
-            Self::Cline => "cline",
-            Self::ContinueDev => "continue-dev",
-        }
+        self.spec().slug
     }
 
     /// Inverse of [`Provider::slug`]. Returns `None` for unknown slugs.
     pub fn from_slug(slug: &str) -> Option<Self> {
-        match slug {
-            "claude-code" => Some(Self::ClaudeCode),
-            "copilot-cli" => Some(Self::CopilotCli),
-            "gemini-cli" => Some(Self::GeminiCli),
-            "codex-cli" => Some(Self::CodexCli),
-            "opencode" => Some(Self::OpenCode),
-            "cursor" => Some(Self::Cursor),
-            "zed-ai" => Some(Self::ZedAi),
-            "cline" => Some(Self::Cline),
-            "continue-dev" => Some(Self::ContinueDev),
-            _ => None,
-        }
+        PROVIDER_SPECS
+            .iter()
+            .find(|spec| spec.slug == slug)
+            .map(|spec| spec.provider)
     }
 
     pub fn all() -> &'static [Self] {
-        &[
-            Self::ClaudeCode,
-            Self::CopilotCli,
-            Self::GeminiCli,
-            Self::CodexCli,
-            Self::OpenCode,
-            Self::Cursor,
-            Self::ZedAi,
-            Self::Cline,
-            Self::ContinueDev,
-        ]
+        ALL_PROVIDERS
     }
 
     /// Returns a CLI command to resume the given session.
     ///
     /// The session ID is single-quoted to prevent shell injection.
     pub fn resume_command(self, session_id: &str) -> String {
-        let safe_id = shell_escape(session_id);
-        match self {
-            Self::ClaudeCode => format!("claude --resume {safe_id}"),
-            Self::CopilotCli => format!("copilot --resume={safe_id}"),
-            Self::GeminiCli => format!("gemini --resume {safe_id}"),
-            Self::CodexCli => {
-                let id = codex_resume_id(session_id);
-                let safe = shell_escape(id);
-                format!("codex resume {safe}")
-            }
-            Self::OpenCode => format!("opencode --session {safe_id}"),
-            // Cursor is a GUI app without a CLI flag to resume a specific
-            // composer session — best we can do is launch the editor.
-            Self::Cursor => "cursor".to_string(),
-            // Zed is a GUI editor; the assistant panel cannot be opened to a
-            // specific conversation from the CLI, so we just launch the app.
-            Self::ZedAi => "zed".to_string(),
-            // Cline and Continue are VS Code extensions; no CLI resume path.
-            Self::Cline | Self::ContinueDev => "code".to_string(),
-        }
+        self.spec().resume_command(session_id)
     }
+}
+
+fn resume_claude_code(session_id: &str) -> String {
+    format!("claude --resume {}", shell_escape(session_id))
+}
+
+fn resume_copilot_cli(session_id: &str) -> String {
+    format!("copilot --resume={}", shell_escape(session_id))
+}
+
+fn resume_gemini_cli(session_id: &str) -> String {
+    format!("gemini --resume {}", shell_escape(session_id))
+}
+
+fn resume_codex_cli(session_id: &str) -> String {
+    let id = codex_resume_id(session_id);
+    format!("codex resume {}", shell_escape(id))
+}
+
+fn resume_opencode(session_id: &str) -> String {
+    format!("opencode --session {}", shell_escape(session_id))
+}
+
+fn resume_aider(_: &str) -> String {
+    "aider".to_string()
+}
+
+fn resume_cursor(_: &str) -> String {
+    "cursor".to_string()
+}
+
+fn resume_zed_ai(_: &str) -> String {
+    "zed".to_string()
+}
+
+fn resume_vscode_extension(_: &str) -> String {
+    "code".to_string()
 }
 
 /// Wraps a value in single quotes for safe shell interpolation.
 /// Single quotes inside the value are escaped as `'\''`.
 fn shell_escape(s: &str) -> String {
-    if s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.') {
+    if s.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+    {
         return s.to_string();
     }
     format!("'{}'", s.replace('\'', "'\\''"))
@@ -209,7 +289,22 @@ mod tests {
     #[test]
     fn slug_round_trip_for_all_providers() {
         for &p in Provider::all() {
-            assert_eq!(Provider::from_slug(p.slug()), Some(p), "slug round-trip for {p:?}");
+            assert_eq!(
+                Provider::from_slug(p.slug()),
+                Some(p),
+                "slug round-trip for {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_specs_cover_every_variant_in_order() {
+        let from_specs: Vec<Provider> = PROVIDER_SPECS.iter().map(|spec| spec.provider).collect();
+        assert_eq!(from_specs, Provider::all());
+        for spec in PROVIDER_SPECS {
+            assert_eq!(Provider::from_slug(spec.slug), Some(spec.provider));
+            assert_eq!(spec.provider.slug(), spec.slug);
+            assert_eq!(spec.provider.as_str(), spec.display_name);
         }
     }
 
@@ -221,6 +316,7 @@ mod tests {
         assert_eq!(Provider::CodexCli.slug(), "codex-cli");
         assert_eq!(Provider::OpenCode.slug(), "opencode");
         assert_eq!(Provider::Cursor.slug(), "cursor");
+        assert_eq!(Provider::Aider.slug(), "aider");
         assert_eq!(Provider::ZedAi.slug(), "zed-ai");
         assert_eq!(Provider::Cline.slug(), "cline");
         assert_eq!(Provider::ContinueDev.slug(), "continue-dev");
@@ -230,6 +326,12 @@ mod tests {
     fn resume_command_cursor() {
         let cmd = Provider::Cursor.resume_command("composer-abc");
         assert_eq!(cmd, "cursor");
+    }
+
+    #[test]
+    fn resume_command_aider() {
+        let cmd = Provider::Aider.resume_command("session-abc");
+        assert_eq!(cmd, "aider");
     }
 
     #[test]

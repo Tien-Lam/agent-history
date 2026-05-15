@@ -6,9 +6,8 @@
 //! instead, so the next page can be derived by "items strictly after this
 //! key in the canonical sort order".
 //!
-//! `SearchCursor` carries the score (Tantivy's primary sort) plus the
-//! session id (deterministic tie-break). `ListCursor` carries the session's
-//! `started_at` (primary sort, descending) plus the session id.
+//! `SearchCursor` carries the full search sort key. `ListCursor` carries the
+//! session's `started_at` (primary sort, descending) plus the session id.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -27,7 +26,20 @@ pub enum CursorError {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SearchCursor {
     pub score: f32,
+    #[serde(default)]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub session_key: String,
+    #[serde(default)]
     pub session_id: String,
+    #[serde(default)]
+    pub message_key: String,
+    #[serde(default)]
+    pub message_id: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub note_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -79,7 +91,13 @@ mod tests {
     fn search_cursor_roundtrip() {
         let c = SearchCursor {
             score: 1.5,
+            started_at: Some(Utc.with_ymd_and_hms(2026, 5, 7, 1, 14, 0).unwrap()),
+            session_key: "claude-code\x1fabc-123\x1f/tmp/session.jsonl".to_string(),
             session_id: "abc-123".to_string(),
+            message_key: "claude-code\x1fabc-123\x1f/tmp/session.jsonl\x1f0\x1fmsg-1".to_string(),
+            message_id: "msg-1".to_string(),
+            kind: "message".to_string(),
+            note_id: None,
         };
         let token = c.encode();
         let back = SearchCursor::decode(&token).unwrap();
@@ -101,7 +119,13 @@ mod tests {
     fn cursor_token_is_url_safe() {
         let c = SearchCursor {
             score: 0.0,
+            started_at: None,
+            session_key: String::new(),
             session_id: "id-with/slash+plus".to_string(),
+            message_key: String::new(),
+            message_id: String::new(),
+            kind: "message".to_string(),
+            note_id: None,
         };
         let token = c.encode();
         assert!(!token.contains('+'));

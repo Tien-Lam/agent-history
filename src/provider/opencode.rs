@@ -34,7 +34,11 @@ fn base_dirs() -> Vec<PathBuf> {
     if let Some(home) = super::home_dir() {
         // OpenCode commonly stores data at ~/.local/share/opencode/storage/
         // even on Windows, so always check this path
-        let local_share = home.join(".local").join("share").join("opencode").join("storage");
+        let local_share = home
+            .join(".local")
+            .join("share")
+            .join("opencode")
+            .join("storage");
         result.push(local_share);
     }
 
@@ -99,7 +103,9 @@ impl HistoryProvider for OpenCodeProvider {
                     continue;
                 }
 
-                let Ok(files) = std::fs::read_dir(project_entry.path()) else { continue };
+                let Ok(files) = std::fs::read_dir(project_entry.path()) else {
+                    continue;
+                };
 
                 for file_entry in files.flatten() {
                     let path = file_entry.path();
@@ -208,12 +214,7 @@ fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> 
         std::fs::read_dir(&message_dir).map_or(0, |entries| {
             entries
                 .filter_map(Result::ok)
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        == Some("json")
-                })
+                .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
                 .count()
         })
     } else {
@@ -338,8 +339,12 @@ fn load_parts_into_content(part_dir: &Path, content: &mut Vec<ContentBlock>) {
             continue;
         }
 
-        let Ok(data) = std::fs::read_to_string(&path) else { continue };
-        let Ok(part) = serde_json::from_str::<RawPart>(&data) else { continue };
+        let Ok(data) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(part) = serde_json::from_str::<RawPart>(&data) else {
+            continue;
+        };
 
         let filename = path
             .file_name()
@@ -382,13 +387,11 @@ fn load_parts_into_content(part_dir: &Path, content: &mut Vec<ContentBlock>) {
                         if !output.is_empty() {
                             let tool_call_id = part.call_id.clone().unwrap_or_default();
                             let success = state.status.as_deref() == Some("completed");
-                            content.push(ContentBlock::ToolResult(
-                                crate::model::ToolResult {
-                                    tool_call_id,
-                                    success,
-                                    output: output.clone(),
-                                },
-                            ));
+                            content.push(ContentBlock::ToolResult(crate::model::ToolResult {
+                                tool_call_id,
+                                success,
+                                output: output.clone(),
+                            }));
                         }
                     }
                 }

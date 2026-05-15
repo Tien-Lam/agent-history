@@ -27,9 +27,7 @@ pub fn map_key_event(key: KeyEvent, mode: AppMode, filter_editing: bool) -> Opti
         (KeyCode::Char('c'), KeyModifiers::CONTROL) if !filter_editing => {
             return Some(Action::Quit);
         }
-        (KeyCode::Char('q'), _)
-            if matches!(mode, AppMode::Browse | AppMode::ViewSession) =>
-        {
+        (KeyCode::Char('q'), _) if matches!(mode, AppMode::Browse | AppMode::ViewSession) => {
             return Some(Action::Quit);
         }
         _ => {}
@@ -71,9 +69,7 @@ fn map_view_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             Some(Action::PageDown)
         }
-        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            Some(Action::PageUp)
-        }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Action::PageUp),
         KeyCode::PageDown => Some(Action::PageDown),
         KeyCode::PageUp => Some(Action::PageUp),
         KeyCode::Char('g') => Some(Action::GoToTop),

@@ -26,7 +26,9 @@ pub fn edge_cases_dir() -> PathBuf {
 pub fn all_providers() -> Vec<Box<dyn HistoryProvider>> {
     vec![
         Box::new(ClaudeCodeProvider::new(vec![fixtures_dir().join("claude")])),
-        Box::new(CopilotCliProvider::new(vec![fixtures_dir().join("copilot")])),
+        Box::new(CopilotCliProvider::new(
+            vec![fixtures_dir().join("copilot")],
+        )),
         Box::new(GeminiCliProvider::new(vec![fixtures_dir().join("gemini")])),
         Box::new(CodexCliProvider::new(vec![fixtures_dir().join("codex")])),
         Box::new(OpenCodeProvider::new(vec![fixtures_dir().join("opencode")])),
@@ -106,11 +108,12 @@ impl ScriptedEventSource {
 
     /// Append a key event to the end of the queue.
     pub fn then_key(mut self, code: KeyCode) -> Self {
-        self.events.push_back(Some(Event::Key(KeyEvent::new_with_kind(
-            code,
-            KeyModifiers::NONE,
-            KeyEventKind::Press,
-        ))));
+        self.events
+            .push_back(Some(Event::Key(KeyEvent::new_with_kind(
+                code,
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            ))));
         self
     }
 }

@@ -141,11 +141,15 @@ impl HistoryProvider for ContinueDevProvider {
             // Load index for enriched metadata (optional)
             let index = load_index(&sessions_dir);
 
-            let Ok(entries) = std::fs::read_dir(&sessions_dir) else { continue };
+            let Ok(entries) = std::fs::read_dir(&sessions_dir) else {
+                continue;
+            };
 
             for entry in entries.flatten() {
                 let path = entry.path();
-                let Some(ext) = path.extension() else { continue };
+                let Some(ext) = path.extension() else {
+                    continue;
+                };
                 if ext != "jsonl" {
                     continue;
                 }
@@ -157,9 +161,9 @@ impl HistoryProvider for ContinueDevProvider {
                     continue;
                 };
                 let session_id = stem.to_string();
-                let meta = index.as_ref().and_then(|idx| {
-                    idx.iter().find(|e| e.session_id == session_id)
-                });
+                let meta = index
+                    .as_ref()
+                    .and_then(|idx| idx.iter().find(|e| e.session_id == session_id));
 
                 let started_at = meta
                     .and_then(|m| m.date_created.as_deref())
@@ -234,8 +238,7 @@ fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Message>, Str
             continue;
         }
 
-        let timestamp =
-            *base_ts + chrono::Duration::milliseconds(i64::try_from(idx).unwrap_or(0));
+        let timestamp = *base_ts + chrono::Duration::milliseconds(i64::try_from(idx).unwrap_or(0));
 
         messages.push(Message {
             id: MessageId(format!("msg-{idx}")),
@@ -281,7 +284,11 @@ fn block2_to_content(block: ContentBlock2) -> Vec<ContentBlock> {
                     }
                 })
                 .unwrap_or_default();
-            vec![ContentBlock::ToolUse(ToolCall { id, name, arguments })]
+            vec![ContentBlock::ToolUse(ToolCall {
+                id,
+                name,
+                arguments,
+            })]
         }
         "tool_result" => {
             let tool_call_id = block.tool_use_id.unwrap_or_default();

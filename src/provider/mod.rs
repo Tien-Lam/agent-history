@@ -1,3 +1,4 @@
+pub mod aider;
 pub mod claude_code;
 pub mod cline;
 pub mod codex_cli;
@@ -7,6 +8,7 @@ pub mod cursor;
 pub mod error;
 pub mod gemini_cli;
 pub mod opencode;
+pub mod registry;
 pub mod zed_ai;
 
 use std::path::PathBuf;
@@ -45,33 +47,26 @@ pub trait HistoryProvider: Send + Sync {
 }
 
 pub fn detect_all_providers() -> Vec<Box<dyn HistoryProvider>> {
-    let mut providers: Vec<Box<dyn HistoryProvider>> = Vec::new();
-    if let Some(p) = claude_code::ClaudeCodeProvider::detect() {
-        providers.push(Box::new(p));
+    registry::RUNTIME_PROVIDER_SPECS
+        .iter()
+        .filter_map(registry::RuntimeProviderSpec::detect)
+        .collect()
+}
+
+/// Load messages for a discovered session. Prefer an already-constructed
+/// provider when available, but fall back to a stateless provider instance so
+/// remote/federated sessions can still be loaded even when the same provider
+/// is not detected locally.
+pub fn load_messages_for_session(
+    session: &Session,
+    providers: &[Box<dyn HistoryProvider>],
+) -> Result<Vec<Message>, ProviderError> {
+    if let Some(provider) = providers.iter().find(|p| p.provider() == session.provider) {
+        return provider.load_messages(session);
     }
-    if let Some(p) = gemini_cli::GeminiCliProvider::detect() {
-        providers.push(Box::new(p));
-    }
-    if let Some(p) = copilot_cli::CopilotCliProvider::detect() {
-        providers.push(Box::new(p));
-    }
-    if let Some(p) = codex_cli::CodexCliProvider::detect() {
-        providers.push(Box::new(p));
-    }
-    if let Some(p) = opencode::OpenCodeProvider::detect() {
-        providers.push(Box::new(p));
-    }
-    if let Some(p) = cursor::CursorProvider::detect() {
-        providers.push(Box::new(p));
-    }
-    if let Some(p) = zed_ai::ZedAiProvider::detect() {
-        providers.push(Box::new(p));
-    }
-    if let Some(p) = cline::ClineProvider::detect() {
-        providers.push(Box::new(p));
-    }
-    if let Some(p) = continue_dev::ContinueDevProvider::detect() {
-        providers.push(Box::new(p));
-    }
-    providers
+
+    registry::runtime_spec(session.provider)
+        .expect("every Provider variant has a runtime provider spec")
+        .stateless()
+        .load_messages(session)
 }

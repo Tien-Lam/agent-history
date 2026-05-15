@@ -11,15 +11,15 @@ expression: render_to_text(&terminal)
 │  Copilot CLI  Apr 08             ││────────────────────────────────────────                                          │
 │    myapp                         ││ I'll fix the build error.                                                        │
 │                                  ││ ▶ Read main.rs ✔                                                                 │
-│  Gemini CLI  Apr 08              ││                                                                                  │
-│    test-project                  ││ As╭ Filter ──────────────────────────────╮                                       │
-│    Explain how async/await works ││───│Providers                             │                                       │
-│                                  ││ He│  ◉ Claude Code                       │                                       │
-│  Codex CLI  Apr 08               ││ ╭─│  ◉ Copilot CLI                       │                                       │
-│    (unknown project)             ││ │ │  ◉ Gemini CLI                        │                                       │
-│    Add error handling to the API ││ │ │  ◉ Codex CLI                         │                                       │
-│                                  ││ │ │  ◉ OpenCode                          │                                       │
-│  OpenCode  Apr 08                ││ ╰─│  ◉ Cursor                            │                                       │
+│  Gemini CLI  Apr 08              ││   ╭ Filter ──────────────────────────────╮                                       │
+│    test-project                  ││ As│Providers                             │                                       │
+│    Explain how async/await works ││───│  ◉ Claude Code                       │                                       │
+│                                  ││ He│  ◉ Copilot CLI                       │                                       │
+│  Codex CLI  Apr 08               ││ ╭─│  ◉ Gemini CLI                        │                                       │
+│    (unknown project)             ││ │ │  ◉ Codex CLI                         │                                       │
+│    Add error handling to the API ││ │ │  ◉ OpenCode                          │                                       │
+│                                  ││ │ │  ◉ Cursor                            │                                       │
+│  OpenCode  Apr 08                ││ ╰─│  ◉ Aider                             │                                       │
 │    dbproject                     ││ Th│  ◉ Zed AI                            │                                       │
 │    Refactor database layer       ││   │  ◉ Cline                             │                                       │
 │                                  ││   │  ◉ Continue.dev                      │                                       │

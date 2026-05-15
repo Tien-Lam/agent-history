@@ -13,7 +13,9 @@ fn help_flag_exits_zero() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Browse and search AI agent conversation history"));
+        .stdout(predicate::str::contains(
+            "Browse and search AI agent conversation history",
+        ));
 }
 
 #[test]
@@ -68,9 +70,7 @@ fn list_with_generated_claude_fixtures() {
     let rows: Vec<serde_json::Value> = stdout
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|l| {
-            serde_json::from_str::<serde_json::Value>(l).expect("each NDJSON line must parse")
-        })
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("each NDJSON line must parse"))
         .filter(|v| v.get("id").is_some())
         .collect();
     assert_eq!(rows.len(), 1);
@@ -93,12 +93,10 @@ fn export_nonexistent_session_emits_envelope_and_exits_one() {
         .expect("expected JSON envelope on stderr");
     let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(parsed["error"]["kind"], "session-not-found");
-    assert!(
-        parsed["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("nonexistent")
-    );
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("nonexistent"));
     assert!(parsed["error"]["hint"].is_string());
 }
 
@@ -115,7 +113,13 @@ fn export_json_valid_output() {
     let home = fixture.base_path.parent().unwrap();
 
     let output = aghist()
-        .args(["export", "--format", "json", "--session", "session-export-test"])
+        .args([
+            "export",
+            "--format",
+            "json",
+            "--session",
+            "session-export-test",
+        ])
         .env("AGHIST_HOME", home)
         .assert()
         .success();
@@ -161,8 +165,10 @@ fn export_to_file() {
     aghist()
         .args([
             "export",
-            "--format", "md",
-            "--session", "session-file-test",
+            "--format",
+            "md",
+            "--session",
+            "session-file-test",
             "--output",
         ])
         .arg(&output_file)
@@ -207,7 +213,10 @@ fn health_returns_ok_envelope_with_writable_index() {
     let fidelity = parsed["provider_fidelity"]
         .as_array()
         .expect("provider_fidelity array");
-    assert!(!fidelity.is_empty(), "expected fidelity row for the fixture provider");
+    assert!(
+        !fidelity.is_empty(),
+        "expected fidelity row for the fixture provider"
+    );
     let row = &fidelity[0];
     assert_eq!(row["provider"], "claude-code");
     assert!(row["session_count"].as_u64().unwrap() >= 1);
@@ -356,17 +365,13 @@ fn sources_add_duplicate_name_fails() {
     let config_path = dir.path().join("config.toml");
 
     aghist()
-        .args([
-            "sources", "add", "box", "--host", "h", "--path", "/p",
-        ])
+        .args(["sources", "add", "box", "--host", "h", "--path", "/p"])
         .env("AGHIST_CONFIG", &config_path)
         .assert()
         .success();
 
     let output = aghist()
-        .args([
-            "sources", "add", "box", "--host", "h2", "--path", "/p2",
-        ])
+        .args(["sources", "add", "box", "--host", "h2", "--path", "/p2"])
         .env("AGHIST_CONFIG", &config_path)
         .output()
         .unwrap();
@@ -406,16 +411,12 @@ fn sources_remove_existing_drops_it() {
     let config_path = dir.path().join("config.toml");
 
     aghist()
-        .args([
-            "sources", "add", "keep", "--host", "h", "--path", "/p1",
-        ])
+        .args(["sources", "add", "keep", "--host", "h", "--path", "/p1"])
         .env("AGHIST_CONFIG", &config_path)
         .assert()
         .success();
     aghist()
-        .args([
-            "sources", "add", "drop", "--host", "h", "--path", "/p2",
-        ])
+        .args(["sources", "add", "drop", "--host", "h", "--path", "/p2"])
         .env("AGHIST_CONFIG", &config_path)
         .assert()
         .success();
@@ -444,9 +445,7 @@ fn sources_add_default_transport_is_ssh() {
     let config_path = dir.path().join("config.toml");
 
     aghist()
-        .args([
-            "sources", "add", "box", "--host", "h", "--path", "/p",
-        ])
+        .args(["sources", "add", "box", "--host", "h", "--path", "/p"])
         .env("AGHIST_CONFIG", &config_path)
         .assert()
         .success();
@@ -468,14 +467,65 @@ fn sources_add_invalid_transport_rejected() {
 
     let output = aghist()
         .args([
-            "sources", "add", "box", "--host", "h", "--path", "/p",
-            "--transport", "smb",
+            "sources",
+            "add",
+            "box",
+            "--host",
+            "h",
+            "--path",
+            "/p",
+            "--transport",
+            "smb",
         ])
         .env("AGHIST_CONFIG", &config_path)
         .output()
         .unwrap();
     // Clap rejects invalid value_parser results with exit 2.
     assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn sources_add_rejects_path_like_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+
+    let output = aghist()
+        .args(["sources", "add", "../escape", "--host", "h", "--path", "/p"])
+        .env("AGHIST_CONFIG", &config_path)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON error envelope");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+    assert!(
+        !config_path.exists(),
+        "invalid source must not be persisted"
+    );
+}
+
+#[test]
+fn sources_add_rejects_rsync_option_like_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+
+    let output = aghist()
+        .args(["sources", "add", "box", "--host=-server", "--path", "/p"])
+        .env("AGHIST_CONFIG", &config_path)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON error envelope");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
 }
 
 /// Writes an executable shell script that imitates rsync: it parses the last
@@ -511,11 +561,7 @@ fn write_fake_rsync(dir: &std::path::Path, args_log: &std::path::Path) -> std::p
 fn write_failing_rsync(dir: &std::path::Path) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let script = dir.join("fake-rsync-fail.sh");
-    std::fs::write(
-        &script,
-        "#!/bin/sh\necho 'fake rsync error' >&2\nexit 23\n",
-    )
-    .unwrap();
+    std::fs::write(&script, "#!/bin/sh\necho 'fake rsync error' >&2\nexit 23\n").unwrap();
     let mut perms = std::fs::metadata(&script).unwrap().permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(&script, perms).unwrap();
@@ -649,7 +695,10 @@ fn sources_pull_invokes_rsync_and_writes_manifest() {
         logged.contains("ssh -o BatchMode=yes"),
         "ssh wrapper missing from args: {logged}"
     );
-    assert!(logged.contains("--delete"), "missing --delete flag: {logged}");
+    assert!(
+        logged.contains("--delete"),
+        "missing --delete flag: {logged}"
+    );
 
     // Manifest exists and is parseable.
     let manifest_path = cache_dir.join("laptop").join(".aghist-source.json");
@@ -676,9 +725,7 @@ fn sources_pull_dry_run_passes_flag_and_skips_count() {
     let fake = write_fake_rsync(dir.path(), &args_log);
 
     aghist()
-        .args([
-            "sources", "add", "box", "--host", "h", "--path", "/p",
-        ])
+        .args(["sources", "add", "box", "--host", "h", "--path", "/p"])
         .env("AGHIST_CONFIG", &config_path)
         .assert()
         .success();
@@ -714,9 +761,7 @@ fn sources_pull_rsync_failure_surfaces_error_kind() {
     let fake = write_failing_rsync(dir.path());
 
     aghist()
-        .args([
-            "sources", "add", "box", "--host", "h", "--path", "/p",
-        ])
+        .args(["sources", "add", "box", "--host", "h", "--path", "/p"])
         .env("AGHIST_CONFIG", &config_path)
         .assert()
         .success();
@@ -756,8 +801,15 @@ fn sources_pull_rsync_transport_uses_rsync_url_not_ssh() {
 
     aghist()
         .args([
-            "sources", "add", "daemon", "--host", "rsync.example.com",
-            "--path", "/module/path", "--transport", "rsync",
+            "sources",
+            "add",
+            "daemon",
+            "--host",
+            "rsync.example.com",
+            "--path",
+            "/module/path",
+            "--transport",
+            "rsync",
         ])
         .env("AGHIST_CONFIG", &config_path)
         .assert()
@@ -811,7 +863,10 @@ fn sources_pull_all_iterates_every_source() {
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     let results = parsed["results"].as_array().expect("results array");
     assert_eq!(results.len(), 2);
-    let names: Vec<&str> = results.iter().map(|r| r["name"].as_str().unwrap()).collect();
+    let names: Vec<&str> = results
+        .iter()
+        .map(|r| r["name"].as_str().unwrap())
+        .collect();
     assert!(names.contains(&"a"), "{names:?}");
     assert!(names.contains(&"b"), "{names:?}");
 
@@ -856,7 +911,13 @@ fn search_federates_across_local_and_remote_source_caches() {
     let config_path = cache_dir.path().join("config.toml");
     aghist()
         .args([
-            "sources", "add", "laptop", "--host", "laptop.local", "--path", "/home/x/.claude",
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
         ])
         .env("AGHIST_CONFIG", &config_path)
         .assert()
@@ -888,7 +949,12 @@ fn search_federates_across_local_and_remote_source_caches() {
 
     let by_session: std::collections::HashMap<&str, &str> = hits
         .iter()
-        .map(|h| (h["session_id"].as_str().unwrap(), h["source"].as_str().unwrap()))
+        .map(|h| {
+            (
+                h["session_id"].as_str().unwrap(),
+                h["source"].as_str().unwrap(),
+            )
+        })
         .collect();
     assert_eq!(
         by_session.get("federated-local"),
@@ -985,9 +1051,18 @@ fn show_resolves_ref_md_default() {
         .success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     // Title is the ref; only turn 2 should appear (no context).
-    assert!(stdout.contains(reference), "stdout missing ref header: {stdout}");
-    assert!(stdout.contains("Turn 2"), "stdout missing 'Turn 2': {stdout}");
-    assert!(!stdout.contains("Turn 1"), "should not include turn 1 without context");
+    assert!(
+        stdout.contains(reference),
+        "stdout missing ref header: {stdout}"
+    );
+    assert!(
+        stdout.contains("Turn 2"),
+        "stdout missing 'Turn 2': {stdout}"
+    );
+    assert!(
+        !stdout.contains("Turn 1"),
+        "should not include turn 1 without context"
+    );
     assert!(stdout.contains("second-message-payload"));
 }
 
@@ -1004,7 +1079,12 @@ fn show_includes_context_window() {
     let home = fixture.base_path.parent().unwrap();
 
     let assert = aghist()
-        .args(["show", "claude-code/session-show-ctx#3", "--include-context", "1"])
+        .args([
+            "show",
+            "claude-code/session-show-ctx#3",
+            "--include-context",
+            "1",
+        ])
         .env("AGHIST_HOME", home)
         .assert()
         .success();
@@ -1031,7 +1111,8 @@ fn show_json_format_emits_machine_readable() {
         .args([
             "show",
             "claude-code/session-show-json#1",
-            "--format", "json",
+            "--format",
+            "json",
         ])
         .env("AGHIST_HOME", home)
         .assert()
@@ -1121,9 +1202,12 @@ fn export_turn_range_slices_messages() {
     let output = aghist()
         .args([
             "export",
-            "--format", "json",
-            "--session", "session-tr-test",
-            "--turn-range", "2:3",
+            "--format",
+            "json",
+            "--session",
+            "session-tr-test",
+            "--turn-range",
+            "2:3",
         ])
         .env("AGHIST_HOME", home)
         .assert()
@@ -1149,9 +1233,12 @@ fn export_turn_range_open_end_clamps_to_total() {
     let output = aghist()
         .args([
             "export",
-            "--format", "json",
-            "--session", "session-tr-clamp",
-            "--turn-range", "1:999",
+            "--format",
+            "json",
+            "--session",
+            "session-tr-clamp",
+            "--turn-range",
+            "1:999",
         ])
         .env("AGHIST_HOME", home)
         .assert()
@@ -1175,9 +1262,12 @@ fn export_turn_range_invalid_emits_usage_envelope() {
     let assert = aghist()
         .args([
             "export",
-            "--format", "md",
-            "--session", "session-tr-bad",
-            "--turn-range", "5:2",
+            "--format",
+            "md",
+            "--session",
+            "session-tr-bad",
+            "--turn-range",
+            "5:2",
         ])
         .env("AGHIST_HOME", home)
         .assert()
@@ -1206,12 +1296,7 @@ fn invalid_export_format_emits_usage_envelope_and_exits_two() {
         .expect("expected JSON envelope on stderr");
     let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(parsed["error"]["kind"], "usage");
-    assert!(
-        parsed["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("xml")
-    );
+    assert!(parsed["error"]["message"].as_str().unwrap().contains("xml"));
 }
 
 #[test]
@@ -1244,10 +1329,7 @@ fn list_with_multiple_providers() {
 
     // Build a unified home dir with Claude and Codex fixtures
     let home_dir = tempfile::tempdir().unwrap();
-    common::helpers::copy_dir_recursive(
-        &claude.base_path,
-        &home_dir.path().join(".claude"),
-    );
+    common::helpers::copy_dir_recursive(&claude.base_path, &home_dir.path().join(".claude"));
     let codex_sessions = home_dir.path().join(".codex").join("sessions");
     common::helpers::copy_dir_recursive(&codex.base_path, &codex_sessions);
 
@@ -1280,10 +1362,12 @@ fn reindex_flag_clears_index() {
     // should succeed (clear the index), and --list reports the empty exit
     // code 3 — the test asserts both signals.
     let dir = tempfile::tempdir().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
     aghist()
         .arg("--reindex")
         .arg("--list")
         .env("AGHIST_HOME", dir.path())
+        .env("AGHIST_INDEX_DIR", index_dir.path())
         .assert()
         .code(3)
         .stderr(predicate::str::contains("Search index cleared"));
@@ -1332,7 +1416,10 @@ fn index_idempotent_second_run_reports_unchanged() {
         .success();
     let stdout = String::from_utf8(first.get_output().stdout.clone()).unwrap();
     let first_json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert_eq!(first_json["added"], 1, "first run should classify session as 'added'");
+    assert_eq!(
+        first_json["added"], 1,
+        "first run should classify session as 'added'"
+    );
     assert_eq!(first_json["updated"], 0);
     assert_eq!(first_json["unchanged"], 0);
     assert!(first_json["messages_indexed"].as_u64().unwrap() >= 1);
@@ -1348,7 +1435,10 @@ fn index_idempotent_second_run_reports_unchanged() {
     let second_json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(second_json["added"], 0);
     assert_eq!(second_json["updated"], 0);
-    assert_eq!(second_json["unchanged"], 1, "second run should report 1 unchanged");
+    assert_eq!(
+        second_json["unchanged"], 1,
+        "second run should report 1 unchanged"
+    );
     assert_eq!(second_json["messages_indexed"], 0);
 }
 
@@ -1366,10 +1456,7 @@ fn index_provider_filter_restricts_scope() {
     let codex = common::fixtures::codex_single_session(2);
 
     let home_dir = tempfile::tempdir().unwrap();
-    common::helpers::copy_dir_recursive(
-        &claude.base_path,
-        &home_dir.path().join(".claude"),
-    );
+    common::helpers::copy_dir_recursive(&claude.base_path, &home_dir.path().join(".claude"));
     common::helpers::copy_dir_recursive(
         &codex.base_path,
         &home_dir.path().join(".codex").join("sessions"),
@@ -1385,7 +1472,10 @@ fn index_provider_filter_restricts_scope() {
     let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(parsed["providers"], serde_json::json!(["claude-code"]));
-    assert_eq!(parsed["sessions_total"], 1, "only Claude session is in scope");
+    assert_eq!(
+        parsed["sessions_total"], 1,
+        "only Claude session is in scope"
+    );
     assert_eq!(parsed["added"], 1);
 }
 
@@ -1404,12 +1494,10 @@ fn index_unknown_provider_emits_usage_envelope_and_exits_two() {
         .expect("expected JSON envelope on stderr");
     let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(parsed["error"]["kind"], "usage");
-    assert!(
-        parsed["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("bogus")
-    );
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("bogus"));
 }
 
 #[test]
@@ -1418,7 +1506,9 @@ fn update_help_exits_zero() {
         .args(["update", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Update aghist to the latest release"));
+        .stdout(predicate::str::contains(
+            "Update aghist to the latest release",
+        ));
 }
 
 #[test]
@@ -1576,7 +1666,12 @@ fn search_debug_search_json_includes_explanation() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8(output.stdout).unwrap();
     let doc: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("--debug-search --json must emit valid JSON");
@@ -1612,7 +1707,12 @@ fn search_without_debug_search_omits_explanation_field() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8(output.stdout).unwrap();
     let doc: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     let arr = doc["hits"].as_array().expect("expected array");
@@ -1786,7 +1886,11 @@ fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
     // No id appears across pages (no skips, no duplicates).
     let all_ids: Vec<&String> = ids1.iter().chain(ids2.iter()).chain(ids3.iter()).collect();
     let unique: std::collections::HashSet<&&String> = all_ids.iter().collect();
-    assert_eq!(unique.len(), all_ids.len(), "pagination must not duplicate ids");
+    assert_eq!(
+        unique.len(),
+        all_ids.len(),
+        "pagination must not duplicate ids"
+    );
     assert_eq!(all_ids.len(), 5, "all 5 sessions must be visited");
 }
 
@@ -1842,6 +1946,65 @@ fn search_invalid_cursor_returns_usage_envelope() {
 }
 
 #[test]
+fn search_limit_emits_cursor_and_pages_without_duplicates() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("search-page")
+        .project("paging")
+        .user("PAGE_TOKEN first")
+        .assistant("PAGE_TOKEN second")
+        .user("PAGE_TOKEN third")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let page1 = aghist()
+        .args(["search", "PAGE_TOKEN", "--json", "--limit", "1"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        page1.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&page1.stderr)
+    );
+    let doc1: serde_json::Value = serde_json::from_slice(&page1.stdout).unwrap();
+    assert_eq!(doc1["hits"].as_array().unwrap().len(), 1);
+    let cursor = doc1["meta"]["next_cursor"]
+        .as_str()
+        .expect("first page should advertise a cursor");
+
+    let page2 = aghist()
+        .args([
+            "search",
+            "PAGE_TOKEN",
+            "--json",
+            "--limit",
+            "1",
+            "--cursor",
+            cursor,
+        ])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        page2.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&page2.stderr)
+    );
+    let doc2: serde_json::Value = serde_json::from_slice(&page2.stdout).unwrap();
+    assert_eq!(doc2["hits"].as_array().unwrap().len(), 1);
+
+    let first = doc1["hits"][0]["message_id"].as_str().unwrap();
+    let second = doc2["hits"][0]["message_id"].as_str().unwrap();
+    assert_ne!(first, second, "cursor page repeated the same hit");
+}
+
+#[test]
 fn search_help_documents_hybrid_weight_flag() {
     aghist()
         .args(["search", "--help"])
@@ -1864,7 +2027,12 @@ fn search_default_engine_is_lexical_in_meta() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         doc["meta"]["engine"], "lexical",
@@ -1898,7 +2066,10 @@ fn search_hybrid_weight_falls_open_to_lexical_without_embeddings() {
     );
     let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let arr = doc["hits"].as_array().expect("expected hits array");
-    assert!(!arr.is_empty(), "fail-open hybrid must still return lexical hits");
+    assert!(
+        !arr.is_empty(),
+        "fail-open hybrid must still return lexical hits"
+    );
     assert_eq!(
         doc["meta"]["engine"], "lexical",
         "missing-embeddings build must report engine=lexical (fail-open), got: {}",
@@ -1919,7 +2090,12 @@ fn search_hybrid_weight_zero_behaves_like_lexical() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         doc["meta"]["engine"], "lexical",
@@ -1940,7 +2116,10 @@ fn search_json_output_wraps_hits_in_meta_envelope() {
     // envelope shape when hits exist.
     if output.status.code() == Some(0) {
         let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert!(doc["hits"].is_array(), "search JSON must wrap rows in 'hits'");
+        assert!(
+            doc["hits"].is_array(),
+            "search JSON must wrap rows in 'hits'"
+        );
         assert!(doc["meta"].is_object(), "search JSON must include 'meta'");
         assert!(doc["meta"]["total"].is_number());
     }
@@ -1990,7 +2169,10 @@ fn search_watch_emits_ndjson_one_per_line_for_existing_matches() {
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    assert!(!lines.is_empty(), "expected at least one NDJSON hit, got: {stdout:?}");
+    assert!(
+        !lines.is_empty(),
+        "expected at least one NDJSON hit, got: {stdout:?}"
+    );
     for line in &lines {
         let row: serde_json::Value =
             serde_json::from_str(line).expect("each watch line must be valid JSON");
@@ -2125,12 +2307,10 @@ fn export_params_invalid_json_emits_usage_envelope() {
         .expect("expected JSON envelope on stderr");
     let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(parsed["error"]["kind"], "usage");
-    assert!(
-        parsed["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("not valid JSON")
-    );
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("not valid JSON"));
 }
 
 #[test]
@@ -2172,12 +2352,10 @@ fn export_params_invalid_format_value_emits_usage() {
         .expect("expected JSON envelope on stderr");
     let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(parsed["error"]["kind"], "usage");
-    assert!(
-        parsed["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("format")
-    );
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("format"));
 }
 
 #[test]
@@ -2277,7 +2455,10 @@ fn search_params_invokes_query() {
     let hits = parsed["hits"]
         .as_array()
         .expect("search JSON must wrap rows in 'hits'");
-    assert!(!hits.is_empty(), "expected at least one hit for the unique phrase");
+    assert!(
+        !hits.is_empty(),
+        "expected at least one hit for the unique phrase"
+    );
 }
 
 #[test]
@@ -2383,7 +2564,14 @@ fn schema_for_search_documents_filter_flags() {
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     let props = &parsed["params"]["properties"];
-    for name in ["provider", "since", "until", "project", "role", "has_tool_call"] {
+    for name in [
+        "provider",
+        "since",
+        "until",
+        "project",
+        "role",
+        "has_tool_call",
+    ] {
         assert!(
             props[name].is_object(),
             "search schema missing filter param: {name}"
@@ -2391,7 +2579,10 @@ fn schema_for_search_documents_filter_flags() {
     }
     assert_eq!(props["provider"]["type"], "string");
     assert_eq!(props["since"]["format"], "date-time");
-    assert_eq!(props["role"]["enum"], serde_json::json!(["user", "assistant", "tool"]));
+    assert_eq!(
+        props["role"]["enum"],
+        serde_json::json!(["user", "assistant", "tool"])
+    );
     assert_eq!(props["has_tool_call"]["type"], "boolean");
 }
 
@@ -2401,7 +2592,14 @@ fn schema_for_list_documents_filter_flags() {
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     let props = &parsed["params"]["properties"];
-    for name in ["provider", "since", "until", "project", "role", "has_tool_call"] {
+    for name in [
+        "provider",
+        "since",
+        "until",
+        "project",
+        "role",
+        "has_tool_call",
+    ] {
         assert!(
             props[name].is_object(),
             "list schema missing filter param: {name}"
@@ -2415,7 +2613,9 @@ fn schema_all_dumps_every_subcommand() {
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     let map = parsed.as_object().expect("top-level object");
-    for name in ["list", "search", "show", "export", "index", "sources", "health", "mcp", "schema"] {
+    for name in [
+        "list", "search", "show", "export", "index", "sources", "health", "mcp", "schema",
+    ] {
         assert!(map.contains_key(name), "missing schema for {name}");
         assert_eq!(map[name]["$id"], format!("aghist:schema/{name}"));
     }
@@ -2426,9 +2626,13 @@ fn schema_unknown_subcommand_exits_one_with_envelope() {
     let output = aghist().args(["schema", "nonsense"]).output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8(output.stderr).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stderr.trim().lines().last().unwrap()).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(stderr.trim().lines().last().unwrap()).unwrap();
     assert_eq!(parsed["error"]["kind"], "usage");
-    assert!(parsed["error"]["message"].as_str().unwrap().contains("nonsense"));
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("nonsense"));
 }
 
 #[test]
@@ -3133,10 +3337,7 @@ fn tag_list_filters_by_session_turn_and_tag_value() {
         ("claude-code/sess#5", "review"),
         ("opencode/other", "review"),
     ] {
-        tag_env(&db)
-            .args(["tag", "add", r, t])
-            .assert()
-            .success();
+        tag_env(&db).args(["tag", "add", r, t]).assert().success();
     }
 
     let scoped = tag_env(&db)
@@ -3533,8 +3734,12 @@ fn list_filters_by_starred() {
         .env("AGHIST_METADATA_DB", &db)
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(0), "stderr: {}",
-        String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let ids = list_session_ids_json(std::str::from_utf8(&out.stdout).unwrap());
     let set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
     assert_eq!(set, ["sess-alpha", "sess-gamma"].into_iter().collect());
@@ -3581,12 +3786,24 @@ fn list_filters_by_note_substring_case_insensitive() {
     let db = db_dir.path().join("metadata.db");
 
     aghist()
-        .args(["note", "add", "claude-code/sess-alpha", "--body", "Look at THIS bug later"])
+        .args([
+            "note",
+            "add",
+            "claude-code/sess-alpha",
+            "--body",
+            "Look at THIS bug later",
+        ])
         .env("AGHIST_METADATA_DB", &db)
         .assert()
         .success();
     aghist()
-        .args(["note", "add", "claude-code/sess-beta", "--body", "different content"])
+        .args([
+            "note",
+            "add",
+            "claude-code/sess-beta",
+            "--body",
+            "different content",
+        ])
         .env("AGHIST_METADATA_DB", &db)
         .assert()
         .success();
@@ -3670,8 +3887,12 @@ fn search_filters_by_starred() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(0), "stderr: {}",
-        String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let doc: serde_json::Value =
         serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
     let hits = doc["hits"].as_array().unwrap();
@@ -3732,8 +3953,11 @@ fn search_returns_note_hits_with_kind_note_and_ref() {
 
     aghist()
         .args([
-            "note", "add", "claude-code/sess-alpha#3",
-            "--body", "investigate xylophone bug",
+            "note",
+            "add",
+            "claude-code/sess-alpha#3",
+            "--body",
+            "investigate xylophone bug",
         ])
         .env("AGHIST_METADATA_DB", &db)
         .assert()
@@ -3774,8 +3998,11 @@ fn search_mixes_note_and_message_hits() {
 
     aghist()
         .args([
-            "note", "add", "claude-code/sess-alpha",
-            "--body", "alpha body annotation",
+            "note",
+            "add",
+            "claude-code/sess-alpha",
+            "--body",
+            "alpha body annotation",
         ])
         .env("AGHIST_METADATA_DB", &db)
         .assert()
@@ -3793,8 +4020,14 @@ fn search_mixes_note_and_message_hits() {
         serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
     let hits = doc["hits"].as_array().unwrap();
     let kinds: Vec<&str> = hits.iter().map(|h| h["kind"].as_str().unwrap()).collect();
-    assert!(kinds.contains(&"note"), "expected at least one note hit: {hits:?}");
-    assert!(kinds.contains(&"message"), "expected at least one message hit: {hits:?}");
+    assert!(
+        kinds.contains(&"note"),
+        "expected at least one note hit: {hits:?}"
+    );
+    assert!(
+        kinds.contains(&"message"),
+        "expected at least one message hit: {hits:?}"
+    );
 
     // Note rows carry note_id + ref; message rows do not.
     for h in hits {
@@ -3837,7 +4070,10 @@ fn search_works_when_metadata_db_is_absent() {
     let doc: serde_json::Value =
         serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
     let hits = doc["hits"].as_array().unwrap();
-    assert!(!hits.is_empty(), "alpha body should match a session message");
+    assert!(
+        !hits.is_empty(),
+        "alpha body should match a session message"
+    );
     for h in hits {
         assert_eq!(h["kind"], "message");
     }
@@ -3923,10 +4159,7 @@ fn usage_by_provider_groups_across_models() {
 
 #[test]
 fn usage_invalid_by_value_emits_usage_envelope() {
-    let assert = aghist()
-        .args(["usage", "--by", "session"])
-        .assert()
-        .code(2);
+    let assert = aghist().args(["usage", "--by", "session"]).assert().code(2);
     let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
     assert!(
         stderr.contains("session") || stderr.contains("--by"),
@@ -4105,10 +4338,7 @@ fn project_limits_truncate_files_section_but_meta_keeps_total() {
 
 #[test]
 fn project_empty_name_emits_usage_envelope() {
-    let assert = aghist()
-        .args(["project", " "])
-        .assert()
-        .code(2);
+    let assert = aghist().args(["project", " "]).assert().code(2);
     let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
     assert!(
         stderr.contains("project") || stderr.contains("empty"),
@@ -4144,9 +4374,18 @@ fn schema_search_includes_metadata_filter_params() {
     let parsed: serde_json::Value =
         serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
     let props = &parsed["params"]["properties"];
-    assert!(props["note"].is_object(), "search schema missing 'note' param");
-    assert!(props["tag"].is_object(), "search schema missing 'tag' param");
-    assert!(props["starred"].is_object(), "search schema missing 'starred' param");
+    assert!(
+        props["note"].is_object(),
+        "search schema missing 'note' param"
+    );
+    assert!(
+        props["tag"].is_object(),
+        "search schema missing 'tag' param"
+    );
+    assert!(
+        props["starred"].is_object(),
+        "search schema missing 'starred' param"
+    );
     assert_eq!(props["starred"]["type"], "boolean");
 }
 
@@ -4185,13 +4424,7 @@ fn report_default_emits_markdown_with_section_headers() {
     let home = fixture.base_path.parent().unwrap();
 
     let output = aghist()
-        .args([
-            "report",
-            "--since",
-            FIXTURE_SINCE,
-            "--until",
-            FIXTURE_UNTIL,
-        ])
+        .args(["report", "--since", FIXTURE_SINCE, "--until", FIXTURE_UNTIL])
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
@@ -4406,7 +4639,10 @@ fn decisions_llm_model_without_llm_flag_is_usage_error() {
         stderr.contains("\"kind\":\"usage\""),
         "stderr should be usage envelope, got: {stderr:?}"
     );
-    assert!(stderr.contains("--llm"), "hint should mention --llm: {stderr:?}");
+    assert!(
+        stderr.contains("--llm"),
+        "hint should mention --llm: {stderr:?}"
+    );
 }
 
 #[test]
@@ -4418,7 +4654,10 @@ fn decisions_schema_documents_llm_params_and_response() {
     let props = &parsed["params"]["properties"];
     assert!(props["llm"].is_object(), "llm param should be in schema");
     assert_eq!(props["llm"]["type"], "boolean");
-    assert!(props["llm_model"].is_object(), "llm_model param should be in schema");
+    assert!(
+        props["llm_model"].is_object(),
+        "llm_model param should be in schema"
+    );
     let one_of = parsed["response"]["oneOf"].as_array().unwrap();
     assert_eq!(one_of.len(), 2, "response should oneOf {{heuristic, llm}}");
     let llm_schema = one_of

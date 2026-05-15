@@ -47,10 +47,7 @@ fn resume_command_copilot_cli() {
     let mut terminal = wide_terminal();
 
     // Navigate to index 1 (Copilot), press 'y'
-    let events = ScriptedEventSource::from_keys(vec![
-        KeyCode::Char('j'),
-        KeyCode::Char('y'),
-    ]);
+    let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('j'), KeyCode::Char('y')]);
     app.run_with_event_source(&mut terminal, events).unwrap();
 
     let text = render_to_text(&terminal);
@@ -156,8 +153,8 @@ fn resume_command_no_selection() {
 
 #[test]
 fn key_mapping_browse_mode() {
-    use crossterm::event::{KeyEvent, KeyModifiers};
     use aghist::event::map_key_event;
+    use crossterm::event::{KeyEvent, KeyModifiers};
 
     let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
     assert!(matches!(
@@ -186,8 +183,8 @@ fn key_mapping_browse_mode() {
 
 #[test]
 fn key_mapping_view_mode() {
-    use crossterm::event::{KeyEvent, KeyModifiers};
     use aghist::event::map_key_event;
+    use crossterm::event::{KeyEvent, KeyModifiers};
 
     let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
     assert!(matches!(
@@ -210,8 +207,8 @@ fn key_mapping_view_mode() {
 
 #[test]
 fn key_mapping_search_mode() {
-    use crossterm::event::{KeyEvent, KeyModifiers};
     use aghist::event::map_key_event;
+    use crossterm::event::{KeyEvent, KeyModifiers};
 
     let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
     assert!(matches!(
@@ -237,11 +234,19 @@ fn key_mapping_search_mode() {
 #[test]
 fn corrupt_fixtures_no_crash() {
     let providers: Vec<Box<dyn HistoryProvider>> = vec![
-        Box::new(ClaudeCodeProvider::new(vec![edge_cases_dir().join("claude")])),
-        Box::new(CopilotCliProvider::new(vec![edge_cases_dir().join("copilot")])),
-        Box::new(GeminiCliProvider::new(vec![edge_cases_dir().join("gemini")])),
+        Box::new(ClaudeCodeProvider::new(vec![
+            edge_cases_dir().join("claude")
+        ])),
+        Box::new(CopilotCliProvider::new(vec![
+            edge_cases_dir().join("copilot")
+        ])),
+        Box::new(GeminiCliProvider::new(
+            vec![edge_cases_dir().join("gemini")],
+        )),
         Box::new(CodexCliProvider::new(vec![edge_cases_dir().join("codex")])),
-        Box::new(OpenCodeProvider::new(vec![edge_cases_dir().join("opencode")])),
+        Box::new(OpenCodeProvider::new(vec![
+            edge_cases_dir().join("opencode")
+        ])),
     ];
     let mut app = App::new(providers, Config::default());
     let mut terminal = make_terminal();

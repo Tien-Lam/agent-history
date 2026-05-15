@@ -87,11 +87,9 @@ impl StatusBarComponent {
                 ("Ctrl+C", "clear"),
                 ("Esc", "close"),
             ],
-            AppMode::ExportMenu => vec![
-                ("j/k", "navigate"),
-                ("Enter", "export"),
-                ("Esc", "cancel"),
-            ],
+            AppMode::ExportMenu => {
+                vec![("j/k", "navigate"), ("Enter", "export"), ("Esc", "cancel")]
+            }
         };
 
         let mut spans: Vec<Span> = Vec::new();

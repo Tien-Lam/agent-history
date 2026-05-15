@@ -25,7 +25,11 @@ fn theme() -> &'static Theme {
         // Pick a dark theme that reads well over the app's dark background.
         // Fall back through a couple of common names so we tolerate any
         // future syntect theme set shuffles, then to whatever's first.
-        for name in ["base16-eighties.dark", "base16-mocha.dark", "Solarized (dark)"] {
+        for name in [
+            "base16-eighties.dark",
+            "base16-mocha.dark",
+            "Solarized (dark)",
+        ] {
             if let Some(t) = ts.themes.get(name) {
                 return t.clone();
             }

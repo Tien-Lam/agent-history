@@ -63,7 +63,11 @@ impl ErrorEnvelope {
 
     pub fn to_json_string(&self) -> String {
         let wrapped = Wrapper { error: self };
-        serde_json::to_string(&wrapped).unwrap_or_else(|_| String::from(r#"{"error":{"kind":"internal-error","message":"failed to serialize envelope"}}"#))
+        serde_json::to_string(&wrapped).unwrap_or_else(|_| {
+            String::from(
+                r#"{"error":{"kind":"internal-error","message":"failed to serialize envelope"}}"#,
+            )
+        })
     }
 }
 

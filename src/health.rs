@@ -51,7 +51,11 @@ pub fn run_health_checks(providers: &[Box<dyn HistoryProvider>]) -> Vec<HealthCh
         checks.push(HealthCheck {
             name: "providers-detected",
             status: HealthStatus::Ok,
-            message: format!("{} provider(s) detected: {}", providers.len(), slugs.join(", ")),
+            message: format!(
+                "{} provider(s) detected: {}",
+                providers.len(),
+                slugs.join(", ")
+            ),
             hint: None,
         });
     }

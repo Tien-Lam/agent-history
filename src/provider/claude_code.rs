@@ -68,12 +68,11 @@ impl HistoryProvider for ClaudeCodeProvider {
                 continue;
             }
 
-            let project_dirs = std::fs::read_dir(&projects).map_err(|e| {
-                ProviderError::Discovery {
+            let project_dirs =
+                std::fs::read_dir(&projects).map_err(|e| ProviderError::Discovery {
                     provider: "Claude Code",
                     source: e,
-                }
-            })?;
+                })?;
 
             for project_entry in project_dirs.flatten() {
                 if !project_entry.file_type().is_ok_and(|t| t.is_dir()) {
@@ -81,16 +80,14 @@ impl HistoryProvider for ClaudeCodeProvider {
                 }
 
                 let project_dir = project_entry.path();
-                let project_name = decode_project_name(
-                    project_entry.file_name().to_string_lossy().as_ref(),
-                );
+                let project_name =
+                    decode_project_name(project_entry.file_name().to_string_lossy().as_ref());
 
-                let entries = std::fs::read_dir(&project_dir).map_err(|e| {
-                    ProviderError::Discovery {
+                let entries =
+                    std::fs::read_dir(&project_dir).map_err(|e| ProviderError::Discovery {
                         provider: "Claude Code",
                         source: e,
-                    }
-                })?;
+                    })?;
 
                 for file_entry in entries.flatten() {
                     let path = file_entry.path();
@@ -104,12 +101,9 @@ impl HistoryProvider for ClaudeCodeProvider {
                         .unwrap_or("")
                         .to_string();
 
-                    if let Some(session) = build_session_metadata(
-                        &path,
-                        &session_id,
-                        &project_name,
-                        &history_entries,
-                    ) {
+                    if let Some(session) =
+                        build_session_metadata(&path, &session_id, &project_name, &history_entries)
+                    {
                         sessions.push(session);
                     }
                 }
@@ -224,10 +218,8 @@ fn build_session_metadata(
                         }
                     }
                     if let Some(ref usage) = msg.usage {
-                        total_input_tokens +=
-                            usage.input_tokens.unwrap_or(0);
-                        total_output_tokens +=
-                            usage.output_tokens.unwrap_or(0);
+                        total_input_tokens += usage.input_tokens.unwrap_or(0);
+                        total_output_tokens += usage.output_tokens.unwrap_or(0);
                     }
                 }
             }
@@ -408,9 +400,7 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
     };
 
     match content {
-        serde_json::Value::String(s) => {
-            parse_text_with_code_blocks(s)
-        }
+        serde_json::Value::String(s) => parse_text_with_code_blocks(s),
         serde_json::Value::Array(arr) => {
             let mut blocks = Vec::new();
             for item in arr {
@@ -478,18 +468,17 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
 fn extract_tool_result_text(item: &serde_json::Value) -> String {
     match item.get("content") {
         Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(arr)) => {
-            arr.iter()
-                .filter_map(|c| {
-                    if c.get("type").and_then(|v| v.as_str()) == Some("text") {
-                        c.get("text").and_then(|v| v.as_str()).map(String::from)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|c| {
+                if c.get("type").and_then(|v| v.as_str()) == Some("text") {
+                    c.get("text").and_then(|v| v.as_str()).map(String::from)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
         _ => String::new(),
     }
 }

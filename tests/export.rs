@@ -11,7 +11,10 @@ use common::helpers::fixtures_dir;
 fn load_fixture_session() -> (aghist::model::Session, Vec<aghist::model::Message>) {
     let provider = ClaudeCodeProvider::new(vec![fixtures_dir().join("claude")]);
     let sessions = provider.discover_sessions().unwrap();
-    let session = sessions.into_iter().next().expect("fixture has at least one session");
+    let session = sessions
+        .into_iter()
+        .next()
+        .expect("fixture has at least one session");
     let messages = provider.load_messages(&session).unwrap();
     (session, messages)
 }
@@ -35,7 +38,10 @@ fn markdown_has_role_headers() {
     let md = export::to_markdown(&session, &messages);
 
     assert!(md.contains("## You"), "should have user role header");
-    assert!(md.contains("## Assistant"), "should have assistant role header");
+    assert!(
+        md.contains("## Assistant"),
+        "should have assistant role header"
+    );
 }
 
 #[test]
@@ -57,7 +63,10 @@ fn markdown_has_tool_call_sections() {
         .any(|c| matches!(c, aghist::model::ContentBlock::ToolUse(_)));
 
     if has_tool_use {
-        assert!(md.contains("<details>"), "tool calls should be in details tags");
+        assert!(
+            md.contains("<details>"),
+            "tool calls should be in details tags"
+        );
         assert!(md.contains("Tool:"), "tool call should show tool name");
     }
 }
@@ -84,8 +93,14 @@ fn json_session_has_required_fields() {
     let sess = parsed.get("session").unwrap();
 
     assert!(sess.get("id").is_some(), "session should have id");
-    assert!(sess.get("provider").is_some(), "session should have provider");
-    assert!(sess.get("started_at").is_some(), "session should have started_at");
+    assert!(
+        sess.get("provider").is_some(),
+        "session should have provider"
+    );
+    assert!(
+        sess.get("started_at").is_some(),
+        "session should have started_at"
+    );
 }
 
 #[test]
@@ -104,8 +119,14 @@ fn json_messages_preserve_content() {
 
     for msg in msgs {
         assert!(msg.get("role").is_some(), "each message should have role");
-        assert!(msg.get("content").is_some(), "each message should have content");
-        assert!(msg.get("timestamp").is_some(), "each message should have timestamp");
+        assert!(
+            msg.get("content").is_some(),
+            "each message should have content"
+        );
+        assert!(
+            msg.get("timestamp").is_some(),
+            "each message should have timestamp"
+        );
     }
 }
 
@@ -154,7 +175,10 @@ fn html_contains_message_content() {
     let (session, messages) = load_fixture_session();
     let html = export::to_html(&session, &messages);
 
-    assert!(html.contains("class=\"message user\""), "should have user messages");
+    assert!(
+        html.contains("class=\"message user\""),
+        "should have user messages"
+    );
     assert!(
         html.contains("class=\"message assistant\""),
         "should have assistant messages"
@@ -311,12 +335,19 @@ fn export_handles_unicode_content() {
     }];
 
     let md = export::to_markdown(&session, &messages);
-    assert!(md.contains("プロジェクト"), "markdown should preserve CJK project name");
-    assert!(md.contains("你好世界"), "markdown should preserve CJK content");
+    assert!(
+        md.contains("プロジェクト"),
+        "markdown should preserve CJK project name"
+    );
+    assert!(
+        md.contains("你好世界"),
+        "markdown should preserve CJK content"
+    );
     assert!(md.contains("🌍"), "markdown should preserve emoji");
 
     let json = export::to_json(&session, &messages);
-    let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON should be valid with unicode");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON should be valid with unicode");
     assert_eq!(parsed["session"]["project_name"], "プロジェクト");
 
     let html = export::to_html(&session, &messages);
@@ -373,7 +404,11 @@ fn sample_session() -> (aghist::model::Session, Vec<aghist::model::Message>) {
     let messages = (1..=3)
         .map(|i| Message {
             id: MessageId(format!("m{i}")),
-            role: if i % 2 == 1 { Role::User } else { Role::Assistant },
+            role: if i % 2 == 1 {
+                Role::User
+            } else {
+                Role::Assistant
+            },
             timestamp: Utc::now(),
             content: vec![ContentBlock::Text(format!("turn-{i} body"))],
             model: None,
@@ -392,7 +427,10 @@ fn markdown_injects_session_and_turn_notes_at_citation_refs() {
     ];
     let md = export::to_markdown_with_notes(&session, &messages, &notes);
 
-    assert!(md.contains("Private annotations"), "session-level header present");
+    assert!(
+        md.contains("Private annotations"),
+        "session-level header present"
+    );
     assert!(md.contains("session-wide thought"));
     assert!(md.contains("thought about turn 2"));
 
@@ -400,7 +438,10 @@ fn markdown_injects_session_and_turn_notes_at_citation_refs() {
     let turn2_pos = md.find("turn-2 body").expect("turn-2 body");
     let note_pos = md.find("thought about turn 2").expect("turn-2 note");
     let turn3_pos = md.find("turn-3 body").expect("turn-3 body");
-    assert!(turn2_pos < note_pos && note_pos < turn3_pos, "note must sit between turn 2 and turn 3");
+    assert!(
+        turn2_pos < note_pos && note_pos < turn3_pos,
+        "note must sit between turn 2 and turn 3"
+    );
 
     // Annotation marker is preserved so readers can't conflate notes with content.
     assert!(
@@ -427,10 +468,17 @@ fn json_emits_notes_array_marked_as_private_annotation() {
     ];
     let json_str = export::to_json_with_notes(&session, &messages, &notes);
     let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("valid JSON");
-    let notes_arr = parsed.get("notes").expect("notes field").as_array().unwrap();
+    let notes_arr = parsed
+        .get("notes")
+        .expect("notes field")
+        .as_array()
+        .unwrap();
     assert_eq!(notes_arr.len(), 2);
     for n in notes_arr {
-        assert_eq!(n.get("kind").and_then(|v| v.as_str()), Some("private-annotation"));
+        assert_eq!(
+            n.get("kind").and_then(|v| v.as_str()),
+            Some("private-annotation")
+        );
         assert!(n.get("body").is_some());
         assert!(n.get("session_ref").is_some());
     }
@@ -452,7 +500,10 @@ fn html_inlines_notes_with_private_annotation_marker() {
         make_note(2, "claude-code/abc-123#1", "turn-1 note"),
     ];
     let html = export::to_html_with_notes(&session, &messages, &notes);
-    assert!(html.contains("session-notes"), "session-level section rendered");
+    assert!(
+        html.contains("session-notes"),
+        "session-level section rendered"
+    );
     assert!(html.contains("data-kind=\"private-annotation\""));
     assert!(html.contains("Private annotation"));
     assert!(html.contains("session note"));
@@ -462,9 +513,16 @@ fn html_inlines_notes_with_private_annotation_marker() {
 #[test]
 fn html_escapes_note_body_to_prevent_xss() {
     let (session, messages) = sample_session();
-    let notes = vec![make_note(1, "claude-code/abc-123#1", "<script>alert('xss')</script>")];
+    let notes = vec![make_note(
+        1,
+        "claude-code/abc-123#1",
+        "<script>alert('xss')</script>",
+    )];
     let html = export::to_html_with_notes(&session, &messages, &notes);
-    assert!(!html.contains("<script>alert"), "note body must not break out of escaping");
+    assert!(
+        !html.contains("<script>alert"),
+        "note body must not break out of escaping"
+    );
     assert!(html.contains("&lt;script&gt;"));
 }
 

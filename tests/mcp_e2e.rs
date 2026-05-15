@@ -141,10 +141,7 @@ fn mcp_health_returns_structured_checks() {
     assert_eq!(result["isError"], false);
     let structured = &result["structuredContent"];
     let checks = structured["checks"].as_array().expect("checks array");
-    let names: Vec<&str> = checks
-        .iter()
-        .map(|c| c["name"].as_str().unwrap())
-        .collect();
+    let names: Vec<&str> = checks.iter().map(|c| c["name"].as_str().unwrap()).collect();
     for expected in [
         "providers-detected",
         "index-dir-writable",
@@ -174,7 +171,10 @@ fn mcp_resources_list_and_read_round_trip_against_claude_fixture() {
         })],
     );
     let resources = listings[0]["result"]["resources"].as_array().unwrap();
-    assert!(!resources.is_empty(), "expected at least one session resource");
+    assert!(
+        !resources.is_empty(),
+        "expected at least one session resource"
+    );
     let session_uri = resources[0]["uri"].as_str().unwrap().to_string();
     assert!(
         session_uri.starts_with("aghist://session/claude-code/"),
@@ -215,9 +215,12 @@ fn mcp_resources_list_and_read_round_trip_against_claude_fixture() {
             "params": { "uri": turn_uri }
         })],
     );
-    let body: Value =
-        serde_json::from_str(turn_read[0]["result"]["contents"][0]["text"].as_str().unwrap())
-            .unwrap();
+    let body: Value = serde_json::from_str(
+        turn_read[0]["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["turn"]["turn"], 3);
     assert!(body["turn"]["ref"].as_str().unwrap().contains("#3"));
 }

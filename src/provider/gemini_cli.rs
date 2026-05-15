@@ -59,41 +59,33 @@ impl HistoryProvider for GeminiCliProvider {
                 continue;
             }
 
-            let project_dirs = std::fs::read_dir(&tmp_dir).map_err(|e| {
-                ProviderError::Discovery {
+            let project_dirs =
+                std::fs::read_dir(&tmp_dir).map_err(|e| ProviderError::Discovery {
                     provider: "Gemini CLI",
                     source: e,
-                }
-            })?;
+                })?;
 
             for project_entry in project_dirs.flatten() {
                 if !project_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
-                let project_slug = project_entry
-                    .file_name()
-                    .to_string_lossy()
-                    .to_string();
+                let project_slug = project_entry.file_name().to_string_lossy().to_string();
 
                 let chats_dir = project_entry.path().join("chats");
                 if !chats_dir.exists() {
                     continue;
                 }
 
-                let chat_files = std::fs::read_dir(&chats_dir).map_err(|e| {
-                    ProviderError::Discovery {
+                let chat_files =
+                    std::fs::read_dir(&chats_dir).map_err(|e| ProviderError::Discovery {
                         provider: "Gemini CLI",
                         source: e,
-                    }
-                })?;
+                    })?;
 
                 for file_entry in chat_files.flatten() {
                     let path = file_entry.path();
-                    let fname = path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+                    let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                     if !fname.starts_with("session-")
                         || !std::path::Path::new(fname)
@@ -103,11 +95,9 @@ impl HistoryProvider for GeminiCliProvider {
                         continue;
                     }
 
-                    if let Some(session) = build_session_from_file(
-                        &path,
-                        &project_slug,
-                        &project_map,
-                    ) {
+                    if let Some(session) =
+                        build_session_from_file(&path, &project_slug, &project_map)
+                    {
                         sessions.push(session);
                     }
                 }
@@ -190,15 +180,15 @@ fn build_session_from_file(
     });
 
     // Get model from first gemini message
-    let model = raw
-        .messages
-        .iter()
-        .find_map(|m| m.model.clone());
+    let model = raw.messages.iter().find_map(|m| m.model.clone());
 
     // Sum tokens
     let (input_total, output_total) = raw.messages.iter().fold((0u64, 0u64), |(inp, out), m| {
         if let Some(ref tokens) = m.tokens {
-            (inp + tokens.input.unwrap_or(0), out + tokens.output.unwrap_or(0))
+            (
+                inp + tokens.input.unwrap_or(0),
+                out + tokens.output.unwrap_or(0),
+            )
         } else {
             (inp, out)
         }
@@ -246,105 +236,129 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
 }
 
 fn convert_messages(raw_messages: &[RawMessage]) -> Vec<Message> {
-    let mut messages = Vec::new();
+    raw_messages.iter().filter_map(convert_message).collect()
+}
 
-    for msg in raw_messages {
-        let role = match msg.msg_type.as_str() {
-            "user" => Role::User,
-            "gemini" => Role::Assistant,
-            _ => continue,
-        };
+fn convert_message(msg: &RawMessage) -> Option<Message> {
+    let role = raw_role(&msg.msg_type)?;
+    let mut content = message_content(msg, role);
 
-        let timestamp = msg
-            .timestamp
-            .as_deref()
-            .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-            .unwrap_or_else(Utc::now);
-
-        let mut content = Vec::new();
-
-        // Extract text content
-        let text = match &msg.content {
-            RawContent::Text(s) => Some(s.clone()),
-            RawContent::Parts(parts) => {
-                if role == Role::User {
-                    // For user messages, prefer displayContent
-                    if let Some(ref dc) = msg.display_content {
-                        Some(dc.iter().filter_map(|p| p.text.as_ref()).cloned().collect::<Vec<_>>().join("\n"))
-                    } else {
-                        Some(parts.iter().filter_map(|p| p.text.as_ref()).cloned().collect::<Vec<_>>().join("\n"))
-                    }
-                } else {
-                    Some(parts.iter().filter_map(|p| p.text.as_ref()).cloned().collect::<Vec<_>>().join("\n"))
-                }
-            }
-        };
-
-        if let Some(text) = text {
-            if !text.is_empty() {
-                content.extend(parse_text_with_code_blocks(&text));
-            }
-        }
-
-        // Thinking
-        if let Some(ref thoughts) = msg.thoughts {
-            for thought in thoughts {
-                let desc = thought.description.as_deref().unwrap_or("");
-                if !desc.is_empty() {
-                    content.push(ContentBlock::Thinking(desc.to_string()));
-                }
-            }
-        }
-
-        // Tool calls. Gemini CLI sometimes attaches a `response` object
-        // to a tool call once it has executed; emit a paired ToolResult so
-        // downstream consumers (search, export, MCP) can correlate them.
-        if let Some(ref tool_calls) = msg.tool_calls {
-            for tc in tool_calls {
-                let id = tc.id.clone().unwrap_or_default();
-                content.push(ContentBlock::ToolUse(ToolCall {
-                    id: id.clone(),
-                    name: tc.name.clone().unwrap_or_else(|| "unknown".to_string()),
-                    arguments: tc
-                        .args
-                        .as_ref()
-                        .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
-                        .unwrap_or_default(),
-                }));
-                if let Some(output) = tc.response.as_ref().map(extract_tool_response_text) {
-                    if !output.is_empty() {
-                        content.push(ContentBlock::ToolResult(crate::model::ToolResult {
-                            tool_call_id: id,
-                            success: tc.error.is_none(),
-                            output,
-                        }));
-                    }
-                }
-            }
-        }
-
-        if content.is_empty() {
-            continue;
-        }
-
-        let token_usage = msg.tokens.as_ref().map(|t| TokenUsage {
-            input_tokens: t.input.unwrap_or(0),
-            output_tokens: t.output.unwrap_or(0),
-            cache_read_tokens: t.cached,
-            cache_write_tokens: None,
-        });
-
-        messages.push(Message {
-            id: MessageId(msg.id.clone().unwrap_or_default()),
-            role,
-            timestamp,
-            content,
-            model: msg.model.clone(),
-            token_usage,
-        });
+    if content.is_empty() {
+        return None;
     }
 
-    messages
+    Some(Message {
+        id: MessageId(msg.id.clone().unwrap_or_default()),
+        role,
+        timestamp: message_timestamp(msg.timestamp.as_deref()),
+        content: std::mem::take(&mut content),
+        model: msg.model.clone(),
+        token_usage: msg.tokens.as_ref().map(token_usage),
+    })
+}
+
+fn raw_role(msg_type: &str) -> Option<Role> {
+    match msg_type {
+        "user" => Some(Role::User),
+        "gemini" => Some(Role::Assistant),
+        _ => None,
+    }
+}
+
+fn message_timestamp(raw: Option<&str>) -> DateTime<Utc> {
+    raw.and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
+        .unwrap_or_else(Utc::now)
+}
+
+fn message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
+    let mut content = Vec::new();
+
+    let text = message_text(msg, role);
+    if !text.is_empty() {
+        content.extend(parse_text_with_code_blocks(&text));
+    }
+
+    append_thoughts(&mut content, msg.thoughts.as_deref());
+    append_tool_calls(&mut content, msg.tool_calls.as_deref());
+
+    content
+}
+
+fn message_text(msg: &RawMessage, role: Role) -> String {
+    match &msg.content {
+        RawContent::Text(s) => s.clone(),
+        RawContent::Parts(parts) if role == Role::User => {
+            let preferred = msg.display_content.as_deref().unwrap_or(parts);
+            text_parts(preferred)
+        }
+        RawContent::Parts(parts) => text_parts(parts),
+    }
+}
+
+fn text_parts(parts: &[TextPart]) -> String {
+    parts
+        .iter()
+        .filter_map(|p| p.text.as_ref())
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn append_thoughts(content: &mut Vec<ContentBlock>, thoughts: Option<&[Thought]>) {
+    let Some(thoughts) = thoughts else {
+        return;
+    };
+
+    for thought in thoughts {
+        let desc = thought.description.as_deref().unwrap_or("");
+        if !desc.is_empty() {
+            content.push(ContentBlock::Thinking(desc.to_string()));
+        }
+    }
+}
+
+fn append_tool_calls(content: &mut Vec<ContentBlock>, tool_calls: Option<&[RawToolCall]>) {
+    let Some(tool_calls) = tool_calls else {
+        return;
+    };
+
+    for tc in tool_calls {
+        let id = tc.id.clone().unwrap_or_default();
+        content.push(ContentBlock::ToolUse(ToolCall {
+            id: id.clone(),
+            name: tc.name.clone().unwrap_or_else(|| "unknown".to_string()),
+            arguments: tc
+                .args
+                .as_ref()
+                .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
+                .unwrap_or_default(),
+        }));
+
+        append_tool_response(content, tc, id);
+    }
+}
+
+fn append_tool_response(content: &mut Vec<ContentBlock>, tc: &RawToolCall, id: String) {
+    let Some(output) = tc.response.as_ref().map(extract_tool_response_text) else {
+        return;
+    };
+
+    if !output.is_empty() {
+        content.push(ContentBlock::ToolResult(crate::model::ToolResult {
+            tool_call_id: id,
+            success: tc.error.is_none(),
+            output,
+        }));
+    }
+}
+
+fn token_usage(tokens: &RawTokens) -> TokenUsage {
+    TokenUsage {
+        input_tokens: tokens.input.unwrap_or(0),
+        output_tokens: tokens.output.unwrap_or(0),
+        cache_read_tokens: tokens.cached,
+        cache_write_tokens: None,
+    }
 }
 
 // -- Raw deserialization types --

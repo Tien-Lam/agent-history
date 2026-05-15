@@ -4,8 +4,8 @@
 //! transcript to two files in each project directory:
 //!
 //! - `.aider.chat.history.md` — markdown-formatted conversation log
-//! - `.aider.input.history`   — raw user input lines (we ignore this; the
-//!                              chat history file is the canonical record)
+//! - `.aider.input.history` — raw user input lines. We ignore this; the chat
+//!   history file is the canonical record.
 //!
 //! Because the files live inside each repo (not in a per-user data dir),
 //! discovery walks one or more configured roots looking for any directory
@@ -18,7 +18,7 @@
 //! 3. `~/projects/` (the convention called out in the spec)
 //!
 //! Walks are bounded to depth 4 — Aider history sits at the project root,
-//! so deeper traversal is wasted work and risks dragging in node_modules /
+//! so deeper traversal is wasted work and risks dragging in `node_modules` /
 //! `.git` blobs from sibling repos.
 //!
 //! ## File format
@@ -118,12 +118,11 @@ impl HistoryProvider for AiderProvider {
     }
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
-        let bytes = std::fs::read_to_string(&session.source_path).map_err(|e| {
-            ProviderError::Parse {
+        let bytes =
+            std::fs::read_to_string(&session.source_path).map_err(|e| ProviderError::Parse {
                 path: session.source_path.clone(),
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
         let blocks = split_sessions(&bytes);
         let target_started_at = session.started_at;
         for block in blocks {
@@ -142,9 +141,8 @@ fn collect_history_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     if depth > MAX_WALK_DEPTH {
         return;
     }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -237,7 +235,10 @@ fn parse_sessions_in_file(path: &Path) -> Result<Vec<Session>, ProviderError> {
 
     let mut sessions = Vec::new();
     for block in split_sessions(&content) {
-        let id = format!("{file_prefix}:{}", block.started_at.format("%Y%m%dT%H%M%SZ"));
+        let id = format!(
+            "{file_prefix}:{}",
+            block.started_at.format("%Y%m%dT%H%M%SZ")
+        );
         let messages = parse_messages(&block, &id);
         if messages.is_empty() {
             // Empty section (no `####` and no body lines) — skip rather
@@ -289,7 +290,7 @@ fn truncate(s: &str, n: usize) -> String {
     }
 }
 
-/// 8-hex-digit FNV1a of a path. Used as a session-ID prefix; not security-
+/// 8-hex-digit `FNV1a` of a path. Used as a session-ID prefix; not security-
 /// sensitive — collisions are tolerated, the timestamp is the real key.
 fn short_hash(path: &Path) -> String {
     let bytes = path.to_string_lossy();
@@ -298,7 +299,7 @@ fn short_hash(path: &Path) -> String {
         h ^= u64::from(b);
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
-    format!("{:08x}", (h ^ (h >> 32)) as u32)
+    format!("{:08x}", (h ^ (h >> 32)) & 0xffff_ffff)
 }
 
 struct Pending {
@@ -308,7 +309,10 @@ struct Pending {
 
 impl Pending {
     fn new() -> Self {
-        Self { role: None, lines: Vec::new() }
+        Self {
+            role: None,
+            lines: Vec::new(),
+        }
     }
 
     fn open(&mut self, role: Role) {
@@ -326,39 +330,6 @@ fn parse_messages(block: &SessionBlock, session_id: &str) -> Vec<Message> {
     let mut pending = Pending::new();
     let mut in_code_fence = false;
     let mut idx: i64 = 0;
-
-    fn flush(
-        pending: &mut Pending,
-        messages: &mut Vec<Message>,
-        idx: &mut i64,
-        started_at: DateTime<Utc>,
-        session_id: &str,
-    ) {
-        let Some(role) = pending.role.take() else {
-            pending.lines.clear();
-            return;
-        };
-        let body = pending.lines.join("\n");
-        pending.lines.clear();
-        let trimmed = body.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-        let content = match role {
-            Role::Tool => vec![ContentBlock::Text(trimmed.to_string())],
-            _ => parse_text_with_code_blocks(trimmed),
-        };
-        let timestamp = started_at + chrono::Duration::milliseconds(*idx);
-        messages.push(Message {
-            id: MessageId(format!("{session_id}#{idx}")),
-            role,
-            timestamp,
-            content,
-            model: None,
-            token_usage: None,
-        });
-        *idx += 1;
-    }
 
     for line in block.body.lines() {
         // Code-fence guard: a `####` or `>` line inside a fenced block is
@@ -383,7 +354,13 @@ fn parse_messages(block: &SessionBlock, session_id: &str) -> Vec<Message> {
         // Role markers
         if let Some(rest) = line.strip_prefix(USER_MARKER) {
             if pending.role != Some(Role::User) {
-                flush(&mut pending, &mut messages, &mut idx, block.started_at, session_id);
+                flush_pending(
+                    &mut pending,
+                    &mut messages,
+                    &mut idx,
+                    block.started_at,
+                    session_id,
+                );
                 pending.open(Role::User);
             }
             let stripped = rest.strip_prefix(' ').unwrap_or(rest);
@@ -392,9 +369,17 @@ fn parse_messages(block: &SessionBlock, session_id: &str) -> Vec<Message> {
         }
         if line.starts_with('>') {
             // Match `> rest` and bare `>`; preserve trailing content if any.
-            let rest = line.strip_prefix("> ").unwrap_or_else(|| line.strip_prefix('>').unwrap_or(""));
+            let rest = line
+                .strip_prefix("> ")
+                .unwrap_or_else(|| line.strip_prefix('>').unwrap_or(""));
             if pending.role != Some(Role::Tool) {
-                flush(&mut pending, &mut messages, &mut idx, block.started_at, session_id);
+                flush_pending(
+                    &mut pending,
+                    &mut messages,
+                    &mut idx,
+                    block.started_at,
+                    session_id,
+                );
                 pending.open(Role::Tool);
             }
             pending.push(rest);
@@ -413,13 +398,58 @@ fn parse_messages(block: &SessionBlock, session_id: &str) -> Vec<Message> {
         // Anything else is assistant prose. If we were mid-tool, the tool
         // block ended at the previous line.
         if pending.role != Some(Role::Assistant) {
-            flush(&mut pending, &mut messages, &mut idx, block.started_at, session_id);
+            flush_pending(
+                &mut pending,
+                &mut messages,
+                &mut idx,
+                block.started_at,
+                session_id,
+            );
             pending.open(Role::Assistant);
         }
         pending.push(line);
     }
-    flush(&mut pending, &mut messages, &mut idx, block.started_at, session_id);
+    flush_pending(
+        &mut pending,
+        &mut messages,
+        &mut idx,
+        block.started_at,
+        session_id,
+    );
     messages
+}
+
+fn flush_pending(
+    pending: &mut Pending,
+    messages: &mut Vec<Message>,
+    idx: &mut i64,
+    started_at: DateTime<Utc>,
+    session_id: &str,
+) {
+    let Some(role) = pending.role.take() else {
+        pending.lines.clear();
+        return;
+    };
+    let body = pending.lines.join("\n");
+    pending.lines.clear();
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let content = match role {
+        Role::Tool => vec![ContentBlock::Text(trimmed.to_string())],
+        _ => parse_text_with_code_blocks(trimmed),
+    };
+    let timestamp = started_at + chrono::Duration::milliseconds(*idx);
+    messages.push(Message {
+        id: MessageId(format!("{session_id}#{idx}")),
+        role,
+        timestamp,
+        content,
+        model: None,
+        token_usage: None,
+    });
+    *idx += 1;
 }
 
 #[cfg(test)]
@@ -483,7 +513,10 @@ That keeps the handler shorter.
         assert_eq!(messages[3].role, Role::Tool);
 
         // Assistant should contain a code block.
-        let has_code = messages[2].content.iter().any(|b| matches!(b, ContentBlock::CodeBlock { .. }));
+        let has_code = messages[2]
+            .content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::CodeBlock { .. }));
         assert!(has_code, "assistant turn should preserve code block");
     }
 
@@ -546,7 +579,12 @@ hello
         // Drop a history file inside a node_modules subtree — it must NOT
         // be discovered, otherwise vendored fixture files would pollute the
         // session list.
-        let buried = tmp.path().join("projects").join("good").join("node_modules").join("pkg");
+        let buried = tmp
+            .path()
+            .join("projects")
+            .join("good")
+            .join("node_modules")
+            .join("pkg");
         fs::create_dir_all(&buried).unwrap();
         fs::write(buried.join(HISTORY_FILE), body).unwrap();
         let provider = AiderProvider::new(vec![tmp.path().to_path_buf()]);
@@ -573,7 +611,11 @@ answer
         write_history(tmp.path(), "repo", body);
         let provider = AiderProvider::new(vec![tmp.path().to_path_buf()]);
         let sessions = provider.discover_sessions().unwrap();
-        assert_eq!(sessions.len(), 1, "only the well-formed session should survive");
+        assert_eq!(
+            sessions.len(),
+            1,
+            "only the well-formed session should survive"
+        );
     }
 
     #[test]
