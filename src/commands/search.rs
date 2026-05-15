@@ -1,3 +1,5 @@
+mod input;
+
 use std::collections::{HashMap, HashSet};
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
@@ -12,6 +14,7 @@ use aghist::{config, federated, provider};
 use super::filtering::{session_metadata_key, strip_turn_suffix};
 use super::metadata::try_index_notes;
 use super::text::truncate;
+use input::{decode_search_cursor, resolve_nonempty_search_query, resolve_search_query};
 
 #[cfg(feature = "embeddings")]
 fn try_hybrid_search(
@@ -64,58 +67,6 @@ fn try_hybrid_search(
         )
         .map_err(|e| ErrorEnvelope::new("index-error", format!("hybrid search failed: {e}")))?;
     Ok(Some(hits))
-}
-
-fn resolve_search_query(
-    query: Option<&str>,
-    query_file: Option<&std::path::Path>,
-    stdin: bool,
-) -> Result<String, ErrorEnvelope> {
-    use std::io::Read;
-
-    let mut sources = 0;
-    if query.is_some() {
-        sources += 1;
-    }
-    if query_file.is_some() {
-        sources += 1;
-    }
-    if stdin {
-        sources += 1;
-    }
-    if sources == 0 {
-        return Err(ErrorEnvelope::new(
-            "usage",
-            "search requires a query (positional, --query-file, or --stdin)",
-        )
-        .with_hint("Run `aghist search --help` for usage."));
-    }
-
-    if let Some(q) = query {
-        return Ok(q.to_string());
-    }
-
-    let mut buf = String::new();
-    if stdin {
-        io::stdin().read_to_string(&mut buf).map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to read query from stdin: {e}"))
-        })?;
-    } else if let Some(path) = query_file {
-        if path == std::path::Path::new("-") {
-            io::stdin().read_to_string(&mut buf).map_err(|e| {
-                ErrorEnvelope::new("io-error", format!("failed to read query from stdin: {e}"))
-            })?;
-        } else {
-            buf = std::fs::read_to_string(path).map_err(|e| {
-                ErrorEnvelope::new(
-                    "io-error",
-                    format!("failed to read query file {}: {e}", path.display()),
-                )
-            })?;
-        }
-    }
-
-    Ok(buf.trim_end().to_string())
 }
 
 #[derive(Clone, Copy)]
@@ -249,41 +200,6 @@ pub(crate) fn search_command(
     }
 
     Ok(EXIT_OK)
-}
-
-fn resolve_nonempty_search_query(
-    query: Option<&str>,
-    query_file: Option<&Path>,
-    stdin: bool,
-) -> Result<String, i32> {
-    let resolved = match resolve_search_query(query, query_file, stdin) {
-        Ok(q) => q,
-        Err(env) => {
-            env.emit();
-            return Err(EXIT_USAGE);
-        }
-    };
-    if resolved.trim().is_empty() {
-        ErrorEnvelope::new("usage", "search query is empty")
-            .with_hint("Run `aghist search --help` for usage.")
-            .emit();
-        return Err(EXIT_USAGE);
-    }
-    Ok(resolved)
-}
-
-fn decode_search_cursor(cursor: Option<&str>) -> Result<Option<aghist::cursor::SearchCursor>, i32> {
-    let Some(token) = cursor else {
-        return Ok(None);
-    };
-    if let Ok(cursor) = aghist::cursor::SearchCursor::decode(token) {
-        Ok(Some(cursor))
-    } else {
-        ErrorEnvelope::new("usage", "invalid --cursor token")
-            .with_hint("Cursors are opaque; pass back the `meta.next_cursor` value verbatim.")
-            .emit();
-        Err(EXIT_USAGE)
-    }
 }
 
 fn raw_search_hits(
