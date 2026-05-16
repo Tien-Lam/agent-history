@@ -16,16 +16,15 @@ pub(crate) fn dispatch_lookup_command(
     filters: &FilterArgs,
 ) -> Result<i32, ErrorEnvelope> {
     match command {
-        Command::Export {
-            format,
-            session,
-            output,
-            turn_range,
-            include_notes,
-            params,
-        } => {
-            let resolved =
-                resolve_export_args(format, session, output, turn_range, include_notes, params)?;
+        Command::Export(args) => {
+            let resolved = resolve_export_args(
+                args.format,
+                args.session,
+                args.output,
+                args.turn_range,
+                args.include_notes,
+                args.params,
+            )?;
             export_session(
                 providers,
                 resolved.format,
@@ -35,67 +34,51 @@ pub(crate) fn dispatch_lookup_command(
                 resolved.include_notes,
             )
         }
-        Command::Index {
-            provider,
-            force,
-            accept_download,
-            params,
-        } => {
+        Command::Index(args) => {
             let (provider, force, accept_download) =
-                resolve_index_args(provider, force, accept_download, params)?;
+                resolve_index_args(args.provider, args.force, args.accept_download, args.params)?;
             run_index(providers, provider, force, accept_download)
         }
-        Command::Search {
-            query,
-            query_file,
-            stdin,
-            limit,
-            cursor,
-            json,
-            watch,
-            watch_interval_ms,
-            watch_iterations,
-            debug_search,
-            hybrid_weight,
-            params,
-        } => dispatch_search_command(
+        Command::Search(args) => dispatch_search_command(
             providers,
             filters,
             SearchDispatchArgs {
-                query,
-                query_file,
-                stdin,
-                limit,
-                cursor,
-                json,
-                hybrid_weight,
-                params,
-                mode: if watch {
+                query: args.query,
+                query_file: args.query_file,
+                stdin: args.stdin,
+                limit: args.limit,
+                cursor: args.cursor,
+                json: args.json,
+                hybrid_weight: args.hybrid_weight,
+                params: args.params,
+                mode: if args.watch {
                     SearchDispatchMode::Watch {
-                        interval_ms: watch_interval_ms,
-                        iterations: watch_iterations,
+                        interval_ms: args.watch_interval_ms,
+                        iterations: args.watch_iterations,
                     }
                 } else {
-                    SearchDispatchMode::Once { debug_search }
+                    SearchDispatchMode::Once {
+                        debug_search: args.debug_search,
+                    }
                 },
             },
         ),
-        Command::Show {
-            reference,
-            format,
-            include_context,
-            params,
-        } => {
-            let (reference, format, include_context) =
-                resolve_show_args(reference, format, include_context, params)?;
+        Command::Show(args) => {
+            let (reference, format, include_context) = resolve_show_args(
+                args.reference,
+                args.format,
+                args.include_context,
+                args.params,
+            )?;
             show_command(providers, &reference, format, include_context)
         }
-        Command::Diff {
-            session1,
-            session2,
-            context,
-            json,
-        } => diff_command(providers, &session1, &session2, context, json),
+        Command::Diff(args) => diff_command(
+            providers,
+            &args.session1,
+            &args.session2,
+            args.context,
+            args.json,
+        ),
         _ => unreachable!("lookup dispatch received unrelated command"),
     }
 }

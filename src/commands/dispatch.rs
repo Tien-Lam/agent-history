@@ -137,11 +137,11 @@ fn dispatch_command(
         } => schema_command(subcommand.as_deref(), list, all)?,
         Command::Update => self_update()?,
         Command::Uninstall => uninstall()?,
-        cmd @ (Command::Export { .. }
-        | Command::Index { .. }
-        | Command::Search { .. }
-        | Command::Show { .. }
-        | Command::Diff { .. }) => dispatch_lookup_command(cmd, ctx.providers, ctx.filters)?,
+        cmd @ (Command::Export(_)
+        | Command::Index(_)
+        | Command::Search(_)
+        | Command::Show(_)
+        | Command::Diff(_)) => dispatch_lookup_command(cmd, ctx.providers, ctx.filters)?,
         cmd @ (Command::Track { .. }
         | Command::Decisions { .. }
         | Command::Todos { .. }
