@@ -1,4 +1,4 @@
-use std::io::{self, Write as _};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
@@ -32,16 +32,69 @@ fn write_sources_payload<W: io::Write>(
                 "sources": sources,
                 "config_path": config_path.display().to_string(),
             });
-            serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
+            serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
             writeln!(out)
         }
         OutputMode::Ndjson => {
             for s in sources {
-                serde_json::to_writer(&mut *out, s).map_err(std::io::Error::other)?;
+                serde_json::to_writer(&mut *out, s).map_err(json_to_io_error)?;
                 writeln!(out)?;
             }
             Ok(())
         }
+    }
+}
+
+fn json_to_io_error(error: serde_json::Error) -> io::Error {
+    if let Some(kind) = error.io_error_kind() {
+        io::Error::new(kind, error)
+    } else {
+        io::Error::other(error)
+    }
+}
+
+fn write_added_source<W: io::Write>(
+    out: &mut W,
+    source: &config::RemoteSource,
+    config_path: &Path,
+    mode: OutputMode,
+) -> io::Result<()> {
+    if mode.is_machine() {
+        let payload = serde_json::json!({
+            "added": source,
+            "config_path": config_path.display().to_string(),
+        });
+        serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
+        writeln!(out)
+    } else {
+        writeln!(
+            out,
+            "Added source '{}' ({} {}:{})",
+            source.name,
+            source.transport.slug(),
+            source.host,
+            source.path
+        )?;
+        writeln!(out, "Config: {}", config_path.display())
+    }
+}
+
+fn write_removed_source<W: io::Write>(
+    out: &mut W,
+    source: &config::RemoteSource,
+    config_path: &Path,
+    mode: OutputMode,
+) -> io::Result<()> {
+    if mode.is_machine() {
+        let payload = serde_json::json!({
+            "removed": source,
+            "config_path": config_path.display().to_string(),
+        });
+        serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
+        writeln!(out)
+    } else {
+        writeln!(out, "Removed source '{}'", source.name)?;
+        writeln!(out, "Config: {}", config_path.display())
     }
 }
 
@@ -138,26 +191,9 @@ pub(crate) fn sources_add_remote(
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    if mode.is_machine() {
-        let payload = serde_json::json!({
-            "added": new_source,
-            "config_path": config_path.display().to_string(),
-        });
-        serde_json::to_writer(&mut out, &payload)
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
-        writeln!(out).ok();
-    } else {
-        writeln!(
-            out,
-            "Added source '{}' ({} {}:{})",
-            new_source.name,
-            new_source.transport.slug(),
-            new_source.host,
-            new_source.path
-        )
-        .ok();
-        writeln!(out, "Config: {}", config_path.display()).ok();
-    }
+    write_added_source(&mut out, &new_source, &config_path, mode).map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write sources output: {e}"))
+    })?;
     Ok(EXIT_OK)
 }
 
@@ -191,17 +227,60 @@ pub(crate) fn sources_remove_remote(name: &str, mode: OutputMode) -> Result<i32,
     let stdout = io::stdout();
     let mut out = stdout.lock();
     let removed = removed.expect("retain reported a removal");
-    if mode.is_machine() {
-        let payload = serde_json::json!({
-            "removed": removed,
-            "config_path": config_path.display().to_string(),
-        });
-        serde_json::to_writer(&mut out, &payload)
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
-        writeln!(out).ok();
-    } else {
-        writeln!(out, "Removed source '{}'", removed.name).ok();
-        writeln!(out, "Config: {}", config_path.display()).ok();
-    }
+    write_removed_source(&mut out, &removed, &config_path, mode).map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write sources output: {e}"))
+    })?;
     Ok(EXIT_OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FailingWriter;
+
+    impl io::Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn source() -> config::RemoteSource {
+        config::RemoteSource {
+            name: "workstation".to_string(),
+            host: "example.test".to_string(),
+            path: "/home/me/.aghist".to_string(),
+            transport: config::Transport::Ssh,
+        }
+    }
+
+    #[test]
+    fn added_source_surfaces_writer_errors() {
+        let mut out = FailingWriter;
+        let err = write_added_source(
+            &mut out,
+            &source(),
+            Path::new("/tmp/config.toml"),
+            OutputMode::Human,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn removed_source_surfaces_writer_errors() {
+        let mut out = FailingWriter;
+        let err = write_removed_source(
+            &mut out,
+            &source(),
+            Path::new("/tmp/config.toml"),
+            OutputMode::Json,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
 }

@@ -4,7 +4,7 @@ use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::metadata::{self, Star};
 use aghist::output::OutputMode;
 
-use super::{metadata_error, open_metadata_db};
+use super::{json_to_io_error, metadata_error, open_metadata_db};
 
 pub(crate) fn star_command(reference: &str, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let conn = open_metadata_db()?;
@@ -32,48 +32,95 @@ pub(crate) fn stars_list(reference: Option<&str>, mode: OutputMode) -> Result<i3
 }
 
 fn emit_star_payload(star: &Star, action: &str, mode: OutputMode) -> Result<(), ErrorEnvelope> {
-    use std::io::Write as _;
     let stdout = io::stdout();
     let mut out = stdout.lock();
+    write_star_payload(&mut out, star, action, mode)
+        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write star output: {e}")))
+}
+
+fn write_star_payload<W: io::Write>(
+    out: &mut W,
+    star: &Star,
+    action: &str,
+    mode: OutputMode,
+) -> io::Result<()> {
     if mode.is_machine() {
         let payload = serde_json::json!({ action: star });
-        serde_json::to_writer(&mut out, &payload)
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
-        writeln!(out).ok();
+        serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
+        writeln!(out)?;
     } else {
-        writeln!(out, "{action} {}", star.session_ref).ok();
+        writeln!(out, "{action} {}", star.session_ref)?;
     }
     Ok(())
 }
 
 fn emit_star_list(stars: &[Star], mode: OutputMode) -> Result<(), ErrorEnvelope> {
-    use std::io::Write as _;
     let stdout = io::stdout();
     let mut out = stdout.lock();
+    write_star_list(&mut out, stars, mode)
+        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write star output: {e}")))
+}
+
+fn write_star_list<W: io::Write>(out: &mut W, stars: &[Star], mode: OutputMode) -> io::Result<()> {
     match mode {
         OutputMode::Json => {
             let payload = serde_json::json!({ "stars": stars, "count": stars.len() });
-            serde_json::to_writer(&mut out, &payload)
-                .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to emit JSON: {e}")))?;
-            writeln!(out).ok();
+            serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
+            writeln!(out)?;
         }
         OutputMode::Ndjson => {
             for star in stars {
-                serde_json::to_writer(&mut out, star).map_err(|e| {
-                    ErrorEnvelope::new("io-error", format!("failed to emit NDJSON row: {e}"))
-                })?;
-                writeln!(out).ok();
+                serde_json::to_writer(&mut *out, star).map_err(json_to_io_error)?;
+                writeln!(out)?;
             }
         }
         OutputMode::Human => {
             if stars.is_empty() {
-                writeln!(out, "(no stars)").ok();
+                writeln!(out, "(no stars)")?;
             } else {
                 for star in stars {
-                    writeln!(out, "* {} (starred {})", star.session_ref, star.starred_at).ok();
+                    writeln!(out, "* {} (starred {})", star.session_ref, star.starred_at)?;
                 }
             }
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FailingWriter;
+
+    impl io::Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn star() -> Star {
+        Star {
+            session_ref: "claude-code/session".to_string(),
+            starred_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn star_payload_surfaces_writer_errors() {
+        let mut out = FailingWriter;
+        let err = write_star_payload(&mut out, &star(), "starred", OutputMode::Human).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn star_list_surfaces_writer_errors() {
+        let mut out = FailingWriter;
+        let err = write_star_list(&mut out, &[star()], OutputMode::Json).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
 }

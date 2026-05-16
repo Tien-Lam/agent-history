@@ -63,7 +63,8 @@ pub(super) fn render_diff_text(
         .collect();
 
     if changed.is_empty() {
-        writeln!(out, "(sessions are identical)").ok();
+        writeln!(out, "(sessions are identical)")
+            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
         return Ok(());
     }
 
