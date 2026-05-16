@@ -1,72 +1,10 @@
-use std::io::{self, IsTerminal};
+use std::io;
 
-use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
-use aghist::model::{Message, Session};
-use aghist::provider;
-use chrono::Utc;
+use aghist::cli_error::ErrorEnvelope;
 
-use super::super::cli::FilterArgs;
-use super::filtering::session_matches;
-use super::text::truncate;
+use super::super::text::truncate;
 
-pub(crate) fn usage_command(
-    providers: &[Box<dyn provider::HistoryProvider>],
-    filters: &FilterArgs,
-    group_by: aghist::usage::GroupBy,
-    limit: usize,
-    force_json: bool,
-) -> Result<i32, ErrorEnvelope> {
-    let project_needle = filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
-
-    let mut sessions: Vec<Session> = Vec::new();
-    for p in providers {
-        if let Some(want) = filters.provider {
-            if p.provider() != want {
-                continue;
-            }
-        }
-        match p.discover_sessions() {
-            Ok(found) => sessions.extend(
-                found
-                    .into_iter()
-                    .filter(|s| session_matches(s, filters, project_needle.as_deref())),
-            ),
-            Err(e) => eprintln!("{}: error: {e}", p.provider()),
-        }
-    }
-
-    let report = aghist::usage::aggregate(&sessions, group_by);
-    if report.rows.is_empty() {
-        return Ok(EXIT_EMPTY);
-    }
-
-    let total_rows = report.rows.len();
-    let trimmed = if limit > 0 && total_rows > limit {
-        let mut r = report;
-        r.rows.truncate(limit);
-        r
-    } else {
-        report
-    };
-
-    let want_json = force_json || !io::stdout().is_terminal();
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    if want_json {
-        render_usage_json(&mut out, &trimmed, group_by, total_rows)
-    } else {
-        render_usage_human(&mut out, &trimmed, group_by, total_rows)
-    }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write usage output: {e}")))?;
-
-    Ok(EXIT_OK)
-}
-
-fn render_usage_json<W: io::Write>(
+pub(super) fn render_usage_json<W: io::Write>(
     out: &mut W,
     report: &aghist::usage::UsageReport,
     group_by: aghist::usage::GroupBy,
@@ -86,7 +24,7 @@ fn render_usage_json<W: io::Write>(
     Ok(())
 }
 
-fn render_usage_human<W: io::Write>(
+pub(super) fn render_usage_human<W: io::Write>(
     out: &mut W,
     report: &aghist::usage::UsageReport,
     group_by: aghist::usage::GroupBy,
@@ -140,73 +78,7 @@ fn render_usage_human<W: io::Write>(
     Ok(())
 }
 
-pub(crate) fn project_command(
-    providers: &[Box<dyn provider::HistoryProvider>],
-    filters: &FilterArgs,
-    name: &str,
-    limits: aghist::project::ProjectLimits,
-    force_json: bool,
-) -> Result<i32, ErrorEnvelope> {
-    let needle = name.trim();
-    if needle.is_empty() {
-        ErrorEnvelope::new("usage", "project <name> must not be empty").emit();
-        return Ok(EXIT_USAGE);
-    }
-    let needle_lower = needle.to_lowercase();
-    let extra_project = filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
-
-    let mut bundles: Vec<(Session, Vec<Message>)> = Vec::new();
-    for p in providers {
-        if let Some(want) = filters.provider {
-            if p.provider() != want {
-                continue;
-            }
-        }
-        let sessions = match p.discover_sessions() {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("{}: error: {e}", p.provider());
-                continue;
-            }
-        };
-        for session in sessions {
-            if !session_matches(&session, filters, extra_project.as_deref()) {
-                continue;
-            }
-            let project_name = session.project_name.as_deref().unwrap_or("");
-            if !project_name.to_lowercase().contains(&needle_lower) {
-                continue;
-            }
-            let Ok(messages) = p.load_messages(&session) else {
-                continue;
-            };
-            bundles.push((session, messages));
-        }
-    }
-
-    if bundles.is_empty() {
-        return Ok(EXIT_EMPTY);
-    }
-
-    let report = aghist::project::aggregate(needle, &bundles, limits);
-    let want_json = force_json || !io::stdout().is_terminal();
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    if want_json {
-        render_project_json(&mut out, &report)
-    } else {
-        render_project_human(&mut out, &report)
-    }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write project output: {e}")))?;
-
-    Ok(EXIT_OK)
-}
-
-fn render_project_json<W: io::Write>(
+pub(super) fn render_project_json<W: io::Write>(
     out: &mut W,
     report: &aghist::project::ProjectReport,
 ) -> io::Result<()> {
@@ -215,7 +87,7 @@ fn render_project_json<W: io::Write>(
     Ok(())
 }
 
-fn render_project_human<W: io::Write>(
+pub(super) fn render_project_human<W: io::Write>(
     out: &mut W,
     report: &aghist::project::ProjectReport,
 ) -> io::Result<()> {
@@ -225,6 +97,24 @@ fn render_project_human<W: io::Write>(
     render_project_threads(out, report)?;
     render_project_files(out, report)?;
     render_project_time_of_day(out, report)
+}
+
+pub(super) fn render_report<W: io::Write>(
+    out: &mut W,
+    envelope: &aghist::report::ReportEnvelope,
+    force_json: bool,
+) -> Result<(), ErrorEnvelope> {
+    if force_json {
+        serde_json::to_writer(&mut *out, envelope)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to encode report: {e}")))?;
+        writeln!(out)
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write report: {e}")))?;
+    } else {
+        let md = aghist::report::render_markdown(envelope);
+        write!(out, "{md}")
+            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write report: {e}")))?;
+    }
+    Ok(())
 }
 
 fn render_project_header<W: io::Write>(
@@ -378,82 +268,6 @@ fn render_project_time_of_day<W: io::Write>(
         writeln!(out, "  {h:02}:00  {count:>6}  {bar}")?;
     }
     Ok(())
-}
-
-pub(crate) fn report_command(
-    providers: &[Box<dyn provider::HistoryProvider>],
-    filters: &FilterArgs,
-    window_days: i64,
-    limits: aghist::report::ReportLimits,
-    force_json: bool,
-) -> Result<i32, ErrorEnvelope> {
-    use std::io::Write as _;
-    let now = Utc::now();
-    let end = filters.until.unwrap_or(now);
-    let start = filters
-        .since
-        .unwrap_or_else(|| end - chrono::Duration::days(window_days.max(1)));
-    if end < start {
-        return Err(ErrorEnvelope::new(
-            "usage",
-            "--until must be greater than or equal to --since",
-        )
-        .with_hint("Pass timestamps in chronological order, or rely on --days."));
-    }
-    let window = aghist::report::ReportWindow::between(start, end);
-
-    let project_needle = filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
-
-    let mut bundles: Vec<(Session, Vec<Message>)> = Vec::new();
-    for p in providers {
-        if let Some(want) = filters.provider {
-            if p.provider() != want {
-                continue;
-            }
-        }
-        let sessions = match p.discover_sessions() {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("{}: error: {e}", p.provider());
-                continue;
-            }
-        };
-        for session in sessions {
-            if !session_matches(&session, filters, project_needle.as_deref()) {
-                continue;
-            }
-            if session.started_at < start || session.started_at > end {
-                continue;
-            }
-            let Ok(messages) = p.load_messages(&session) else {
-                continue;
-            };
-            bundles.push((session, messages));
-        }
-    }
-
-    if bundles.is_empty() {
-        return Ok(EXIT_EMPTY);
-    }
-
-    let envelope = aghist::report::aggregate(window, &bundles, limits);
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    if force_json {
-        serde_json::to_writer(&mut out, &envelope)
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to encode report: {e}")))?;
-        writeln!(out)
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write report: {e}")))?;
-    } else {
-        let md = aghist::report::render_markdown(&envelope);
-        write!(out, "{md}")
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write report: {e}")))?;
-    }
-    Ok(EXIT_OK)
 }
 
 #[allow(clippy::cast_precision_loss)]
