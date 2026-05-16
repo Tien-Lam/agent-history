@@ -1,6 +1,7 @@
 use super::aghist;
 use super::common;
 use predicates::prelude::*;
+use std::collections::BTreeSet;
 
 #[test]
 fn schema_list_emits_subcommand_index() {
@@ -74,13 +75,24 @@ fn schema_for_list_documents_filter_flags() {
 }
 #[test]
 fn schema_all_dumps_every_subcommand() {
-    let assert = aghist().args(["schema", "--all"]).assert().success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-    let map = parsed.as_object().expect("top-level object");
-    for name in [
-        "list", "search", "show", "export", "index", "sources", "health", "mcp", "schema",
-    ] {
+    let index = aghist().args(["schema", "--list"]).assert().success();
+    let index_stdout = String::from_utf8(index.get_output().stdout.clone()).unwrap();
+    let index: serde_json::Value = serde_json::from_str(index_stdout.trim()).unwrap();
+    let listed: BTreeSet<&str> = index["subcommands"]
+        .as_array()
+        .expect("subcommands array")
+        .iter()
+        .map(|name| name.as_str().unwrap())
+        .collect();
+
+    let all = aghist().args(["schema", "--all"]).assert().success();
+    let all_stdout = String::from_utf8(all.get_output().stdout.clone()).unwrap();
+    let all: serde_json::Value = serde_json::from_str(all_stdout.trim()).unwrap();
+    let map = all.as_object().expect("top-level object");
+    let dumped: BTreeSet<&str> = map.keys().map(String::as_str).collect();
+    assert_eq!(dumped, listed);
+
+    for name in listed {
         assert!(map.contains_key(name), "missing schema for {name}");
         assert_eq!(map[name]["$id"], format!("aghist:schema/{name}"));
     }

@@ -2,8 +2,8 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     exit_codes, filter_params_fragment, provider_slug_enum, provider_slug_enum_nullable,
-    session_row_schema, SCHEMA_DRAFT, SOURCE_QUALIFIED_CITATION_REF_PATTERN,
-    SOURCE_QUALIFIED_SESSION_ONLY_REF_PATTERN,
+    session_row_schema, source_qualified_citation_ref_pattern,
+    source_qualified_session_only_ref_pattern, SCHEMA_DRAFT,
 };
 
 fn list_params_properties() -> Value {
@@ -151,7 +151,7 @@ pub(in crate::schema) fn show_schema() -> Value {
             "properties": {
                 "reference": {
                     "type": "string",
-                    "pattern": SOURCE_QUALIFIED_CITATION_REF_PATTERN,
+                    "pattern": source_qualified_citation_ref_pattern(),
                     "description": "Citation ref. Examples: claude-code/abc-123#7, laptop:claude-code/abc-123#7"
                 },
                 "format": {
@@ -244,12 +244,12 @@ pub(in crate::schema) fn diff_schema() -> Value {
             "properties": {
                 "session1": {
                     "type": "string",
-                    "pattern": SOURCE_QUALIFIED_SESSION_ONLY_REF_PATTERN,
+                    "pattern": source_qualified_session_only_ref_pattern(),
                     "description": "First session ref. Examples: claude-code/abc-123, laptop:claude-code/abc-123"
                 },
                 "session2": {
                     "type": "string",
-                    "pattern": SOURCE_QUALIFIED_SESSION_ONLY_REF_PATTERN,
+                    "pattern": source_qualified_session_only_ref_pattern(),
                     "description": "Second session ref. Examples: claude-code/def-456, laptop:claude-code/def-456"
                 },
                 "context": {
@@ -285,7 +285,7 @@ pub(in crate::schema) fn diff_schema() -> Value {
             "DiffSession": {
                 "type": "object",
                 "properties": {
-                    "ref": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_ONLY_REF_PATTERN },
+                    "ref": { "type": "string", "pattern": source_qualified_session_only_ref_pattern() },
                     "started_at": { "type": "string", "format": "date-time" },
                     "turns": { "type": "integer", "minimum": 0 }
                 },

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::common::{provider_slug_enum, SOURCE_QUALIFIED_SESSION_REF_PATTERN};
+use super::common::{provider_slug_enum, source_qualified_session_ref_pattern};
 
 mod project;
 mod report;
@@ -34,7 +34,7 @@ fn decision_candidate_item_schema() -> Value {
         "properties": {
             "ref": {
                 "type": "string",
-                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                "pattern": source_qualified_session_ref_pattern(),
                 "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
             },
             "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
@@ -56,7 +56,7 @@ fn todo_candidate_item_schema() -> Value {
         "properties": {
             "ref": {
                 "type": "string",
-                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                "pattern": source_qualified_session_ref_pattern(),
                 "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
             },
             "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::super::common::{exit_codes, SCHEMA_DRAFT, SOURCE_QUALIFIED_SESSION_REF_PATTERN};
+use super::super::common::{exit_codes, source_qualified_session_ref_pattern, SCHEMA_DRAFT};
 
 fn star_row() -> Value {
     json!({
@@ -8,7 +8,7 @@ fn star_row() -> Value {
         "properties": {
             "session_ref": {
                 "type": "string",
-                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                "pattern": source_qualified_session_ref_pattern(),
                 "description": "<provider>/<session-id>[#<turn>] or <source>:<provider>/<session-id>[#<turn>]"
             },
             "starred_at": {
@@ -30,7 +30,7 @@ pub(in crate::schema) fn star_schema() -> Value {
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN }
+                "reference": { "type": "string", "pattern": source_qualified_session_ref_pattern() }
             },
             "required": ["reference"],
             "additionalProperties": false
@@ -55,7 +55,7 @@ pub(in crate::schema) fn unstar_schema() -> Value {
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN }
+                "reference": { "type": "string", "pattern": source_qualified_session_ref_pattern() }
             },
             "required": ["reference"],
             "additionalProperties": false
@@ -80,7 +80,7 @@ pub(in crate::schema) fn stars_schema() -> Value {
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
+                "reference": { "type": "string", "pattern": source_qualified_session_ref_pattern() },
                 "json": { "type": "boolean" }
             },
             "additionalProperties": false

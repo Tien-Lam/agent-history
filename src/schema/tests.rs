@@ -98,21 +98,24 @@ fn diff_schema_includes_source_qualified_session_pattern() {
 
 #[test]
 fn ref_patterns_track_provider_registry() {
-    for provider in Provider::all() {
-        let slug = provider.slug();
-        assert!(
-            common::SOURCE_QUALIFIED_SESSION_REF_PATTERN.contains(slug),
-            "session ref pattern missing provider slug {slug}"
-        );
-        assert!(
-            common::SOURCE_QUALIFIED_SESSION_ONLY_REF_PATTERN.contains(slug),
-            "session-only ref pattern missing provider slug {slug}"
-        );
-        assert!(
-            common::SOURCE_QUALIFIED_CITATION_REF_PATTERN.contains(slug),
-            "citation ref pattern missing provider slug {slug}"
-        );
-    }
+    let providers = Provider::all()
+        .iter()
+        .map(|provider| provider.slug())
+        .collect::<Vec<_>>()
+        .join("|");
+
+    assert_eq!(
+        common::source_qualified_session_ref_pattern(),
+        format!("^([A-Za-z0-9][A-Za-z0-9_-]*:)?({providers})/[^#]+(#[1-9][0-9]*)?$")
+    );
+    assert_eq!(
+        common::source_qualified_session_only_ref_pattern(),
+        format!("^([A-Za-z0-9][A-Za-z0-9_-]*:)?({providers})/[^#]+$")
+    );
+    assert_eq!(
+        common::source_qualified_citation_ref_pattern(),
+        format!("^([A-Za-z0-9][A-Za-z0-9_-]*:)?({providers})/[^#]+#[1-9][0-9]*$")
+    );
 }
 
 #[test]

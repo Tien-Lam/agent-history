@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 
 use crate::command_spec::{command_names, command_spec};
 
-/// Subcommands that expose a schema. Order matches the help output.
+/// Command targets that expose a schema, in stable discovery order.
 pub fn subcommands() -> Vec<&'static str> {
     command_names().collect()
 }

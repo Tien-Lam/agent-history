@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
 use super::super::common::{
-    exit_codes, filter_params_fragment, SCHEMA_DRAFT, SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+    exit_codes, filter_params_fragment, source_qualified_session_ref_pattern, SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn track_schema() -> Value {
@@ -63,7 +63,7 @@ pub(in crate::schema) fn track_schema() -> Value {
                         "properties": {
                             "session_ref": {
                                 "type": "string",
-                                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                                "pattern": source_qualified_session_ref_pattern(),
                                 "description": "`<provider-slug>/<session-id>` for local sessions, or `<source>:<provider-slug>/<session-id>` for remote source sessions."
                             },
                             "date": {

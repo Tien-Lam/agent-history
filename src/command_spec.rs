@@ -1,14 +1,16 @@
-/// Stable, machine-readable command registry shared by schema generation and
-/// CLI-facing documentation. Command execution still lives in the binary, but
-/// discoverable command names now come from one table instead of hand-written
-/// arrays in each surface.
+/// Stable, machine-readable registry for commands that expose JSON schemas.
+///
+/// Command execution still lives in the binary. This table is the schema
+/// discovery contract, not a complete mirror of clap's top-level help:
+/// `list` is exposed as the legacy `--list` flag, while lifecycle commands
+/// such as `update` and `uninstall` deliberately have no schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommandSpec {
     pub name: &'static str,
     pub summary: &'static str,
 }
 
-/// Order matches the public help output and `aghist schema --list`.
+/// Order is the stable `aghist schema --list` discovery order.
 pub const COMMAND_SPECS: &[CommandSpec] = &[
     CommandSpec {
         name: "list",

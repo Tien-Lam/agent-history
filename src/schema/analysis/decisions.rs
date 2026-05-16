@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 
 use super::super::common::{
-    exit_codes, filter_params_fragment, provider_slug_enum, SCHEMA_DRAFT,
-    SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+    exit_codes, filter_params_fragment, provider_slug_enum, source_qualified_session_ref_pattern,
+    SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn decisions_schema() -> Value {
@@ -87,7 +87,7 @@ fn decisions_response_heuristic() -> Value {
                     "properties": {
                         "ref": {
                             "type": "string",
-                            "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                            "pattern": source_qualified_session_ref_pattern(),
                             "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
                         },
                         "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
@@ -124,7 +124,7 @@ fn decisions_response_llm() -> Value {
                     "properties": {
                         "ref": {
                             "type": "string",
-                            "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                            "pattern": source_qualified_session_ref_pattern(),
                             "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
                         },
                         "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
