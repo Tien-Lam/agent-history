@@ -9,7 +9,9 @@ use super::super::cli::FilterArgs;
 mod collect;
 mod output;
 
-use collect::{collect_filtered_sessions, collect_message_bundles, normalized_project_filter};
+use collect::{
+    collect_federated_filtered_sessions, collect_message_bundles, normalized_project_filter,
+};
 use output::{
     render_project_human, render_project_json, render_report, render_usage_human, render_usage_json,
 };
@@ -22,7 +24,8 @@ pub(crate) fn usage_command(
     force_json: bool,
 ) -> Result<i32, ErrorEnvelope> {
     let project_needle = normalized_project_filter(filters);
-    let sessions = collect_filtered_sessions(providers, filters, project_needle.as_deref());
+    let sessions =
+        collect_federated_filtered_sessions(providers, filters, project_needle.as_deref());
 
     let report = aghist::usage::aggregate(&sessions, group_by);
     if report.rows.is_empty() {

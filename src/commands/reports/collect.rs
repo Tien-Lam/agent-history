@@ -1,6 +1,7 @@
 use aghist::model::{Message, Session};
 use aghist::provider;
 
+use super::super::discovery::federated_discovery_for_commands;
 use super::super::filtering::session_matches;
 use crate::cli::FilterArgs;
 
@@ -14,16 +15,16 @@ pub(super) fn normalized_project_filter(filters: &FilterArgs) -> Option<String> 
         .filter(|s| !s.is_empty())
 }
 
-pub(super) fn collect_filtered_sessions(
+pub(super) fn collect_federated_filtered_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
     project_needle: Option<&str>,
 ) -> Vec<Session> {
-    let mut sessions = Vec::new();
-    visit_matching_sessions(providers, filters, project_needle, |_, session| {
-        sessions.push(session);
-    });
-    sessions
+    federated_discovery_for_commands(providers)
+        .sessions
+        .into_iter()
+        .filter(|session| session_matches(session, filters, project_needle))
+        .collect()
 }
 
 pub(super) fn collect_message_bundles(

@@ -79,6 +79,64 @@ fn usage_by_provider_groups_across_models() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["key"], "claude-code");
 }
+
+#[test]
+fn usage_includes_remote_source_cache_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-usage")
+        .project("remote-proj")
+        .user("hi")
+        .assistant("remote answer")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["usage", "--by", "provider", "--json"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap();
+    let rows = parsed["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["key"], "claude-code");
+    assert_eq!(rows[0]["session_count"], 1);
+    assert_eq!(rows[0]["input_tokens"], 100);
+    assert_eq!(rows[0]["output_tokens"], 50);
+    assert_eq!(parsed["totals"]["session_count"], 1);
+}
+
 #[test]
 fn usage_invalid_by_value_emits_usage_envelope() {
     let assert = aghist().args(["usage", "--by", "session"]).assert().code(2);
