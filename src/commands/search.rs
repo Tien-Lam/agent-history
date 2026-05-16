@@ -10,8 +10,9 @@ use std::path::Path;
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::{QualifiedCitationRef, Session};
 use aghist::search::{self, SearchFilters};
-use aghist::{config, federated, provider};
+use aghist::{federated, provider};
 
+use super::discovery::federated_discovery_for_commands;
 use super::metadata::try_index_notes;
 use input::{decode_search_cursor, resolve_nonempty_search_query};
 use output::{print_search_json, print_search_table};
@@ -64,7 +65,7 @@ pub(crate) fn search_command(
         Err(exit) => return Ok(exit),
     };
 
-    let federation = federated_discovery_for_search(providers);
+    let federation = federated_discovery_for_commands(providers);
     let sessions: Vec<Session> = federation.sessions;
 
     let index_dir = search::SearchIndex::default_index_dir();
@@ -203,24 +204,4 @@ fn format_search_ref(source: &str, session: &Session, turn: usize) -> String {
         citation,
     )
     .to_string()
-}
-
-pub(crate) fn federated_discovery_for_search(
-    providers: &[Box<dyn provider::HistoryProvider>],
-) -> federated::FederatedDiscovery {
-    let config = match config::Config::resolved_path() {
-        Some(path) => config::Config::load_from(&path),
-        None => config::Config::default(),
-    };
-    let enabled = config.enabled_providers();
-    let mut result = if let Some(cache_root) = config::sources_cache_root() {
-        federated::discover_federated(providers, &config.sources, &cache_root)
-    } else {
-        federated::discover_federated(providers, &[], std::path::Path::new(""))
-    };
-    result.retain_providers(&enabled);
-    for failure in &result.failures {
-        eprintln!("warning: source '{}': {}", failure.source, failure.message);
-    }
-    result
 }

@@ -8,9 +8,9 @@ use aghist::model::Session;
 use aghist::provider;
 use aghist::search::{self, SearchFilters};
 
+use super::super::discovery::federated_discovery_for_commands;
 use super::super::filtering::session_metadata_key;
 use super::super::metadata::try_index_notes;
-use super::federated_discovery_for_search;
 use super::input::resolve_search_query;
 use super::output::write_watch_hit;
 
@@ -56,7 +56,7 @@ pub(crate) fn search_watch_command(
     loop {
         iteration += 1;
 
-        let federation = federated_discovery_for_search(providers);
+        let federation = federated_discovery_for_commands(providers);
         let sessions: Vec<Session> = federation.sessions;
 
         let (tx, _rx) = crossbeam_channel::unbounded::<aghist::action::Action>();

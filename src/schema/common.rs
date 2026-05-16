@@ -104,6 +104,7 @@ pub(super) fn session_row_schema() -> Value {
         "type": "object",
         "properties": {
             "id": { "type": "string" },
+            "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
             "provider": { "type": "string", "enum": provider_slug_enum() },
             "project": { "type": ["string", "null"] },
             "branch": { "type": ["string", "null"] },
@@ -111,7 +112,7 @@ pub(super) fn session_row_schema() -> Value {
             "started_at": { "type": "string", "format": "date-time" },
             "message_count": { "type": "integer", "minimum": 0 }
         },
-        "required": ["id", "provider", "started_at", "message_count"]
+        "required": ["id", "source", "provider", "started_at", "message_count"]
     })
 }
 

@@ -7,7 +7,8 @@
 //! key in the canonical sort order".
 //!
 //! `SearchCursor` carries the full search sort key. `ListCursor` carries the
-//! session's `started_at` (primary sort, descending) plus the session id.
+//! session's `started_at` (primary sort, descending) plus the session identity
+//! key so local and remote sessions with reused ids paginate cleanly.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -46,6 +47,8 @@ pub struct SearchCursor {
 pub struct ListCursor {
     pub started_at: DateTime<Utc>,
     pub session_id: String,
+    #[serde(default)]
+    pub session_key: String,
 }
 
 impl SearchCursor {
@@ -109,6 +112,7 @@ mod tests {
         let c = ListCursor {
             started_at: Utc.with_ymd_and_hms(2026, 5, 7, 1, 14, 0).unwrap(),
             session_id: "xyz".to_string(),
+            session_key: "claude-code\x1fxyz\x1f/tmp/session.jsonl".to_string(),
         };
         let token = c.encode();
         let back = ListCursor::decode(&token).unwrap();

@@ -94,6 +94,113 @@ fn list_with_multiple_providers() {
     assert!(providers.contains("claude-code"));
     assert!(providers.contains("codex-cli"));
 }
+
+#[test]
+fn list_federates_remote_sources_and_paginates_reused_session_ids() {
+    let local = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("shared-list-id")
+        .project("local-proj")
+        .user("local session without tool call")
+        .done()
+        .build();
+    let home = local.base_path.parent().unwrap();
+
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("shared-list-id")
+        .project("remote-proj")
+        .user("remote session")
+        .assistant_with_tool("using a tool", "Read", r#"{"file_path":"/tmp/remote.txt"}"#)
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let page1 = aghist()
+        .args(["--list", "--json", "--limit", "1"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        page1.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&page1.stderr)
+    );
+    let doc1: serde_json::Value = serde_json::from_slice(&page1.stdout).unwrap();
+    assert_eq!(doc1["meta"]["total"], 2);
+    assert_eq!(doc1["sessions"].as_array().unwrap().len(), 1);
+    let cursor = doc1["meta"]["next_cursor"].as_str().unwrap();
+
+    let page2 = aghist()
+        .args(["--list", "--json", "--limit", "1", "--cursor", cursor])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        page2.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&page2.stderr)
+    );
+    let doc2: serde_json::Value = serde_json::from_slice(&page2.stdout).unwrap();
+    assert_eq!(doc2["sessions"].as_array().unwrap().len(), 1);
+    assert!(doc2["meta"]["next_cursor"].is_null());
+
+    let sources: std::collections::HashSet<String> = doc1["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(doc2["sessions"].as_array().unwrap().iter())
+        .map(|row| row["source"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        sources,
+        std::collections::HashSet::from(["local".to_string(), "laptop".to_string()])
+    );
+
+    let tool_filtered = aghist()
+        .args(["--list", "--json", "--has-tool-call"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        tool_filtered.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&tool_filtered.stderr)
+    );
+    let filtered: serde_json::Value = serde_json::from_slice(&tool_filtered.stdout).unwrap();
+    let rows = filtered["sessions"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["source"], "laptop");
+    assert_eq!(rows[0]["id"], "shared-list-id");
+}
+
 #[test]
 fn reindex_flag_clears_index() {
     // --reindex paired with --list against an empty home: the reindex side

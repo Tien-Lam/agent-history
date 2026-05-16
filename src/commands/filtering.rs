@@ -96,11 +96,11 @@ pub(crate) fn metadata_filter_matches(
 /// demand; corrupt/unreadable sessions are silently dropped (consistent with
 /// the rest of the pipeline).
 pub(crate) fn session_has_matching_message(
-    provider: &dyn provider::HistoryProvider,
+    providers: &[Box<dyn provider::HistoryProvider>],
     session: &Session,
     filters: &FilterArgs,
 ) -> bool {
-    let Ok(messages) = provider.load_messages(session) else {
+    let Ok(messages) = provider::load_messages_for_session(session, providers) else {
         return false;
     };
     messages.iter().any(|m| message_matches(m, filters))

@@ -5,7 +5,7 @@ use aghist::model::{CitationRef, Message, Provider, QualifiedCitationRef, Role, 
 use aghist::{config, federated, provider};
 
 use super::super::cli::ShowFormat;
-use super::search::federated_discovery_for_search;
+use super::discovery::federated_discovery_for_commands;
 
 pub(crate) fn show_command(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -16,7 +16,7 @@ pub(crate) fn show_command(
     let parsed = parse_show_ref(raw_ref)?;
     let citation = parsed.citation;
 
-    let discovery = federated_discovery_for_search(providers);
+    let discovery = federated_discovery_for_commands(providers);
     let wanted_source = parsed.source.as_deref().unwrap_or(federated::LOCAL_SOURCE);
     let session = discovery
         .sessions
