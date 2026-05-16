@@ -1,6 +1,6 @@
 use super::aghist;
 use super::common;
-use super::copy_dir_recursive;
+use super::common::helpers::copy_dir_recursive;
 use predicates::prelude::*;
 
 /// Federated search: a registered remote source whose `data_dir` mirrors a
