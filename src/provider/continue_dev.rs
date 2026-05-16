@@ -230,6 +230,27 @@ mod tests {
     }
 
     #[test]
+    fn parses_tool_use_and_tool_result_blocks() {
+        let tmp = TempDir::new().unwrap();
+        write_session(
+            tmp.path(),
+            "uuid1",
+            r#"{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"read_file","input":{"path":"x.rs"}}]}
+{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":[{"type":"text","text":"ok"},{"type":"image","text":"ignored"}]}]}"#,
+        );
+        let p = provider_for(&tmp);
+        let sessions = p.discover_sessions().unwrap();
+        let msgs = p.load_messages(&sessions[0]).unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert!(
+            matches!(&msgs[0].content[0], ContentBlock::ToolUse(tc) if tc.name == "read_file" && tc.arguments.contains("\"path\""))
+        );
+        assert!(
+            matches!(&msgs[1].content[0], ContentBlock::ToolResult(tr) if tr.tool_call_id == "tu1" && tr.output == "ok")
+        );
+    }
+
+    #[test]
     fn skips_unknown_roles() {
         let tmp = TempDir::new().unwrap();
         write_session(

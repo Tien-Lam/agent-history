@@ -1,5 +1,6 @@
 pub mod aider;
 mod aider_parse;
+mod anthropic_content;
 pub mod claude_code;
 mod claude_code_parse;
 pub mod cline;

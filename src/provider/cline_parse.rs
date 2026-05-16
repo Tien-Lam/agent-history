@@ -3,10 +3,8 @@ use std::path::Path;
 use chrono::{DateTime, TimeZone, Utc};
 use serde::Deserialize;
 
-use crate::model::{
-    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, ToolCall, ToolResult,
-};
-use crate::provider::text_blocks::parse_text_with_code_blocks;
+use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
+use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
 
 pub(crate) const API_HISTORY_FILE: &str = "api_conversation_history.json";
 pub(crate) const UI_MESSAGES_FILE: &str = "ui_messages.json";
@@ -16,36 +14,7 @@ pub(crate) const METADATA_FILE: &str = "task_metadata.json";
 struct ApiMessage {
     role: String,
     #[serde(default)]
-    content: ApiContent,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(untagged)]
-enum ApiContent {
-    Blocks(Vec<ApiBlock>),
-    Text(String),
-    #[default]
-    Empty,
-}
-
-#[derive(Deserialize)]
-struct ApiBlock {
-    #[serde(rename = "type")]
-    kind: String,
-    #[serde(default)]
-    text: Option<String>,
-    // tool_use
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    input: Option<serde_json::Value>,
-    // tool_result
-    #[serde(default)]
-    tool_use_id: Option<String>,
-    #[serde(default)]
-    content: Option<serde_json::Value>,
+    content: AnthropicContent,
 }
 
 #[derive(Deserialize)]
@@ -148,7 +117,7 @@ pub(crate) fn parse_api_history(
             _ => continue,
         };
 
-        let blocks = api_content_to_blocks(msg.content);
+        let blocks = content_to_blocks(msg.content);
         if blocks.is_empty() {
             continue;
         }
@@ -167,71 +136,4 @@ pub(crate) fn parse_api_history(
     }
 
     Ok(messages)
-}
-
-fn api_content_to_blocks(content: ApiContent) -> Vec<ContentBlock> {
-    match content {
-        ApiContent::Text(t) if !t.trim().is_empty() => parse_text_with_code_blocks(&t),
-        ApiContent::Blocks(blocks) => blocks.into_iter().flat_map(api_block_to_content).collect(),
-        _ => vec![],
-    }
-}
-
-fn api_block_to_content(block: ApiBlock) -> Vec<ContentBlock> {
-    match block.kind.as_str() {
-        "text" => {
-            let t = block.text.unwrap_or_default();
-            if t.trim().is_empty() {
-                vec![]
-            } else {
-                parse_text_with_code_blocks(&t)
-            }
-        }
-        "tool_use" => {
-            let id = block.id.unwrap_or_default();
-            let name = block.name.unwrap_or_default();
-            let arguments = block
-                .input
-                .map(|v| {
-                    if let serde_json::Value::String(s) = v {
-                        s
-                    } else {
-                        serde_json::to_string_pretty(&v).unwrap_or_default()
-                    }
-                })
-                .unwrap_or_default();
-            vec![ContentBlock::ToolUse(ToolCall {
-                id,
-                name,
-                arguments,
-            })]
-        }
-        "tool_result" => {
-            let tool_call_id = block.tool_use_id.unwrap_or_default();
-            let output = block
-                .content
-                .map(|v| match v {
-                    serde_json::Value::String(s) => s,
-                    serde_json::Value::Array(arr) => arr
-                        .into_iter()
-                        .filter_map(|b| {
-                            if b.get("type")?.as_str()? == "text" {
-                                b.get("text")?.as_str().map(str::to_string)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                    other => serde_json::to_string_pretty(&other).unwrap_or_default(),
-                })
-                .unwrap_or_default();
-            vec![ContentBlock::ToolResult(ToolResult {
-                tool_call_id,
-                success: true,
-                output,
-            })]
-        }
-        _ => vec![],
-    }
 }
