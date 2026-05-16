@@ -3,6 +3,7 @@ mod aider_parse;
 pub mod claude_code;
 mod claude_code_parse;
 pub mod cline;
+mod cline_parse;
 pub mod codex_cli;
 pub mod continue_dev;
 pub mod copilot_cli;
