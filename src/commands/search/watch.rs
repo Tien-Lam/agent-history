@@ -8,8 +8,8 @@ use aghist::model::Session;
 use aghist::provider;
 use aghist::search::{self, SearchFilters};
 
-use super::super::discovery::federated_discovery_for_commands;
-use super::super::filtering::session_metadata_key;
+use super::super::discovery::{federated_discovery_for_commands, source_for_session};
+use super::super::filtering::{qualified_session_metadata_key, strip_turn_suffix};
 use super::super::metadata::try_index_notes;
 use super::input::resolve_search_query;
 use super::output::write_watch_hit;
@@ -76,10 +76,22 @@ pub(crate) fn search_watch_command(
         let mut handle = stdout.lock();
         for h in &hits {
             if let Some(keys) = metadata_keys {
-                let allowed = session_meta
-                    .get(h.session_key.as_str())
-                    .map(|s| session_metadata_key(s))
-                    .is_some_and(|k| keys.contains(&k));
+                let allowed = match h.kind {
+                    search::HitKind::Message => session_meta
+                        .get(h.session_key.as_str())
+                        .map(|session| {
+                            qualified_session_metadata_key(
+                                session,
+                                source_for_session(&federation.source_by_session, session),
+                            )
+                        })
+                        .is_some_and(|k| keys.contains(&k)),
+                    search::HitKind::Note => h
+                        .note_session_ref
+                        .as_deref()
+                        .map(strip_turn_suffix)
+                        .is_some_and(|k| keys.contains(k)),
+                };
                 if !allowed {
                     continue;
                 }

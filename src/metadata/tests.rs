@@ -122,6 +122,8 @@ fn validate_accepts_session_and_turn_refs() {
     validate_session_ref("claude-code/abc-123").unwrap();
     validate_session_ref("claude-code/abc-123#7").unwrap();
     validate_session_ref("opencode/ses_xyz#99").unwrap();
+    validate_session_ref("laptop:claude-code/abc-123").unwrap();
+    validate_session_ref("work_box:opencode/ses_xyz#99").unwrap();
 }
 
 #[test]
@@ -148,6 +150,14 @@ fn validate_rejects_bad_refs() {
     ));
     assert!(matches!(
         validate_session_ref("claude-code/abc#two"),
+        Err(MetadataError::InvalidSessionRef(_, _))
+    ));
+    assert!(matches!(
+        validate_session_ref("-bad:claude-code/abc"),
+        Err(MetadataError::InvalidSessionRef(_, _))
+    ));
+    assert!(matches!(
+        validate_session_ref("local:claude-code/abc"),
         Err(MetadataError::InvalidSessionRef(_, _))
     ));
 }
@@ -457,11 +467,13 @@ fn filter_session_keys_returns_none_when_no_filter_active() {
 fn filter_session_keys_strips_turn_suffix() {
     let (_tmp, conn) = open_fresh();
     star_add(&conn, "claude-code/abc#3").unwrap();
+    star_add(&conn, "laptop:claude-code/abc#4").unwrap();
     let keys = filter_session_keys(&conn, None, None, true)
         .unwrap()
         .unwrap();
-    assert_eq!(keys.len(), 1);
+    assert_eq!(keys.len(), 2);
     assert!(keys.contains("claude-code/abc"));
+    assert!(keys.contains("laptop:claude-code/abc"));
 }
 
 #[test]

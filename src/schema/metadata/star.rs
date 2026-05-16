@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::super::common::{exit_codes, SCHEMA_DRAFT, SESSION_REF_PATTERN};
+use super::super::common::{exit_codes, SCHEMA_DRAFT, SOURCE_QUALIFIED_SESSION_REF_PATTERN};
 
 fn star_row() -> Value {
     json!({
@@ -8,8 +8,8 @@ fn star_row() -> Value {
         "properties": {
             "session_ref": {
                 "type": "string",
-                "pattern": SESSION_REF_PATTERN,
-                "description": "<provider>/<session-id>[#<turn>]"
+                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                "description": "<provider>/<session-id>[#<turn>] or <source>:<provider>/<session-id>[#<turn>]"
             },
             "starred_at": {
                 "type": "string",
@@ -30,7 +30,7 @@ pub(in crate::schema) fn star_schema() -> Value {
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": SESSION_REF_PATTERN }
+                "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN }
             },
             "required": ["reference"],
             "additionalProperties": false
@@ -55,7 +55,7 @@ pub(in crate::schema) fn unstar_schema() -> Value {
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": SESSION_REF_PATTERN }
+                "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN }
             },
             "required": ["reference"],
             "additionalProperties": false
@@ -76,11 +76,11 @@ pub(in crate::schema) fn stars_schema() -> Value {
         "$id": "aghist:schema/stars",
         "title": "aghist stars",
         "command": "stars",
-        "description": "List starred sessions and turns. With no ref: every star, newest first. With `<provider>/<session-id>`: the session row plus any of its turns. With a turn-level ref: that turn exactly. Empty result exits 3.",
+        "description": "List starred sessions and turns. With no ref: every star, newest first. With a session ref (optionally `<source>:`-qualified): the session row plus any of its turns. With a turn-level ref: that turn exactly. Empty result exits 3.",
         "params": {
             "type": "object",
             "properties": {
-                "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
                 "json": { "type": "boolean" }
             },
             "additionalProperties": false

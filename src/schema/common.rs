@@ -3,8 +3,6 @@ use serde_json::{json, Value};
 use crate::model::Provider;
 
 pub(super) const SCHEMA_DRAFT: &str = "https://json-schema.org/draft/2020-12/schema";
-pub(super) const SESSION_REF_PATTERN: &str =
-    "^(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
 pub(super) const SOURCE_QUALIFIED_SESSION_REF_PATTERN: &str =
     "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
 

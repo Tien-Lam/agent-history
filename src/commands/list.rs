@@ -7,8 +7,10 @@ use aghist::output::OutputMode;
 use aghist::provider;
 
 use super::super::cli::FilterArgs;
-use super::discovery::federated_discovery_for_commands;
-use super::filtering::{metadata_filter_matches, session_has_matching_message, session_matches};
+use super::discovery::{federated_discovery_for_commands, source_for_session};
+use super::filtering::{
+    metadata_filter_matches_source, session_has_matching_message, session_matches,
+};
 
 pub(crate) fn list_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -31,7 +33,13 @@ pub(crate) fn list_sessions(
         .sessions
         .into_iter()
         .filter(|s| session_matches(s, filters, project_needle.as_deref()))
-        .filter(|s| metadata_filter_matches(s, metadata_keys))
+        .filter(|s| {
+            metadata_filter_matches_source(
+                s,
+                source_for_session(&source_by_session, s),
+                metadata_keys,
+            )
+        })
         .filter(|s| !needs_messages || session_has_matching_message(providers, s, filters))
         .map(|session| {
             let source = source_by_session

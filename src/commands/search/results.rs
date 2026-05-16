@@ -6,7 +6,8 @@ use aghist::embed;
 use aghist::model::{Session, SessionOrTurnRef};
 use aghist::search::{self, SearchFilters};
 
-use super::super::filtering::{session_metadata_key, strip_turn_suffix};
+use super::super::discovery::source_for_session;
+use super::super::filtering::{qualified_session_metadata_key, strip_turn_suffix};
 use super::SearchHitRow;
 
 pub(super) fn raw_search_hits(
@@ -49,6 +50,7 @@ pub(super) fn raw_search_hits(
 pub(super) fn filter_hits_by_metadata(
     hits: Vec<SearchHitRow>,
     session_meta: &HashMap<String, &Session>,
+    source_by_session: &HashMap<String, String>,
     metadata_keys: Option<&HashSet<String>>,
 ) -> Vec<SearchHitRow> {
     let Some(keys) = metadata_keys else {
@@ -58,7 +60,9 @@ pub(super) fn filter_hits_by_metadata(
         .filter(|(hit, _)| match hit.kind {
             search::HitKind::Message => session_meta
                 .get(hit.session_key.as_str())
-                .map(|s| session_metadata_key(s))
+                .map(|s| {
+                    qualified_session_metadata_key(s, source_for_session(source_by_session, s))
+                })
                 .is_some_and(|k| keys.contains(&k)),
             search::HitKind::Note => hit
                 .note_session_ref
@@ -72,10 +76,13 @@ pub(super) fn filter_hits_by_metadata(
 pub(super) fn filter_hits_to_current_sessions(
     hits: Vec<SearchHitRow>,
     session_meta: &HashMap<String, &Session>,
+    source_by_session: &HashMap<String, String>,
 ) -> Vec<SearchHitRow> {
     let session_refs: HashSet<String> = session_meta
         .values()
-        .map(|session| session.session_ref().to_string())
+        .map(|session| {
+            qualified_session_metadata_key(session, source_for_session(source_by_session, session))
+        })
         .collect();
 
     hits.into_iter()
@@ -84,9 +91,9 @@ pub(super) fn filter_hits_to_current_sessions(
             search::HitKind::Note => hit
                 .note_session_ref
                 .as_deref()
-                .and_then(|raw| raw.parse::<SessionOrTurnRef>().ok())
-                .map(|parsed| parsed.session_ref().to_string())
-                .is_some_and(|session_ref| session_refs.contains(&session_ref)),
+                .filter(|raw| raw.parse::<SessionOrTurnRef>().is_ok() || raw.contains(':'))
+                .map(strip_turn_suffix)
+                .is_some_and(|session_ref| session_refs.contains(session_ref)),
         })
         .collect()
 }

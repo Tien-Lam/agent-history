@@ -65,7 +65,8 @@ pub(crate) enum NoteCommand {
     /// `--body-file`, or stdin (`--stdin`). Outputs the created note as JSON
     /// (single object) on stdout.
     Add {
-        /// Session ref: `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+        /// Session ref: `<provider>/<session-id>[#<turn>]` or
+        /// `<source>:<provider>/<session-id>[#<turn>]`.
         #[arg(value_name = "REF")]
         reference: String,
 
@@ -83,9 +84,9 @@ pub(crate) enum NoteCommand {
     },
     /// List notes, optionally filtered by session ref.
     ///
-    /// With no ref: every note, newest first. With `<provider>/<session-id>`:
+    /// With no ref: every note, newest first. With a session ref:
     /// every note on that session and any of its turns. With a turn-level ref:
-    /// only notes on that exact turn.
+    /// only notes on that exact turn. Remote sessions use a `<source>:` prefix.
     List {
         /// Optional session ref filter.
         #[arg(value_name = "REF")]
@@ -128,7 +129,8 @@ pub(crate) enum TagCommand {
     /// Attach a tag to a session ref. Outputs the created row as JSON on stdout.
     /// Adding the same (ref, tag) pair twice raises a `tag-conflict` error.
     Add {
-        /// Session ref: `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+        /// Session ref: `<provider>/<session-id>[#<turn>]` or
+        /// `<source>:<provider>/<session-id>[#<turn>]`.
         #[arg(value_name = "REF")]
         reference: String,
 
@@ -138,10 +140,10 @@ pub(crate) enum TagCommand {
     },
     /// List tags, optionally filtered by session ref and/or tag value.
     ///
-    /// With no arguments: every tag, newest first. With `<provider>/<session-id>`:
+    /// With no arguments: every tag, newest first. With a session ref:
     /// every tag on that session and any of its turns. With a turn-level ref:
-    /// tags on that exact turn. `--tag <name>` narrows to a specific tag value
-    /// (combinable with the ref filter).
+    /// tags on that exact turn. Remote sessions use a `<source>:` prefix.
+    /// `--tag <name>` narrows to a specific tag value (combinable with the ref filter).
     List {
         /// Optional session ref filter.
         #[arg(value_name = "REF")]

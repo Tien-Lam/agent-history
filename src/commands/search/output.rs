@@ -134,7 +134,7 @@ fn json_hit<'a>(
             provider: None,
             project: None,
             started_at: None,
-            source: federated::LOCAL_SOURCE,
+            source: note_source(hit.note_session_ref.as_deref()),
             note_id: hit.note_id,
             ref_: hit.note_session_ref.as_deref(),
             explanation,
@@ -205,9 +205,13 @@ fn write_table_row<W: Write>(
     let session_short = truncate(&session_label, 14);
     let snippet = truncate(&hit.snippet, 80);
     if any_remote {
-        let source = source_by_session
-            .get(hit.session_key.as_str())
-            .map_or(federated::LOCAL_SOURCE, String::as_str);
+        let source = if is_note {
+            note_source(hit.note_session_ref.as_deref())
+        } else {
+            source_by_session
+                .get(hit.session_key.as_str())
+                .map_or(federated::LOCAL_SOURCE, String::as_str)
+        };
         let source = truncate(source, 10);
         writeln!(
             out,
@@ -227,4 +231,16 @@ fn write_table_row<W: Write>(
         }
     }
     Ok(())
+}
+
+fn note_source(reference: Option<&str>) -> &str {
+    let Some(reference) = reference else {
+        return federated::LOCAL_SOURCE;
+    };
+    let slash = reference.find('/');
+    let colon = reference.find(':');
+    match (colon, slash) {
+        (Some(c), Some(s)) if c < s => &reference[..c],
+        _ => federated::LOCAL_SOURCE,
+    }
 }

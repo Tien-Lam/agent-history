@@ -3,7 +3,8 @@
 //! aghist must never modify a provider's session files (Claude Code's JSONL,
 //! Copilot's logs, etc). Per-user annotations — notes, tags, stars — live in a
 //! separate sqlite database keyed by stable citation refs of the form
-//! `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+//! `<provider>/<session-id>`, `<provider>/<session-id>#<turn>`, or the same
+//! refs prefixed with `<source>:` for remote-source sessions.
 //!
 //! Default location is `~/.local/share/aghist/metadata.db` (`XDG_DATA_HOME` on
 //! Linux, `Library/Application Support` on macOS, `%APPDATA%` on Windows).

@@ -226,6 +226,7 @@ fn remote_source_name_validation_rejects_path_components() {
     assert!(validate_source_name("../escape").is_err());
     assert!(validate_source_name("a/b").is_err());
     assert!(validate_source_name("-option").is_err());
+    assert!(validate_source_name("local").is_err());
 }
 
 #[test]

@@ -1,5 +1,42 @@
+use std::path::{Path, PathBuf};
+
 use super::aghist;
 use super::common;
+
+struct RemoteSourceCache {
+    _workdir: tempfile::TempDir,
+    cache_dir: PathBuf,
+    config_path: PathBuf,
+}
+
+fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+    common::helpers::copy_dir_recursive(remote_base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    RemoteSourceCache {
+        _workdir: workdir,
+        cache_dir,
+        config_path,
+    }
+}
 
 /// Build a Claude fixture with three known sessions, all under the same
 /// `AGHIST_HOME`, returning the home path and the session ids in deterministic
@@ -181,6 +218,77 @@ fn list_metadata_filter_no_match_exits_three() {
         .unwrap();
     assert_eq!(out.status.code(), Some(3));
 }
+
+#[test]
+fn list_source_qualified_star_filters_remote_duplicate_session_ids() {
+    let local = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("sess-shared")
+        .project("local-proj")
+        .user("local body")
+        .done()
+        .build();
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("sess-shared")
+        .project("remote-proj")
+        .user("remote body")
+        .done()
+        .build();
+    let home = local.base_path.parent().unwrap();
+    let source = laptop_remote_source(&remote.base_path);
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+
+    aghist()
+        .args(["star", "laptop:claude-code/sess-shared"])
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .success();
+
+    let out = aghist()
+        .args(["--list", "--json", "--starred"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
+        .env("AGHIST_METADATA_DB", &db)
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
+    let sessions = parsed["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["id"], "sess-shared");
+    assert_eq!(sessions[0]["source"], "laptop");
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let search = aghist()
+        .args(["search", "body", "--json", "--starred"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
+        .env("AGHIST_METADATA_DB", &db)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        search.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&search.stderr)
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&search.stdout).unwrap().trim()).unwrap();
+    let hits = parsed["hits"].as_array().unwrap();
+    assert!(!hits.is_empty());
+    assert!(hits.iter().all(|hit| hit["session_id"] == "sess-shared"));
+    assert!(hits.iter().all(|hit| hit["source"] == "laptop"));
+}
+
 #[test]
 fn search_filters_by_starred() {
     let (_keep, home) = three_session_fixture();

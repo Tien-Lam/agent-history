@@ -1,15 +1,23 @@
+use crate::config::validate_source_name;
 use crate::model::{CitationParseError, SessionOrTurnRef};
 
 use super::MetadataError;
 
-/// Validate a `session_ref` string used as a note key. Accepts
-/// `<provider-slug>/<session-id>` (session-level) or
-/// `<provider-slug>/<session-id>#<turn>` (turn-level). The provider slug must
-/// match a known [`Provider`]; the session id must be non-empty; if a turn is
-/// present it must parse as a positive integer.
+/// Validate a `session_ref` string used as a note/tag/star key. Accepts
+/// `<provider-slug>/<session-id>` (session-level),
+/// `<provider-slug>/<session-id>#<turn>` (turn-level), or the same refs
+/// prefixed with a registered-source-style name:
+/// `<source>:<provider-slug>/<session-id>[#<turn>]`.
+///
+/// The provider slug must match a known [`Provider`]; the session id must be
+/// non-empty; if a turn is present it must parse as a positive integer.
 pub fn validate_session_ref(raw: &str) -> std::result::Result<&str, MetadataError> {
     let invalid = |reason: &'static str| MetadataError::InvalidSessionRef(raw.to_string(), reason);
-    raw.parse::<SessionOrTurnRef>().map_err(|e| {
+    let (source, unqualified) = split_source_prefix(raw);
+    if let Some(source) = source {
+        validate_source_name(source).map_err(|_message| invalid("invalid source name"))?;
+    }
+    unqualified.parse::<SessionOrTurnRef>().map_err(|e| {
         let reason = match e {
             CitationParseError::Empty => "empty",
             CitationParseError::MissingProvider
@@ -21,4 +29,13 @@ pub fn validate_session_ref(raw: &str) -> std::result::Result<&str, MetadataErro
         invalid(reason)
     })?;
     Ok(raw)
+}
+
+fn split_source_prefix(raw: &str) -> (Option<&str>, &str) {
+    let slash = raw.find('/');
+    let colon = raw.find(':');
+    match (colon, slash) {
+        (Some(c), Some(s)) if c < s => (Some(&raw[..c]), &raw[c + 1..]),
+        _ => (None, raw),
+    }
 }

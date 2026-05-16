@@ -135,9 +135,10 @@ pub(crate) enum Command {
     ///
     /// Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`
     /// by default; override with `AGHIST_METADATA_DB`). Each note is keyed by a
-    /// session ref of the form `<provider>/<session-id>` (session-level) or
-    /// `<provider>/<session-id>#<turn>` (turn-level). aghist never mutates the
-    /// underlying provider history files.
+    /// session ref of the form `<provider>/<session-id>` (session-level),
+    /// `<provider>/<session-id>#<turn>` (turn-level), or the same shapes
+    /// prefixed with `<source>:` for remote-source sessions. aghist never
+    /// mutates the underlying provider history files.
     Note {
         #[command(subcommand)]
         command: NoteCommand,
@@ -146,10 +147,11 @@ pub(crate) enum Command {
     ///
     /// Tags live in the metadata sidecar (same database as `aghist note`).
     /// Each tag is a short label (e.g. `review`, `todo`) attached to a session
-    /// ref of the form `<provider>/<session-id>` or
-    /// `<provider>/<session-id>#<turn>`. The (`session_ref`, `tag`) pair is unique:
-    /// adding the same tag twice is a no-op error. aghist never mutates the
-    /// underlying provider history files.
+    /// ref of the form `<provider>/<session-id>`,
+    /// `<provider>/<session-id>#<turn>`, or the same shapes prefixed with
+    /// `<source>:` for remote-source sessions. The (`session_ref`, `tag`) pair
+    /// is unique: adding the same tag twice is a no-op error. aghist never
+    /// mutates the underlying provider history files.
     Tag {
         #[command(subcommand)]
         command: TagCommand,
@@ -157,26 +159,27 @@ pub(crate) enum Command {
     /// Mark a session or turn as starred.
     ///
     /// Stars live in the metadata sidecar (same database as `aghist note`/`tag`).
-    /// Each star is keyed by a session ref of the form `<provider>/<session-id>`
-    /// or `<provider>/<session-id>#<turn>`. Starring an already-starred ref
+    /// Each star is keyed by a session ref of the form `<provider>/<session-id>`,
+    /// `<provider>/<session-id>#<turn>`, or the same shapes prefixed with
+    /// `<source>:` for remote-source sessions. Starring an already-starred ref
     /// raises a `star-conflict` error. aghist never mutates provider history files.
     Star {
-        /// Session ref: `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+        /// Session ref: `<provider>/<session-id>[#<turn>]` or `<source>:<provider>/<session-id>[#<turn>]`.
         #[arg(value_name = "REF")]
         reference: String,
     },
     /// Remove a star from a session or turn. Errors with `star-not-found` if
     /// the ref is not currently starred.
     Unstar {
-        /// Session ref: `<provider>/<session-id>` or `<provider>/<session-id>#<turn>`.
+        /// Session ref: `<provider>/<session-id>[#<turn>]` or `<source>:<provider>/<session-id>[#<turn>]`.
         #[arg(value_name = "REF")]
         reference: String,
     },
     /// List starred sessions and turns.
     ///
-    /// With no ref: every star, newest first. With `<provider>/<session-id>`:
-    /// the session row plus any of its turns. With a turn-level ref: that turn
-    /// exactly. Empty result exits with code 3.
+    /// With no ref: every star, newest first. With a session ref: the session
+    /// row plus any of its turns. With a turn-level ref: that turn exactly.
+    /// Remote sessions use a `<source>:` prefix. Empty result exits with code 3.
     Stars {
         /// Optional session ref filter.
         #[arg(value_name = "REF")]

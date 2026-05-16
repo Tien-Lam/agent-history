@@ -7,7 +7,9 @@ use aghist::provider;
 
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
-use crate::commands::filtering::{message_matches, metadata_filter_matches, session_matches};
+use crate::commands::filtering::{
+    message_matches, metadata_filter_matches_source, session_matches,
+};
 use crate::commands::text::truncate;
 
 use super::common::map_llm_error;
@@ -35,7 +37,8 @@ fn scan_topic_sessions(
         if !session_matches(&session, filters, project_needle.as_deref()) {
             continue;
         }
-        if !metadata_filter_matches(&session, metadata_keys) {
+        let source = source_for_session(&discovery.source_by_session, &session);
+        if !metadata_filter_matches_source(&session, source, metadata_keys) {
             continue;
         }
         let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
@@ -67,7 +70,6 @@ fn scan_topic_sessions(
         if excerpts.is_empty() {
             continue;
         }
-        let source = source_for_session(&discovery.source_by_session, &session);
         matched.push(aghist::llm::TrackSession {
             source: (source != aghist::federated::LOCAL_SOURCE).then(|| source.to_string()),
             provider: session.provider,

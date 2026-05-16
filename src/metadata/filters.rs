@@ -5,9 +5,10 @@ use rusqlite::{params, Connection};
 use super::tags::normalize_tag;
 use super::{MetadataError, Result};
 
-/// Resolve metadata-filter flags into a set of `<provider-slug>/<session-id>`
-/// keys (turn suffix stripped). Used by `--list` / `search` to keep only
-/// sessions that match the requested annotations.
+/// Resolve metadata-filter flags into source-aware session keys with any turn
+/// suffix stripped. Local keys use `<provider-slug>/<session-id>`; remote keys
+/// use `<source>:<provider-slug>/<session-id>`. Used by commands with global
+/// metadata filters to keep only sessions that match the requested annotations.
 ///
 /// All active filters AND-combine: a session is kept only if it appears in
 /// every requested filter's key set. `note_substr` is a case-insensitive
@@ -67,8 +68,8 @@ pub fn filter_session_keys(
     Ok(Some(acc))
 }
 
-/// Strip the `#<turn>` suffix from a `session_ref`, leaving the
-/// `<provider-slug>/<session-id>` prefix.
+/// Strip the `#<turn>` suffix from a `session_ref`, preserving any source
+/// prefix and leaving the session-level key.
 fn strip_turn_suffix(session_ref: String) -> String {
     match session_ref.rsplit_once('#') {
         Some((prefix, _)) => prefix.to_string(),

@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::super::common::{count_array_response, exit_codes, SCHEMA_DRAFT, SESSION_REF_PATTERN};
+use super::super::common::{
+    count_array_response, exit_codes, SCHEMA_DRAFT, SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+};
 
 fn tag_row_schema() -> Value {
     json!({
@@ -9,8 +11,8 @@ fn tag_row_schema() -> Value {
             "id": { "type": "integer", "minimum": 1 },
             "session_ref": {
                 "type": "string",
-                "pattern": SESSION_REF_PATTERN,
-                "description": "<provider>/<session-id>[#<turn>]"
+                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                "description": "<provider>/<session-id>[#<turn>] or <source>:<provider>/<session-id>[#<turn>]"
             },
             "tag": { "type": "string", "minLength": 1 },
             "created_at": { "type": "string", "description": "ISO-8601 UTC, sub-second precision." }
@@ -26,7 +28,7 @@ fn tag_subcommands_schema() -> Value {
             "params": {
                 "type": "object",
                 "properties": {
-                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
                     "tag": { "type": "string", "minLength": 1 }
                 },
                 "required": ["reference", "tag"],
@@ -43,7 +45,7 @@ fn tag_subcommands_schema() -> Value {
             "params": {
                 "type": "object",
                 "properties": {
-                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
                     "tag": { "type": "string", "minLength": 1 },
                     "json": { "type": "boolean" }
                 },
@@ -56,7 +58,7 @@ fn tag_subcommands_schema() -> Value {
             "params": {
                 "type": "object",
                 "properties": {
-                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
                     "tag": { "type": "string", "minLength": 1 }
                 },
                 "required": ["reference", "tag"],

@@ -73,6 +73,9 @@ pub fn validate_source_name(name: &str) -> Result<(), String> {
     if trimmed == "." || trimmed == ".." {
         return Err("source name must not be '.' or '..'".to_string());
     }
+    if trimmed == crate::federated::LOCAL_SOURCE {
+        return Err("source name 'local' is reserved".to_string());
+    }
     let mut chars = trimmed.chars();
     let Some(first) = chars.next() else {
         return Err("source name must not be empty".to_string());

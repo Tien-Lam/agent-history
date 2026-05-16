@@ -80,11 +80,7 @@ pub(crate) fn search_command(
 
     try_index_notes(&index);
 
-    let pool_size = index
-        .num_docs()
-        .map_err(|e| ErrorEnvelope::new("index-error", format!("failed to inspect index: {e}")))?
-        .max(limit)
-        .max(1);
+    let pool_size = search_pool_size(&index, limit)?;
 
     let (raw_hits, engine_used) = raw_search_hits(
         &index_dir,
@@ -96,11 +92,12 @@ pub(crate) fn search_command(
         hybrid_weight,
     )?;
 
-    let session_meta: HashMap<String, &Session> =
-        sessions.iter().map(|s| (s.identity_key(), s)).collect();
-
-    let raw_hits = filter_hits_to_current_sessions(raw_hits, &session_meta);
-    let raw_hits = filter_hits_by_metadata(raw_hits, &session_meta, metadata_keys);
+    let (session_meta, raw_hits) = current_search_hits(
+        raw_hits,
+        &sessions,
+        &federation.source_by_session,
+        metadata_keys,
+    );
 
     let total = raw_hits.len();
     if raw_hits.is_empty() {
@@ -157,6 +154,28 @@ pub(crate) fn search_command(
     }
 
     Ok(EXIT_OK)
+}
+
+fn current_search_hits<'a>(
+    raw_hits: Vec<SearchHitRow>,
+    sessions: &'a [Session],
+    source_by_session: &HashMap<String, String>,
+    metadata_keys: Option<&HashSet<String>>,
+) -> (HashMap<String, &'a Session>, Vec<SearchHitRow>) {
+    let session_meta: HashMap<String, &Session> =
+        sessions.iter().map(|s| (s.identity_key(), s)).collect();
+    let raw_hits = filter_hits_to_current_sessions(raw_hits, &session_meta, source_by_session);
+    let raw_hits =
+        filter_hits_by_metadata(raw_hits, &session_meta, source_by_session, metadata_keys);
+    (session_meta, raw_hits)
+}
+
+fn search_pool_size(index: &search::SearchIndex, limit: usize) -> Result<usize, ErrorEnvelope> {
+    Ok(index
+        .num_docs()
+        .map_err(|e| ErrorEnvelope::new("index-error", format!("failed to inspect index: {e}")))?
+        .max(limit)
+        .max(1))
 }
 
 fn resolve_search_hit_refs(

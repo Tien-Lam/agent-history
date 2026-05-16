@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use aghist::model::{Message, Session};
 use aghist::provider;
 
-use super::super::discovery::federated_discovery_for_commands;
-use super::super::filtering::{metadata_filter_matches, session_matches};
+use super::super::discovery::{federated_discovery_for_commands, source_for_session};
+use super::super::filtering::{metadata_filter_matches_source, session_matches};
 use crate::cli::FilterArgs;
 
 pub(super) type SessionBundle = (Session, Vec<Message>);
@@ -28,11 +28,19 @@ pub(super) fn collect_federated_filtered_sessions(
     project_needle: Option<&str>,
     metadata_keys: Option<&HashSet<String>>,
 ) -> Vec<Session> {
-    federated_discovery_for_commands(providers)
+    let discovery = federated_discovery_for_commands(providers);
+    let source_by_session = discovery.source_by_session;
+    discovery
         .sessions
         .into_iter()
         .filter(|session| session_matches(session, filters, project_needle))
-        .filter(|session| metadata_filter_matches(session, metadata_keys))
+        .filter(|session| {
+            metadata_filter_matches_source(
+                session,
+                source_for_session(&source_by_session, session),
+                metadata_keys,
+            )
+        })
         .collect()
 }
 
@@ -50,7 +58,11 @@ pub(super) fn collect_federated_message_bundles(
         if !session_matches(&session, filters, project_needle) {
             continue;
         }
-        if !metadata_filter_matches(&session, metadata_keys) {
+        if !metadata_filter_matches_source(
+            &session,
+            source_for_session(&source_by_session, &session),
+            metadata_keys,
+        ) {
             continue;
         }
         if !include_session(&session) {

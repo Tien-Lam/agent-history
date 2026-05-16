@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::super::common::{count_array_response, exit_codes, SCHEMA_DRAFT, SESSION_REF_PATTERN};
+use super::super::common::{
+    count_array_response, exit_codes, SCHEMA_DRAFT, SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+};
 
 fn note_row_schema() -> Value {
     json!({
@@ -9,8 +11,8 @@ fn note_row_schema() -> Value {
             "id": { "type": "integer", "minimum": 1 },
             "session_ref": {
                 "type": "string",
-                "pattern": SESSION_REF_PATTERN,
-                "description": "<provider>/<session-id>[#<turn>]"
+                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                "description": "<provider>/<session-id>[#<turn>] or <source>:<provider>/<session-id>[#<turn>]"
             },
             "body": { "type": "string", "minLength": 1 },
             "created_at": { "type": "string", "description": "ISO-8601 UTC, sub-second precision." },
@@ -27,7 +29,7 @@ fn note_subcommands_schema() -> Value {
             "params": {
                 "type": "object",
                 "properties": {
-                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
                     "body": { "type": "string", "description": "Literal body text. Mutually exclusive with body_file/stdin." },
                     "body_file": { "type": "string", "description": "Path to read body from ('-' for stdin)." },
                     "stdin": { "type": "boolean", "description": "Read body from standard input." }
@@ -46,7 +48,7 @@ fn note_subcommands_schema() -> Value {
             "params": {
                 "type": "object",
                 "properties": {
-                    "reference": { "type": "string", "pattern": SESSION_REF_PATTERN },
+                    "reference": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
                     "json": { "type": "boolean" }
                 },
                 "additionalProperties": false

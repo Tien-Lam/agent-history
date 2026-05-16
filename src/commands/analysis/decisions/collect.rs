@@ -4,7 +4,9 @@ use aghist::provider;
 
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
-use crate::commands::filtering::{message_matches, metadata_filter_matches, session_matches};
+use crate::commands::filtering::{
+    message_matches, metadata_filter_matches_source, session_matches,
+};
 
 use super::DecisionRow;
 
@@ -28,7 +30,7 @@ pub(super) fn collect_federated_decision_rows(
         if !session_matches(&session, filters, project_needle) {
             continue;
         }
-        if !metadata_filter_matches(&session, metadata_keys) {
+        if !metadata_filter_matches_source(&session, &source, metadata_keys) {
             continue;
         }
         if let Some(needle) = session_needle {

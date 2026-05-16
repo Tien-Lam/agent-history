@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use aghist::cli_error::ErrorEnvelope;
+use aghist::federated;
 use aghist::metadata;
 use aghist::model::{ContentBlock, Message, Session};
 use aghist::provider;
@@ -70,9 +71,21 @@ pub(crate) fn session_metadata_key(session: &Session) -> String {
     session.session_ref().to_string()
 }
 
-/// Drop a `#<turn>` suffix, leaving `<provider-slug>/<session-id>` - the same
-/// key shape as [`session_metadata_key`] so note refs and session refs can be
-/// compared against the same allow-set.
+/// Build the metadata key for a federated session. Local sessions keep the
+/// legacy unqualified shape; remote sessions use
+/// `<source>:<provider-slug>/<id>`.
+pub(crate) fn qualified_session_metadata_key(session: &Session, source: &str) -> String {
+    let raw = session_metadata_key(session);
+    if source == federated::LOCAL_SOURCE {
+        raw
+    } else {
+        format!("{source}:{raw}")
+    }
+}
+
+/// Drop a `#<turn>` suffix, preserving any source prefix and leaving the same
+/// session-level key shape as [`qualified_session_metadata_key`] so note refs
+/// and session refs can be compared against the same allow-set.
 pub(crate) fn strip_turn_suffix(session_ref: &str) -> &str {
     session_ref
         .rsplit_once('#')
@@ -80,15 +93,16 @@ pub(crate) fn strip_turn_suffix(session_ref: &str) -> &str {
 }
 
 /// Returns true when `metadata_keys` is `None` (filter inactive) or when the
-/// session's `<provider>/<id>` key is in the allowed set.
-pub(crate) fn metadata_filter_matches(
+/// session's source-aware metadata key is in the allowed set.
+pub(crate) fn metadata_filter_matches_source(
     session: &Session,
+    source: &str,
     metadata_keys: Option<&HashSet<String>>,
 ) -> bool {
     let Some(keys) = metadata_keys else {
         return true;
     };
-    keys.contains(&session_metadata_key(session))
+    keys.contains(&qualified_session_metadata_key(session, source))
 }
 
 /// Returns true if the session contains at least one message satisfying the
