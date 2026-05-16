@@ -18,6 +18,11 @@ pub(crate) fn show_command(
 
     let discovery = federated_discovery_for_commands(providers);
     let wanted_source = parsed.source.as_deref().unwrap_or(federated::LOCAL_SOURCE);
+    let display_ref = QualifiedCitationRef::new(
+        (wanted_source != federated::LOCAL_SOURCE).then(|| wanted_source.to_string()),
+        citation.clone(),
+    )
+    .to_string();
     let session = discovery
         .sessions
         .iter()
@@ -65,13 +70,24 @@ pub(crate) fn show_command(
     let stdout = io::stdout();
     let mut out = stdout.lock();
     match format {
-        ShowFormat::Md => {
-            render_show_md(&mut out, &citation, session, slice, start_idx, target_idx)
-        }
-        ShowFormat::Json => {
-            render_show_json(&mut out, &citation, session, slice, start_idx, target_idx)
-        }
-        ShowFormat::Text => render_show_text(&mut out, &citation, slice, start_idx, target_idx),
+        ShowFormat::Md => render_show_md(
+            &mut out,
+            &display_ref,
+            session,
+            slice,
+            start_idx,
+            target_idx,
+        ),
+        ShowFormat::Json => render_show_json(
+            &mut out,
+            &display_ref,
+            &citation,
+            session,
+            slice,
+            start_idx,
+            target_idx,
+        ),
+        ShowFormat::Text => render_show_text(&mut out, &display_ref, slice, start_idx, target_idx),
     }
     .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write show output: {e}")))?;
 
@@ -108,13 +124,13 @@ fn parse_show_ref(raw_ref: &str) -> Result<QualifiedCitationRef, ErrorEnvelope> 
 
 fn render_show_md<W: io::Write>(
     out: &mut W,
-    citation: &CitationRef,
+    display_ref: &str,
     session: &Session,
     slice: &[Message],
     start_idx: usize,
     target_idx: usize,
 ) -> io::Result<()> {
-    writeln!(out, "# {citation}")?;
+    writeln!(out, "# {display_ref}")?;
     if let Some(project) = &session.project_name {
         writeln!(out, "_{project}_")?;
     }
@@ -135,6 +151,7 @@ fn render_show_md<W: io::Write>(
 
 fn render_show_json<W: io::Write>(
     out: &mut W,
+    display_ref: &str,
     citation: &CitationRef,
     session: &Session,
     slice: &[Message],
@@ -173,7 +190,7 @@ fn render_show_json<W: io::Write>(
         .collect();
 
     let payload = ShowOut {
-        reference: citation.to_string(),
+        reference: display_ref.to_string(),
         provider: citation.provider,
         session_id: session.id.0.as_str(),
         project: session.project_name.as_deref(),
@@ -188,12 +205,12 @@ fn render_show_json<W: io::Write>(
 
 fn render_show_text<W: io::Write>(
     out: &mut W,
-    citation: &CitationRef,
+    display_ref: &str,
     slice: &[Message],
     start_idx: usize,
     target_idx: usize,
 ) -> io::Result<()> {
-    writeln!(out, "{citation}")?;
+    writeln!(out, "{display_ref}")?;
     for (i, msg) in slice.iter().enumerate() {
         let turn_no = start_idx + i + 1;
         let marker = if start_idx + i == target_idx {
