@@ -148,9 +148,7 @@ fn self_update_impl() -> Result<i32, ErrorEnvelope> {
         "unsupported-install-method",
         "this aghist binary was built without self-update support",
     )
-    .with_hint(
-        "Use your installer to update, or install a GitHub release via install.sh/manual download.",
-    ))
+    .with_hint("Use your installer to update, or install a GitHub release via install.sh."))
 }
 
 fn current_exe() -> Result<PathBuf, ErrorEnvelope> {
@@ -163,7 +161,12 @@ fn ensure_self_managed_install(
     operation: InstallOperation,
 ) -> Result<(), ErrorEnvelope> {
     match detect_install_source(exe) {
-        InstallSource::GithubRelease | InstallSource::Unknown => Ok(()),
+        InstallSource::GithubRelease => Ok(()),
+        InstallSource::Unknown => Err(unsupported_install_method(
+            operation,
+            "this aghist binary does not have aghist's release install marker",
+            "Reinstall with `install.sh`, or use the installer/package manager that owns this binary.",
+        )),
         InstallSource::Cargo => Err(unsupported_install_method(
             operation,
             "this aghist binary is installed under Cargo's bin directory",
@@ -192,4 +195,44 @@ fn unsupported_install_method(
         format!("cannot {} aghist: {reason}", operation.verb()),
     )
     .with_hint(hint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn exe_path(dir: &Path) -> PathBuf {
+        dir.join(if cfg!(windows) {
+            "aghist.exe"
+        } else {
+            "aghist"
+        })
+    }
+
+    #[test]
+    fn self_managed_operations_require_release_marker() {
+        let root = tempfile::tempdir().unwrap();
+        let exe = exe_path(root.path());
+
+        let err = ensure_self_managed_install(&exe, InstallOperation::Update).unwrap_err();
+
+        assert_eq!(err.kind, "unsupported-install-method");
+        assert!(
+            err.message
+                .contains("does not have aghist's release install marker"),
+            "{}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn release_marker_allows_self_managed_operations() {
+        let root = tempfile::tempdir().unwrap();
+        let exe = exe_path(root.path());
+        let marker = exe.with_file_name("aghist.install");
+        std::fs::write(marker, "method=github-release\n").unwrap();
+
+        ensure_self_managed_install(&exe, InstallOperation::Update).unwrap();
+        ensure_self_managed_install(&exe, InstallOperation::Uninstall).unwrap();
+    }
 }

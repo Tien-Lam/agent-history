@@ -43,7 +43,9 @@ Providers are auto-detected based on platform-specific default paths.
 curl -sSfL https://raw.githubusercontent.com/Tien-Lam/agent-history/main/install.sh | bash
 ```
 
-Installs to `~/.local/bin` by default. Override with `| bash -s -- --to /usr/local/bin`.
+Installs to `~/.local/bin` by default. Override with
+`| bash -s -- --to /path/to/bin`; the directory must be writable by the
+installing user.
 
 ### cargo-binstall
 
@@ -73,11 +75,13 @@ Download the latest release for your platform from [GitHub Releases](https://git
 aghist update
 ```
 
-`aghist update` is for GitHub release binaries installed by the shell script or
-manual download. If you installed with `cargo-binstall`, run
+`aghist update` is for GitHub release binaries installed by the shell script,
+which writes an adjacent `aghist.install` marker so aghist can tell it owns the
+binary. If you installed with `cargo-binstall`, run
 `cargo binstall aghist --force`; if you installed from source, run
 `cargo install --git https://github.com/Tien-Lam/agent-history.git --force`.
-Package-manager installs should be updated with the package manager.
+Package-manager and manually copied binaries should be updated with the tool or
+process that installed them.
 
 ### Uninstalling
 
@@ -85,9 +89,10 @@ Package-manager installs should be updated with the package manager.
 aghist uninstall
 ```
 
-Removes a self-managed release binary, search index, and configuration. For
-Cargo or package-manager installs, uninstall the binary with that installer and
-remove the data directories manually if desired.
+Removes a self-managed release binary installed by the shell script, plus the
+search index and configuration. For Cargo, package-manager, or manually copied
+installs, uninstall the binary with that installer/process and remove the data
+directories manually if desired.
 
 ## Usage
 

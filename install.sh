@@ -21,8 +21,24 @@ EOF
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --to)  INSTALL_DIR="$2"; shift 2 ;;
-        --tag) TAG="$2"; shift 2 ;;
+        --to)
+            if [ $# -lt 2 ] || [ -z "$2" ]; then
+                echo "Error: --to requires a non-empty DIR"
+                usage
+                exit 1
+            fi
+            INSTALL_DIR="$2"
+            shift 2
+            ;;
+        --tag)
+            if [ $# -lt 2 ] || [ -z "$2" ]; then
+                echo "Error: --tag requires a non-empty TAG"
+                usage
+                exit 1
+            fi
+            TAG="$2"
+            shift 2
+            ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1"; usage; exit 1 ;;
     esac
@@ -102,17 +118,20 @@ target=$TARGET
 tag=$TAG
 EOF
 
-mkdir -p "$INSTALL_DIR"
-if [ -w "$INSTALL_DIR" ]; then
-    cp -f "$TMPDIR/$BIN_FILE" "$INSTALL_DIR/$BIN_FILE"
-    chmod +x "$INSTALL_DIR/$BIN_FILE"
-    cp -f "$MARKER_TMP" "$INSTALL_DIR/$BINARY.install"
-else
-    echo "Elevating permissions to install to $INSTALL_DIR"
-    sudo cp -f "$TMPDIR/$BIN_FILE" "$INSTALL_DIR/$BIN_FILE"
-    sudo chmod +x "$INSTALL_DIR/$BIN_FILE"
-    sudo cp -f "$MARKER_TMP" "$INSTALL_DIR/$BINARY.install"
+if ! mkdir -p "$INSTALL_DIR"; then
+    echo "Error: could not create install directory: $INSTALL_DIR"
+    echo "Choose a writable directory with --to DIR."
+    exit 1
 fi
+if [ ! -w "$INSTALL_DIR" ]; then
+    echo "Error: install directory is not writable: $INSTALL_DIR"
+    echo "Choose a user-writable directory with --to DIR, or run the installer with the permissions you intend to own the binary."
+    exit 1
+fi
+cp -f "$TMPDIR/$BIN_FILE" "$INSTALL_DIR/$BIN_FILE"
+chmod 0755 "$INSTALL_DIR/$BIN_FILE"
+cp -f "$MARKER_TMP" "$INSTALL_DIR/$BINARY.install"
+chmod 0644 "$INSTALL_DIR/$BINARY.install"
 
 echo "Installed $BINARY $TAG to $INSTALL_DIR/$BIN_FILE"
 
