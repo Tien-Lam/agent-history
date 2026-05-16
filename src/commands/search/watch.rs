@@ -4,12 +4,13 @@ use std::path::Path;
 use std::time::Duration;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK, EXIT_USAGE};
+use aghist::metadata;
 use aghist::model::Session;
 use aghist::provider;
 use aghist::search::{self, SearchFilters};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
-use super::super::filtering::{qualified_session_metadata_key, strip_turn_suffix};
+use super::super::filtering::qualified_session_metadata_key;
 use super::super::metadata::try_index_notes;
 use super::input::resolve_search_query;
 use super::output::write_watch_hit;
@@ -89,8 +90,8 @@ pub(crate) fn search_watch_command(
                     search::HitKind::Note => h
                         .note_session_ref
                         .as_deref()
-                        .map(strip_turn_suffix)
-                        .is_some_and(|k| keys.contains(k)),
+                        .and_then(|raw| metadata::session_key_from_ref(raw).ok())
+                        .is_some_and(|k| keys.contains(&k)),
                 };
                 if !allowed {
                     continue;

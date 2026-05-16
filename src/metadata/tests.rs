@@ -163,6 +163,22 @@ fn validate_rejects_bad_refs() {
 }
 
 #[test]
+fn session_key_from_ref_validates_and_strips_turn_suffix() {
+    assert_eq!(
+        session_key_from_ref("claude-code/abc-123#7").unwrap(),
+        "claude-code/abc-123"
+    );
+    assert_eq!(
+        session_key_from_ref("laptop:claude-code/abc-123#7").unwrap(),
+        "laptop:claude-code/abc-123"
+    );
+    assert!(matches!(
+        session_key_from_ref("local:claude-code/abc-123#7"),
+        Err(MetadataError::InvalidSessionRef(_, _))
+    ));
+}
+
+#[test]
 fn note_add_returns_populated_row() {
     let (_tmp, conn) = open_fresh();
     let note = note_add(&conn, "claude-code/abc-123#7", "first note body").unwrap();
@@ -171,6 +187,29 @@ fn note_add_returns_populated_row() {
     assert_eq!(note.body, "first note body");
     assert!(!note.created_at.is_empty());
     assert_eq!(note.created_at, note.updated_at);
+}
+
+#[test]
+fn filter_session_keys_ignores_invalid_stored_refs() {
+    let (_tmp, conn) = open_fresh();
+    conn.execute(
+        "INSERT INTO notes(session_ref, body) VALUES (?1, ?2)",
+        ("not-a-session-ref", "needle"),
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO notes(session_ref, body) VALUES (?1, ?2)",
+        ("claude-code/valid#2", "needle"),
+    )
+    .unwrap();
+
+    let keys = filter_session_keys(&conn, Some("needle"), None, false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        keys,
+        ["claude-code/valid".to_string()].into_iter().collect()
+    );
 }
 
 #[test]

@@ -73,6 +73,6 @@ pub type Result<T> = std::result::Result<T, MetadataError>;
 pub use connection::{default_path, open, open_default};
 pub use filters::filter_session_keys;
 pub use notes::{note_add, note_edit, note_get, note_list, note_remove, Note};
-pub use refs::validate_session_ref;
+pub use refs::{session_key_from_ref, validate_session_ref};
 pub use stars::{star_add, star_get, star_list, star_remove, Star};
 pub use tags::{tag_add, tag_list, tag_remove, Tag};

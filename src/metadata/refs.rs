@@ -31,6 +31,17 @@ pub fn validate_session_ref(raw: &str) -> std::result::Result<&str, MetadataErro
     Ok(raw)
 }
 
+/// Validate a session-or-turn ref and return the session-level key used for
+/// matching annotations to sessions. The source prefix, when present, is
+/// preserved.
+pub fn session_key_from_ref(raw: &str) -> std::result::Result<String, MetadataError> {
+    validate_session_ref(raw)?;
+    Ok(raw
+        .rsplit_once('#')
+        .map_or(raw, |(session_ref, _turn)| session_ref)
+        .to_string())
+}
+
 fn split_source_prefix(raw: &str) -> (Option<&str>, &str) {
     let slash = raw.find('/');
     let colon = raw.find(':');

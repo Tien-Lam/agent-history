@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use rusqlite::{params, Connection};
 
+use super::refs::session_key_from_ref;
 use super::tags::normalize_tag;
 use super::{MetadataError, Result};
 
@@ -36,7 +37,11 @@ pub fn filter_session_keys(
         let refs = stmt
             .query_map(params![pattern], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        sets.push(refs.into_iter().map(strip_turn_suffix).collect());
+        sets.push(
+            refs.into_iter()
+                .filter_map(|r| session_key_from_ref(&r).ok())
+                .collect(),
+        );
     }
 
     if let Some(tag) = tag {
@@ -45,7 +50,11 @@ pub fn filter_session_keys(
         let refs = stmt
             .query_map(params![normalized], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        sets.push(refs.into_iter().map(strip_turn_suffix).collect());
+        sets.push(
+            refs.into_iter()
+                .filter_map(|r| session_key_from_ref(&r).ok())
+                .collect(),
+        );
     }
 
     if starred {
@@ -53,7 +62,11 @@ pub fn filter_session_keys(
         let refs = stmt
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        sets.push(refs.into_iter().map(strip_turn_suffix).collect());
+        sets.push(
+            refs.into_iter()
+                .filter_map(|r| session_key_from_ref(&r).ok())
+                .collect(),
+        );
     }
 
     if sets.is_empty() {
@@ -66,13 +79,4 @@ pub fn filter_session_keys(
         acc.retain(|k| next.contains(k));
     }
     Ok(Some(acc))
-}
-
-/// Strip the `#<turn>` suffix from a `session_ref`, preserving any source
-/// prefix and leaving the session-level key.
-fn strip_turn_suffix(session_ref: String) -> String {
-    match session_ref.rsplit_once('#') {
-        Some((prefix, _)) => prefix.to_string(),
-        None => session_ref,
-    }
 }

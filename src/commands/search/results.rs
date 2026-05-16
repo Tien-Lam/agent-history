@@ -3,11 +3,12 @@ use std::path::Path;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::embed;
-use aghist::model::{Session, SessionOrTurnRef};
+use aghist::metadata;
+use aghist::model::Session;
 use aghist::search::{self, SearchFilters};
 
 use super::super::discovery::source_for_session;
-use super::super::filtering::{qualified_session_metadata_key, strip_turn_suffix};
+use super::super::filtering::qualified_session_metadata_key;
 use super::SearchHitRow;
 
 pub(super) fn raw_search_hits(
@@ -67,8 +68,8 @@ pub(super) fn filter_hits_by_metadata(
             search::HitKind::Note => hit
                 .note_session_ref
                 .as_deref()
-                .map(strip_turn_suffix)
-                .is_some_and(|k| keys.contains(k)),
+                .and_then(|raw| metadata::session_key_from_ref(raw).ok())
+                .is_some_and(|k| keys.contains(&k)),
         })
         .collect()
 }
@@ -91,9 +92,8 @@ pub(super) fn filter_hits_to_current_sessions(
             search::HitKind::Note => hit
                 .note_session_ref
                 .as_deref()
-                .filter(|raw| raw.parse::<SessionOrTurnRef>().is_ok() || raw.contains(':'))
-                .map(strip_turn_suffix)
-                .is_some_and(|session_ref| session_refs.contains(session_ref)),
+                .and_then(|raw| metadata::session_key_from_ref(raw).ok())
+                .is_some_and(|session_ref| session_refs.contains(&session_ref)),
         })
         .collect()
 }
