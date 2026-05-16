@@ -1,0 +1,129 @@
+use std::io::{self, IsTerminal};
+
+use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
+use aghist::model::CitationRef;
+use aghist::provider;
+use chrono::{DateTime, Utc};
+
+use crate::cli::FilterArgs;
+
+mod collect;
+mod llm;
+mod output;
+
+use collect::collect_decision_rows;
+use llm::run_llm_decisions;
+use output::{render_decisions_human, render_decisions_json};
+
+#[derive(Clone, Copy)]
+pub(crate) struct DecisionsCommandRequest<'a> {
+    pub(crate) session_filter: Option<&'a str>,
+    pub(crate) threshold: f32,
+    pub(crate) limit: usize,
+    pub(crate) force_json: bool,
+    pub(crate) filters: &'a FilterArgs,
+    pub(crate) use_llm: bool,
+    pub(crate) llm_model: Option<&'a str>,
+}
+
+pub(crate) fn decisions_command(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    request: DecisionsCommandRequest<'_>,
+) -> Result<i32, ErrorEnvelope> {
+    let DecisionsCommandRequest {
+        session_filter,
+        threshold,
+        limit,
+        force_json,
+        filters,
+        use_llm,
+        llm_model,
+    } = request;
+    if !use_llm && llm_model.is_some() {
+        return Err(ErrorEnvelope::new("usage", "--llm-model requires --llm"));
+    }
+    if !threshold.is_finite() || threshold < 0.0 {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("--threshold must be a non-negative finite number (got {threshold})"),
+        ));
+    }
+
+    // If --session was given as a full citation ref, drop the trailing
+    // `#turn` so it can match the session id; we extract decisions across
+    // the whole session regardless of the cited turn.
+    let session_needle = session_filter.map(|s| {
+        let trimmed = s.trim();
+        let without_turn = trimmed.rsplit_once('#').map_or(trimmed, |(head, _)| head);
+        // Strip leading provider segment if present (`<slug>/<id>` → `<id>`).
+        without_turn
+            .split_once('/')
+            .map_or(without_turn, |(_, rest)| rest)
+            .to_string()
+    });
+
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
+    let mut rows = collect_decision_rows(
+        providers,
+        filters,
+        project_needle.as_deref(),
+        session_needle.as_deref(),
+        threshold,
+    );
+
+    rows.sort_by(|a, b| {
+        b.candidate
+            .score
+            .partial_cmp(&a.candidate.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.started_at.cmp(&a.started_at))
+            .then_with(|| a.citation.session_id.0.cmp(&b.citation.session_id.0))
+            .then_with(|| a.candidate.turn.cmp(&b.candidate.turn))
+    });
+
+    if use_llm {
+        return run_llm_decisions(rows, limit, force_json, llm_model);
+    }
+
+    if rows.len() > limit {
+        rows.truncate(limit);
+    }
+
+    if rows.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
+
+    let want_json = force_json || !io::stdout().is_terminal();
+    let stdout = io::stdout();
+    let mut sink = stdout.lock();
+    if want_json {
+        render_decisions_json(&mut sink, &rows)
+    } else {
+        render_decisions_human(&mut sink, &rows)
+    }
+    .map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write decisions output: {e}"))
+    })?;
+
+    Ok(EXIT_OK)
+}
+
+struct LlmRow {
+    citation: CitationRef,
+    decision: aghist::llm::StructuredDecision,
+    source_snippet: Option<String>,
+    project: Option<String>,
+    started_at: DateTime<Utc>,
+}
+
+struct DecisionRow {
+    citation: aghist::model::CitationRef,
+    candidate: aghist::decisions::DecisionCandidate,
+    project: Option<String>,
+    started_at: DateTime<Utc>,
+}
