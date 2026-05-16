@@ -1,4 +1,5 @@
 pub mod aider;
+mod aider_parse;
 pub mod claude_code;
 pub mod cline;
 pub mod codex_cli;
