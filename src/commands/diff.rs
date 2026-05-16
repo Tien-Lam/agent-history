@@ -1,9 +1,11 @@
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
-use aghist::model::{ContentBlock, Message, Provider, Role, Session};
+use aghist::model::{ContentBlock, Message, Role, Session};
 use aghist::provider;
 
+use super::discovery::federated_discovery_for_commands;
+use super::session_select::{resolve_session_selector, SelectedSession, SelectorShape};
 use super::text::truncate;
 
 mod render;
@@ -85,41 +87,15 @@ fn lcs_diff(left: &[DiffLine], right: &[DiffLine]) -> Vec<DiffOp> {
 
 fn load_session_messages(
     providers: &[Box<dyn provider::HistoryProvider>],
-    raw: &str,
+    target: &SelectedSession<'_>,
 ) -> Result<(Session, Vec<Message>), ErrorEnvelope> {
-    let (slug, session_id) = raw.split_once('/').ok_or_else(|| {
+    let messages = provider::load_messages_for_session(target.session, providers).map_err(|e| {
         ErrorEnvelope::new(
-            "usage",
-            format!("invalid session ref '{raw}': expected <provider>/<session-id>"),
+            "provider-error",
+            format!("load {}: {e}", target.session_ref),
         )
     })?;
-    let provider_kind = Provider::from_slug(slug)
-        .ok_or_else(|| ErrorEnvelope::new("usage", format!("unknown provider slug '{slug}'")))?;
-    let p = providers
-        .iter()
-        .find(|p| p.provider() == provider_kind)
-        .ok_or_else(|| {
-            ErrorEnvelope::new(
-                "provider-unavailable",
-                format!("provider '{slug}' not detected"),
-            )
-        })?;
-    let sessions = p
-        .discover_sessions()
-        .map_err(|e| ErrorEnvelope::new("provider-error", format!("discover {slug}: {e}")))?;
-    let session = sessions
-        .into_iter()
-        .find(|s| s.id.0 == session_id || s.id.0.starts_with(session_id))
-        .ok_or_else(|| {
-            ErrorEnvelope::new(
-                "session-not-found",
-                format!("session '{session_id}' not found in {slug}"),
-            )
-        })?;
-    let messages = p.load_messages(&session).map_err(|e| {
-        ErrorEnvelope::new("provider-error", format!("load {slug}/{session_id}: {e}"))
-    })?;
-    Ok((session, messages))
+    Ok((target.session.clone(), messages))
 }
 
 pub(crate) fn diff_command(
@@ -129,8 +105,21 @@ pub(crate) fn diff_command(
     context: usize,
     force_json: bool,
 ) -> Result<i32, ErrorEnvelope> {
-    let (sess1, msgs1) = load_session_messages(providers, raw1)?;
-    let (sess2, msgs2) = load_session_messages(providers, raw2)?;
+    let discovery = federated_discovery_for_commands(providers);
+    let target1 = resolve_session_selector(
+        &discovery.sessions,
+        &discovery.source_by_session,
+        raw1,
+        SelectorShape::SessionRefOnly,
+    )?;
+    let target2 = resolve_session_selector(
+        &discovery.sessions,
+        &discovery.source_by_session,
+        raw2,
+        SelectorShape::SessionRefOnly,
+    )?;
+    let (sess1, msgs1) = load_session_messages(providers, &target1)?;
+    let (sess2, msgs2) = load_session_messages(providers, &target2)?;
 
     let lines1: Vec<DiffLine> = msgs1.iter().map(DiffLine::from_message).collect();
     let lines2: Vec<DiffLine> = msgs2.iter().map(DiffLine::from_message).collect();
@@ -138,8 +127,8 @@ pub(crate) fn diff_command(
     let ops = lcs_diff(&lines1, &lines2);
     let want_json = force_json || !io::stdout().is_terminal();
     let render = DiffRenderInput {
-        raw1,
-        raw2,
+        raw1: &target1.session_ref,
+        raw2: &target2.session_ref,
         sess1: &sess1,
         sess2: &sess2,
         lines1: &lines1,

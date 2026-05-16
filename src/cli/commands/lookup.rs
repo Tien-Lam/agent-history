@@ -193,11 +193,11 @@ pub(crate) struct ShowCommand {
 
 #[derive(Args)]
 pub(crate) struct DiffCommand {
-    /// First session ref (e.g. `claude-code/abc-123`).
+    /// First session ref (e.g. `claude-code/abc-123` or `laptop:claude-code/abc-123`).
     #[arg(value_name = "SESSION1")]
     pub(crate) session1: String,
 
-    /// Second session ref (e.g. `claude-code/def-456`).
+    /// Second session ref (e.g. `claude-code/def-456` or `laptop:claude-code/def-456`).
     #[arg(value_name = "SESSION2")]
     pub(crate) session2: String,
 

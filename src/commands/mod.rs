@@ -16,6 +16,7 @@ pub mod reports;
 pub mod reports_dispatch;
 pub mod search;
 pub mod search_dispatch;
+pub mod session_select;
 pub mod show;
 pub mod sources;
 pub mod system;

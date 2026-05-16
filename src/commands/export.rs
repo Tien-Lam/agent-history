@@ -2,12 +2,10 @@ use std::io::Write as _;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::metadata::{self, Note};
-use aghist::model::{Session, SessionRef};
 use aghist::{export, provider};
 
-use super::discovery::{
-    federated_discovery_for_commands, qualified_session_ref, source_for_session,
-};
+use super::discovery::federated_discovery_for_commands;
+use super::session_select::{resolve_session_selector, SelectorShape};
 
 /// Parse a 1-based inclusive turn range against a session of `total` messages.
 ///
@@ -104,145 +102,6 @@ fn load_session_notes(
     Some(out)
 }
 
-struct ExportTarget<'a> {
-    session: &'a Session,
-    session_ref: String,
-}
-
-fn split_source_prefix(raw: &str) -> Result<Option<(&str, &str)>, ErrorEnvelope> {
-    let slash = raw.find('/');
-    let colon = raw.find(':');
-    if !matches!((colon, slash), (Some(c), Some(s)) if c < s) {
-        return Ok(None);
-    }
-    let (source, rest) = raw.split_once(':').expect("colon detected above");
-    aghist::config::validate_source_name(source)
-        .map_err(|message| ErrorEnvelope::new("usage", message))?;
-    Ok(Some((source, rest)))
-}
-
-fn parse_session_ref(raw: &str, full_selector: &str) -> Result<SessionRef, ErrorEnvelope> {
-    raw.parse::<SessionRef>().map_err(|e| {
-        ErrorEnvelope::new(
-            "usage",
-            format!("invalid session ref '{full_selector}': {e}"),
-        )
-        .with_hint("Format: <provider-slug>/<session-id> or <source>:<provider-slug>/<session-id>.")
-    })
-}
-
-fn export_target_not_found(selector: &str) -> ErrorEnvelope {
-    ErrorEnvelope::new(
-        "session-not-found",
-        format!("Session not found: {selector}"),
-    )
-    .with_hint("Run `aghist --list --json` to see available sessions and sources.")
-}
-
-fn export_target_ambiguous(
-    selector: &str,
-    matches: &[&Session],
-    sources: &[String],
-) -> ErrorEnvelope {
-    let mut candidates: Vec<String> = matches
-        .iter()
-        .zip(sources)
-        .take(8)
-        .map(|(session, source)| {
-            if source == aghist::federated::LOCAL_SOURCE {
-                session.session_ref().to_string()
-            } else {
-                format!("{source}:{}", session.session_ref())
-            }
-        })
-        .collect();
-    if matches.len() > candidates.len() {
-        candidates.push(format!("... and {} more", matches.len() - candidates.len()));
-    }
-    ErrorEnvelope::new(
-        "ambiguous-session",
-        format!(
-            "session selector '{selector}' matched {} sessions: {}",
-            matches.len(),
-            candidates.join(", ")
-        ),
-    )
-    .with_hint("Use --session <source>:<provider>/<session-id> to choose one session explicitly.")
-}
-
-fn unique_export_target<'a>(
-    selector: &str,
-    matches: &[&'a Session],
-    source_by_session: &std::collections::HashMap<String, String>,
-) -> Result<ExportTarget<'a>, ErrorEnvelope> {
-    if matches.is_empty() {
-        return Err(export_target_not_found(selector));
-    }
-    let sources: Vec<String> = matches
-        .iter()
-        .map(|session| source_for_session(source_by_session, session).to_string())
-        .collect();
-    if matches.len() > 1 {
-        return Err(export_target_ambiguous(selector, matches, &sources));
-    }
-    let session = matches[0];
-    Ok(ExportTarget {
-        session,
-        session_ref: qualified_session_ref(source_by_session, session),
-    })
-}
-
-fn resolve_export_target<'a>(
-    sessions: &'a [Session],
-    source_by_session: &std::collections::HashMap<String, String>,
-    selector: &str,
-) -> Result<ExportTarget<'a>, ErrorEnvelope> {
-    if selector.contains('#') {
-        return Err(ErrorEnvelope::new(
-            "usage",
-            "export --session expects a session ref, not a turn-level citation ref",
-        )
-        .with_hint("Use `aghist show <ref>` for a single turn, or remove the `#<turn>` suffix and use `--turn-range`."));
-    }
-
-    if let Some((source, raw_ref)) = split_source_prefix(selector)? {
-        let session_ref = parse_session_ref(raw_ref, selector)?;
-        let matches: Vec<&Session> = sessions
-            .iter()
-            .filter(|session| {
-                session.provider == session_ref.provider
-                    && session.id == session_ref.session_id
-                    && source_for_session(source_by_session, session) == source
-            })
-            .collect();
-        return unique_export_target(selector, &matches, source_by_session);
-    }
-
-    if selector.contains('/') {
-        let session_ref = parse_session_ref(selector, selector)?;
-        let matches: Vec<&Session> = sessions
-            .iter()
-            .filter(|session| {
-                session.provider == session_ref.provider && session.id == session_ref.session_id
-            })
-            .collect();
-        return unique_export_target(selector, &matches, source_by_session);
-    }
-
-    let exact_matches: Vec<&Session> = sessions
-        .iter()
-        .filter(|session| session.id.0 == selector)
-        .collect();
-    if !exact_matches.is_empty() {
-        return unique_export_target(selector, &exact_matches, source_by_session);
-    }
-    let prefix_matches: Vec<&Session> = sessions
-        .iter()
-        .filter(|session| session.id.0.starts_with(selector))
-        .collect();
-    unique_export_target(selector, &prefix_matches, source_by_session)
-}
-
 pub(crate) fn export_session(
     providers: &[Box<dyn provider::HistoryProvider>],
     format: export::ExportFormat,
@@ -252,10 +111,11 @@ pub(crate) fn export_session(
     include_notes: bool,
 ) -> Result<i32, ErrorEnvelope> {
     let discovery = federated_discovery_for_commands(providers);
-    let target = resolve_export_target(
+    let target = resolve_session_selector(
         &discovery.sessions,
         &discovery.source_by_session,
         session_id,
+        SelectorShape::SessionRefOrIdPrefix,
     )?;
     let session = target.session;
 

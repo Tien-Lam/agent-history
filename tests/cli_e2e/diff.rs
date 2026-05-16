@@ -87,6 +87,90 @@ fn diff_identical_sessions_exits_empty_with_json_summary() {
 }
 
 #[test]
+fn diff_accepts_source_qualified_remote_session_refs() {
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("diff-remote-left")
+        .project("diff-remote-project")
+        .user("shared opening")
+        .assistant("left remote answer")
+        .done()
+        .add_session("diff-remote-right")
+        .project("diff-remote-project")
+        .user("shared opening")
+        .assistant("right remote answer")
+        .done()
+        .build();
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
+
+    let assert = aghist()
+        .args([
+            "diff",
+            "laptop:claude-code/diff-remote-left",
+            "laptop:claude-code/diff-remote-right",
+            "--json",
+        ])
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
+        .assert()
+        .success();
+    let parsed = parse_stdout_json(&assert);
+
+    assert_eq!(
+        parsed["session1"]["ref"],
+        "laptop:claude-code/diff-remote-left"
+    );
+    assert_eq!(
+        parsed["session2"]["ref"],
+        "laptop:claude-code/diff-remote-right"
+    );
+    assert_eq!(parsed["changed"], 2);
+}
+
+#[test]
+fn diff_unqualified_duplicate_ref_requires_source_prefix() {
+    let local = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("diff-shared")
+        .project("local-diff-project")
+        .user("local body")
+        .done()
+        .add_session("diff-local-other")
+        .project("local-diff-project")
+        .user("other local body")
+        .done()
+        .build();
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("diff-shared")
+        .project("remote-diff-project")
+        .user("remote body")
+        .done()
+        .build();
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
+    let home = local.base_path.parent().unwrap();
+
+    let assert = aghist()
+        .args([
+            "diff",
+            "claude-code/diff-shared",
+            "claude-code/diff-local-other",
+            "--json",
+        ])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
+        .assert()
+        .code(1);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|line| line.starts_with('{')).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "ambiguous-session");
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("laptop:claude-code/diff-shared"));
+}
+
+#[test]
 fn diff_invalid_ref_emits_usage_envelope() {
     let dir = tempfile::tempdir().unwrap();
     let assert = aghist()
