@@ -11,7 +11,7 @@ use super::index::run_index;
 use super::install::{self_update, uninstall};
 use super::list::list_sessions;
 use super::metadata::{note_dispatch, star_command, stars_list, tag_dispatch, unstar_command};
-use super::reports::{project_command, report_command, usage_command};
+use super::reports_dispatch::dispatch_report_command;
 use super::search_dispatch::{dispatch_search_command, SearchDispatchArgs, SearchDispatchMode};
 use super::show::show_command;
 use super::sources::{
@@ -166,7 +166,7 @@ fn dispatch_command(
         | Command::Unstar { .. }
         | Command::Stars { .. }) => dispatch_metadata_command(cmd, ctx)?,
         cmd @ (Command::Usage { .. } | Command::Project { .. } | Command::Report { .. }) => {
-            dispatch_report_command(cmd, ctx)?
+            dispatch_report_command(cmd, ctx.providers, ctx.filters)?
         }
     };
     Ok(Some(exit))
@@ -301,59 +301,6 @@ fn dispatch_sources_command(
         Some(SourcesCommand::Pull { name, all, dry_run }) => {
             sources_pull_remote(name.as_deref(), all, dry_run, mode)
         }
-    }
-}
-
-fn dispatch_report_command(
-    command: Command,
-    ctx: &DispatchContext<'_>,
-) -> Result<i32, ErrorEnvelope> {
-    match command {
-        Command::Usage { by, limit, json } => {
-            usage_command(ctx.providers, ctx.filters, by, limit, json)
-        }
-        Command::Project {
-            name,
-            decisions,
-            todos,
-            threads,
-            files,
-            json,
-        } => {
-            let limits = aghist::project::ProjectLimits {
-                decisions,
-                todos,
-                threads,
-                files,
-            };
-            project_command(ctx.providers, ctx.filters, &name, limits, json)
-        }
-        Command::Report {
-            days,
-            week,
-            month,
-            top_projects,
-            decisions,
-            todos,
-            threads,
-            json,
-        } => {
-            let window_days = if month {
-                30
-            } else if week {
-                7
-            } else {
-                days.unwrap_or(7)
-            };
-            let limits = aghist::report::ReportLimits {
-                top_projects,
-                decisions,
-                todos,
-                threads,
-            };
-            report_command(ctx.providers, ctx.filters, window_days, limits, json)
-        }
-        _ => unreachable!("report dispatch received unrelated command"),
     }
 }
 
