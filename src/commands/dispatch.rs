@@ -155,7 +155,7 @@ fn dispatch_command(
         | Command::Stars { .. }) => {
             dispatch_metadata_command(cmd, ctx.providers, ctx.output.mode(CommandKind::OneShot))?
         }
-        cmd @ (Command::Usage { .. } | Command::Project { .. } | Command::Report { .. }) => {
+        cmd @ (Command::Usage(_) | Command::Project(_) | Command::Report(_)) => {
             dispatch_report_command(cmd, ctx.providers, ctx.filters)?
         }
     };

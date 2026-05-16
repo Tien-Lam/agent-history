@@ -1,14 +1,14 @@
 use clap::Subcommand;
 
-use super::resolvers::parse_usage_group_by;
-
 mod analysis;
 mod lookup;
 mod metadata;
+mod reports;
 
 use analysis::{DecisionsCommand, ThreadsCommand, TodosCommand, TrackCommand};
 use lookup::{DiffCommand, ExportCommand, IndexCommand, SearchCommand, ShowCommand};
 pub(crate) use metadata::{NoteCommand, SourcesCommand, TagCommand};
+use reports::{ProjectCommand, ReportCommand, UsageCommand};
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
@@ -198,20 +198,7 @@ pub(crate) enum Command {
     /// JSON envelope: `{rows:[...], totals:{...}, meta:{group_by, ...}}`.
     /// Rows are ordered by `total_tokens` descending, with key as a stable
     /// tiebreaker. Empty result exits 3.
-    Usage {
-        /// Group rows by `model` (default), `provider`, or `project`.
-        #[arg(long, default_value = "model", value_parser = parse_usage_group_by, value_name = "DIM")]
-        by: aghist::usage::GroupBy,
-
-        /// Cap rows after sorting (0 = no limit). Totals always cover every
-        /// matching session, even those clipped from `rows`.
-        #[arg(long, short = 'n', default_value_t = 0)]
-        limit: usize,
-
-        /// Force JSON output (default: JSON on pipe, table on TTY).
-        #[arg(long)]
-        json: bool,
-    },
+    Usage(UsageCommand),
     /// Per-project productivity dashboard.
     ///
     /// Aggregates one project's history into a single envelope: session and
@@ -226,32 +213,7 @@ pub(crate) enum Command {
     /// `--files` to cap each section (raw counts live in `meta.*_total`).
     ///
     /// Empty result (no matching sessions) exits with code 3.
-    Project {
-        /// Project name. Matched as a case-insensitive substring against
-        /// each session's `project_name`.
-        #[arg(value_name = "NAME")]
-        name: String,
-
-        /// Cap the decisions section. 0 = no cap.
-        #[arg(long, default_value_t = aghist::project::ProjectLimits::DEFAULTS.decisions, value_name = "N")]
-        decisions: usize,
-
-        /// Cap the todos section. 0 = no cap.
-        #[arg(long, default_value_t = aghist::project::ProjectLimits::DEFAULTS.todos, value_name = "N")]
-        todos: usize,
-
-        /// Cap the threads section. 0 = no cap.
-        #[arg(long, default_value_t = aghist::project::ProjectLimits::DEFAULTS.threads, value_name = "N")]
-        threads: usize,
-
-        /// Cap the top-files section. 0 = no cap.
-        #[arg(long, default_value_t = aghist::project::ProjectLimits::DEFAULTS.files, value_name = "N")]
-        files: usize,
-
-        /// Force JSON output (default: JSON on pipe, table on TTY).
-        #[arg(long)]
-        json: bool,
-    },
+    Project(ProjectCommand),
     /// Cross-project weekly summary suitable for journals or reviews.
     ///
     /// Aggregates a window of activity across every provider into a single
@@ -265,39 +227,7 @@ pub(crate) enum Command {
     /// Default output is Markdown — paste straight into a journal. Pass
     /// `--json` for the structured envelope (schema: `aghist schema report`).
     /// Empty result (no matching sessions) exits with code 3.
-    Report {
-        /// Window length in days. Mutually exclusive with `--week`/`--month`.
-        #[arg(long, value_name = "N", conflicts_with_all = ["week", "month"])]
-        days: Option<i64>,
-
-        /// Shorthand for `--days 7`.
-        #[arg(long, conflicts_with_all = ["days", "month"])]
-        week: bool,
-
-        /// Shorthand for `--days 30`.
-        #[arg(long, conflicts_with_all = ["days", "week"])]
-        month: bool,
-
-        /// Cap the top-projects section. 0 = no cap.
-        #[arg(long, default_value_t = aghist::report::ReportLimits::DEFAULTS.top_projects, value_name = "N")]
-        top_projects: usize,
-
-        /// Cap the decisions section. 0 = no cap.
-        #[arg(long, default_value_t = aghist::report::ReportLimits::DEFAULTS.decisions, value_name = "N")]
-        decisions: usize,
-
-        /// Cap the todos section. 0 = no cap.
-        #[arg(long, default_value_t = aghist::report::ReportLimits::DEFAULTS.todos, value_name = "N")]
-        todos: usize,
-
-        /// Cap the threads section. 0 = no cap.
-        #[arg(long, default_value_t = aghist::report::ReportLimits::DEFAULTS.threads, value_name = "N")]
-        threads: usize,
-
-        /// Emit the structured JSON envelope instead of Markdown.
-        #[arg(long)]
-        json: bool,
-    },
+    Report(ReportCommand),
     /// Update a self-managed release binary to the latest GitHub release
     Update,
     /// Remove a self-managed release binary and data
