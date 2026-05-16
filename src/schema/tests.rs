@@ -70,6 +70,16 @@ fn show_schema_includes_reference_pattern() {
     // Sanity check: the example ref from the description matches the pattern.
     let re = regex_lite_check(pattern.as_str().unwrap(), "claude-code/abc-123#7");
     assert!(re, "show ref pattern should match canonical example");
+    let re = regex_lite_check(pattern.as_str().unwrap(), "laptop:claude-code/abc-123#7");
+    assert!(re, "show ref pattern should match source-qualified refs");
+    assert!(
+        pattern.as_str().unwrap().contains(":)?"),
+        "show ref pattern should document the optional source prefix"
+    );
+    assert!(
+        !pattern.as_str().unwrap().ends_with(")?$"),
+        "show ref pattern should require a turn suffix"
+    );
 }
 
 #[test]

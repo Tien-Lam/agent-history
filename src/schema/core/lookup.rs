@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     exit_codes, filter_params_fragment, provider_slug_enum, provider_slug_enum_nullable,
-    session_row_schema, SCHEMA_DRAFT,
+    session_row_schema, SCHEMA_DRAFT, SOURCE_QUALIFIED_CITATION_REF_PATTERN,
 };
 
 fn list_params_properties() -> Value {
@@ -144,14 +144,14 @@ pub(in crate::schema) fn show_schema() -> Value {
         "$id": "aghist:schema/show",
         "title": "aghist show",
         "command": "show",
-        "description": "Resolve a citation ref `<provider>/<session-id>#<turn>` to a single message.",
+        "description": "Resolve a citation ref `<provider>/<session-id>#<turn>` or `<source>:<provider>/<session-id>#<turn>` to a single message.",
         "params": {
             "type": "object",
             "properties": {
                 "reference": {
                     "type": "string",
-                    "pattern": "^[a-z0-9-]+/.+#[1-9][0-9]*$",
-                    "description": "Citation ref. Example: claude-code/abc-123#7"
+                    "pattern": SOURCE_QUALIFIED_CITATION_REF_PATTERN,
+                    "description": "Citation ref. Examples: claude-code/abc-123#7, laptop:claude-code/abc-123#7"
                 },
                 "format": {
                     "type": "string",
