@@ -1,12 +1,16 @@
 use std::path::Path;
 
 use aghist::model::Provider;
+use aghist::provider::aider::AiderProvider;
 use aghist::provider::claude_code::ClaudeCodeProvider;
+use aghist::provider::cline::ClineProvider;
 use aghist::provider::codex_cli::CodexCliProvider;
+use aghist::provider::continue_dev::ContinueDevProvider;
 use aghist::provider::copilot_cli::CopilotCliProvider;
 use aghist::provider::cursor::CursorProvider;
 use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
+use aghist::provider::zed_ai::ZedAiProvider;
 use aghist::provider::HistoryProvider;
 use tempfile::TempDir;
 
@@ -61,6 +65,36 @@ pub fn missing_dir_provider_cases(base: &Path) -> Vec<ProviderCase> {
             label: "cursor",
             provider: Box::new(CursorProvider::new(vec![base.join("missing-cursor")])),
             expected_provider: Provider::Cursor,
+            expected_sessions: Some(0),
+            expected_messages_per_session: None,
+        },
+        ProviderCase {
+            label: "aider",
+            provider: Box::new(AiderProvider::new(vec![base.join("missing-aider")])),
+            expected_provider: Provider::Aider,
+            expected_sessions: Some(0),
+            expected_messages_per_session: None,
+        },
+        ProviderCase {
+            label: "zed-ai",
+            provider: Box::new(ZedAiProvider::new(vec![base.join("missing-zed-ai")])),
+            expected_provider: Provider::ZedAi,
+            expected_sessions: Some(0),
+            expected_messages_per_session: None,
+        },
+        ProviderCase {
+            label: "cline",
+            provider: Box::new(ClineProvider::new(vec![base.join("missing-cline")])),
+            expected_provider: Provider::Cline,
+            expected_sessions: Some(0),
+            expected_messages_per_session: None,
+        },
+        ProviderCase {
+            label: "continue-dev",
+            provider: Box::new(ContinueDevProvider::new(vec![
+                base.join("missing-continue-dev")
+            ])),
+            expected_provider: Provider::ContinueDev,
             expected_sessions: Some(0),
             expected_messages_per_session: None,
         },
