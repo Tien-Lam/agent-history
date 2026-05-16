@@ -148,7 +148,10 @@ pub(crate) fn search_command(
             &session_meta,
             &federation.source_by_session,
             next_cursor.as_deref(),
-        );
+        )
+        .map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write search output: {e}"))
+        })?;
     }
 
     Ok(EXIT_OK)

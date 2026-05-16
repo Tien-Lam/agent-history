@@ -65,7 +65,8 @@ pub(super) fn print_search_table(
     sessions: &HashMap<String, &Session>,
     source_by_session: &HashMap<String, String>,
     next_cursor: Option<&str>,
-) {
+) -> io::Result<()> {
+    let mut out = io::stdout().lock();
     let any_remote = hits.iter().any(|(h, _)| {
         source_by_session
             .get(h.session_key.as_str())
@@ -73,22 +74,35 @@ pub(super) fn print_search_table(
     });
 
     if any_remote {
-        println!(
+        writeln!(
+            out,
             "{:<6}  {:<16}  {:<12}  {:<20}  {:<10}  {:<14}  SNIPPET",
             "SCORE", "STARTED", "PROVIDER", "PROJECT", "SOURCE", "SESSION"
-        );
+        )?;
     } else {
-        println!(
+        writeln!(
+            out,
             "{:<6}  {:<16}  {:<12}  {:<20}  {:<14}  SNIPPET",
             "SCORE", "STARTED", "PROVIDER", "PROJECT", "SESSION"
-        );
+        )?;
     }
     for (h, explain) in hits {
-        print_table_row(h, explain.as_ref(), sessions, source_by_session, any_remote);
+        write_table_row(
+            &mut out,
+            h,
+            explain.as_ref(),
+            sessions,
+            source_by_session,
+            any_remote,
+        )?;
     }
     if let Some(token) = next_cursor {
-        println!("\n(more results — pass --cursor {token} for the next page)");
+        writeln!(
+            out,
+            "\n(more results — pass --cursor {token} for the next page)"
+        )?;
     }
+    Ok(())
 }
 
 pub(super) fn write_watch_hit<W: Write>(
@@ -148,13 +162,14 @@ fn json_hit<'a>(
     }
 }
 
-fn print_table_row(
+fn write_table_row<W: Write>(
+    out: &mut W,
     hit: &search::SearchHit,
     explanation: Option<&search::Explanation>,
     sessions: &HashMap<String, &Session>,
     source_by_session: &HashMap<String, String>,
     any_remote: bool,
-) {
+) -> io::Result<()> {
     let is_note = matches!(hit.kind, search::HitKind::Note);
     let session = sessions.get(hit.session_key.as_str()).copied();
     let started = if is_note {
@@ -194,19 +209,22 @@ fn print_table_row(
             .get(hit.session_key.as_str())
             .map_or(federated::LOCAL_SOURCE, String::as_str);
         let source = truncate(source, 10);
-        println!(
+        writeln!(
+            out,
             "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<10}  {:<14}  {}",
             hit.score, started, provider, project, source, session_short, snippet
-        );
+        )?;
     } else {
-        println!(
+        writeln!(
+            out,
             "{:<6.2}  {:<16}  {:<12}  {:<20}  {:<14}  {}",
             hit.score, started, provider, project, session_short, snippet
-        );
+        )?;
     }
     if let Some(explanation) = explanation {
         for line in explanation.to_pretty_json().lines() {
-            println!("    {line}");
+            writeln!(out, "    {line}")?;
         }
     }
+    Ok(())
 }

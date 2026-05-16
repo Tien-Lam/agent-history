@@ -1,7 +1,7 @@
-use std::io::Write as _;
+use std::io::{self, Write as _};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
-use aghist::model::Session;
+use aghist::model::{Provider, Session};
 use aghist::output::OutputMode;
 use aghist::provider;
 
@@ -17,6 +17,7 @@ pub(crate) fn list_sessions(
     metadata_keys: Option<&std::collections::HashSet<String>>,
 ) -> Result<i32, ErrorEnvelope> {
     let mut all_sessions = Vec::new();
+    let mut provider_counts = Vec::new();
 
     let needs_messages = filters.role.is_some() || filters.has_tool_call;
     let project_needle = filters
@@ -44,7 +45,7 @@ pub(crate) fn list_sessions(
                     })
                     .collect();
                 if !mode.is_machine() {
-                    println!("{}: {} sessions", p.provider(), kept.len());
+                    provider_counts.push((p.provider(), kept.len()));
                 }
                 all_sessions.extend(kept);
             }
@@ -107,7 +108,11 @@ pub(crate) fn list_sessions(
     };
 
     match mode {
-        OutputMode::Human => render_list_human(page, total, next_cursor.as_deref()),
+        OutputMode::Human => {
+            render_list_human(&provider_counts, page, total, next_cursor.as_deref()).map_err(
+                |e| ErrorEnvelope::new("io-error", format!("failed to write list output: {e}")),
+            )?;
+        }
         OutputMode::Json => render_list_json(page, total, next_cursor.as_deref()).map_err(|e| {
             ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
         })?,
@@ -125,8 +130,17 @@ pub(crate) fn list_sessions(
     }
 }
 
-fn render_list_human(sessions: &[Session], total: usize, next_cursor: Option<&str>) {
-    println!("\nTotal: {total} sessions\n");
+fn render_list_human(
+    provider_counts: &[(Provider, usize)],
+    sessions: &[Session],
+    total: usize,
+    next_cursor: Option<&str>,
+) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    for (provider, count) in provider_counts {
+        writeln!(out, "{provider}: {count} sessions")?;
+    }
+    writeln!(out, "\nTotal: {total} sessions\n")?;
     for s in sessions {
         let project = s.project_name.as_deref().unwrap_or("(unknown)");
         let branch = s.git_branch.as_deref().unwrap_or("");
@@ -139,18 +153,23 @@ fn render_list_human(sessions: &[Session], total: usize, next_cursor: Option<&st
             Some(text) => text.to_string(),
             None => String::new(),
         };
-        println!(
+        writeln!(
+            out,
             "  {} | {} | {} | {} | {}",
             s.started_at.format("%Y-%m-%d %H:%M"),
             s.provider,
             project,
             branch,
             summary
-        );
+        )?;
     }
     if let Some(token) = next_cursor {
-        println!("\n(more results — pass --cursor {token} for the next page)");
+        writeln!(
+            out,
+            "\n(more results — pass --cursor {token} for the next page)"
+        )?;
     }
+    Ok(())
 }
 
 #[derive(serde::Serialize)]
