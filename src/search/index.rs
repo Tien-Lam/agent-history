@@ -228,7 +228,11 @@ impl SearchIndex {
         let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
         writer.delete_all_documents()?;
         writer.commit()?;
-        let _ = fs::remove_file(self.index_dir.join("manifest.json"));
+        match fs::remove_file(self.index_dir.join("manifest.json")) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
         Ok(())
     }
 

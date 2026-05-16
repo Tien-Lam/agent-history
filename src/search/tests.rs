@@ -129,6 +129,17 @@ fn build_tiny_index() -> (tempfile::TempDir, SearchIndex) {
 }
 
 #[test]
+fn clear_reports_manifest_removal_failure() {
+    let dir = tempdir().unwrap();
+    let index = SearchIndex::open_or_create(dir.path()).unwrap();
+    std::fs::create_dir(dir.path().join("manifest.json")).unwrap();
+
+    let err = index.clear().unwrap_err();
+
+    assert!(matches!(err, SearchError::Io(_)), "{err}");
+}
+
+#[test]
 fn duplicate_raw_session_ids_do_not_overwrite_each_other() {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();
