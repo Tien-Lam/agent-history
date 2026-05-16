@@ -32,13 +32,12 @@ struct DispatchContext<'a> {
 }
 
 pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
-    clear_search_index_if_requested(cli.reindex);
-
     if let Some(exit) = reject_conflicting_output_flags(cli.json, cli.ndjson) {
         return Ok(exit);
     }
 
     let config = load_config()?;
+    clear_search_index_if_requested(cli.reindex);
     let providers = detect_enabled_providers(&config);
     let Cli {
         list,

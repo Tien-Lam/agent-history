@@ -84,3 +84,44 @@ fn uninstall_from_build_tree_is_rejected_before_prompt() {
         .unwrap()
         .contains("Cargo build directory"));
 }
+
+#[test]
+fn reindex_does_not_clear_index_on_usage_error() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let manifest = index_dir.path().join("manifest.json");
+    std::fs::write(&manifest, "{}").unwrap();
+
+    aghist()
+        .args(["--reindex", "--json", "--ndjson", "--list"])
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .assert()
+        .code(2);
+
+    assert!(
+        manifest.exists(),
+        "--reindex must not mutate the index before usage validation succeeds"
+    );
+}
+
+#[test]
+fn reindex_does_not_clear_index_on_config_error() {
+    let root = tempfile::tempdir().unwrap();
+    let config_path = root.path().join("bad-config.toml");
+    let index_dir = root.path().join("idx");
+    let manifest = index_dir.join("manifest.json");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    std::fs::write(&manifest, "{}").unwrap();
+    std::fs::write(&config_path, "[providers\n").unwrap();
+
+    aghist()
+        .args(["--reindex", "--list"])
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_INDEX_DIR", &index_dir)
+        .assert()
+        .failure();
+
+    assert!(
+        manifest.exists(),
+        "--reindex must not mutate the index before config validation succeeds"
+    );
+}
