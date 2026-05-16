@@ -5,6 +5,7 @@ mod claude_code_parse;
 pub mod cline;
 mod cline_parse;
 pub mod codex_cli;
+mod codex_cli_parse;
 pub mod continue_dev;
 mod continue_dev_parse;
 pub mod copilot_cli;
