@@ -14,6 +14,7 @@ mod cursor_message;
 mod cursor_store;
 pub mod error;
 pub mod gemini_cli;
+mod gemini_cli_parse;
 pub mod opencode;
 mod opencode_parse;
 pub mod registry;
