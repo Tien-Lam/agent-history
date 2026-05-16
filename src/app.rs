@@ -13,7 +13,6 @@ use crate::action::Action;
 use crate::config::Config;
 use crate::embed;
 use crate::event::{map_key_event, CrosstermEventSource, EventSource};
-use crate::export::ExportFormat;
 use crate::model::{Message, Provider, Session, SessionId};
 use crate::provider::HistoryProvider;
 use crate::search::{SearchHit, SearchIndex};
@@ -23,6 +22,7 @@ use crate::ui::session_list::SessionListComponent;
 use crate::ui::status_bar::StatusBarComponent;
 
 mod dispatch;
+mod export;
 mod overlays;
 mod render;
 mod search;
@@ -376,47 +376,6 @@ impl App {
         if let Some((session_id, source_path, provider)) = self.resolve_selected_session() {
             self.load_messages_cached(&session_id, &source_path, provider);
             self.message_view.reset_scroll();
-        }
-    }
-
-    fn perform_export(&mut self, format: ExportFormat) {
-        let session = {
-            let Some(idx) = self.session_list.selected_index() else {
-                return;
-            };
-            let display = self.display_sessions();
-            match display.get(idx) {
-                Some(s) => (*s).clone(),
-                None => return,
-            }
-        };
-
-        let messages = match self.message_cache.get(&session.id.0) {
-            Some(m) => m.clone(),
-            None => return,
-        };
-
-        let content = crate::export::export(format, &session, &messages);
-        let id_short = session.id.0.get(..8).unwrap_or(&session.id.0);
-        let sanitized: String = id_short
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        let filename = format!("aghist-{sanitized}.{}", format.extension());
-
-        match std::fs::write(&filename, &content) {
-            Ok(()) => {
-                self.status_message = Some(format!("Exported to {filename}"));
-            }
-            Err(e) => {
-                self.warnings.push(format!("Export failed: {e}"));
-            }
         }
     }
 }
