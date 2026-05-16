@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-
-use aghist::model::{QualifiedCitationRef, Session};
 use aghist::{config, federated, provider};
 
 pub(crate) fn federated_discovery_for_commands(
@@ -23,45 +20,6 @@ pub(crate) fn federated_discovery_for_commands(
     result
 }
 
-pub(crate) fn source_for_session<'a>(
-    source_by_session: &'a HashMap<String, String>,
-    session: &Session,
-) -> &'a str {
-    source_by_session
-        .get(session.identity_key().as_str())
-        .map_or(federated::LOCAL_SOURCE, String::as_str)
-}
-
-pub(crate) fn qualified_session_ref(
-    source_by_session: &HashMap<String, String>,
-    session: &Session,
-) -> String {
-    let session_ref = session.session_ref().to_string();
-    let source = source_for_session(source_by_session, session);
-    if source == federated::LOCAL_SOURCE {
-        session_ref
-    } else {
-        format!("{source}:{session_ref}")
-    }
-}
-
-pub(crate) fn qualified_citation_ref(
-    source_by_session: &HashMap<String, String>,
-    session: &Session,
-    turn: u32,
-) -> String {
-    let source = source_for_session(source_by_session, session);
-    let Some(citation) = session.citation_ref(turn) else {
-        let raw_ref = format!("{}/{}#{turn}", session.provider.slug(), session.id.0);
-        return if source == federated::LOCAL_SOURCE {
-            raw_ref
-        } else {
-            format!("{source}:{raw_ref}")
-        };
-    };
-    QualifiedCitationRef::new(
-        (source != federated::LOCAL_SOURCE).then(|| source.to_string()),
-        citation,
-    )
-    .to_string()
-}
+pub(crate) use aghist::session_resolver::{
+    qualified_citation_ref, qualified_session_ref, source_for_session,
+};

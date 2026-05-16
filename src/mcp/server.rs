@@ -15,6 +15,7 @@ use crate::config::RemoteSource;
 use crate::federated::{self, FederatedDiscovery, SourceFailure, LOCAL_SOURCE};
 use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
+use crate::session_resolver::SessionResolver;
 
 /// Owns the providers + search index for the lifetime of a server run.
 pub struct McpServer {
@@ -212,44 +213,14 @@ impl McpServer {
             self.ensure_provider_visible(provider)?;
         }
         let discovery = self.collect_discovery();
-        let candidates: Vec<LocatedSession> = discovery
-            .sessions
-            .iter()
-            .filter(|session| provider_filter.is_none_or(|want| session.provider == want))
-            .filter(|session| {
-                source_filter.is_none_or(|want| discovery.source_of_session(session) == want)
-            })
-            .filter(|session| session.id.0 == session_id || session.id.0.starts_with(session_id))
-            .map(|session| LocatedSession {
-                session: session.clone(),
-                source: discovery.source_of_session(session).to_string(),
-            })
-            .collect();
-
-        let exact: Vec<LocatedSession> = candidates
-            .iter()
-            .filter(|located| located.session.id.0 == session_id)
-            .map(|located| LocatedSession {
-                session: located.session.clone(),
-                source: located.source.clone(),
-            })
-            .collect();
-        let matches = if exact.is_empty() { candidates } else { exact };
-
-        match matches.len() {
-            0 => Err(format!("session not found: {session_id}")),
-            1 => {
-                let mut matches = matches.into_iter();
-                if let Some(located) = matches.next() {
-                    Ok(located)
-                } else {
-                    Err(format!("session not found: {session_id}"))
-                }
-            }
-            _ => Err(format!(
-                "session id '{session_id}' is ambiguous; specify provider and source"
-            )),
-        }
+        let resolver = SessionResolver::new(&discovery.sessions, &discovery.source_by_session);
+        let selected = resolver
+            .find_by_id_prefix(session_id, provider_filter, source_filter)
+            .map_err(|e| e.to_string())?;
+        Ok(LocatedSession {
+            session: selected.session.clone(),
+            source: selected.source.to_string(),
+        })
     }
 
     pub(super) fn find_session_exact(
@@ -269,48 +240,14 @@ impl McpServer {
     ) -> Result<LocatedSession, String> {
         self.ensure_provider_visible(provider)?;
         let discovery = self.collect_discovery();
-        let matches: Vec<LocatedSession> = discovery
-            .sessions
-            .iter()
-            .filter(|session| {
-                session.provider == provider
-                    && session.id.0 == session_id
-                    && source.is_none_or(|source| discovery.source_of_session(session) == source)
-            })
-            .map(|session| LocatedSession {
-                session: session.clone(),
-                source: discovery.source_of_session(session).to_string(),
-            })
-            .collect();
-
-        match matches.len() {
-            0 => {
-                let scope = source.map_or_else(
-                    || "any source".to_string(),
-                    |source| format!("source '{source}'"),
-                );
-                Err(format!(
-                    "session '{session_id}' not found in provider '{}' from {scope}",
-                    provider.slug()
-                ))
-            }
-            1 => {
-                let mut matches = matches.into_iter();
-                if let Some(located) = matches.next() {
-                    Ok(located)
-                } else {
-                    Err(format!(
-                        "session '{session_id}' not found in provider '{}' from any source",
-                        provider.slug()
-                    ))
-                }
-            }
-            _ => Err(format!(
-                "session '{}' in provider '{}' is ambiguous; specify source",
-                session_id,
-                provider.slug()
-            )),
-        }
+        let resolver = SessionResolver::new(&discovery.sessions, &discovery.source_by_session);
+        let selected = resolver
+            .find_exact(provider, session_id, source)
+            .map_err(|e| e.to_string())?;
+        Ok(LocatedSession {
+            session: selected.session.clone(),
+            source: selected.source.to_string(),
+        })
     }
 
     fn ensure_provider_visible(&self, provider: Provider) -> Result<(), String> {

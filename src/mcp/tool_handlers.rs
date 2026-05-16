@@ -83,9 +83,6 @@ impl McpServer {
         let session_id = required_str(args, "session_id")?;
         let provider_filter = optional_provider(args, "provider")?;
         let source_filter = optional_str(args, "source")?;
-        if let Some(source) = source_filter.as_deref() {
-            crate::config::validate_source_name(source)?;
-        }
         let located =
             self.find_session_by_prefix(&session_id, provider_filter, source_filter.as_deref())?;
         let messages = provider::load_messages_for_session(&located.session, &self.providers)
@@ -109,9 +106,6 @@ impl McpServer {
         let include_context = optional_usize(args, "include_context", 0, 0, 100)?;
         let citation = qualified.citation;
         let source = qualified.source.as_deref();
-        if let Some(source) = source {
-            crate::config::validate_source_name(source)?;
-        }
 
         let located = self.find_session_exact_with_optional_source(
             citation.provider,
