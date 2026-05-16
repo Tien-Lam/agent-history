@@ -11,7 +11,7 @@ mod collect;
 mod llm;
 mod output;
 
-use collect::collect_decision_rows;
+use collect::{collect_decision_rows, collect_federated_decision_rows};
 use llm::run_llm_decisions;
 use output::{render_decisions_human, render_decisions_json};
 
@@ -61,6 +61,16 @@ pub(crate) fn decisions_command(
             .map_or(without_turn, |(_, rest)| rest)
             .to_string()
     });
+    let source_needle = session_filter.and_then(|s| {
+        let trimmed = s.trim();
+        let without_turn = trimmed.rsplit_once('#').map_or(trimmed, |(head, _)| head);
+        let slash = without_turn.find('/');
+        let colon = without_turn.find(':');
+        match (colon, slash) {
+            (Some(c), Some(s)) if c < s => Some(without_turn[..c].to_string()),
+            _ => None,
+        }
+    });
 
     let project_needle = filters
         .project
@@ -68,13 +78,24 @@ pub(crate) fn decisions_command(
         .map(str::to_lowercase)
         .filter(|s| !s.is_empty());
 
-    let mut rows = collect_decision_rows(
-        providers,
-        filters,
-        project_needle.as_deref(),
-        session_needle.as_deref(),
-        threshold,
-    );
+    let mut rows = if use_llm {
+        collect_decision_rows(
+            providers,
+            filters,
+            project_needle.as_deref(),
+            session_needle.as_deref(),
+            threshold,
+        )
+    } else {
+        collect_federated_decision_rows(
+            providers,
+            filters,
+            project_needle.as_deref(),
+            session_needle.as_deref(),
+            source_needle.as_deref(),
+            threshold,
+        )
+    };
 
     rows.sort_by(|a, b| {
         b.candidate
@@ -124,6 +145,17 @@ struct LlmRow {
 struct DecisionRow {
     citation: aghist::model::CitationRef,
     candidate: aghist::decisions::DecisionCandidate,
+    source: String,
     project: Option<String>,
     started_at: DateTime<Utc>,
+}
+
+impl DecisionRow {
+    fn reference(&self) -> String {
+        if self.source == aghist::federated::LOCAL_SOURCE {
+            self.citation.to_string()
+        } else {
+            format!("{}:{}", self.source, self.citation)
+        }
+    }
 }

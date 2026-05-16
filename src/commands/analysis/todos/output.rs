@@ -1,26 +1,22 @@
 use std::io;
 
-use aghist::todos::TodoCandidate;
-
 use crate::commands::text::truncate;
 
-use super::LlmTodoRow;
+use super::{LlmTodoRow, TodoRow};
 
-pub(super) fn render_todos_json<W: io::Write>(
-    out: &mut W,
-    todos: &[TodoCandidate],
-) -> io::Result<()> {
+pub(super) fn render_todos_json<W: io::Write>(out: &mut W, todos: &[TodoRow]) -> io::Result<()> {
     let payload = serde_json::json!({
-        "todos": todos.iter().map(|candidate| serde_json::json!({
-            "ref": candidate.citation.to_string(),
-            "provider": candidate.citation.provider,
-            "session_id": candidate.citation.session_id.0,
-            "turn": candidate.citation.turn,
-            "kind": candidate.kind,
-            "snippet": candidate.snippet,
-            "role": candidate.role,
-            "timestamp": candidate.timestamp,
-            "bd_id": candidate.bd_id,
+        "todos": todos.iter().map(|row| serde_json::json!({
+            "ref": row.reference(),
+            "source": row.source,
+            "provider": row.candidate.citation.provider,
+            "session_id": row.candidate.citation.session_id.0,
+            "turn": row.candidate.citation.turn,
+            "kind": row.candidate.kind,
+            "snippet": row.candidate.snippet,
+            "role": row.candidate.role,
+            "timestamp": row.candidate.timestamp,
+            "bd_id": row.candidate.bd_id,
         })).collect::<Vec<_>>(),
         "count": todos.len(),
     });
@@ -29,18 +25,16 @@ pub(super) fn render_todos_json<W: io::Write>(
     Ok(())
 }
 
-pub(super) fn render_todos_human<W: io::Write>(
-    out: &mut W,
-    todos: &[TodoCandidate],
-) -> io::Result<()> {
+pub(super) fn render_todos_human<W: io::Write>(out: &mut W, todos: &[TodoRow]) -> io::Result<()> {
     writeln!(
         out,
         "{:<14}  {:<19}  {:<46}  SNIPPET",
         "KIND", "WHEN (UTC)", "REF"
     )?;
-    for candidate in todos {
+    for row in todos {
+        let candidate = &row.candidate;
         let when = candidate.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
-        let reference = candidate.citation.to_string();
+        let reference = row.reference();
         let reference = truncate(&reference, 46);
         let snippet = truncate(&candidate.snippet, 80);
         writeln!(

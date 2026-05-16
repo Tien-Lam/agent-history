@@ -2,9 +2,10 @@ use aghist::provider;
 use aghist::todos::{self, TodoCandidate, TodoKind};
 
 use crate::cli::FilterArgs;
+use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
 use crate::commands::filtering::{message_matches, session_matches};
 
-use super::SessionMetaMap;
+use super::{SessionMetaMap, TodoRow};
 
 pub(super) fn collect_todo_candidates(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -61,6 +62,44 @@ pub(super) fn collect_todo_candidates(
     }
 
     (candidates, session_meta)
+}
+
+pub(super) fn collect_federated_todo_candidates(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    filters: &FilterArgs,
+    kinds: &[TodoKind],
+) -> Vec<TodoRow> {
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+
+    let discovery = federated_discovery_for_commands(providers);
+    let mut candidates = Vec::new();
+
+    for session in discovery.sessions {
+        let source = source_for_session(&discovery.source_by_session, &session).to_string();
+        if !session_matches(&session, filters, project_needle.as_deref()) {
+            continue;
+        }
+        let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
+            continue;
+        };
+        for candidate in
+            todos::extract_from_messages(session.provider, &session.id, &messages, kinds)
+        {
+            if !candidate_matches_filters(&candidate, &messages, filters) {
+                continue;
+            }
+            candidates.push(TodoRow {
+                candidate,
+                source: source.clone(),
+            });
+        }
+    }
+
+    candidates
 }
 
 fn candidate_matches_filters(

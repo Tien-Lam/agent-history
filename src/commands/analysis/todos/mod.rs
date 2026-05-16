@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal};
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::{CitationRef, Provider};
 use aghist::provider;
-use aghist::todos::TodoKind;
+use aghist::todos::{TodoCandidate, TodoKind};
 use chrono::{DateTime, Utc};
 
 use crate::cli::FilterArgs;
@@ -12,7 +12,7 @@ mod collect;
 mod llm;
 mod output;
 
-use collect::collect_todo_candidates;
+use collect::{collect_federated_todo_candidates, collect_todo_candidates};
 use llm::run_llm_todos;
 use output::{render_todos_human, render_todos_json};
 
@@ -29,19 +29,27 @@ pub(crate) fn todos_command(
         return Err(ErrorEnvelope::new("usage", "--llm-model requires --llm"));
     }
 
-    let (mut all, session_meta) = collect_todo_candidates(providers, filters, kinds, use_llm);
-
     if use_llm {
+        let (all, session_meta) = collect_todo_candidates(providers, filters, kinds, true);
         return run_llm_todos(all, &session_meta, limit, force_json, llm_model);
     }
 
+    let mut all = collect_federated_todo_candidates(providers, filters, kinds);
+
     // Newest matches first — most useful for "what's still hanging?".
     all.sort_by(|a, b| {
-        b.timestamp
-            .cmp(&a.timestamp)
-            .then_with(|| a.citation.session_id.0.cmp(&b.citation.session_id.0))
-            .then_with(|| a.citation.turn.cmp(&b.citation.turn))
-            .then_with(|| (a.kind as u8).cmp(&(b.kind as u8)))
+        b.candidate
+            .timestamp
+            .cmp(&a.candidate.timestamp)
+            .then_with(|| {
+                a.candidate
+                    .citation
+                    .session_id
+                    .0
+                    .cmp(&b.candidate.citation.session_id.0)
+            })
+            .then_with(|| a.candidate.citation.turn.cmp(&b.candidate.citation.turn))
+            .then_with(|| (a.candidate.kind as u8).cmp(&(b.candidate.kind as u8)))
     });
 
     if limit > 0 && all.len() > limit {
@@ -73,6 +81,21 @@ struct LlmTodoRow {
     source_kind: Option<String>,
     project: Option<String>,
     started_at: DateTime<Utc>,
+}
+
+struct TodoRow {
+    candidate: TodoCandidate,
+    source: String,
+}
+
+impl TodoRow {
+    fn reference(&self) -> String {
+        if self.source == aghist::federated::LOCAL_SOURCE {
+            self.candidate.citation.to_string()
+        } else {
+            format!("{}:{}", self.source, self.candidate.citation)
+        }
+    }
 }
 
 type SessionMetaMap = std::collections::HashMap<

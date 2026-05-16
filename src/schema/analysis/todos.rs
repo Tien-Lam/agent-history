@@ -1,6 +1,9 @@
 use serde_json::{json, Value};
 
-use super::super::common::{exit_codes, filter_params_fragment, provider_slug_enum, SCHEMA_DRAFT};
+use super::super::common::{
+    exit_codes, filter_params_fragment, provider_slug_enum, SCHEMA_DRAFT,
+    SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+};
 
 pub(in crate::schema) fn todos_schema() -> Value {
     let mut props = serde_json::Map::new();
@@ -58,8 +61,10 @@ pub(in crate::schema) fn todos_schema() -> Value {
                         "properties": {
                             "ref": {
                                 "type": "string",
-                                "description": "Citation ref `<provider>/<session-id>#<turn>` — pass to `aghist show` to inspect."
+                                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                                "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions. Pass to `aghist show` to inspect."
                             },
+                            "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
                             "provider": { "type": "string", "enum": provider_slug_enum() },
                             "session_id": { "type": "string" },
                             "turn": { "type": "integer", "minimum": 1 },
@@ -78,7 +83,7 @@ pub(in crate::schema) fn todos_schema() -> Value {
                                 "description": "Captured beads-style id (only for kind=bd_ref). Caller can `bd show` to drop closed refs."
                             }
                         },
-                        "required": ["ref", "provider", "session_id", "turn", "kind", "snippet", "role", "timestamp"]
+                        "required": ["ref", "source", "provider", "session_id", "turn", "kind", "snippet", "role", "timestamp"]
                     }
                 },
                 "count": { "type": "integer", "minimum": 0 }

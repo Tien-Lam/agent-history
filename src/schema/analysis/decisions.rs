@@ -1,6 +1,9 @@
 use serde_json::{json, Value};
 
-use super::super::common::{exit_codes, filter_params_fragment, provider_slug_enum, SCHEMA_DRAFT};
+use super::super::common::{
+    exit_codes, filter_params_fragment, provider_slug_enum, SCHEMA_DRAFT,
+    SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+};
 
 pub(in crate::schema) fn decisions_schema() -> Value {
     let mut props = serde_json::Map::new();
@@ -84,9 +87,10 @@ fn decisions_response_heuristic() -> Value {
                     "properties": {
                         "ref": {
                             "type": "string",
-                            "pattern": "^[a-z0-9-]+/.+#[1-9][0-9]*$",
-                            "description": "Citation ref `<provider>/<session-id>#<turn>`."
+                            "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                            "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
                         },
+                        "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
                         "provider": { "type": "string", "enum": provider_slug_enum() },
                         "session_id": { "type": "string" },
                         "turn": { "type": "integer", "minimum": 1 },
@@ -98,7 +102,7 @@ fn decisions_response_heuristic() -> Value {
                         "timestamp": { "type": "string", "format": "date-time" },
                         "started_at": { "type": "string", "format": "date-time" }
                     },
-                    "required": ["ref", "provider", "session_id", "turn", "role", "score", "markers", "snippet", "timestamp", "started_at"]
+                    "required": ["ref", "source", "provider", "session_id", "turn", "role", "score", "markers", "snippet", "timestamp", "started_at"]
                 }
             },
             "count": { "type": "integer", "minimum": 0 }

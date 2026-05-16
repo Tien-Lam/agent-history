@@ -245,6 +245,114 @@ fn threads_include_remote_source_refs_without_local_provider() {
     assert_eq!(threads[0]["providers"][0], "claude-code");
 }
 
+#[test]
+fn decisions_include_remote_source_refs_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-decision")
+        .project("decision-proj")
+        .user("architecture")
+        .assistant("We decided to keep SQLite instead of adding a service.")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["decisions", "--json"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap();
+    let decisions = parsed["decisions"].as_array().unwrap();
+    assert_eq!(decisions.len(), 1);
+    assert_eq!(decisions[0]["source"], "laptop");
+    assert_eq!(decisions[0]["ref"], "laptop:claude-code/remote-decision#2");
+}
+
+#[test]
+fn todos_include_remote_source_refs_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-todo")
+        .project("todo-proj")
+        .user("TODO: revisit remote sync retries")
+        .assistant("noted")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["todos", "--json"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap();
+    let todos = parsed["todos"].as_array().unwrap();
+    assert_eq!(todos.len(), 1);
+    assert_eq!(todos[0]["source"], "laptop");
+    assert_eq!(todos[0]["ref"], "laptop:claude-code/remote-todo#1");
+}
+
 // ─── project subcommand ───────────────────────────────────────────────────
 #[test]
 fn project_with_no_data_exits_three_for_empty() {
