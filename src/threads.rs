@@ -70,6 +70,17 @@ pub struct Thread {
 /// Output is sorted most-recent-first by `started_at`, ties broken by
 /// project name ascending so the order is deterministic.
 pub fn cluster(sessions: &[Session], opts: ClusterOptions) -> Vec<Thread> {
+    cluster_with_session_refs(sessions, opts, |session| session.session_ref().to_string())
+}
+
+/// Cluster sessions into threads, using `ref_for_session` to render each
+/// constituent session ref. Command layers use this to qualify remote source
+/// refs while the library default stays source-agnostic.
+pub fn cluster_with_session_refs(
+    sessions: &[Session],
+    opts: ClusterOptions,
+    ref_for_session: impl Fn(&Session) -> String,
+) -> Vec<Thread> {
     let mut buckets: BTreeMap<Option<String>, Vec<&Session>> = BTreeMap::new();
     for s in sessions {
         buckets.entry(s.project_name.clone()).or_default().push(s);
@@ -91,14 +102,14 @@ pub fn cluster(sessions: &[Session], opts: ClusterOptions) -> Vec<Thread> {
                 cur_end = Some(cur_end.map_or(s_end, |e| e.max(s_end)));
             } else {
                 if cur.len() >= opts.min_sessions {
-                    threads.push(make_thread(project.as_deref(), &cur));
+                    threads.push(make_thread(project.as_deref(), &cur, &ref_for_session));
                 }
                 cur = vec![s];
                 cur_end = Some(s.ended_at.unwrap_or(s.started_at));
             }
         }
         if cur.len() >= opts.min_sessions {
-            threads.push(make_thread(project.as_deref(), &cur));
+            threads.push(make_thread(project.as_deref(), &cur, &ref_for_session));
         }
     }
 
@@ -110,7 +121,11 @@ pub fn cluster(sessions: &[Session], opts: ClusterOptions) -> Vec<Thread> {
     threads
 }
 
-fn make_thread(project: Option<&str>, sessions: &[&Session]) -> Thread {
+fn make_thread(
+    project: Option<&str>,
+    sessions: &[&Session],
+    ref_for_session: &impl Fn(&Session) -> String,
+) -> Thread {
     debug_assert!(
         !sessions.is_empty(),
         "thread must have at least one session"
@@ -139,10 +154,7 @@ fn make_thread(project: Option<&str>, sessions: &[&Session]) -> Thread {
     branches.sort();
     branches.dedup();
 
-    let session_refs: Vec<String> = sessions
-        .iter()
-        .map(|s| s.session_ref().to_string())
-        .collect();
+    let session_refs: Vec<String> = sessions.iter().map(|s| ref_for_session(s)).collect();
 
     let summary_seed = sessions
         .iter()

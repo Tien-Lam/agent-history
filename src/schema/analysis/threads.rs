@@ -1,6 +1,9 @@
 use serde_json::{json, Value};
 
-use super::super::common::{exit_codes, filter_params_fragment, provider_slug_enum, SCHEMA_DRAFT};
+use super::super::common::{
+    exit_codes, filter_params_fragment, provider_slug_enum, SCHEMA_DRAFT,
+    SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+};
 
 pub(in crate::schema) fn threads_schema() -> Value {
     let mut props = serde_json::Map::new();
@@ -81,8 +84,8 @@ pub(in crate::schema) fn threads_schema() -> Value {
                             },
                             "session_refs": {
                                 "type": "array",
-                                "items": { "type": "string" },
-                                "description": "`<provider-slug>/<session-id>` for each constituent session, in cluster order."
+                                "items": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
+                                "description": "`<provider-slug>/<session-id>` for local sessions, or `<source>:<provider-slug>/<session-id>` for remote source sessions, in cluster order."
                             },
                             "summary_seed": {
                                 "type": ["string", "null"],

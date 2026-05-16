@@ -9,7 +9,7 @@ mod collect;
 mod llm;
 mod output;
 
-use collect::collect_sessions;
+use collect::{collect_federated_sessions, collect_sessions};
 use llm::run_llm_threads;
 use output::{render_threads_human, render_threads_json};
 
@@ -49,17 +49,20 @@ pub(crate) fn threads_command(
         ));
     }
 
-    let sessions = collect_sessions(providers, filters);
-
     if use_llm {
+        let sessions = collect_sessions(providers, filters);
         return run_llm_threads(sessions, limit, llm_max_sessions, force_json, llm_model);
     }
 
+    let discovery = collect_federated_sessions(providers, filters);
     let opts = aghist::threads::ClusterOptions {
         gap: chrono::Duration::hours(gap_hours),
         min_sessions: min_sessions.max(1),
     };
-    let mut threads = aghist::threads::cluster(&sessions, opts);
+    let mut threads =
+        aghist::threads::cluster_with_session_refs(&discovery.sessions, opts, |session| {
+            crate::commands::discovery::qualified_session_ref(&discovery.source_by_session, session)
+        });
 
     if limit > 0 && threads.len() > limit {
         threads.truncate(limit);
