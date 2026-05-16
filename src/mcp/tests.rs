@@ -9,6 +9,7 @@ use super::resources::{
 };
 use super::McpServer;
 use crate::model::Provider;
+use crate::schema_fragments;
 
 fn server() -> McpServer {
     McpServer::new(Vec::new())
@@ -135,6 +136,21 @@ fn tool_provider_enums_track_provider_registry() {
             .collect();
         assert_eq!(actual, expected, "{tool_name} provider enum drifted");
     }
+}
+
+#[test]
+fn tool_ref_patterns_use_shared_contract_fragments() {
+    let tools = tool_definitions();
+    let tools = tools.as_array().unwrap();
+    let get_message = tools
+        .iter()
+        .find(|tool| tool["name"].as_str() == Some("get_message"))
+        .expect("missing get_message tool");
+
+    assert_eq!(
+        get_message["inputSchema"]["properties"]["ref"]["pattern"],
+        schema_fragments::source_qualified_citation_ref_pattern()
+    );
 }
 
 #[test]

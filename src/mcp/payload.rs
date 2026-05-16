@@ -2,10 +2,12 @@ use serde_json::{json, Value};
 
 use super::resources::{session_uri_for_source, turn_uri_for_source};
 use crate::federated::LOCAL_SOURCE;
-use crate::model::{Message, Provider, QualifiedCitationRef, Session};
+use crate::model::{Message, QualifiedCitationRef, Session};
+use crate::schema_fragments;
 
 pub(super) fn tool_definitions() -> Value {
-    let provider_slugs = provider_slug_vec();
+    let provider_slugs = schema_fragments::provider_slug_enum();
+    let citation_ref_pattern = schema_fragments::source_qualified_citation_ref_pattern();
     json!([
         {
             "name": "search_sessions",
@@ -53,7 +55,11 @@ pub(super) fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "ref": { "type": "string", "description": "Citation ref. Example: claude-code/abc-123#7" },
+                    "ref": {
+                        "type": "string",
+                        "pattern": citation_ref_pattern,
+                        "description": "Citation ref. Example: claude-code/abc-123#7"
+                    },
                     "include_context": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0 }
                 },
                 "required": ["ref"],
@@ -78,10 +84,6 @@ pub(super) fn tool_definitions() -> Value {
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
         }
     ])
-}
-
-fn provider_slug_vec() -> Vec<&'static str> {
-    Provider::all().iter().map(|p| p.slug()).collect()
 }
 
 pub(super) fn tool_success(payload: &Value) -> Value {

@@ -1,46 +1,27 @@
 use serde_json::{json, Value};
 
-use crate::model::Provider;
+use crate::schema_fragments;
 
 pub(super) const SCHEMA_DRAFT: &str = "https://json-schema.org/draft/2020-12/schema";
 
-fn provider_slug_pattern() -> String {
-    Provider::all()
-        .iter()
-        .map(|provider| provider.slug())
-        .collect::<Vec<_>>()
-        .join("|")
-}
-
 pub(super) fn source_qualified_session_ref_pattern() -> String {
-    format!(
-        "^([A-Za-z0-9][A-Za-z0-9_-]*:)?({})/[^#]+(#[1-9][0-9]*)?$",
-        provider_slug_pattern()
-    )
+    schema_fragments::source_qualified_session_ref_pattern()
 }
 
 pub(super) fn source_qualified_session_only_ref_pattern() -> String {
-    format!(
-        "^([A-Za-z0-9][A-Za-z0-9_-]*:)?({})/[^#]+$",
-        provider_slug_pattern()
-    )
+    schema_fragments::source_qualified_session_only_ref_pattern()
 }
 
 pub(super) fn source_qualified_citation_ref_pattern() -> String {
-    format!(
-        "^([A-Za-z0-9][A-Za-z0-9_-]*:)?({})/[^#]+#[1-9][0-9]*$",
-        provider_slug_pattern()
-    )
+    schema_fragments::source_qualified_citation_ref_pattern()
 }
 
 pub(super) fn provider_slug_enum() -> Value {
-    json!(Provider::all().iter().map(|p| p.slug()).collect::<Vec<_>>())
+    schema_fragments::provider_slug_enum()
 }
 
 pub(super) fn provider_slug_enum_nullable() -> Value {
-    let mut slugs: Vec<Value> = Provider::all().iter().map(|p| json!(p.slug())).collect();
-    slugs.push(Value::Null);
-    Value::Array(slugs)
+    schema_fragments::provider_slug_enum_nullable()
 }
 
 pub(super) fn exit_codes() -> Value {
