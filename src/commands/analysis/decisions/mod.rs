@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
@@ -22,6 +23,7 @@ pub(crate) struct DecisionsCommandRequest<'a> {
     pub(crate) limit: usize,
     pub(crate) force_json: bool,
     pub(crate) filters: &'a FilterArgs,
+    pub(crate) metadata_keys: Option<&'a HashSet<String>>,
     pub(crate) use_llm: bool,
     pub(crate) llm_model: Option<&'a str>,
 }
@@ -36,6 +38,7 @@ pub(crate) fn decisions_command(
         limit,
         force_json,
         filters,
+        metadata_keys,
         use_llm,
         llm_model,
     } = request;
@@ -84,6 +87,7 @@ pub(crate) fn decisions_command(
         project_needle.as_deref(),
         session_needle.as_deref(),
         source_needle.as_deref(),
+        metadata_keys,
         threshold,
     );
 

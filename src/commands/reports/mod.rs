@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
@@ -21,13 +22,18 @@ use output::{
 pub(crate) fn usage_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
+    metadata_keys: Option<&HashSet<String>>,
     group_by: aghist::usage::GroupBy,
     limit: usize,
     force_json: bool,
 ) -> Result<i32, ErrorEnvelope> {
     let project_needle = normalized_project_filter(filters);
-    let sessions =
-        collect_federated_filtered_sessions(providers, filters, project_needle.as_deref());
+    let sessions = collect_federated_filtered_sessions(
+        providers,
+        filters,
+        project_needle.as_deref(),
+        metadata_keys,
+    );
 
     let report = aghist::usage::aggregate(&sessions, group_by);
     if report.rows.is_empty() {
@@ -59,6 +65,7 @@ pub(crate) fn usage_command(
 pub(crate) fn project_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
+    metadata_keys: Option<&HashSet<String>>,
     name: &str,
     limits: aghist::project::ProjectLimits,
     force_json: bool,
@@ -74,6 +81,7 @@ pub(crate) fn project_command(
         providers,
         filters,
         extra_project.as_deref(),
+        metadata_keys,
         |session| {
             let project_name = session.project_name.as_deref().unwrap_or("");
             project_name.to_lowercase().contains(&needle_lower)
@@ -109,6 +117,7 @@ pub(crate) fn project_command(
 pub(crate) fn report_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
+    metadata_keys: Option<&HashSet<String>>,
     window_days: i64,
     limits: aghist::report::ReportLimits,
     force_json: bool,
@@ -132,6 +141,7 @@ pub(crate) fn report_command(
         providers,
         filters,
         project_needle.as_deref(),
+        metadata_keys,
         |session| session.started_at >= start && session.started_at <= end,
     );
     let bundles = collected.bundles;

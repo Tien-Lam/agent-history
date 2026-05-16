@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
@@ -16,25 +17,40 @@ use collect::collect_federated_todo_candidates;
 use llm::run_llm_todos;
 use output::{render_todos_human, render_todos_json};
 
+#[derive(Clone, Copy)]
+pub(crate) struct TodosCommandRequest<'a> {
+    pub(crate) filters: &'a FilterArgs,
+    pub(crate) metadata_keys: Option<&'a HashSet<String>>,
+    pub(crate) kinds: &'a [TodoKind],
+    pub(crate) limit: usize,
+    pub(crate) force_json: bool,
+    pub(crate) use_llm: bool,
+    pub(crate) llm_model: Option<&'a str>,
+}
+
 pub(crate) fn todos_command(
     providers: &[Box<dyn provider::HistoryProvider>],
-    filters: &FilterArgs,
-    kinds: &[TodoKind],
-    limit: usize,
-    force_json: bool,
-    use_llm: bool,
-    llm_model: Option<&str>,
+    request: TodosCommandRequest<'_>,
 ) -> Result<i32, ErrorEnvelope> {
+    let TodosCommandRequest {
+        filters,
+        metadata_keys,
+        kinds,
+        limit,
+        force_json,
+        use_llm,
+        llm_model,
+    } = request;
     if !use_llm && llm_model.is_some() {
         return Err(ErrorEnvelope::new("usage", "--llm-model requires --llm"));
     }
 
     if use_llm {
-        let all = collect_federated_todo_candidates(providers, filters, kinds);
+        let all = collect_federated_todo_candidates(providers, filters, metadata_keys, kinds);
         return run_llm_todos(all, limit, force_json, llm_model);
     }
 
-    let mut all = collect_federated_todo_candidates(providers, filters, kinds);
+    let mut all = collect_federated_todo_candidates(providers, filters, metadata_keys, kinds);
 
     // Newest matches first — most useful for "what's still hanging?".
     all.sort_by(|a, b| {

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
@@ -6,7 +7,7 @@ use aghist::provider;
 
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
-use crate::commands::filtering::{message_matches, session_matches};
+use crate::commands::filtering::{message_matches, metadata_filter_matches, session_matches};
 use crate::commands::text::truncate;
 
 use super::common::map_llm_error;
@@ -17,6 +18,7 @@ use super::common::map_llm_error;
 fn scan_topic_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
+    metadata_keys: Option<&HashSet<String>>,
     topic: &str,
     limit: usize,
 ) -> Vec<aghist::llm::TrackSession> {
@@ -31,6 +33,9 @@ fn scan_topic_sessions(
     let discovery = federated_discovery_for_commands(providers);
     for session in discovery.sessions {
         if !session_matches(&session, filters, project_needle.as_deref()) {
+            continue;
+        }
+        if !metadata_filter_matches(&session, metadata_keys) {
             continue;
         }
         let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
@@ -81,13 +86,14 @@ fn scan_topic_sessions(
 pub(crate) fn track_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
+    metadata_keys: Option<&HashSet<String>>,
     topic: &str,
     limit: usize,
     force_json: bool,
     llm_model: Option<&str>,
 ) -> Result<i32, ErrorEnvelope> {
     use std::io::Write as _;
-    let matched = scan_topic_sessions(providers, filters, topic, limit);
+    let matched = scan_topic_sessions(providers, filters, metadata_keys, topic, limit);
 
     if matched.is_empty() {
         return Ok(EXIT_EMPTY);

@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use aghist::model::{Message, Session};
 use aghist::provider;
 
 use super::super::discovery::federated_discovery_for_commands;
-use super::super::filtering::session_matches;
+use super::super::filtering::{metadata_filter_matches, session_matches};
 use crate::cli::FilterArgs;
 
 pub(super) type SessionBundle = (Session, Vec<Message>);
@@ -26,11 +26,13 @@ pub(super) fn collect_federated_filtered_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
     project_needle: Option<&str>,
+    metadata_keys: Option<&HashSet<String>>,
 ) -> Vec<Session> {
     federated_discovery_for_commands(providers)
         .sessions
         .into_iter()
         .filter(|session| session_matches(session, filters, project_needle))
+        .filter(|session| metadata_filter_matches(session, metadata_keys))
         .collect()
 }
 
@@ -38,6 +40,7 @@ pub(super) fn collect_federated_message_bundles(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
     project_needle: Option<&str>,
+    metadata_keys: Option<&HashSet<String>>,
     include_session: impl Fn(&Session) -> bool,
 ) -> FederatedSessionBundles {
     let discovery = federated_discovery_for_commands(providers);
@@ -45,6 +48,9 @@ pub(super) fn collect_federated_message_bundles(
     let mut bundles = Vec::new();
     for session in discovery.sessions {
         if !session_matches(&session, filters, project_needle) {
+            continue;
+        }
+        if !metadata_filter_matches(&session, metadata_keys) {
             continue;
         }
         if !include_session(&session) {

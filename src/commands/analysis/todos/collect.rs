@@ -1,15 +1,18 @@
+use std::collections::HashSet;
+
 use aghist::provider;
 use aghist::todos::{self, TodoCandidate, TodoKind};
 
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
-use crate::commands::filtering::{message_matches, session_matches};
+use crate::commands::filtering::{message_matches, metadata_filter_matches, session_matches};
 
 use super::TodoRow;
 
 pub(super) fn collect_federated_todo_candidates(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
+    metadata_keys: Option<&HashSet<String>>,
     kinds: &[TodoKind],
 ) -> Vec<TodoRow> {
     let project_needle = filters
@@ -24,6 +27,9 @@ pub(super) fn collect_federated_todo_candidates(
     for session in discovery.sessions {
         let source = source_for_session(&discovery.source_by_session, &session).to_string();
         if !session_matches(&session, filters, project_needle.as_deref()) {
+            continue;
+        }
+        if !metadata_filter_matches(&session, metadata_keys) {
             continue;
         }
         let Ok(messages) = provider::load_messages_for_session(&session, providers) else {

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
@@ -16,6 +17,7 @@ use output::{render_threads_human, render_threads_json};
 #[derive(Clone, Copy)]
 pub(crate) struct ThreadsCommandRequest<'a> {
     pub(crate) filters: &'a FilterArgs,
+    pub(crate) metadata_keys: Option<&'a HashSet<String>>,
     pub(crate) gap_hours: i64,
     pub(crate) min_sessions: usize,
     pub(crate) limit: usize,
@@ -31,6 +33,7 @@ pub(crate) fn threads_command(
 ) -> Result<i32, ErrorEnvelope> {
     let ThreadsCommandRequest {
         filters,
+        metadata_keys,
         gap_hours,
         min_sessions,
         limit,
@@ -50,7 +53,7 @@ pub(crate) fn threads_command(
     }
 
     if use_llm {
-        let discovery = collect_federated_sessions(providers, filters);
+        let discovery = collect_federated_sessions(providers, filters, metadata_keys);
         return run_llm_threads(
             discovery.sessions,
             &discovery.source_by_session,
@@ -61,7 +64,7 @@ pub(crate) fn threads_command(
         );
     }
 
-    let discovery = collect_federated_sessions(providers, filters);
+    let discovery = collect_federated_sessions(providers, filters, metadata_keys);
     let opts = aghist::threads::ClusterOptions {
         gap: chrono::Duration::hours(gap_hours),
         min_sessions: min_sessions.max(1),

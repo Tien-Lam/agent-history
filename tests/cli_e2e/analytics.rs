@@ -15,6 +15,13 @@ struct RemoteSourceCache {
     config_path: PathBuf,
 }
 
+struct MetadataFilteredFixture {
+    _fixture: common::fixtures::FixtureDir,
+    home: PathBuf,
+    _db_dir: tempfile::TempDir,
+    db_path: PathBuf,
+}
+
 fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
     let empty_home = tempfile::tempdir().unwrap();
     let workdir = tempfile::tempdir().unwrap();
@@ -43,6 +50,37 @@ fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
         _workdir: workdir,
         cache_dir,
         config_path,
+    }
+}
+
+fn metadata_filtered_fixture() -> MetadataFilteredFixture {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-meta-keep")
+        .project("meta-proj")
+        .user("TODO: keep metadata filtered work")
+        .assistant("We decided to keep SQLite instead of adding a service.")
+        .done()
+        .add_session("session-meta-drop")
+        .project("meta-proj")
+        .user("TODO: drop metadata filtered work with BM25 ranking")
+        .assistant("We decided to use Postgres instead of SQLite.")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap().to_path_buf();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db_path = db_dir.path().join("metadata.db");
+
+    aghist()
+        .args(["star", "claude-code/session-meta-keep"])
+        .env("AGHIST_METADATA_DB", &db_path)
+        .assert()
+        .success();
+
+    MetadataFilteredFixture {
+        _fixture: fixture,
+        home,
+        _db_dir: db_dir,
+        db_path,
     }
 }
 
@@ -489,6 +527,62 @@ fn schema_subcommand_includes_track() {
     assert_eq!(item_props["direction"]["enum"].as_array().unwrap().len(), 4);
 }
 
+#[test]
+fn analysis_commands_respect_metadata_filters() {
+    let fixture = metadata_filtered_fixture();
+
+    let decisions = aghist()
+        .args(["decisions", "--json", "--starred"])
+        .env("AGHIST_HOME", &fixture.home)
+        .env("AGHIST_METADATA_DB", &fixture.db_path)
+        .output()
+        .unwrap();
+    assert_eq!(decisions.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&decisions.stdout).unwrap().trim()).unwrap();
+    let rows = parsed["decisions"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    assert!(rows
+        .iter()
+        .all(|row| row["session_id"] == "session-meta-keep"));
+
+    let todos = aghist()
+        .args(["todos", "--json", "--starred"])
+        .env("AGHIST_HOME", &fixture.home)
+        .env("AGHIST_METADATA_DB", &fixture.db_path)
+        .output()
+        .unwrap();
+    assert_eq!(todos.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&todos.stdout).unwrap().trim()).unwrap();
+    let rows = parsed["todos"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["session_id"], "session-meta-keep");
+
+    let threads = aghist()
+        .args(["threads", "--json", "--starred"])
+        .env("AGHIST_HOME", &fixture.home)
+        .env("AGHIST_METADATA_DB", &fixture.db_path)
+        .output()
+        .unwrap();
+    assert_eq!(threads.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&threads.stdout).unwrap().trim()).unwrap();
+    let refs = parsed["threads"][0]["session_refs"].as_array().unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0], "claude-code/session-meta-keep");
+
+    let track = aghist()
+        .args(["track", "BM25 ranking", "--json", "--starred"])
+        .env("AGHIST_HOME", &fixture.home)
+        .env("AGHIST_METADATA_DB", &fixture.db_path)
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("AGHIST_LLM_API_KEY")
+        .output()
+        .unwrap();
+    assert_eq!(track.status.code(), Some(3));
+}
+
 // ─── project subcommand ───────────────────────────────────────────────────
 #[test]
 fn project_with_no_data_exits_three_for_empty() {
@@ -630,6 +724,57 @@ fn project_match_is_case_insensitive_substring() {
     let matched = parsed["matched_projects"].as_array().unwrap();
     assert!(matched.iter().any(|v| v == "Alpha-Service"));
 }
+
+#[test]
+fn report_commands_respect_metadata_filters() {
+    let fixture = metadata_filtered_fixture();
+
+    let usage = aghist()
+        .args(["usage", "--json", "--starred"])
+        .env("AGHIST_HOME", &fixture.home)
+        .env("AGHIST_METADATA_DB", &fixture.db_path)
+        .output()
+        .unwrap();
+    assert_eq!(usage.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&usage.stdout).unwrap().trim()).unwrap();
+    assert_eq!(parsed["totals"]["session_count"], 1);
+
+    let project = aghist()
+        .args(["project", "meta-proj", "--json", "--starred"])
+        .env("AGHIST_HOME", &fixture.home)
+        .env("AGHIST_METADATA_DB", &fixture.db_path)
+        .output()
+        .unwrap();
+    assert_eq!(project.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&project.stdout).unwrap().trim()).unwrap();
+    assert_eq!(parsed["session_count"], 1);
+    assert_eq!(parsed["decisions"][0]["session_id"], "session-meta-keep");
+    assert_eq!(parsed["todos"][0]["session_id"], "session-meta-keep");
+
+    let report = aghist()
+        .args([
+            "report",
+            "--since",
+            FIXTURE_SINCE,
+            "--until",
+            FIXTURE_UNTIL,
+            "--json",
+            "--starred",
+        ])
+        .env("AGHIST_HOME", &fixture.home)
+        .env("AGHIST_METADATA_DB", &fixture.db_path)
+        .output()
+        .unwrap();
+    assert_eq!(report.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&report.stdout).unwrap().trim()).unwrap();
+    assert_eq!(parsed["session_count"], 1);
+    assert_eq!(parsed["decisions"][0]["session_id"], "session-meta-keep");
+    assert_eq!(parsed["todos"][0]["session_id"], "session-meta-keep");
+}
+
 #[test]
 fn project_limits_truncate_files_section_but_meta_keeps_total() {
     let fixture = common::fixtures::ClaudeFixtureBuilder::new()
