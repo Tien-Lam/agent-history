@@ -1,42 +1,5 @@
-use std::path::{Path, PathBuf};
-
 use super::aghist;
 use super::common;
-
-struct RemoteSourceCache {
-    _workdir: tempfile::TempDir,
-    cache_dir: PathBuf,
-    config_path: PathBuf,
-}
-
-fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-    common::helpers::copy_dir_recursive(remote_base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
-
-    RemoteSourceCache {
-        _workdir: workdir,
-        cache_dir,
-        config_path,
-    }
-}
 
 /// Build a Claude fixture with three known sessions, all under the same
 /// `AGHIST_HOME`, returning the home path and the session ids in deterministic
@@ -234,7 +197,7 @@ fn list_source_qualified_star_filters_remote_duplicate_session_ids() {
         .done()
         .build();
     let home = local.base_path.parent().unwrap();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
     let db_dir = tempfile::tempdir().unwrap();
     let db = db_dir.path().join("metadata.db");
 

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::aghist;
 use super::common;
@@ -8,49 +8,11 @@ use super::common;
 const FIXTURE_SINCE: &str = "2024-12-25T00:00:00Z";
 const FIXTURE_UNTIL: &str = "2025-01-02T00:00:00Z";
 
-struct RemoteSourceCache {
-    empty_home: tempfile::TempDir,
-    _workdir: tempfile::TempDir,
-    cache_dir: PathBuf,
-    config_path: PathBuf,
-}
-
 struct MetadataFilteredFixture {
     _fixture: common::fixtures::FixtureDir,
     home: PathBuf,
     _db_dir: tempfile::TempDir,
     db_path: PathBuf,
-}
-
-fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-    common::helpers::copy_dir_recursive(remote_base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
-
-    RemoteSourceCache {
-        empty_home,
-        _workdir: workdir,
-        cache_dir,
-        config_path,
-    }
 }
 
 fn metadata_filtered_fixture() -> MetadataFilteredFixture {
@@ -167,7 +129,7 @@ fn usage_includes_remote_source_cache_without_local_provider() {
         .assistant("remote answer")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["usage", "--by", "provider", "--json"])
@@ -254,7 +216,7 @@ fn threads_include_remote_source_refs_without_local_provider() {
         .assistant("thread answer")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["threads", "--json"])
@@ -290,7 +252,7 @@ fn threads_llm_finds_remote_source_candidates_without_local_provider() {
         .assistant("thread answer")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["threads", "--llm", "--json"])
@@ -318,7 +280,7 @@ fn track_finds_remote_source_candidates_without_local_provider() {
         .assistant("We changed BM25 ranking to prefer recent sessions.")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["track", "BM25 ranking", "--json"])
@@ -346,7 +308,7 @@ fn decisions_include_remote_source_refs_without_local_provider() {
         .assistant("We decided to keep SQLite instead of adding a service.")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["decisions", "--json"])
@@ -379,7 +341,7 @@ fn decisions_llm_finds_remote_source_candidates_without_local_provider() {
         .assistant("We decided to keep SQLite instead of adding a service.")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["decisions", "--llm", "--json"])
@@ -407,7 +369,7 @@ fn todos_include_remote_source_refs_without_local_provider() {
         .assistant("noted")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["todos", "--json"])
@@ -440,7 +402,7 @@ fn todos_llm_finds_remote_source_candidates_without_local_provider() {
         .assistant("noted")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["todos", "--llm", "--json"])
@@ -666,7 +628,7 @@ fn project_includes_remote_source_refs_without_local_provider() {
         .assistant("We decided to keep SQLite instead of adding a service.")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["project", "remote-proj", "--json"])
@@ -923,7 +885,7 @@ fn report_includes_remote_source_refs_without_local_provider() {
         .assistant("We decided to keep SQLite instead of adding a service.")
         .done()
         .build();
-    let source = laptop_remote_source(&remote.base_path);
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args([

@@ -70,6 +70,41 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) {
     }
 }
 
+pub struct RemoteSourceCache {
+    pub empty_home: tempfile::TempDir,
+    pub _workdir: tempfile::TempDir,
+    pub cache_dir: PathBuf,
+    pub config_path: PathBuf,
+}
+
+pub fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    fs::create_dir_all(&remote_data).unwrap();
+    copy_dir_recursive(remote_base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    fs::write(
+        &config_path,
+        r#"[[sources]]
+name = "laptop"
+host = "laptop.local"
+path = "/home/x/.claude"
+transport = "ssh"
+"#,
+    )
+    .unwrap();
+
+    RemoteSourceCache {
+        empty_home,
+        _workdir: workdir,
+        cache_dir,
+        config_path,
+    }
+}
+
 /// A scripted event source that yields pre-recorded events for testing
 /// the full event loop via `app.run_with_event_source()`.
 pub struct ScriptedEventSource {
