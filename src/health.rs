@@ -9,6 +9,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::model::Provider;
 use crate::provider::HistoryProvider;
 use crate::provider_diagnostic::{analyze_provider, ProviderDiagnostic};
 use crate::search::SearchIndex;
@@ -44,7 +45,10 @@ pub fn run_health_checks(providers: &[Box<dyn HistoryProvider>]) -> Vec<HealthCh
             name: "providers-detected",
             status: HealthStatus::Warn,
             message: "no providers detected on this system".to_string(),
-            hint: Some("Use one of the supported agents (claude-code, copilot-cli, gemini-cli, codex-cli, opencode, cursor), or check `aghist sources`.".to_string()),
+            hint: Some(format!(
+                "Use one of the supported agents ({}), or check `aghist sources`.",
+                supported_provider_slugs()
+            )),
         });
     } else {
         let slugs: Vec<&str> = providers.iter().map(|p| p.provider().slug()).collect();
@@ -131,6 +135,14 @@ pub fn run_health_checks(providers: &[Box<dyn HistoryProvider>]) -> Vec<HealthCh
     checks
 }
 
+fn supported_provider_slugs() -> String {
+    Provider::all()
+        .iter()
+        .map(|provider| provider.slug())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Sample each detected provider for tool-call fidelity. Returns one
 /// [`ProviderDiagnostic`] per provider. Errors during discover/load are
 /// converted to a synthetic diagnostic with `provider` set to the slug
@@ -163,4 +175,27 @@ fn check_dir_writable(dir: &Path) -> std::io::Result<()> {
     std::fs::write(&probe, b"ok")?;
     std::fs::remove_file(&probe)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_provider_hint_tracks_provider_registry() {
+        let checks = run_health_checks(&[]);
+        let providers_check = checks
+            .iter()
+            .find(|check| check.name == "providers-detected")
+            .expect("providers-detected check");
+        let hint = providers_check.hint.as_deref().expect("provider hint");
+
+        for provider in Provider::all() {
+            assert!(
+                hint.contains(provider.slug()),
+                "missing provider slug {} in hint {hint:?}",
+                provider.slug()
+            );
+        }
+    }
 }
