@@ -6,7 +6,7 @@ use super::super::args::{optional_usize, required_str};
 use super::super::server::McpServer;
 
 use crate::action::Action;
-use crate::model::Session;
+use crate::model::{Session, SessionOrTurnRef};
 use crate::search::{HitKind, SearchIndex};
 
 impl McpServer {
@@ -23,8 +23,9 @@ impl McpServer {
             .map_err(|e| format!("failed to open search index: {e}"))?;
 
         let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+        let provider_scope = self.provider_scope();
         index
-            .build_index(&sessions, &self.providers, &tx)
+            .build_index_for_providers(&sessions, &self.providers, &tx, &provider_scope)
             .map_err(|e| format!("failed to build index: {e}"))?;
 
         index_notes_best_effort(&index);
@@ -35,6 +36,22 @@ impl McpServer {
 
         let session_meta: HashMap<String, &Session> =
             sessions.iter().map(|s| (s.identity_key(), s)).collect();
+        let session_refs: HashSet<String> = session_meta
+            .values()
+            .map(|session| session.session_ref().to_string())
+            .collect();
+        let hits: Vec<_> = hits
+            .into_iter()
+            .filter(|hit| match hit.kind {
+                HitKind::Message => session_meta.contains_key(hit.session_key.as_str()),
+                HitKind::Note => hit
+                    .note_session_ref
+                    .as_deref()
+                    .and_then(|raw| raw.parse::<SessionOrTurnRef>().ok())
+                    .map(|parsed| parsed.session_ref().to_string())
+                    .is_some_and(|session_ref| session_refs.contains(&session_ref)),
+            })
+            .collect();
         let turn_lookup = self.turn_lookup_for_hits(&hits, &session_meta);
 
         let mut hits_json = Vec::with_capacity(hits.len());

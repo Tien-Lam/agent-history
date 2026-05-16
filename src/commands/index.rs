@@ -56,17 +56,28 @@ pub(crate) fn run_index(
         )
     })?;
     if force {
-        index.clear().map_err(|e| {
-            ErrorEnvelope::new("index-error", format!("failed to clear index: {e}"))
-        })?;
+        if let Some(want) = filter {
+            let prune_providers = HashSet::from([want]);
+            index.clear_providers(&prune_providers).map_err(|e| {
+                ErrorEnvelope::new("index-error", format!("failed to clear index: {e}"))
+            })?;
+        } else {
+            index.clear().map_err(|e| {
+                ErrorEnvelope::new("index-error", format!("failed to clear index: {e}"))
+            })?;
+        }
     }
 
     let (tx, _rx) = crossbeam_channel::unbounded();
     // build_index needs the full provider list for load_messages dispatch;
     // provider filtering is enforced by only feeding it sessions from `active`.
-    let stats = index
-        .build_index(&sessions, providers, &tx)
-        .map_err(|e| ErrorEnvelope::new("index-error", format!("failed to build index: {e}")))?;
+    let stats = if let Some(want) = filter {
+        let prune_providers = HashSet::from([want]);
+        index.build_index_for_providers(&sessions, providers, &tx, &prune_providers)
+    } else {
+        index.build_index(&sessions, providers, &tx)
+    }
+    .map_err(|e| ErrorEnvelope::new("index-error", format!("failed to build index: {e}")))?;
 
     #[cfg(feature = "embeddings")]
     let embed_summary =

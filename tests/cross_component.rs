@@ -450,6 +450,46 @@ fn search_index_clear_and_rebuild() {
 }
 
 #[test]
+fn search_index_scoped_rebuild_prunes_only_selected_providers() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+
+    let providers = all_providers();
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    index.build_index(&sessions, &providers, &tx).unwrap();
+    assert!(
+        !index.search("missing semicolon", 10).unwrap().is_empty(),
+        "Claude fixture should be indexed before scoped rebuild"
+    );
+    assert!(
+        !index.search("async", 10).unwrap().is_empty(),
+        "Gemini fixture should be indexed before scoped rebuild"
+    );
+
+    let prune_providers = std::collections::HashSet::from([Provider::ClaudeCode]);
+    let stats = index
+        .build_index_for_providers(&[], &providers, &tx, &prune_providers)
+        .unwrap();
+    assert!(
+        stats.removed >= 1,
+        "scoped rebuild should remove stale Claude entries"
+    );
+    assert!(
+        index.search("missing semicolon", 10).unwrap().is_empty(),
+        "Claude docs should be pruned when Claude is in scope"
+    );
+    assert!(
+        !index.search("async", 10).unwrap().is_empty(),
+        "out-of-scope Gemini docs must survive a Claude-only rebuild"
+    );
+}
+
+#[test]
 fn search_roundtrip_verifies_message_ids() {
     let index_dir = tempfile::tempdir().unwrap();
     let index = SearchIndex::open_or_create(index_dir.path()).unwrap();

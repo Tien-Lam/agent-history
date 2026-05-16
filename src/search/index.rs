@@ -6,7 +6,7 @@ use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Te
 
 use crate::action::Action;
 use crate::metadata::Note;
-use crate::model::Session;
+use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
 
 use super::document::{extract_content, extract_tool_output, message_has_tool_call};
@@ -14,6 +14,15 @@ use super::fields::SearchFields;
 use super::fingerprint::{file_fingerprint, manifest_has_legacy_path_keys};
 use super::storage::{reset_index_dir, write_index_sentinel};
 use super::types::{HitKind, IndexStats, Manifest, NotesIndexStats, SearchError};
+
+fn should_prune_session_key(key: &str, prune_providers: Option<&HashSet<Provider>>) -> bool {
+    let Some(providers) = prune_providers else {
+        return true;
+    };
+    key.split_once('\x1f')
+        .and_then(|(slug, _)| Provider::from_slug(slug))
+        .is_some_and(|provider| providers.contains(&provider))
+}
 
 pub struct SearchIndex {
     pub(super) index: Index,
@@ -64,6 +73,26 @@ impl SearchIndex {
         sessions: &[Session],
         providers: &[Box<dyn HistoryProvider>],
         progress_tx: &crossbeam_channel::Sender<Action>,
+    ) -> Result<IndexStats, SearchError> {
+        self.build_index_inner(sessions, providers, progress_tx, None)
+    }
+
+    pub fn build_index_for_providers(
+        &self,
+        sessions: &[Session],
+        providers: &[Box<dyn HistoryProvider>],
+        progress_tx: &crossbeam_channel::Sender<Action>,
+        prune_providers: &HashSet<Provider>,
+    ) -> Result<IndexStats, SearchError> {
+        self.build_index_inner(sessions, providers, progress_tx, Some(prune_providers))
+    }
+
+    fn build_index_inner(
+        &self,
+        sessions: &[Session],
+        providers: &[Box<dyn HistoryProvider>],
+        progress_tx: &crossbeam_channel::Sender<Action>,
+        prune_providers: Option<&HashSet<Provider>>,
     ) -> Result<IndexStats, SearchError> {
         let mut manifest = self.load_manifest();
         let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
@@ -138,7 +167,10 @@ impl SearchIndex {
         let stale: Vec<String> = manifest
             .sessions
             .keys()
-            .filter(|key| !current_session_keys.contains(*key))
+            .filter(|key| {
+                !current_session_keys.contains(*key)
+                    && should_prune_session_key(key, prune_providers)
+            })
             .cloned()
             .collect();
         for session_key in stale {
@@ -233,6 +265,21 @@ impl SearchIndex {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.into()),
         }
+        Ok(())
+    }
+
+    pub fn clear_providers(&self, providers: &HashSet<Provider>) -> Result<(), SearchError> {
+        let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
+        for provider in providers {
+            writer.delete_term(Term::from_field_text(self.fields.provider, provider.slug()));
+        }
+        writer.commit()?;
+
+        let mut manifest = self.load_manifest();
+        manifest
+            .sessions
+            .retain(|key, _| !should_prune_session_key(key, Some(providers)));
+        self.save_manifest(&manifest)?;
         Ok(())
     }
 

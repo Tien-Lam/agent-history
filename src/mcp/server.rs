@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, BufRead, Write};
 
 use serde_json::{json, Value};
@@ -9,7 +10,7 @@ use super::protocol::{
 };
 use super::resources::resource_templates;
 
-use crate::model::Session;
+use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
 
 /// Owns the providers + search index for the lifetime of a server run.
@@ -139,6 +140,10 @@ impl McpServer {
             }
         }
         all
+    }
+
+    pub(super) fn provider_scope(&self) -> HashSet<Provider> {
+        self.providers.iter().map(|p| p.provider()).collect()
     }
 
     /// Walks providers, discovers sessions, and runs `f` against the matching

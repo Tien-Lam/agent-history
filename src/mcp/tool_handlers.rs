@@ -190,16 +190,29 @@ impl McpServer {
         let index = SearchIndex::open_or_create(&index_dir)
             .map_err(|e| format!("failed to open index at {}: {e}", index_dir.display()))?;
         if force {
-            index
-                .clear()
-                .map_err(|e| format!("failed to clear index: {e}"))?;
+            if let Some(want) = provider_filter {
+                let prune_providers = std::collections::HashSet::from([want]);
+                index
+                    .clear_providers(&prune_providers)
+                    .map_err(|e| format!("failed to clear index: {e}"))?;
+            } else {
+                let prune_providers = self.provider_scope();
+                index
+                    .clear_providers(&prune_providers)
+                    .map_err(|e| format!("failed to clear index: {e}"))?;
+            }
         }
 
         let started = std::time::Instant::now();
         let (tx, _rx) = crossbeam_channel::unbounded::<crate::action::Action>();
-        let stats = index
-            .build_index(&sessions, &self.providers, &tx)
-            .map_err(|e| format!("failed to build index: {e}"))?;
+        let stats = if let Some(want) = provider_filter {
+            let prune_providers = std::collections::HashSet::from([want]);
+            index.build_index_for_providers(&sessions, &self.providers, &tx, &prune_providers)
+        } else {
+            let prune_providers = self.provider_scope();
+            index.build_index_for_providers(&sessions, &self.providers, &tx, &prune_providers)
+        }
+        .map_err(|e| format!("failed to build index: {e}"))?;
 
         let provider_slugs: Vec<&str> = active.iter().map(|p| p.provider().slug()).collect();
 

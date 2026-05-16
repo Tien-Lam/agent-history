@@ -16,8 +16,8 @@ use super::metadata::try_index_notes;
 use input::{decode_search_cursor, resolve_nonempty_search_query};
 use output::{print_search_json, print_search_table};
 use results::{
-    filter_hits_by_metadata, next_search_cursor, raw_search_hits, search_hit_is_after_cursor,
-    sort_search_hits,
+    filter_hits_by_metadata, filter_hits_to_current_sessions, next_search_cursor, raw_search_hits,
+    search_hit_is_after_cursor, sort_search_hits,
 };
 pub(crate) use watch::{search_watch_command, SearchWatchRequest};
 
@@ -98,6 +98,7 @@ pub(crate) fn search_command(
     let session_meta: HashMap<String, &Session> =
         sessions.iter().map(|s| (s.identity_key(), s)).collect();
 
+    let raw_hits = filter_hits_to_current_sessions(raw_hits, &session_meta);
     let raw_hits = filter_hits_by_metadata(raw_hits, &session_meta, metadata_keys);
 
     let total = raw_hits.len();

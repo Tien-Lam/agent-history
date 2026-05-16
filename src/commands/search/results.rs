@@ -3,7 +3,7 @@ use std::path::Path;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::embed;
-use aghist::model::Session;
+use aghist::model::{Session, SessionOrTurnRef};
 use aghist::search::{self, SearchFilters};
 
 use super::super::filtering::{session_metadata_key, strip_turn_suffix};
@@ -65,6 +65,28 @@ pub(super) fn filter_hits_by_metadata(
                 .as_deref()
                 .map(strip_turn_suffix)
                 .is_some_and(|k| keys.contains(k)),
+        })
+        .collect()
+}
+
+pub(super) fn filter_hits_to_current_sessions(
+    hits: Vec<SearchHitRow>,
+    session_meta: &HashMap<String, &Session>,
+) -> Vec<SearchHitRow> {
+    let session_refs: HashSet<String> = session_meta
+        .values()
+        .map(|session| session.session_ref().to_string())
+        .collect();
+
+    hits.into_iter()
+        .filter(|(hit, _)| match hit.kind {
+            search::HitKind::Message => session_meta.contains_key(hit.session_key.as_str()),
+            search::HitKind::Note => hit
+                .note_session_ref
+                .as_deref()
+                .and_then(|raw| raw.parse::<SessionOrTurnRef>().ok())
+                .map(|parsed| parsed.session_ref().to_string())
+                .is_some_and(|session_ref| session_refs.contains(&session_ref)),
         })
         .collect()
 }
