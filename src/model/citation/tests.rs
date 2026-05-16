@@ -55,6 +55,14 @@ fn qualified_citation_ref_round_trips_source_prefix() {
 }
 
 #[test]
+fn qualified_citation_ref_preserves_colon_in_unqualified_session_id() {
+    let parsed: QualifiedCitationRef = "claude-code/abc:def#7".parse().unwrap();
+    assert_eq!(parsed.source, None);
+    assert_eq!(parsed.citation.session_id, sid("abc:def"));
+    assert_eq!(parsed.to_string(), "claude-code/abc:def#7");
+}
+
+#[test]
 fn round_trip_all_providers() {
     for &p in Provider::all() {
         let original = CitationRef {

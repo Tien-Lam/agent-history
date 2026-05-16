@@ -4,7 +4,8 @@ pub mod provider;
 pub mod session;
 
 pub use citation::{
-    CitationParseError, CitationRef, QualifiedCitationRef, SessionOrTurnRef, SessionRef,
+    split_source_prefix, CitationParseError, CitationRef, QualifiedCitationRef, SessionOrTurnRef,
+    SessionRef,
 };
 pub use message::{ContentBlock, Message, MessageId, Role, ToolCall, ToolResult};
 pub use provider::Provider;

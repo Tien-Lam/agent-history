@@ -27,6 +27,19 @@ use thiserror::Error;
 use super::provider::Provider;
 use super::session::SessionId;
 
+/// Split an optional source prefix from a ref.
+///
+/// A prefix only counts as a source when `:` appears before the provider `/`.
+/// This keeps unqualified session ids containing `:` round-trippable.
+pub fn split_source_prefix(raw: &str) -> (Option<&str>, &str) {
+    let slash = raw.find('/');
+    let colon = raw.find(':');
+    match (colon, slash) {
+        (Some(c), Some(s)) if c > 0 && c < s => (Some(&raw[..c]), &raw[c + 1..]),
+        _ => (None, raw),
+    }
+}
+
 /// A stable reference to a session: `<provider-slug>/<session-id>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct SessionRef {
@@ -260,13 +273,12 @@ impl FromStr for QualifiedCitationRef {
     type Err = CitationParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (source, raw_ref) = match s.split_once(':') {
-            Some((source, rest)) if !source.is_empty() => (Some(source.to_string()), rest),
-            Some((_source, rest)) => (None, rest),
-            None => (None, s),
-        };
+        let (source, raw_ref) = split_source_prefix(s);
         let citation = raw_ref.parse::<CitationRef>()?;
-        Ok(Self { source, citation })
+        Ok(Self {
+            source: source.map(ToOwned::to_owned),
+            citation,
+        })
     }
 }
 

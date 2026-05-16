@@ -121,6 +121,7 @@ fn open_fresh() -> (TempDir, Connection) {
 fn validate_accepts_session_and_turn_refs() {
     validate_session_ref("claude-code/abc-123").unwrap();
     validate_session_ref("claude-code/abc-123#7").unwrap();
+    validate_session_ref("claude-code/abc:def#7").unwrap();
     validate_session_ref("opencode/ses_xyz#99").unwrap();
     validate_session_ref("laptop:claude-code/abc-123").unwrap();
     validate_session_ref("work_box:opencode/ses_xyz#99").unwrap();

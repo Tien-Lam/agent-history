@@ -1,5 +1,5 @@
 use crate::config::validate_source_name;
-use crate::model::{CitationParseError, SessionOrTurnRef};
+use crate::model::{split_source_prefix, CitationParseError, SessionOrTurnRef};
 
 use super::MetadataError;
 
@@ -40,13 +40,4 @@ pub fn session_key_from_ref(raw: &str) -> std::result::Result<String, MetadataEr
         .rsplit_once('#')
         .map_or(raw, |(session_ref, _turn)| session_ref)
         .to_string())
-}
-
-fn split_source_prefix(raw: &str) -> (Option<&str>, &str) {
-    let slash = raw.find('/');
-    let colon = raw.find(':');
-    match (colon, slash) {
-        (Some(c), Some(s)) if c < s => (Some(&raw[..c]), &raw[c + 1..]),
-        _ => (None, raw),
-    }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use aghist::cli_error::ErrorEnvelope;
-use aghist::model::{CitationRef, Session, SessionRef};
+use aghist::model::{split_source_prefix, CitationRef, Session, SessionRef};
 use aghist::{config, federated};
 
 use super::discovery::{qualified_session_ref, source_for_session};
@@ -23,15 +23,15 @@ pub(crate) struct SelectedCitation<'a> {
     pub(crate) citation_ref: String,
 }
 
-fn split_source_prefix(raw: &str) -> Result<Option<(&str, &str)>, ErrorEnvelope> {
-    let slash = raw.find('/');
-    let colon = raw.find(':');
-    if !matches!((colon, slash), (Some(c), Some(s)) if c < s) {
-        return Ok(None);
+fn split_valid_source_prefix(raw: &str) -> Result<Option<(&str, &str)>, ErrorEnvelope> {
+    let (source, rest) = split_source_prefix(raw);
+    if let Some(source) = source {
+        config::validate_source_name(source)
+            .map_err(|message| ErrorEnvelope::new("usage", message))?;
+        Ok(Some((source, rest)))
+    } else {
+        Ok(None)
     }
-    let (source, rest) = raw.split_once(':').expect("colon detected above");
-    config::validate_source_name(source).map_err(|message| ErrorEnvelope::new("usage", message))?;
-    Ok(Some((source, rest)))
 }
 
 fn parse_session_ref(raw: &str, full_selector: &str) -> Result<SessionRef, ErrorEnvelope> {
@@ -127,7 +127,7 @@ pub(crate) fn resolve_session_selector<'a>(
         .with_hint("Use `aghist show <ref>` for a single turn, or remove the `#<turn>` suffix."));
     }
 
-    if let Some((source, raw_ref)) = split_source_prefix(selector)? {
+    if let Some((source, raw_ref)) = split_valid_source_prefix(selector)? {
         let session_ref = parse_session_ref(raw_ref, selector)?;
         let matches: Vec<&Session> = sessions
             .iter()
@@ -178,7 +178,7 @@ pub(crate) fn resolve_citation_selector<'a>(
     source_by_session: &HashMap<String, String>,
     selector: &str,
 ) -> Result<SelectedCitation<'a>, ErrorEnvelope> {
-    let (source, citation) = if let Some((source, raw_ref)) = split_source_prefix(selector)? {
+    let (source, citation) = if let Some((source, raw_ref)) = split_valid_source_prefix(selector)? {
         (Some(source), parse_citation_ref(raw_ref, selector)?)
     } else {
         (None, parse_citation_ref(selector, selector)?)
