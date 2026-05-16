@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use super::{project_name_from_path, ProviderError};
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
-use crate::provider::claude_code::parse_text_with_code_blocks;
+use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Debug, Deserialize)]
 struct ZedConversation {

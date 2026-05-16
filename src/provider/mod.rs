@@ -13,6 +13,7 @@ pub mod error;
 pub mod gemini_cli;
 pub mod opencode;
 pub mod registry;
+mod text_blocks;
 pub mod zed_ai;
 mod zed_ai_parse;
 

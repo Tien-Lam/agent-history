@@ -2,7 +2,7 @@ use chrono::{TimeZone, Utc};
 
 use super::cursor_format::{millis_to_datetime, BubbleData, ToolCallData, ToolFormerData};
 use crate::model::{ContentBlock, Message, MessageId, Role, ToolCall, ToolResult};
-use crate::provider::claude_code::parse_text_with_code_blocks;
+use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub(crate) fn build_message(
     bubble_id: &str,

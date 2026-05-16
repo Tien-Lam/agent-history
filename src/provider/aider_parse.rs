@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 
 use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
-use crate::provider::claude_code::parse_text_with_code_blocks;
+use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 const SESSION_HEADER: &str = "# aider chat started at ";
 const USER_MARKER: &str = "####";

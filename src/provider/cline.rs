@@ -42,7 +42,7 @@ use super::{HistoryProvider, ProviderError};
 use crate::model::{
     ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, ToolCall, ToolResult,
 };
-use crate::provider::claude_code::parse_text_with_code_blocks;
+use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 const EXTENSION_ID: &str = "saoudrizwan.claude-dev";
 const TASKS_SUBDIR: &str = "tasks";
