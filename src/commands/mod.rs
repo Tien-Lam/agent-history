@@ -8,6 +8,7 @@ pub mod health;
 pub mod index;
 pub mod install;
 pub mod list;
+pub mod lookup_dispatch;
 pub mod metadata;
 pub mod metadata_dispatch;
 pub mod reports;

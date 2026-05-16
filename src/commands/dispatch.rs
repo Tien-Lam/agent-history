@@ -1,17 +1,11 @@
-use super::super::cli::{
-    resolve_export_args, resolve_index_args, resolve_show_args, Cli, Command, FilterArgs,
-};
+use super::super::cli::{Cli, Command, FilterArgs};
 use super::analysis_dispatch::dispatch_analysis_command;
-use super::diff::diff_command;
-use super::export::export_session;
 use super::filtering::resolve_metadata_filter;
-use super::index::run_index;
 use super::install::{self_update, uninstall};
 use super::list::list_sessions;
+use super::lookup_dispatch::dispatch_lookup_command;
 use super::metadata_dispatch::dispatch_metadata_command;
 use super::reports_dispatch::dispatch_report_command;
-use super::search_dispatch::{dispatch_search_command, SearchDispatchArgs, SearchDispatchMode};
-use super::show::show_command;
 use super::system::{run_mcp, schema_command};
 use super::tui::run_tui;
 use aghist::cli_error::{ErrorEnvelope, EXIT_USAGE};
@@ -147,7 +141,7 @@ fn dispatch_command(
         | Command::Index { .. }
         | Command::Search { .. }
         | Command::Show { .. }
-        | Command::Diff { .. }) => dispatch_lookup_command(cmd, ctx)?,
+        | Command::Diff { .. }) => dispatch_lookup_command(cmd, ctx.providers, ctx.filters)?,
         cmd @ (Command::Track { .. }
         | Command::Decisions { .. }
         | Command::Todos { .. }
@@ -166,95 +160,6 @@ fn dispatch_command(
         }
     };
     Ok(Some(exit))
-}
-
-fn dispatch_lookup_command(
-    command: Command,
-    ctx: &DispatchContext<'_>,
-) -> Result<i32, ErrorEnvelope> {
-    match command {
-        Command::Export {
-            format,
-            session,
-            output,
-            turn_range,
-            include_notes,
-            params,
-        } => {
-            let resolved =
-                resolve_export_args(format, session, output, turn_range, include_notes, params)?;
-            export_session(
-                ctx.providers,
-                resolved.format,
-                &resolved.session,
-                resolved.output.as_deref(),
-                resolved.turn_range.as_deref(),
-                resolved.include_notes,
-            )
-        }
-        Command::Index {
-            provider,
-            force,
-            accept_download,
-            params,
-        } => {
-            let (provider, force, accept_download) =
-                resolve_index_args(provider, force, accept_download, params)?;
-            run_index(ctx.providers, provider, force, accept_download)
-        }
-        Command::Search {
-            query,
-            query_file,
-            stdin,
-            limit,
-            cursor,
-            json,
-            watch,
-            watch_interval_ms,
-            watch_iterations,
-            debug_search,
-            hybrid_weight,
-            params,
-        } => dispatch_search_command(
-            ctx.providers,
-            ctx.filters,
-            SearchDispatchArgs {
-                query,
-                query_file,
-                stdin,
-                limit,
-                cursor,
-                json,
-                hybrid_weight,
-                params,
-                mode: if watch {
-                    SearchDispatchMode::Watch {
-                        interval_ms: watch_interval_ms,
-                        iterations: watch_iterations,
-                    }
-                } else {
-                    SearchDispatchMode::Once { debug_search }
-                },
-            },
-        ),
-        Command::Show {
-            reference,
-            format,
-            include_context,
-            params,
-        } => {
-            let (reference, format, include_context) =
-                resolve_show_args(reference, format, include_context, params)?;
-            show_command(ctx.providers, &reference, format, include_context)
-        }
-        Command::Diff {
-            session1,
-            session2,
-            context,
-            json,
-        } => diff_command(ctx.providers, &session1, &session2, context, json),
-        _ => unreachable!("lookup dispatch received unrelated command"),
-    }
 }
 
 fn dispatch_list(
