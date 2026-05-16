@@ -362,6 +362,10 @@ transport = "ssh"
     );
 
     let (session_uri, hit_ref) = assert_remote_mcp_initial_responses(&responses);
+    let unqualified_hit_ref = hit_ref
+        .strip_prefix("laptop:")
+        .unwrap_or(&hit_ref)
+        .to_string();
 
     let followup = run_session_with_config_and_sources_cache(
         empty_home.path(),
@@ -382,6 +386,15 @@ transport = "ssh"
                 "id": 5,
                 "method": "resources/read",
                 "params": { "uri": session_uri }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_message",
+                    "arguments": { "ref": unqualified_hit_ref }
+                }
             }),
         ],
     );
@@ -444,6 +457,10 @@ fn assert_remote_mcp_followup(followup: &[Value], hit_ref: &str) {
         .as_str()
         .unwrap()
         .starts_with("aghist://source/laptop/session/claude-code/"));
+
+    let unqualified_message = &followup[2]["result"]["structuredContent"];
+    assert_eq!(unqualified_message["session"]["source"], "laptop");
+    assert_eq!(unqualified_message["ref"].as_str().unwrap(), hit_ref);
 }
 
 #[test]

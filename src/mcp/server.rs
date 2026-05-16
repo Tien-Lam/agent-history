@@ -258,26 +258,59 @@ impl McpServer {
         session_id: &str,
         source: &str,
     ) -> Result<LocatedSession, String> {
+        self.find_session_exact_with_optional_source(provider, session_id, Some(source))
+    }
+
+    pub(super) fn find_session_exact_with_optional_source(
+        &self,
+        provider: Provider,
+        session_id: &str,
+        source: Option<&str>,
+    ) -> Result<LocatedSession, String> {
         self.ensure_provider_visible(provider)?;
         let discovery = self.collect_discovery();
-        discovery
+        let matches: Vec<LocatedSession> = discovery
             .sessions
             .iter()
-            .find(|session| {
+            .filter(|session| {
                 session.provider == provider
                     && session.id.0 == session_id
-                    && discovery.source_of_session(session) == source
+                    && source.is_none_or(|source| discovery.source_of_session(session) == source)
             })
             .map(|session| LocatedSession {
                 session: session.clone(),
                 source: discovery.source_of_session(session).to_string(),
             })
-            .ok_or_else(|| {
-                format!(
-                    "session '{session_id}' not found in provider '{}' from source '{source}'",
+            .collect();
+
+        match matches.len() {
+            0 => {
+                let scope = source.map_or_else(
+                    || "any source".to_string(),
+                    |source| format!("source '{source}'"),
+                );
+                Err(format!(
+                    "session '{session_id}' not found in provider '{}' from {scope}",
                     provider.slug()
-                )
-            })
+                ))
+            }
+            1 => {
+                let mut matches = matches.into_iter();
+                if let Some(located) = matches.next() {
+                    Ok(located)
+                } else {
+                    Err(format!(
+                        "session '{session_id}' not found in provider '{}' from any source",
+                        provider.slug()
+                    ))
+                }
+            }
+            _ => Err(format!(
+                "session '{}' in provider '{}' is ambiguous; specify source",
+                session_id,
+                provider.slug()
+            )),
+        }
     }
 
     fn ensure_provider_visible(&self, provider: Provider) -> Result<(), String> {

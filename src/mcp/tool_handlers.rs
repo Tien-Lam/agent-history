@@ -108,9 +108,16 @@ impl McpServer {
             .map_err(|e| format!("invalid ref '{raw_ref}': {e}"))?;
         let include_context = optional_usize(args, "include_context", 0, 0, 100)?;
         let citation = qualified.citation;
-        let source = qualified.source.as_deref().unwrap_or(LOCAL_SOURCE);
+        let source = qualified.source.as_deref();
+        if let Some(source) = source {
+            crate::config::validate_source_name(source)?;
+        }
 
-        let located = self.find_session_exact(citation.provider, &citation.session_id.0, source)?;
+        let located = self.find_session_exact_with_optional_source(
+            citation.provider,
+            &citation.session_id.0,
+            source,
+        )?;
         let messages = provider::load_messages_for_session(&located.session, &self.providers)
             .map_err(|e| format!("failed to load messages: {e}"))?;
 
