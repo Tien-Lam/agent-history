@@ -490,6 +490,34 @@ fn search_index_scoped_rebuild_prunes_only_selected_providers() {
 }
 
 #[test]
+fn search_index_unscoped_partial_rebuild_prunes_nothing() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+
+    let providers = all_providers();
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    index.build_index(&sessions, &providers, &tx).unwrap();
+    let stats = index
+        .build_index_without_pruning(&[], &providers, &tx)
+        .unwrap();
+
+    assert_eq!(stats.removed, 0);
+    assert!(
+        !index.search("missing semicolon", 10).unwrap().is_empty(),
+        "no-prune partial rebuild must preserve existing Claude docs"
+    );
+    assert!(
+        !index.search("async", 10).unwrap().is_empty(),
+        "no-prune partial rebuild must preserve existing Gemini docs"
+    );
+}
+
+#[test]
 fn search_roundtrip_verifies_message_ids() {
     let index_dir = tempfile::tempdir().unwrap();
     let index = SearchIndex::open_or_create(index_dir.path()).unwrap();

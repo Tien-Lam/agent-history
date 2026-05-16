@@ -87,6 +87,16 @@ impl SearchIndex {
         self.build_index_inner(sessions, providers, progress_tx, Some(prune_providers))
     }
 
+    pub fn build_index_without_pruning(
+        &self,
+        sessions: &[Session],
+        providers: &[Box<dyn HistoryProvider>],
+        progress_tx: &crossbeam_channel::Sender<Action>,
+    ) -> Result<IndexStats, SearchError> {
+        let prune_providers = HashSet::new();
+        self.build_index_inner(sessions, providers, progress_tx, Some(&prune_providers))
+    }
+
     fn build_index_inner(
         &self,
         sessions: &[Session],

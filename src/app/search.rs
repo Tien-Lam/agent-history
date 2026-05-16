@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::action::Action;
 use crate::embed;
+use crate::model::Session;
 use crate::search::SearchFilters;
 
 use super::App;
@@ -55,16 +56,16 @@ impl App {
         let providers = Arc::clone(&self.providers);
         let tx = self.action_tx.clone();
 
-        std::thread::spawn(
-            move || match index.build_index(&sessions, &providers, &tx) {
+        std::thread::spawn(move || {
+            match index.build_index_without_pruning(&sessions, &providers, &tx) {
                 Ok(_) => {
                     let _ = tx.send(Action::IndexReady);
                 }
                 Err(e) => {
                     let _ = tx.send(Action::LoadError(format!("Index error: {e}")));
                 }
-            },
-        );
+            }
+        });
     }
 
     /// Refresh `msg_filter_session_ids` from the search index when role or
@@ -164,6 +165,12 @@ impl App {
 
         if let Ok(hits) = hits_result {
             self.last_engine = engine;
+            let current_session_keys: HashSet<String> =
+                self.sessions.iter().map(Session::identity_key).collect();
+            let hits: Vec<_> = hits
+                .into_iter()
+                .filter(|hit| current_session_keys.contains(&hit.session_key))
+                .collect();
             let mut seen = HashSet::new();
             let ids: Vec<String> = hits
                 .iter()
