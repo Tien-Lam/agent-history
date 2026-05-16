@@ -1,0 +1,164 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "tools": [
+    {
+      "description": "Full-text search across indexed sessions. Returns hits with stable citation refs (`<provider>/<session-id>#<turn>` locally, `<source>:<provider>/<session-id>#<turn>` for remote sources). Refreshes the index incrementally before searching.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 20,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Tantivy query string. Matches the `content` and `project` fields.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "search_sessions"
+    },
+    {
+      "description": "List sessions across MCP-visible local providers and registered remote source caches, sorted by start time descending.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "project": {
+            "description": "Substring match on session project_name.",
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "claude-code",
+              "copilot-cli",
+              "gemini-cli",
+              "codex-cli",
+              "opencode",
+              "cursor",
+              "aider",
+              "zed-ai",
+              "cline",
+              "continue-dev"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_sessions"
+    },
+    {
+      "description": "Resolve a session by ID (full or unique prefix) and return its metadata plus all turns. Use provider/source to disambiguate federated sessions.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "enum": [
+              "claude-code",
+              "copilot-cli",
+              "gemini-cli",
+              "codex-cli",
+              "opencode",
+              "cursor",
+              "aider",
+              "zed-ai",
+              "cline",
+              "continue-dev"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "source": {
+            "description": "Source name from list_sessions. Omit for unique matches; use 'local' for local-only lookup.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "name": "get_session"
+    },
+    {
+      "description": "Resolve a citation ref `<provider>/<session-id>#<turn>` or `<source>:<provider>/<session-id>#<turn>` to the target message, optionally with context turns on each side.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_context": {
+            "default": 0,
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ref": {
+            "description": "Citation ref. Example: claude-code/abc-123#7",
+            "pattern": "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+#[1-9][0-9]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "type": "object"
+      },
+      "name": "get_message"
+    },
+    {
+      "description": "Refresh the search index (incremental by default). Returns counts of added/updated/unchanged sessions.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "default": false,
+            "description": "Clear the index first for a full rebuild.",
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "claude-code",
+              "copilot-cli",
+              "gemini-cli",
+              "codex-cli",
+              "opencode",
+              "cursor",
+              "aider",
+              "zed-ai",
+              "cline",
+              "continue-dev"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "reindex"
+    },
+    {
+      "description": "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "health"
+    }
+  ]
+}

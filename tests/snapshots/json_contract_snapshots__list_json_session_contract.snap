@@ -1,0 +1,22 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "meta": {
+    "next_cursor": null,
+    "total": 1
+  },
+  "sessions": [
+    {
+      "branch": "main",
+      "id": "json-contract-session",
+      "message_count": 2,
+      "project": "contract-project",
+      "provider": "claude-code",
+      "source": "local",
+      "started_at": "2025-01-01T00:00:05Z",
+      "summary": "Session json-contract-session"
+    }
+  ]
+}
