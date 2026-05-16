@@ -69,19 +69,23 @@ Download the latest release for your platform from [GitHub Releases](https://git
 | Windows x86_64 | `aghist-v*-x86_64-pc-windows-msvc.zip` |
 | macOS Apple Silicon | `aghist-v*-aarch64-apple-darwin.tar.gz` |
 
+Official release archives include `aghist.install`. Keep it next to the binary
+if you want `aghist update` and `aghist uninstall` to recognize the install as
+self-managed by aghist.
+
 ### Updating
 
 ```sh
 aghist update
 ```
 
-`aghist update` is for GitHub release binaries installed by the shell script,
-which writes an adjacent `aghist.install` marker so aghist can tell it owns the
-binary. If you installed with `cargo-binstall`, run
+`aghist update` is for GitHub release binaries installed by the shell script or
+extracted from official release archives with the adjacent `aghist.install`
+marker intact. If you installed with `cargo-binstall`, run
 `cargo binstall aghist --force`; if you installed from source, run
 `cargo install --git https://github.com/Tien-Lam/agent-history.git --force`.
-Package-manager and manually copied binaries should be updated with the tool or
-process that installed them.
+Package-manager binaries and manually copied binaries without the marker should
+be updated with the tool or process that installed them.
 
 ### Uninstalling
 
@@ -89,10 +93,11 @@ process that installed them.
 aghist uninstall
 ```
 
-Removes a self-managed release binary installed by the shell script, plus the
+Removes a self-managed release binary installed by the shell script or extracted
+from an official release archive with `aghist.install` beside it, plus the
 search index and configuration. For Cargo, package-manager, or manually copied
-installs, uninstall the binary with that installer/process and remove the data
-directories manually if desired.
+installs without the marker, uninstall the binary with that installer/process
+and remove the data directories manually if desired.
 
 ## Usage
 

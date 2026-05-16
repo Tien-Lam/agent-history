@@ -53,14 +53,26 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../aghist-${{ github.ref_name }}-${{ matrix.target }}.tar.gz aghist
+          cat > aghist.install <<'EOF'
+          method=github-release
+          repo=${{ github.repository }}
+          target=${{ matrix.target }}
+          tag=${{ github.ref_name }}
+          EOF
+          tar czf ../../../aghist-${{ github.ref_name }}-${{ matrix.target }}.tar.gz aghist aghist.install
           cd ../../..
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../aghist-${{ github.ref_name }}-${{ matrix.target }}.zip aghist.exe
+          @"
+          method=github-release
+          repo=${{ github.repository }}
+          target=${{ matrix.target }}
+          tag=${{ github.ref_name }}
+          "@ | Set-Content -NoNewline -Encoding utf8NoBOM aghist.install
+          7z a ../../../aghist-${{ github.ref_name }}-${{ matrix.target }}.zip aghist.exe aghist.install
           cd ../../..
 
       - name: Upload artifact
