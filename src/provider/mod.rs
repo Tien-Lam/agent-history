@@ -14,6 +14,7 @@ mod cursor_store;
 pub mod error;
 pub mod gemini_cli;
 pub mod opencode;
+mod opencode_parse;
 pub mod registry;
 mod text_blocks;
 pub mod zed_ai;
