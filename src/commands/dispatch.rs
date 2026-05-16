@@ -2,10 +2,7 @@ use super::super::cli::{
     resolve_export_args, resolve_index_args, resolve_show_args, Cli, Command, FilterArgs,
     SourcesCommand,
 };
-use super::analysis::{
-    decisions_command, threads_command, todos_command, track_command, DecisionsCommandRequest,
-    ThreadsCommandRequest,
-};
+use super::analysis_dispatch::dispatch_analysis_command;
 use super::diff::diff_command;
 use super::export::export_session;
 use super::filtering::resolve_metadata_filter;
@@ -160,7 +157,7 @@ fn dispatch_command(
         cmd @ (Command::Track { .. }
         | Command::Decisions { .. }
         | Command::Todos { .. }
-        | Command::Threads { .. }) => dispatch_analysis_command(cmd, ctx)?,
+        | Command::Threads { .. }) => dispatch_analysis_command(cmd, ctx.providers, ctx.filters)?,
         cmd @ (Command::Sources { .. }
         | Command::Health
         | Command::Note { .. }
@@ -261,83 +258,6 @@ fn dispatch_lookup_command(
             json,
         } => diff_command(ctx.providers, &session1, &session2, context, json),
         _ => unreachable!("lookup dispatch received unrelated command"),
-    }
-}
-
-fn dispatch_analysis_command(
-    command: Command,
-    ctx: &DispatchContext<'_>,
-) -> Result<i32, ErrorEnvelope> {
-    match command {
-        Command::Track {
-            topic,
-            limit,
-            json,
-            llm_model,
-        } => track_command(
-            ctx.providers,
-            ctx.filters,
-            &topic,
-            limit,
-            json,
-            llm_model.as_deref(),
-        ),
-        Command::Decisions {
-            session,
-            threshold,
-            limit,
-            json,
-            llm,
-            llm_model,
-        } => decisions_command(
-            ctx.providers,
-            DecisionsCommandRequest {
-                session_filter: session.as_deref(),
-                threshold,
-                limit,
-                force_json: json,
-                filters: ctx.filters,
-                use_llm: llm,
-                llm_model: llm_model.as_deref(),
-            },
-        ),
-        Command::Todos {
-            kind,
-            limit,
-            json,
-            llm,
-            llm_model,
-        } => todos_command(
-            ctx.providers,
-            ctx.filters,
-            &kind,
-            limit,
-            json,
-            llm,
-            llm_model.as_deref(),
-        ),
-        Command::Threads {
-            gap_hours,
-            min_sessions,
-            limit,
-            json,
-            llm,
-            llm_model,
-            llm_max_sessions,
-        } => threads_command(
-            ctx.providers,
-            ThreadsCommandRequest {
-                filters: ctx.filters,
-                gap_hours,
-                min_sessions,
-                limit,
-                force_json: json,
-                use_llm: llm,
-                llm_model: llm_model.as_deref(),
-                llm_max_sessions,
-            },
-        ),
-        _ => unreachable!("analysis dispatch received unrelated command"),
     }
 }
 

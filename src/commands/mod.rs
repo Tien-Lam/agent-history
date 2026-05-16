@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod analysis_dispatch;
 pub mod diff;
 pub mod dispatch;
 pub mod export;
