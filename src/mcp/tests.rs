@@ -191,6 +191,21 @@ fn resources_templates_list_advertises_session_and_turn() {
         .collect();
     assert!(uris.contains(&"aghist://session/{provider}/{session_id}"));
     assert!(uris.contains(&"aghist://session/{provider}/{session_id}/turn/{turn}"));
+
+    let session_template = templates
+        .iter()
+        .find(|template| {
+            template["uriTemplate"].as_str() == Some("aghist://session/{provider}/{session_id}")
+        })
+        .expect("session template");
+    let description = session_template["description"].as_str().unwrap();
+    for provider in Provider::all() {
+        assert!(
+            description.contains(provider.slug()),
+            "session resource template description is missing provider slug {}",
+            provider.slug()
+        );
+    }
 }
 
 #[test]

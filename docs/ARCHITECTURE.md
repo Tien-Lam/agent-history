@@ -14,6 +14,11 @@ graph TD
     CP["Copilot CLI<br><code>~/.copilot/</code>"] --> HP
     CX["Codex CLI"] --> HP
     OC["OpenCode"] --> HP
+    CU["Cursor"] --> HP
+    AD["Aider"] --> HP
+    ZA["Zed AI"] --> HP
+    CL["Cline"] --> HP
+    CD["Continue.dev"] --> HP
 
     HP["<b>HistoryProvider trait</b><br>discover_sessions() / load_messages()"]
 
@@ -77,6 +82,11 @@ Current implementations:
 | Gemini CLI | `gemini_cli.rs` | `~/.gemini/tmp/` | JSON |
 | Codex CLI | `codex_cli.rs` | User-configurable | JSONL (rollout files) |
 | OpenCode | `opencode.rs` | `~/OpenCode/` | Session/message structure |
+| Cursor | `cursor.rs` | Platform-specific Cursor `state.vscdb` | SQLite composer/chat rows |
+| Aider | `aider.rs` | Project `.aider.chat.history.md` files | Markdown transcript |
+| Zed AI | `zed_ai.rs` | Platform-specific `zed/conversations/` | JSON |
+| Cline | `cline.rs` | VS Code-compatible global storage task dirs | Anthropic Messages JSON |
+| Continue.dev | `continue_dev.rs` | `~/.continue/sessions/` | JSONL + index |
 
 All providers respect `AGHIST_HOME` as an override for the home directory, primarily used in tests.
 
@@ -84,9 +94,9 @@ All providers respect `AGHIST_HOME` as an override for the home directory, prima
 
 1. Create `src/provider/your_tool.rs` implementing `HistoryProvider`.
 2. Add a `detect()` constructor that returns `None` if the data directory doesn't exist.
-3. Register it in `detect_all_providers()` in `src/provider/mod.rs`.
-4. Add the provider variant to the `Provider` enum in `src/model/provider.rs`.
-5. Add a `"your-tool"` string mapping in `Config::enabled_providers()`.
+3. Add the provider variant and `ProviderSpec` entry in `src/model/provider.rs`.
+4. Register detection/stateless construction in `src/provider/registry.rs`.
+5. Add generated and missing-directory conformance cases under `tests/common/`.
 
 ## Unified model
 

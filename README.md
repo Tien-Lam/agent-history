@@ -14,6 +14,11 @@ Cross-platform TUI for viewing and searching AI agent conversation history.
 - **Gemini CLI** — Google Gemini CLI history
 - **Codex CLI** — OpenAI Codex CLI history
 - **OpenCode** — OpenCode conversations
+- **Cursor** — Cursor composer/chat history
+- **Aider** — per-repository `.aider.chat.history.md` transcripts
+- **Zed AI** — Zed assistant conversations
+- **Cline** — Cline task histories from VS Code-compatible editors
+- **Continue.dev** — Continue session JSONL history
 
 Providers are auto-detected based on platform-specific default paths.
 

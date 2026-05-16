@@ -36,13 +36,19 @@ pub(super) fn resource_descriptor(s: &Session) -> Value {
 }
 
 pub(super) fn resource_templates() -> Value {
+    let provider_slugs = Provider::all()
+        .iter()
+        .map(|provider| provider.slug())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let session_description = format!(
+        "Full session metadata + ordered turns. `provider` is the kebab-case slug ({provider_slugs})."
+    );
     json!([
         {
             "uriTemplate": "aghist://session/{provider}/{session_id}",
             "name": "Session",
-            "description": "Full session metadata + ordered turns. \
-                            `provider` is the kebab-case slug \
-                            (claude-code, copilot-cli, gemini-cli, codex-cli, opencode, cursor).",
+            "description": session_description,
             "mimeType": "application/json"
         },
         {
