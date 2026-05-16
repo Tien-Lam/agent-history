@@ -44,6 +44,7 @@ pub fn schema_for(subcmd: &str) -> Option<Value> {
         "decisions" => Some(analysis::decisions_schema()),
         "todos" => Some(analysis::todos_schema()),
         "threads" => Some(analysis::threads_schema()),
+        "track" => Some(analysis::track_schema()),
         "note" => Some(metadata::note_schema()),
         "tag" => Some(metadata::tag_schema()),
         "star" => Some(metadata::star_schema()),

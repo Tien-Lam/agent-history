@@ -15,19 +15,21 @@ identify what *changed* about the topic across sessions — decisions made, \
 approaches revised, implementations shifted, ideas introduced or abandoned.
 
 Schema, JSON only, no prose:
-{\"timeline\":[{\"session_ref\":\"<provider-slug>/<session-id>\",\"date\":\"<YYYY-MM-DD>\",\"event\":\"<one-sentence description of what changed>\",\"direction\":\"introduced|revised|confirmed|dropped\"}]}
+{\"timeline\":[{\"session_ref\":\"<provider-slug>/<session-id> or <source>:<provider-slug>/<session-id>\",\"date\":\"<YYYY-MM-DD>\",\"event\":\"<one-sentence description of what changed>\",\"direction\":\"introduced|revised|confirmed|dropped\"}]}
 
 Rules:
 - Each timeline entry describes one notable change or confirmation about the topic in that session.
 - direction: \"introduced\" = first mention/implementation; \"revised\" = approach changed; \"confirmed\" = same approach reaffirmed; \"dropped\" = topic abandoned/reversed.
 - event: one concrete sentence. Start with an action verb (\"Switched to...\", \"Added...\", \"Decided to...\", \"Dropped...\").
-- session_ref: must match exactly one of the refs listed in the input. Do not invent refs.
+- session_ref: must match exactly one of the refs listed in the input. Do not invent refs or strip source prefixes.
 - Only emit entries for sessions where something noteworthy happened about the topic. Skip sessions that merely mention the topic in passing.
 - If no sessions have meaningful changes, return {\"timeline\":[]}.";
 
 /// One session's topic-relevant excerpt for the track extractor.
 #[derive(Debug, Clone)]
 pub struct TrackSession {
+    /// Registered remote source name. `None` means local host history.
+    pub source: Option<String>,
     pub provider: Provider,
     pub session_id: SessionId,
     pub started_at: DateTime<Utc>,
@@ -38,7 +40,11 @@ pub struct TrackSession {
 impl TrackSession {
     #[must_use]
     pub fn session_ref(&self) -> String {
-        format!("{}/{}", self.provider.slug(), self.session_id.0)
+        let raw = format!("{}/{}", self.provider.slug(), self.session_id.0);
+        match self.source.as_deref().filter(|source| !source.is_empty()) {
+            Some(source) => format!("{source}:{raw}"),
+            None => raw,
+        }
     }
 }
 

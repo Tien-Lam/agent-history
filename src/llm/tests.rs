@@ -232,6 +232,20 @@ fn user_message_threads_preserves_remote_source_refs() {
     assert!(msg.contains("laptop:claude-code/abc-123"));
 }
 
+#[test]
+fn user_message_track_preserves_remote_source_refs() {
+    let sessions = vec![TrackSession {
+        source: Some("laptop".to_string()),
+        provider: Provider::ClaudeCode,
+        session_id: SessionId("abc-123".to_string()),
+        started_at: ts(0),
+        excerpts: vec!["BM25 ranking changed".to_string()],
+    }];
+
+    let msg = user_message_track("BM25", &sessions);
+    assert!(msg.contains("laptop:claude-code/abc-123"));
+}
+
 fn threads_assistant_response(inner: &str) -> String {
     assistant_response(inner)
 }

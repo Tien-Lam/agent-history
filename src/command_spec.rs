@@ -59,6 +59,10 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         summary: "Cluster sessions into related work threads.",
     },
     CommandSpec {
+        name: "track",
+        summary: "Track how a topic evolved across sessions.",
+    },
+    CommandSpec {
         name: "note",
         summary: "Manage per-user notes.",
     },

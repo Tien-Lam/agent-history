@@ -5,6 +5,8 @@ use aghist::model::ContentBlock;
 use aghist::provider;
 
 use crate::cli::FilterArgs;
+use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
+use crate::commands::filtering::{message_matches, session_matches};
 use crate::commands::text::truncate;
 
 use super::common::map_llm_error;
@@ -20,64 +22,58 @@ fn scan_topic_sessions(
 ) -> Vec<aghist::llm::TrackSession> {
     let needle = topic.to_lowercase();
     let mut matched: Vec<aghist::llm::TrackSession> = Vec::new();
+    let project_needle = filters
+        .project
+        .as_deref()
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
 
-    'outer: for p in providers {
-        if let Some(want) = filters.provider {
-            if p.provider() != want {
-                continue;
-            }
+    let discovery = federated_discovery_for_commands(providers);
+    for session in discovery.sessions {
+        if !session_matches(&session, filters, project_needle.as_deref()) {
+            continue;
         }
-        let Ok(sessions) = p.discover_sessions() else {
+        let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
             continue;
         };
-        for session in sessions {
-            if limit > 0 && matched.len() >= limit {
-                break 'outer;
+        let mut excerpts: Vec<String> = Vec::new();
+        for msg in &messages {
+            if excerpts.len() >= 3 {
+                break;
             }
-            if filters.since.is_some_and(|s| session.started_at < s)
-                || filters.until.is_some_and(|u| session.started_at > u)
-            {
+            if !message_matches(msg, filters) {
                 continue;
             }
-            if let Some(ref proj) = filters.project {
-                let name = session.project_name.as_deref().unwrap_or("");
-                if !name.to_lowercase().contains(&proj.to_lowercase()) {
-                    continue;
-                }
-            }
-            let Ok(messages) = p.load_messages(&session) else {
-                continue;
-            };
-            let mut excerpts: Vec<String> = Vec::new();
-            for msg in &messages {
-                if excerpts.len() >= 3 {
-                    break;
-                }
-                for block in &msg.content {
-                    if let ContentBlock::Text(t) = block {
-                        if t.to_lowercase().contains(&needle) {
-                            let snippet = t.trim();
-                            let short = if snippet.chars().count() > 200 {
-                                format!("{}…", snippet.chars().take(199).collect::<String>())
-                            } else {
-                                snippet.to_string()
-                            };
-                            excerpts.push(short);
-                            break;
-                        }
+            for block in &msg.content {
+                if let ContentBlock::Text(t) = block {
+                    if t.to_lowercase().contains(&needle) {
+                        let snippet = t.trim();
+                        let short = if snippet.chars().count() > 200 {
+                            format!("{}…", snippet.chars().take(199).collect::<String>())
+                        } else {
+                            snippet.to_string()
+                        };
+                        excerpts.push(short);
+                        break;
                     }
                 }
             }
-            if excerpts.is_empty() {
-                continue;
-            }
-            matched.push(aghist::llm::TrackSession {
-                provider: p.provider(),
-                session_id: session.id.clone(),
-                started_at: session.started_at,
-                excerpts,
-            });
         }
+        if excerpts.is_empty() {
+            continue;
+        }
+        let source = source_for_session(&discovery.source_by_session, &session);
+        matched.push(aghist::llm::TrackSession {
+            source: (source != aghist::federated::LOCAL_SOURCE).then(|| source.to_string()),
+            provider: session.provider,
+            session_id: session.id.clone(),
+            started_at: session.started_at,
+            excerpts,
+        });
+    }
+    matched.sort_by_key(|s| s.started_at);
+    if limit > 0 && matched.len() > limit {
+        matched.truncate(limit);
     }
     matched
 }
@@ -91,13 +87,11 @@ pub(crate) fn track_command(
     llm_model: Option<&str>,
 ) -> Result<i32, ErrorEnvelope> {
     use std::io::Write as _;
-    let mut matched = scan_topic_sessions(providers, filters, topic, limit);
+    let matched = scan_topic_sessions(providers, filters, topic, limit);
 
     if matched.is_empty() {
         return Ok(EXIT_EMPTY);
     }
-
-    matched.sort_by_key(|s| s.started_at);
 
     let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
     if let Some(model) = llm_model {

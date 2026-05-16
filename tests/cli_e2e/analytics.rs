@@ -272,6 +272,34 @@ fn threads_llm_finds_remote_source_candidates_without_local_provider() {
 }
 
 #[test]
+fn track_finds_remote_source_candidates_without_local_provider() {
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-track")
+        .project("track-proj")
+        .user("BM25 ranking context")
+        .assistant("We changed BM25 ranking to prefer recent sessions.")
+        .done()
+        .build();
+    let source = laptop_remote_source(&remote.base_path);
+
+    let output = aghist()
+        .args(["track", "BM25 ranking", "--json"])
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("AGHIST_LLM_API_KEY")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("\"kind\":\"llm-error\""),
+        "stderr should carry llm-error envelope, got: {stderr:?}"
+    );
+}
+
+#[test]
 fn decisions_include_remote_source_refs_without_local_provider() {
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-decision")
@@ -440,6 +468,25 @@ fn schema_subcommand_includes_threads_llm_shape() {
             "llm response items must include {field}"
         );
     }
+}
+
+#[test]
+fn schema_subcommand_includes_track() {
+    let out = aghist().args(["schema", "--list"]).output().unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
+    let arr = parsed["subcommands"].as_array().unwrap();
+    assert!(arr.iter().any(|v| v == "track"));
+
+    let track_schema = aghist().args(["schema", "track"]).output().unwrap();
+    assert_eq!(track_schema.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&track_schema.stdout).unwrap().trim()).unwrap();
+    assert_eq!(parsed["command"], "track");
+    assert_eq!(parsed["params"]["properties"]["topic"]["minLength"], 1);
+    let item_props = &parsed["response"]["properties"]["timeline"]["items"]["properties"];
+    assert!(item_props["session_ref"].is_object());
+    assert_eq!(item_props["direction"]["enum"].as_array().unwrap().len(), 4);
 }
 
 // ─── project subcommand ───────────────────────────────────────────────────
