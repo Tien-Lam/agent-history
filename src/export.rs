@@ -74,9 +74,26 @@ pub fn export_with_notes(
     messages: &[Message],
     notes: &[Note],
 ) -> String {
+    let session_ref = session.session_ref().to_string();
+    export_with_notes_for_session_ref(format, session, messages, notes, &session_ref)
+}
+
+pub fn export_with_notes_for_session_ref(
+    format: ExportFormat,
+    session: &Session,
+    messages: &[Message],
+    notes: &[Note],
+    session_ref: &str,
+) -> String {
     match format {
-        ExportFormat::Markdown => to_markdown_with_notes(session, messages, notes),
-        ExportFormat::Json => to_json_with_notes(session, messages, notes),
-        ExportFormat::Html => to_html_with_notes(session, messages, notes),
+        ExportFormat::Markdown => {
+            markdown::to_markdown_with_notes_for_session_ref(session, messages, notes, session_ref)
+        }
+        ExportFormat::Json => {
+            json::to_json_with_notes_for_session_ref(session, messages, notes, session_ref)
+        }
+        ExportFormat::Html => {
+            html::to_html_with_notes_for_session_ref(session, messages, notes, session_ref)
+        }
     }
 }

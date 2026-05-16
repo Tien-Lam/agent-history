@@ -2,8 +2,12 @@ use std::io::Write as _;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::metadata::{self, Note};
-use aghist::model::Session;
+use aghist::model::{Session, SessionRef};
 use aghist::{export, provider};
+
+use super::discovery::{
+    federated_discovery_for_commands, qualified_session_ref, source_for_session,
+};
 
 /// Parse a 1-based inclusive turn range against a session of `total` messages.
 ///
@@ -65,7 +69,7 @@ fn parse_turn_range(spec: &str, total: usize) -> Result<(usize, usize), String> 
 /// the slice are dropped; turn-level notes have their `session_ref` rebased so
 /// turn N in the full session becomes turn `N - turn_offset` in the slice.
 fn load_session_notes(
-    session: &Session,
+    session_ref: &str,
     turn_offset: usize,
     slice_len: usize,
 ) -> Option<Vec<Note>> {
@@ -74,8 +78,7 @@ fn load_session_notes(
         return None;
     }
     let conn = metadata::open(&path).ok()?;
-    let session_ref = session.session_ref().to_string();
-    let all = metadata::note_list(&conn, Some(&session_ref)).ok()?;
+    let all = metadata::note_list(&conn, Some(session_ref)).ok()?;
     let offset = u32::try_from(turn_offset).unwrap_or(u32::MAX);
     let max_turn_inclusive = offset.saturating_add(u32::try_from(slice_len).unwrap_or(u32::MAX));
     let turn_prefix = format!("{session_ref}#");
@@ -101,6 +104,145 @@ fn load_session_notes(
     Some(out)
 }
 
+struct ExportTarget<'a> {
+    session: &'a Session,
+    session_ref: String,
+}
+
+fn split_source_prefix(raw: &str) -> Result<Option<(&str, &str)>, ErrorEnvelope> {
+    let slash = raw.find('/');
+    let colon = raw.find(':');
+    if !matches!((colon, slash), (Some(c), Some(s)) if c < s) {
+        return Ok(None);
+    }
+    let (source, rest) = raw.split_once(':').expect("colon detected above");
+    aghist::config::validate_source_name(source)
+        .map_err(|message| ErrorEnvelope::new("usage", message))?;
+    Ok(Some((source, rest)))
+}
+
+fn parse_session_ref(raw: &str, full_selector: &str) -> Result<SessionRef, ErrorEnvelope> {
+    raw.parse::<SessionRef>().map_err(|e| {
+        ErrorEnvelope::new(
+            "usage",
+            format!("invalid session ref '{full_selector}': {e}"),
+        )
+        .with_hint("Format: <provider-slug>/<session-id> or <source>:<provider-slug>/<session-id>.")
+    })
+}
+
+fn export_target_not_found(selector: &str) -> ErrorEnvelope {
+    ErrorEnvelope::new(
+        "session-not-found",
+        format!("Session not found: {selector}"),
+    )
+    .with_hint("Run `aghist --list --json` to see available sessions and sources.")
+}
+
+fn export_target_ambiguous(
+    selector: &str,
+    matches: &[&Session],
+    sources: &[String],
+) -> ErrorEnvelope {
+    let mut candidates: Vec<String> = matches
+        .iter()
+        .zip(sources)
+        .take(8)
+        .map(|(session, source)| {
+            if source == aghist::federated::LOCAL_SOURCE {
+                session.session_ref().to_string()
+            } else {
+                format!("{source}:{}", session.session_ref())
+            }
+        })
+        .collect();
+    if matches.len() > candidates.len() {
+        candidates.push(format!("... and {} more", matches.len() - candidates.len()));
+    }
+    ErrorEnvelope::new(
+        "ambiguous-session",
+        format!(
+            "session selector '{selector}' matched {} sessions: {}",
+            matches.len(),
+            candidates.join(", ")
+        ),
+    )
+    .with_hint("Use --session <source>:<provider>/<session-id> to choose one session explicitly.")
+}
+
+fn unique_export_target<'a>(
+    selector: &str,
+    matches: &[&'a Session],
+    source_by_session: &std::collections::HashMap<String, String>,
+) -> Result<ExportTarget<'a>, ErrorEnvelope> {
+    if matches.is_empty() {
+        return Err(export_target_not_found(selector));
+    }
+    let sources: Vec<String> = matches
+        .iter()
+        .map(|session| source_for_session(source_by_session, session).to_string())
+        .collect();
+    if matches.len() > 1 {
+        return Err(export_target_ambiguous(selector, matches, &sources));
+    }
+    let session = matches[0];
+    Ok(ExportTarget {
+        session,
+        session_ref: qualified_session_ref(source_by_session, session),
+    })
+}
+
+fn resolve_export_target<'a>(
+    sessions: &'a [Session],
+    source_by_session: &std::collections::HashMap<String, String>,
+    selector: &str,
+) -> Result<ExportTarget<'a>, ErrorEnvelope> {
+    if selector.contains('#') {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            "export --session expects a session ref, not a turn-level citation ref",
+        )
+        .with_hint("Use `aghist show <ref>` for a single turn, or remove the `#<turn>` suffix and use `--turn-range`."));
+    }
+
+    if let Some((source, raw_ref)) = split_source_prefix(selector)? {
+        let session_ref = parse_session_ref(raw_ref, selector)?;
+        let matches: Vec<&Session> = sessions
+            .iter()
+            .filter(|session| {
+                session.provider == session_ref.provider
+                    && session.id == session_ref.session_id
+                    && source_for_session(source_by_session, session) == source
+            })
+            .collect();
+        return unique_export_target(selector, &matches, source_by_session);
+    }
+
+    if selector.contains('/') {
+        let session_ref = parse_session_ref(selector, selector)?;
+        let matches: Vec<&Session> = sessions
+            .iter()
+            .filter(|session| {
+                session.provider == session_ref.provider && session.id == session_ref.session_id
+            })
+            .collect();
+        return unique_export_target(selector, &matches, source_by_session);
+    }
+
+    let exact_matches: Vec<&Session> = sessions
+        .iter()
+        .filter(|session| session.id.0 == selector)
+        .collect();
+    if !exact_matches.is_empty() {
+        return unique_export_target(selector, &exact_matches, source_by_session);
+    }
+    let prefix_matches: Vec<&Session> = sessions
+        .iter()
+        .filter(|session| session.id.0.starts_with(selector))
+        .collect();
+    unique_export_target(selector, &prefix_matches, source_by_session)
+}
+
 pub(crate) fn export_session(
     providers: &[Box<dyn provider::HistoryProvider>],
     format: export::ExportFormat,
@@ -109,39 +251,15 @@ pub(crate) fn export_session(
     turn_range: Option<&str>,
     include_notes: bool,
 ) -> Result<i32, ErrorEnvelope> {
-    let mut all_sessions = Vec::new();
-    for p in providers {
-        if let Ok(sessions) = p.discover_sessions() {
-            all_sessions.extend(sessions);
-        }
-    }
+    let discovery = federated_discovery_for_commands(providers);
+    let target = resolve_export_target(
+        &discovery.sessions,
+        &discovery.source_by_session,
+        session_id,
+    )?;
+    let session = target.session;
 
-    let session = all_sessions
-        .iter()
-        .find(|s| s.id.0 == session_id || s.id.0.starts_with(session_id))
-        .ok_or_else(|| {
-            ErrorEnvelope::new(
-                "session-not-found",
-                format!("Session not found: {session_id}"),
-            )
-            .with_hint("Run `aghist --list` to see available session IDs.")
-        })?;
-
-    let provider = providers
-        .iter()
-        .find(|p| p.provider() == session.provider)
-        .ok_or_else(|| {
-            ErrorEnvelope::new(
-                "provider-unavailable",
-                format!(
-                    "Provider {} is not enabled for session {}",
-                    session.provider, session.id.0
-                ),
-            )
-            .with_hint("Enable the provider in your config (`providers` table).")
-        })?;
-
-    let messages = provider.load_messages(session).map_err(|e| {
+    let messages = provider::load_messages_for_session(session, providers).map_err(|e| {
         ErrorEnvelope::new(
             "provider-error",
             format!("failed to load messages for {}: {e}", session.id.0),
@@ -165,12 +283,18 @@ pub(crate) fn export_session(
     };
 
     let notes: Vec<Note> = if include_notes {
-        load_session_notes(session, turn_offset, sliced.len()).unwrap_or_default()
+        load_session_notes(&target.session_ref, turn_offset, sliced.len()).unwrap_or_default()
     } else {
         Vec::new()
     };
 
-    let content = export::export_with_notes(format, session, sliced, &notes);
+    let content = export::export_with_notes_for_session_ref(
+        format,
+        session,
+        sliced,
+        &notes,
+        &target.session_ref,
+    );
 
     if let Some(path) = output {
         std::fs::write(path, &content).map_err(|e| {

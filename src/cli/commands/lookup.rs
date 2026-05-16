@@ -17,7 +17,7 @@ pub(crate) struct ExportCommand {
     )]
     pub(crate) format: Option<export::ExportFormat>,
 
-    /// Session ID (or prefix) to export
+    /// Session ID/prefix, `<provider>/<id>`, or `<source>:<provider>/<id>` to export
     #[arg(
         long,
         short,

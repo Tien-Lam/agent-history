@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::metadata::Note;
-use crate::model::Session;
 
 /// Bucket of notes for a single session, partitioned by their citation ref.
 pub(super) struct NoteBuckets<'a> {
@@ -10,8 +9,7 @@ pub(super) struct NoteBuckets<'a> {
 }
 
 impl<'a> NoteBuckets<'a> {
-    pub(super) fn build(session: &Session, notes: &'a [Note]) -> Self {
-        let session_ref = session.session_ref().to_string();
+    pub(super) fn build_for_session_ref(session_ref: &str, notes: &'a [Note]) -> Self {
         let turn_prefix = format!("{session_ref}#");
         let mut session_level = Vec::new();
         let mut by_turn: HashMap<u32, Vec<&Note>> = HashMap::new();

@@ -485,6 +485,31 @@ fn json_emits_notes_array_marked_as_private_annotation() {
 }
 
 #[test]
+fn json_matches_notes_against_explicit_source_qualified_session_ref() {
+    let (session, messages) = sample_session();
+    let notes = vec![
+        make_note(7, "claude-code/abc-123#2", "local turn-2"),
+        make_note(8, "laptop:claude-code/abc-123#2", "remote turn-2"),
+    ];
+    let json_str = export::export_with_notes_for_session_ref(
+        ExportFormat::Json,
+        &session,
+        &messages,
+        &notes,
+        "laptop:claude-code/abc-123",
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("valid JSON");
+    let notes_arr = parsed
+        .get("notes")
+        .expect("notes field")
+        .as_array()
+        .unwrap();
+    assert_eq!(notes_arr.len(), 1);
+    assert_eq!(notes_arr[0]["session_ref"], "laptop:claude-code/abc-123#2");
+    assert_eq!(notes_arr[0]["body"], "remote turn-2");
+}
+
+#[test]
 fn json_omits_notes_field_when_no_notes_match() {
     let (session, messages) = sample_session();
     let json_str = export::to_json_with_notes(&session, &messages, &[]);

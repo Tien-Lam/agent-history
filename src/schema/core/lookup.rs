@@ -209,7 +209,7 @@ pub(in crate::schema) fn export_schema() -> Value {
             "type": "object",
             "properties": {
                 "format": { "type": "string", "enum": ["md", "json", "html"] },
-                "session": { "type": "string", "description": "Session ID or unique prefix." },
+                "session": { "type": "string", "description": "Session ID/prefix, `<provider>/<session-id>`, or `<source>:<provider>/<session-id>`." },
                 "output": { "type": "string", "description": "Output file path (defaults to stdout)." },
                 "turn_range": {
                     "type": "string",

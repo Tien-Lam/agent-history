@@ -10,6 +10,16 @@ pub fn to_markdown(session: &Session, messages: &[Message]) -> String {
 }
 
 pub fn to_markdown_with_notes(session: &Session, messages: &[Message], notes: &[Note]) -> String {
+    let session_ref = session.session_ref().to_string();
+    to_markdown_with_notes_for_session_ref(session, messages, notes, &session_ref)
+}
+
+pub(crate) fn to_markdown_with_notes_for_session_ref(
+    session: &Session,
+    messages: &[Message],
+    notes: &[Note],
+    session_ref: &str,
+) -> String {
     let mut out = String::new();
 
     let title = session.project_name.as_deref().unwrap_or("Conversation");
@@ -28,7 +38,7 @@ pub fn to_markdown_with_notes(session: &Session, messages: &[Message], notes: &[
     }
     out.push_str("\n---\n\n");
 
-    let buckets = NoteBuckets::build(session, notes);
+    let buckets = NoteBuckets::build_for_session_ref(session_ref, notes);
     if !buckets.session_level.is_empty() {
         out.push_str("## 📝 Private annotations\n\n");
         for n in &buckets.session_level {

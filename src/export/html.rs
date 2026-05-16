@@ -10,6 +10,16 @@ pub fn to_html(session: &Session, messages: &[Message]) -> String {
 }
 
 pub fn to_html_with_notes(session: &Session, messages: &[Message], notes: &[Note]) -> String {
+    let session_ref = session.session_ref().to_string();
+    to_html_with_notes_for_session_ref(session, messages, notes, &session_ref)
+}
+
+pub(crate) fn to_html_with_notes_for_session_ref(
+    session: &Session,
+    messages: &[Message],
+    notes: &[Note],
+    session_ref: &str,
+) -> String {
     let title = html_escape(session.project_name.as_deref().unwrap_or("Conversation"));
     let provider = html_escape(session.provider.as_str());
     let date = session.started_at.format("%Y-%m-%d %H:%M UTC").to_string();
@@ -31,7 +41,7 @@ pub fn to_html_with_notes(session: &Session, messages: &[Message], notes: &[Note
         );
     }
 
-    let buckets = NoteBuckets::build(session, notes);
+    let buckets = NoteBuckets::build_for_session_ref(session_ref, notes);
     let mut body = String::new();
     if !buckets.session_level.is_empty() {
         body.push_str("<section class=\"session-notes\">\n");

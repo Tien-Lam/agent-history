@@ -10,6 +10,16 @@ pub fn to_json(session: &Session, messages: &[Message]) -> String {
 }
 
 pub fn to_json_with_notes(session: &Session, messages: &[Message], notes: &[Note]) -> String {
+    let session_ref = session.session_ref().to_string();
+    to_json_with_notes_for_session_ref(session, messages, notes, &session_ref)
+}
+
+pub(crate) fn to_json_with_notes_for_session_ref(
+    session: &Session,
+    messages: &[Message],
+    notes: &[Note],
+    session_ref: &str,
+) -> String {
     #[derive(Serialize)]
     struct ExportData<'a> {
         session: &'a Session,
@@ -30,7 +40,7 @@ pub fn to_json_with_notes(session: &Session, messages: &[Message], notes: &[Note
         updated_at: &'a str,
     }
 
-    let buckets = NoteBuckets::build(session, notes);
+    let buckets = NoteBuckets::build_for_session_ref(session_ref, notes);
     let mut matched: Vec<&Note> = buckets.session_level.clone();
     for v in buckets.by_turn.values() {
         matched.extend(v.iter().copied());
