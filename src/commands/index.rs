@@ -3,7 +3,7 @@ use std::io::Write as _;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::model::{Provider, Session};
-use aghist::{config, federated, provider, search};
+use aghist::{config, federated, provider, query_scope, search};
 
 mod embeddings;
 
@@ -18,10 +18,10 @@ pub(crate) fn run_index(
         ErrorEnvelope::new("config-error", format!("{e}"))
             .with_hint("Fix the TOML or set AGHIST_CONFIG to a known-good config file.")
     })?;
-    let enabled = config.enabled_providers();
+    let scope = query_scope::QueryScope::enabled(&config);
 
     if let Some(want) = filter {
-        if !enabled.contains(&want) {
+        if !scope.contains_provider(want) {
             return Err(ErrorEnvelope::new(
                 "provider-unavailable",
                 format!("provider '{}' is not enabled in config", want.slug()),
@@ -35,6 +35,7 @@ pub(crate) fn run_index(
     let active: Vec<&dyn provider::HistoryProvider> = providers
         .iter()
         .map(Box::as_ref)
+        .filter(|p| scope.contains_provider(p.provider()))
         .filter(|p| filter.is_none_or(|want| p.provider() == want))
         .collect();
 
@@ -46,7 +47,7 @@ pub(crate) fn run_index(
             Err(e) => errors.push((p.provider(), e.to_string())),
         }
     }
-    let source_failures = append_remote_sessions(&mut sessions, &config, &enabled, filter);
+    let source_failures = append_remote_sessions(&mut sessions, &scope, filter);
 
     let index_dir = search::SearchIndex::default_index_dir();
     let index = search::SearchIndex::open_or_create(&index_dir).map_err(|e| {
@@ -119,20 +120,17 @@ pub(crate) fn run_index(
 
 fn append_remote_sessions(
     sessions: &mut Vec<Session>,
-    config: &config::Config,
-    enabled: &HashSet<Provider>,
+    scope: &query_scope::QueryScope,
     filter: Option<Provider>,
 ) -> Vec<federated::SourceFailure> {
-    let Some(cache_root) = config::sources_cache_root() else {
+    let Some(remote) = scope.discover_remote_sources() else {
         return Vec::new();
     };
 
-    let remote = federated::discover_remote_sources(&config.sources, &cache_root);
     sessions.extend(
         remote
             .sessions
             .into_iter()
-            .filter(|session| enabled.contains(&session.provider))
             .filter(|session| filter.is_none_or(|want| session.provider == want)),
     );
     remote.failures

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::output::{CommandKind, OutputMode};
-use aghist::{config, provider};
+use aghist::{config, provider, query_scope};
 
 use super::super::cli::FilterArgs;
 use super::filtering::resolve_metadata_filter;
@@ -33,7 +33,7 @@ impl CommandContext {
         ndjson: bool,
     ) -> Result<Self, ErrorEnvelope> {
         let config = load_config()?;
-        let providers = detect_enabled_providers(&config);
+        let providers = query_scope::detect_enabled_providers(&config);
         Ok(Self {
             config,
             providers,
@@ -59,20 +59,9 @@ impl CommandContext {
     }
 
     pub(crate) fn into_mcp_server(self) -> aghist::mcp::McpServer {
-        // MCP gets a narrower view than the rest of the CLI: users can hide
-        // providers from MCP clients without disabling them locally.
-        let exposed = self.config.mcp_exposed_providers();
-        let providers = self
-            .providers
-            .into_iter()
-            .filter(|p| exposed.contains(&p.provider()))
-            .collect();
-        aghist::mcp::McpServer::new_federated(
-            providers,
-            self.config.sources,
-            config::sources_cache_root(),
-            exposed,
-        )
+        let scope = query_scope::QueryScope::mcp_visible(&self.config);
+        let providers = scope.filter_provider_instances(self.providers);
+        aghist::mcp::McpServer::new_scoped(providers, scope)
     }
 
     pub(crate) fn into_tui_parts(
@@ -87,12 +76,4 @@ fn load_config() -> Result<config::Config, ErrorEnvelope> {
         ErrorEnvelope::new("config-error", format!("{e}"))
             .with_hint("Fix the TOML or set AGHIST_CONFIG to a known-good config file.")
     })
-}
-
-fn detect_enabled_providers(config: &config::Config) -> Vec<Box<dyn provider::HistoryProvider>> {
-    let enabled = config.enabled_providers();
-    provider::detect_all_providers()
-        .into_iter()
-        .filter(|p| enabled.contains(&p.provider()))
-        .collect()
 }

@@ -18,6 +18,7 @@ pub mod output;
 pub mod project;
 pub mod provider;
 pub mod provider_diagnostic;
+pub mod query_scope;
 pub mod report;
 pub mod schema;
 mod schema_fragments;

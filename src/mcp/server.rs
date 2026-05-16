@@ -15,14 +15,13 @@ use crate::config::RemoteSource;
 use crate::federated::{self, FederatedDiscovery, SourceFailure, LOCAL_SOURCE};
 use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
+use crate::query_scope::QueryScope;
 use crate::session_resolver::SessionResolver;
 
 /// Owns the providers + search index for the lifetime of a server run.
 pub struct McpServer {
     pub(super) providers: Vec<Box<dyn HistoryProvider>>,
-    sources: Vec<RemoteSource>,
-    sources_cache_root: Option<PathBuf>,
-    visible_providers: HashSet<Provider>,
+    scope: QueryScope,
 }
 
 pub(super) struct LocatedSession {
@@ -35,9 +34,7 @@ impl McpServer {
         let visible_providers = providers.iter().map(|p| p.provider()).collect();
         Self {
             providers,
-            sources: Vec::new(),
-            sources_cache_root: None,
-            visible_providers,
+            scope: QueryScope::local(visible_providers),
         }
     }
 
@@ -47,12 +44,14 @@ impl McpServer {
         sources_cache_root: Option<PathBuf>,
         visible_providers: HashSet<Provider>,
     ) -> Self {
-        Self {
+        Self::new_scoped(
             providers,
-            sources,
-            sources_cache_root,
-            visible_providers,
-        }
+            QueryScope::from_parts(visible_providers, sources, sources_cache_root),
+        )
+    }
+
+    pub fn new_scoped(providers: Vec<Box<dyn HistoryProvider>>, scope: QueryScope) -> Self {
+        Self { providers, scope }
     }
 
     /// Drives the loop reading newline-delimited JSON from `input` and writing
@@ -165,11 +164,11 @@ impl McpServer {
     // --- helpers -----------------------------------------------------------
 
     pub(super) fn collect_discovery(&self) -> FederatedDiscovery {
-        let mut discovery = if let Some(cache_root) = self.sources_cache_root.as_ref() {
-            federated::discover_federated(&self.providers, &self.sources, cache_root)
+        let mut discovery = if let Some(cache_root) = self.scope.sources_cache_root() {
+            federated::discover_federated(&self.providers, self.scope.sources(), cache_root)
         } else {
             let mut local = self.collect_local_discovery();
-            if !self.sources.is_empty() {
+            if self.scope.has_remote_sources() {
                 local.failures.push(SourceFailure {
                     source: LOCAL_SOURCE.to_string(),
                     message: "sources cache dir unavailable".to_string(),
@@ -177,7 +176,7 @@ impl McpServer {
             }
             local
         };
-        discovery.retain_providers(&self.visible_providers);
+        self.scope.retain_discovery(&mut discovery);
         discovery
     }
 
@@ -200,7 +199,7 @@ impl McpServer {
     }
 
     pub(super) fn provider_scope(&self) -> HashSet<Provider> {
-        self.visible_providers.clone()
+        self.scope.providers().clone()
     }
 
     pub(super) fn find_session_by_prefix(
@@ -251,7 +250,7 @@ impl McpServer {
     }
 
     fn ensure_provider_visible(&self, provider: Provider) -> Result<(), String> {
-        if self.visible_providers.contains(&provider) {
+        if self.scope.contains_provider(provider) {
             Ok(())
         } else {
             Err(format!(

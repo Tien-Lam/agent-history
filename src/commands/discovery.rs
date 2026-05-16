@@ -1,4 +1,4 @@
-use aghist::{config, federated, provider};
+use aghist::{config, federated, provider, query_scope};
 
 pub(crate) fn federated_discovery_for_commands(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -7,13 +7,7 @@ pub(crate) fn federated_discovery_for_commands(
         Some(path) => config::Config::load_from(&path),
         None => config::Config::default(),
     };
-    let enabled = config.enabled_providers();
-    let mut result = if let Some(cache_root) = config::sources_cache_root() {
-        federated::discover_federated(providers, &config.sources, &cache_root)
-    } else {
-        federated::discover_federated(providers, &[], std::path::Path::new(""))
-    };
-    result.retain_providers(&enabled);
+    let result = query_scope::QueryScope::enabled(&config).discover_federated(providers);
     for failure in &result.failures {
         eprintln!("warning: source '{}': {}", failure.source, failure.message);
     }
