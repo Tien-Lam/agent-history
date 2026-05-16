@@ -7,6 +7,7 @@ mod cline_parse;
 pub mod codex_cli;
 pub mod continue_dev;
 pub mod copilot_cli;
+mod copilot_cli_parse;
 pub mod cursor;
 mod cursor_format;
 mod cursor_message;
