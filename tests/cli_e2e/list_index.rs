@@ -213,6 +213,60 @@ fn index_provider_filter_restricts_scope() {
     );
     assert_eq!(parsed["added"], 1);
 }
+
+#[test]
+fn index_provider_filter_includes_remote_cache_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-index-only")
+        .project("remote-proj")
+        .user("REMOTE_INDEX_TOKEN remote message body")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["index", "--provider", "claude-code"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("expected JSON on stdout, got {stdout:?}: {e}"));
+    assert_eq!(parsed["providers"], serde_json::json!(["claude-code"]));
+    assert_eq!(parsed["sessions_total"], 1);
+    assert_eq!(parsed["added"], 1);
+    assert!(
+        parsed["messages_indexed"].as_u64().unwrap() >= 1,
+        "remote session messages should be indexed: {parsed}"
+    );
+}
+
 #[test]
 fn index_unknown_provider_emits_usage_envelope_and_exits_two() {
     let home = tempfile::tempdir().unwrap();

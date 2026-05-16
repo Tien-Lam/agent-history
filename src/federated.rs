@@ -74,6 +74,34 @@ pub fn providers_rooted_at(root: &Path) -> Vec<Box<dyn HistoryProvider>> {
     providers
 }
 
+fn discover_remote_sources_outcomes(
+    sources: &[RemoteSource],
+    cache_root: &Path,
+) -> Vec<DiscoveryOutcome> {
+    std::thread::scope(|scope| {
+        let remote_handles: Vec<_> = sources
+            .iter()
+            .map(|src| scope.spawn(move || discover_remote(src, cache_root)))
+            .collect();
+
+        let mut out = Vec::with_capacity(remote_handles.len());
+        for (src, h) in sources.iter().zip(remote_handles) {
+            match h.join() {
+                Ok(o) => out.push(o),
+                Err(_) => out.push((
+                    src.name.clone(),
+                    Vec::new(),
+                    Some(SourceFailure {
+                        source: src.name.clone(),
+                        message: "remote discovery thread panicked".to_string(),
+                    }),
+                )),
+            }
+        }
+        out
+    })
+}
+
 fn discover_local(local_providers: &[Box<dyn HistoryProvider>]) -> DiscoveryOutcome {
     let mut sessions = Vec::new();
     for p in local_providers {
@@ -154,6 +182,13 @@ fn merge_discovery_outcomes(outcomes: Vec<DiscoveryOutcome>) -> FederatedDiscove
         source_by_session,
         failures,
     }
+}
+
+/// Discover only registered remote sources, without scanning local provider
+/// directories. This is useful for commands that already performed local
+/// discovery and only need to add remote cache contents.
+pub fn discover_remote_sources(sources: &[RemoteSource], cache_root: &Path) -> FederatedDiscovery {
+    merge_discovery_outcomes(discover_remote_sources_outcomes(sources, cache_root))
 }
 
 /// Discover sessions concurrently from local providers + every registered

@@ -72,6 +72,27 @@ fn remote_source_sessions_are_tagged_with_source_name() {
 }
 
 #[test]
+fn remote_only_discovery_skips_local_source_tag() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache = tmp.path().join("cache");
+    let remote_data = cache.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+    write_claude_fixture(&remote_data, "remote-only");
+
+    let sources = vec![RemoteSource {
+        name: "laptop".to_string(),
+        host: "laptop.local".to_string(),
+        path: "/home/x".to_string(),
+        transport: Transport::Ssh,
+    }];
+
+    let result = discover_remote_sources(&sources, &cache);
+    assert_eq!(result.sessions.len(), 1);
+    assert_eq!(result.source_of_session(&result.sessions[0]), "laptop");
+    assert!(result.failures.is_empty());
+}
+
+#[test]
 fn raw_session_id_overlap_across_sources_is_preserved() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
