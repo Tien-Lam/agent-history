@@ -6,6 +6,7 @@ pub mod cline;
 mod cline_parse;
 pub mod codex_cli;
 pub mod continue_dev;
+mod continue_dev_parse;
 pub mod copilot_cli;
 mod copilot_cli_parse;
 pub mod cursor;
