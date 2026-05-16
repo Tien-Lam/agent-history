@@ -1,9 +1,7 @@
 use aghist::cli_error::ErrorEnvelope;
-use aghist::provider;
 
-use super::super::cli::{
-    resolve_export_args, resolve_index_args, resolve_show_args, Command, FilterArgs,
-};
+use super::super::cli::{resolve_export_args, resolve_index_args, resolve_show_args, Command};
+use super::context::CommandContext;
 use super::diff::diff_command;
 use super::export::export_session;
 use super::index::run_index;
@@ -12,8 +10,7 @@ use super::show::show_command;
 
 pub(crate) fn dispatch_lookup_command(
     command: Command,
-    providers: &[Box<dyn provider::HistoryProvider>],
-    filters: &FilterArgs,
+    ctx: &CommandContext,
 ) -> Result<i32, ErrorEnvelope> {
     match command {
         Command::Export(args) => {
@@ -26,7 +23,7 @@ pub(crate) fn dispatch_lookup_command(
                 args.params,
             )?;
             export_session(
-                providers,
+                ctx.providers(),
                 resolved.format,
                 &resolved.session,
                 resolved.output.as_deref(),
@@ -37,11 +34,10 @@ pub(crate) fn dispatch_lookup_command(
         Command::Index(args) => {
             let (provider, force, accept_download) =
                 resolve_index_args(args.provider, args.force, args.accept_download, args.params)?;
-            run_index(providers, provider, force, accept_download)
+            run_index(ctx.providers(), provider, force, accept_download)
         }
         Command::Search(args) => dispatch_search_command(
-            providers,
-            filters,
+            ctx,
             SearchDispatchArgs {
                 query: args.query,
                 query_file: args.query_file,
@@ -70,10 +66,10 @@ pub(crate) fn dispatch_lookup_command(
                 args.include_context,
                 args.params,
             )?;
-            show_command(providers, &reference, format, include_context)
+            show_command(ctx.providers(), &reference, format, include_context)
         }
         Command::Diff(args) => diff_command(
-            providers,
+            ctx.providers(),
             &args.session1,
             &args.session2,
             args.context,

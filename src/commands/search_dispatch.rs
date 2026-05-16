@@ -5,8 +5,8 @@ use aghist::cli_error::ErrorEnvelope;
 use aghist::provider;
 use aghist::search::SearchFilters;
 
-use super::super::cli::{resolve_search_args, FilterArgs, SearchArgs};
-use super::filtering::resolve_metadata_filter;
+use super::super::cli::{resolve_search_args, SearchArgs};
+use super::context::CommandContext;
 use super::search::{
     search_command, search_watch_command, SearchCommandRequest, SearchWatchRequest,
 };
@@ -30,18 +30,18 @@ pub(crate) enum SearchDispatchMode {
 }
 
 pub(crate) fn dispatch_search_command(
-    providers: &[Box<dyn provider::HistoryProvider>],
-    filter_args: &FilterArgs,
+    ctx: &CommandContext,
     args: SearchDispatchArgs,
 ) -> Result<i32, ErrorEnvelope> {
+    let filter_args = ctx.filters();
     let filters = filter_args.to_search_filters();
-    let metadata_keys = resolve_metadata_filter(filter_args)?;
+    let metadata_keys = ctx.metadata_filter_keys()?;
     match args.mode {
         SearchDispatchMode::Watch {
             interval_ms,
             iterations,
         } => search_watch_command(
-            providers,
+            ctx.providers(),
             SearchWatchRequest {
                 query: args.query.as_deref(),
                 query_file: args.query_file.as_deref(),
@@ -54,7 +54,7 @@ pub(crate) fn dispatch_search_command(
             },
         ),
         SearchDispatchMode::Once { debug_search } => dispatch_one_shot_search(
-            providers,
+            ctx.providers(),
             args,
             &filters,
             metadata_keys.as_ref(),

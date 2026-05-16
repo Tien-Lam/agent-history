@@ -1,16 +1,16 @@
 use aghist::cli_error::ErrorEnvelope;
-use aghist::provider;
 
-use super::super::cli::{Command, FilterArgs};
-use super::filtering::resolve_metadata_filter;
+use super::super::cli::Command;
+use super::context::CommandContext;
 use super::reports::{project_command, report_command, usage_command};
 
 pub(crate) fn dispatch_report_command(
     command: Command,
-    providers: &[Box<dyn provider::HistoryProvider>],
-    filters: &FilterArgs,
+    ctx: &CommandContext,
 ) -> Result<i32, ErrorEnvelope> {
-    let metadata_keys = resolve_metadata_filter(filters)?;
+    let filters = ctx.filters();
+    let providers = ctx.providers();
+    let metadata_keys = ctx.metadata_filter_keys()?;
     match command {
         Command::Usage(args) => usage_command(
             providers,

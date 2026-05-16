@@ -1,19 +1,19 @@
 use aghist::cli_error::ErrorEnvelope;
-use aghist::provider;
 
-use super::super::cli::{Command, FilterArgs};
+use super::super::cli::Command;
 use super::analysis::{
     decisions_command, threads_command, todos_command, track_command, DecisionsCommandRequest,
     ThreadsCommandRequest, TodosCommandRequest,
 };
-use super::filtering::resolve_metadata_filter;
+use super::context::CommandContext;
 
 pub(crate) fn dispatch_analysis_command(
     command: Command,
-    providers: &[Box<dyn provider::HistoryProvider>],
-    filters: &FilterArgs,
+    ctx: &CommandContext,
 ) -> Result<i32, ErrorEnvelope> {
-    let metadata_keys = resolve_metadata_filter(filters)?;
+    let filters = ctx.filters();
+    let providers = ctx.providers();
+    let metadata_keys = ctx.metadata_filter_keys()?;
     match command {
         Command::Track(args) => track_command(
             providers,

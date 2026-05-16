@@ -1,8 +1,9 @@
 use aghist::cli_error::ErrorEnvelope;
-use aghist::output::OutputMode;
+use aghist::output::{CommandKind, OutputMode};
 use aghist::provider;
 
 use super::super::cli::{Command, SourcesCommand};
+use super::context::CommandContext;
 use super::health::health_command;
 use super::metadata::{note_dispatch, star_command, stars_list, tag_dispatch, unstar_command};
 use super::sources::{
@@ -12,12 +13,14 @@ use super::sources::{
 
 pub(crate) fn dispatch_metadata_command(
     command: Command,
-    providers: &[Box<dyn provider::HistoryProvider>],
-    one_shot_mode: OutputMode,
+    ctx: &CommandContext,
 ) -> Result<i32, ErrorEnvelope> {
+    let one_shot_mode = ctx.output_mode(CommandKind::OneShot);
     match command {
-        Command::Sources { command } => dispatch_sources_command(command, providers, one_shot_mode),
-        Command::Health => health_command(providers, one_shot_mode),
+        Command::Sources { command } => {
+            dispatch_sources_command(command, ctx.providers(), one_shot_mode)
+        }
+        Command::Health => health_command(ctx.providers(), one_shot_mode),
         Command::Note { command } => note_dispatch(command, one_shot_mode),
         Command::Tag { command } => tag_dispatch(command, one_shot_mode),
         Command::Star { reference } => star_command(&reference, one_shot_mode),

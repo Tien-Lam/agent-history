@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod analysis_dispatch;
+pub mod context;
 pub mod diff;
 pub mod discovery;
 pub mod dispatch;
