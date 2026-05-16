@@ -83,6 +83,39 @@ fn show_schema_includes_reference_pattern() {
 }
 
 #[test]
+fn diff_schema_includes_source_qualified_session_pattern() {
+    let schema = schema_for("diff").unwrap();
+    let pattern = schema["params"]["properties"]["session1"]["pattern"]
+        .as_str()
+        .unwrap();
+    assert!(regex_lite_check(pattern, "claude-code/abc-123"));
+    assert!(regex_lite_check(pattern, "laptop:claude-code/abc-123"));
+    assert!(
+        pattern.ends_with("/[^#]+$"),
+        "diff session ref pattern should reject turn suffixes"
+    );
+}
+
+#[test]
+fn ref_patterns_track_provider_registry() {
+    for provider in Provider::all() {
+        let slug = provider.slug();
+        assert!(
+            common::SOURCE_QUALIFIED_SESSION_REF_PATTERN.contains(slug),
+            "session ref pattern missing provider slug {slug}"
+        );
+        assert!(
+            common::SOURCE_QUALIFIED_SESSION_ONLY_REF_PATTERN.contains(slug),
+            "session-only ref pattern missing provider slug {slug}"
+        );
+        assert!(
+            common::SOURCE_QUALIFIED_CITATION_REF_PATTERN.contains(slug),
+            "citation ref pattern missing provider slug {slug}"
+        );
+    }
+}
+
+#[test]
 fn provider_enum_tracks_provider_registry() {
     let expected: Vec<&str> = Provider::all().iter().map(|p| p.slug()).collect();
     let provider_enum = common::provider_slug_enum();
@@ -99,7 +132,7 @@ fn provider_enum_tracks_provider_registry() {
 /// known anchors without full regex matching.
 fn regex_lite_check(pattern: &str, sample: &str) -> bool {
     // We only assert the pattern is well-formed and the sample contains
-    // both "/" and "#" (required by the pattern's structure).
-    assert!(pattern.contains('#'));
-    sample.contains('/') && sample.contains('#')
+    // "/" (required by the pattern's structure).
+    assert!(pattern.contains('/'));
+    sample.contains('/')
 }

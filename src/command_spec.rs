@@ -27,6 +27,10 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         summary: "Export a session to Markdown, JSON, or HTML.",
     },
     CommandSpec {
+        name: "diff",
+        summary: "Compare two sessions turn-by-turn.",
+    },
+    CommandSpec {
         name: "index",
         summary: "Build or refresh the search index.",
     },

@@ -4,9 +4,11 @@ use crate::model::Provider;
 
 pub(super) const SCHEMA_DRAFT: &str = "https://json-schema.org/draft/2020-12/schema";
 pub(super) const SOURCE_QUALIFIED_SESSION_REF_PATTERN: &str =
-    "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+(#[1-9][0-9]*)?$";
+    "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+(#[1-9][0-9]*)?$";
+pub(super) const SOURCE_QUALIFIED_SESSION_ONLY_REF_PATTERN: &str =
+    "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+$";
 pub(super) const SOURCE_QUALIFIED_CITATION_REF_PATTERN: &str =
-    "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor)/[^#]+#[1-9][0-9]*$";
+    "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+#[1-9][0-9]*$";
 
 pub(super) fn provider_slug_enum() -> Value {
     json!(Provider::all().iter().map(|p| p.slug()).collect::<Vec<_>>())

@@ -36,6 +36,7 @@ pub fn schema_for(subcmd: &str) -> Option<Value> {
         "search" => Some(core::search_schema()),
         "show" => Some(core::show_schema()),
         "export" => Some(core::export_schema()),
+        "diff" => Some(core::diff_schema()),
         "index" => Some(core::index_schema()),
         "sources" => Some(core::sources_schema()),
         "health" => Some(core::health_schema()),
