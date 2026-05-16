@@ -5,12 +5,14 @@ use aghist::provider;
 use chrono::Utc;
 
 use super::super::cli::FilterArgs;
+use super::discovery::{qualified_citation_ref, qualified_session_ref, source_for_session};
 
 mod collect;
 mod output;
 
 use collect::{
-    collect_federated_filtered_sessions, collect_message_bundles, normalized_project_filter,
+    collect_federated_filtered_sessions, collect_federated_message_bundles,
+    normalized_project_filter,
 };
 use output::{
     render_project_human, render_project_json, render_report, render_usage_human, render_usage_json,
@@ -68,17 +70,29 @@ pub(crate) fn project_command(
     }
     let needle_lower = needle.to_lowercase();
     let extra_project = normalized_project_filter(filters);
-    let bundles =
-        collect_message_bundles(providers, filters, extra_project.as_deref(), |session| {
+    let collected = collect_federated_message_bundles(
+        providers,
+        filters,
+        extra_project.as_deref(),
+        |session| {
             let project_name = session.project_name.as_deref().unwrap_or("");
             project_name.to_lowercase().contains(&needle_lower)
-        });
+        },
+    );
+    let bundles = collected.bundles;
 
     if bundles.is_empty() {
         return Ok(EXIT_EMPTY);
     }
 
-    let report = aghist::project::aggregate(needle, &bundles, limits);
+    let report = aghist::project::aggregate_with_refs(
+        needle,
+        &bundles,
+        limits,
+        |session| source_for_session(&collected.source_by_session, session).to_string(),
+        |session| qualified_session_ref(&collected.source_by_session, session),
+        |session, turn| qualified_citation_ref(&collected.source_by_session, session, turn),
+    );
     let want_json = force_json || !io::stdout().is_terminal();
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -114,16 +128,26 @@ pub(crate) fn report_command(
     let window = aghist::report::ReportWindow::between(start, end);
 
     let project_needle = normalized_project_filter(filters);
-    let bundles =
-        collect_message_bundles(providers, filters, project_needle.as_deref(), |session| {
-            session.started_at >= start && session.started_at <= end
-        });
+    let collected = collect_federated_message_bundles(
+        providers,
+        filters,
+        project_needle.as_deref(),
+        |session| session.started_at >= start && session.started_at <= end,
+    );
+    let bundles = collected.bundles;
 
     if bundles.is_empty() {
         return Ok(EXIT_EMPTY);
     }
 
-    let envelope = aghist::report::aggregate(window, &bundles, limits);
+    let envelope = aghist::report::aggregate_with_refs(
+        window,
+        &bundles,
+        limits,
+        |session| source_for_session(&collected.source_by_session, session).to_string(),
+        |session| qualified_session_ref(&collected.source_by_session, session),
+        |session, turn| qualified_citation_ref(&collected.source_by_session, session, turn),
+    );
     let stdout = io::stdout();
     let mut out = stdout.lock();
     render_report(&mut out, &envelope, force_json)?;

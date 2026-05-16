@@ -15,8 +15,8 @@ use serde::Serialize;
 use crate::decisions::DEFAULT_THRESHOLD as DECISIONS_THRESHOLD;
 use crate::model::{Message, Session};
 use crate::project::{
-    aggregate_tokens, clustered_threads, ranked_decisions, ranked_todos, DecisionRow,
-    ProjectTokens, TodoRow,
+    aggregate_tokens, clustered_threads_with_refs, ranked_decisions_with_refs,
+    ranked_todos_with_refs, DecisionRow, ProjectTokens, TodoRow,
 };
 use crate::threads::{Thread, DEFAULT_GAP_HOURS};
 
@@ -153,15 +153,50 @@ pub fn aggregate(
     sessions: &[(Session, Vec<Message>)],
     limits: ReportLimits,
 ) -> ReportEnvelope {
+    aggregate_with_refs(
+        window,
+        sessions,
+        limits,
+        |_| crate::federated::LOCAL_SOURCE.to_string(),
+        |session| session.session_ref().to_string(),
+        |session, turn| {
+            session.citation_ref(turn).map_or_else(
+                || format!("{}/{}#{turn}", session.provider.slug(), session.id.0),
+                |reference| reference.to_string(),
+            )
+        },
+    )
+}
+
+#[must_use]
+pub fn aggregate_with_refs(
+    window: ReportWindow,
+    sessions: &[(Session, Vec<Message>)],
+    limits: ReportLimits,
+    source_for_session: impl Fn(&Session) -> String,
+    session_ref_for_session: impl Fn(&Session) -> String,
+    citation_ref_for_turn: impl Fn(&Session, u32) -> String,
+) -> ReportEnvelope {
     let session_count = sessions.len();
     let message_count: usize = sessions.iter().map(|(_, m)| m.len()).sum();
     let token_usage = aggregate_tokens(sessions);
 
     let (projects_total, top_projects) = top_projects(sessions, limits.top_projects);
 
-    let (decisions_total, decisions_all) = ranked_decisions(sessions, limits.decisions);
-    let (todos_total, todos_all) = ranked_todos(sessions, limits.todos);
-    let (threads_total, threads_all) = clustered_threads(sessions, limits.threads);
+    let (decisions_total, decisions_all) = ranked_decisions_with_refs(
+        sessions,
+        limits.decisions,
+        &source_for_session,
+        &citation_ref_for_turn,
+    );
+    let (todos_total, todos_all) = ranked_todos_with_refs(
+        sessions,
+        limits.todos,
+        &source_for_session,
+        &citation_ref_for_turn,
+    );
+    let (threads_total, threads_all) =
+        clustered_threads_with_refs(sessions, limits.threads, &session_ref_for_session);
 
     ReportEnvelope {
         window,

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use aghist::model::{Message, Session};
 use aghist::provider;
 
@@ -6,6 +8,11 @@ use super::super::filtering::session_matches;
 use crate::cli::FilterArgs;
 
 pub(super) type SessionBundle = (Session, Vec<Message>);
+
+pub(super) struct FederatedSessionBundles {
+    pub(super) bundles: Vec<SessionBundle>,
+    pub(super) source_by_session: HashMap<String, String>,
+}
 
 pub(super) fn normalized_project_filter(filters: &FilterArgs) -> Option<String> {
     filters
@@ -27,48 +34,29 @@ pub(super) fn collect_federated_filtered_sessions(
         .collect()
 }
 
-pub(super) fn collect_message_bundles(
+pub(super) fn collect_federated_message_bundles(
     providers: &[Box<dyn provider::HistoryProvider>],
     filters: &FilterArgs,
     project_needle: Option<&str>,
     include_session: impl Fn(&Session) -> bool,
-) -> Vec<SessionBundle> {
+) -> FederatedSessionBundles {
+    let discovery = federated_discovery_for_commands(providers);
+    let source_by_session = discovery.source_by_session;
     let mut bundles = Vec::new();
-    visit_matching_sessions(providers, filters, project_needle, |provider, session| {
-        if !include_session(&session) {
-            return;
+    for session in discovery.sessions {
+        if !session_matches(&session, filters, project_needle) {
+            continue;
         }
-        let Ok(messages) = provider.load_messages(&session) else {
-            return;
+        if !include_session(&session) {
+            continue;
+        }
+        let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
+            continue;
         };
         bundles.push((session, messages));
-    });
-    bundles
-}
-
-fn visit_matching_sessions(
-    providers: &[Box<dyn provider::HistoryProvider>],
-    filters: &FilterArgs,
-    project_needle: Option<&str>,
-    mut visit: impl FnMut(&dyn provider::HistoryProvider, Session),
-) {
-    for provider in providers {
-        if let Some(want) = filters.provider {
-            if provider.provider() != want {
-                continue;
-            }
-        }
-        let sessions = match provider.discover_sessions() {
-            Ok(sessions) => sessions,
-            Err(e) => {
-                eprintln!("{}: error: {e}", provider.provider());
-                continue;
-            }
-        };
-        for session in sessions {
-            if session_matches(&session, filters, project_needle) {
-                visit(provider.as_ref(), session);
-            }
-        }
+    }
+    FederatedSessionBundles {
+        bundles,
+        source_by_session,
     }
 }

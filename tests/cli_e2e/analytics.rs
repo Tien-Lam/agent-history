@@ -426,6 +426,72 @@ fn project_aggregates_sessions_messages_tokens_and_emits_envelope() {
     assert!(parsed["meta"]["limits"]["files"].as_u64().unwrap() >= 1);
     assert!(parsed["meta"]["thread_gap_hours"].is_number());
 }
+
+#[test]
+fn project_includes_remote_source_refs_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-project")
+        .project("remote-proj")
+        .user("TODO: revisit remote project refs")
+        .assistant("We decided to keep SQLite instead of adding a service.")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["project", "remote-proj", "--json"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap();
+    assert_eq!(parsed["session_count"], 1);
+    assert_eq!(parsed["decisions"][0]["source"], "laptop");
+    assert_eq!(
+        parsed["decisions"][0]["ref"],
+        "laptop:claude-code/remote-project#2"
+    );
+    assert_eq!(parsed["todos"][0]["source"], "laptop");
+    assert_eq!(
+        parsed["todos"][0]["ref"],
+        "laptop:claude-code/remote-project#1"
+    );
+    assert_eq!(
+        parsed["threads"][0]["session_refs"][0],
+        "laptop:claude-code/remote-project"
+    );
+}
+
 #[test]
 fn project_match_is_case_insensitive_substring() {
     let fixture = common::fixtures::ClaudeFixtureBuilder::new()
@@ -587,6 +653,79 @@ fn report_json_emits_structured_envelope() {
     assert!(names.contains(&"beta".to_string()));
     assert!(parsed["meta"]["projects_total"].as_u64().unwrap() >= 2);
 }
+
+#[test]
+fn report_includes_remote_source_refs_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-report")
+        .project("remote-report-proj")
+        .user("TODO: revisit remote report refs")
+        .assistant("We decided to keep SQLite instead of adding a service.")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args([
+            "report",
+            "--since",
+            FIXTURE_SINCE,
+            "--until",
+            FIXTURE_UNTIL,
+            "--json",
+        ])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap();
+    assert_eq!(parsed["session_count"], 1);
+    assert_eq!(parsed["decisions"][0]["source"], "laptop");
+    assert_eq!(
+        parsed["decisions"][0]["ref"],
+        "laptop:claude-code/remote-report#2"
+    );
+    assert_eq!(parsed["todos"][0]["source"], "laptop");
+    assert_eq!(
+        parsed["todos"][0]["ref"],
+        "laptop:claude-code/remote-report#1"
+    );
+    assert_eq!(
+        parsed["threads"][0]["session_refs"][0],
+        "laptop:claude-code/remote-report"
+    );
+}
+
 #[test]
 fn report_top_projects_limit_truncates_but_meta_keeps_total() {
     let fixture = common::fixtures::ClaudeFixtureBuilder::new()

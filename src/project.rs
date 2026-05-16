@@ -22,7 +22,10 @@ mod extract;
 mod files;
 mod tokens;
 
-pub use extract::{collect_decisions, collect_todos, DecisionRow, TodoRow};
+pub use extract::{
+    collect_decisions, collect_decisions_with_refs, collect_todos, collect_todos_with_refs,
+    DecisionRow, TodoRow,
+};
 use files::top_files;
 pub use files::FileTouch;
 pub use tokens::{aggregate_tokens, ProjectTokens};
@@ -120,6 +123,30 @@ pub fn aggregate(
     sessions: &[(Session, Vec<Message>)],
     limits: ProjectLimits,
 ) -> ProjectReport {
+    aggregate_with_refs(
+        query,
+        sessions,
+        limits,
+        |_| crate::federated::LOCAL_SOURCE.to_string(),
+        |session| session.session_ref().to_string(),
+        |session, turn| {
+            session.citation_ref(turn).map_or_else(
+                || format!("{}/{}#{turn}", session.provider.slug(), session.id.0),
+                |reference| reference.to_string(),
+            )
+        },
+    )
+}
+
+#[must_use]
+pub fn aggregate_with_refs(
+    query: &str,
+    sessions: &[(Session, Vec<Message>)],
+    limits: ProjectLimits,
+    source_for_session: impl Fn(&Session) -> String,
+    session_ref_for_session: impl Fn(&Session) -> String,
+    citation_ref_for_turn: impl Fn(&Session, u32) -> String,
+) -> ProjectReport {
     let session_count = sessions.len();
     let message_count: usize = sessions.iter().map(|(_, m)| m.len()).sum();
 
@@ -132,9 +159,20 @@ pub fn aggregate(
     let token_usage = aggregate_tokens(sessions);
     let matched_projects = collect_projects(sessions);
 
-    let (decisions_total, decisions_all) = ranked_decisions(sessions, limits.decisions);
-    let (todos_total, todos_all) = ranked_todos(sessions, limits.todos);
-    let (threads_total, threads_all) = clustered_threads(sessions, limits.threads);
+    let (decisions_total, decisions_all) = ranked_decisions_with_refs(
+        sessions,
+        limits.decisions,
+        &source_for_session,
+        &citation_ref_for_turn,
+    );
+    let (todos_total, todos_all) = ranked_todos_with_refs(
+        sessions,
+        limits.todos,
+        &source_for_session,
+        &citation_ref_for_turn,
+    );
+    let (threads_total, threads_all) =
+        clustered_threads_with_refs(sessions, limits.threads, &session_ref_for_session);
 
     let (top_files_all_count, top_files) = top_files(sessions, limits.files);
 
@@ -165,11 +203,13 @@ pub fn aggregate(
     }
 }
 
-pub(crate) fn ranked_decisions(
+pub(crate) fn ranked_decisions_with_refs(
     sessions: &[(Session, Vec<Message>)],
     limit: usize,
+    source_for_session: impl Fn(&Session) -> String,
+    citation_ref_for_turn: impl Fn(&Session, u32) -> String,
 ) -> (usize, Vec<DecisionRow>) {
-    let mut rows = collect_decisions(sessions);
+    let mut rows = collect_decisions_with_refs(sessions, source_for_session, citation_ref_for_turn);
     rows.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
@@ -183,11 +223,13 @@ pub(crate) fn ranked_decisions(
     (total, rows)
 }
 
-pub(crate) fn ranked_todos(
+pub(crate) fn ranked_todos_with_refs(
     sessions: &[(Session, Vec<Message>)],
     limit: usize,
+    source_for_session: impl Fn(&Session) -> String,
+    citation_ref_for_turn: impl Fn(&Session, u32) -> String,
 ) -> (usize, Vec<TodoRow>) {
-    let mut rows = collect_todos(sessions);
+    let mut rows = collect_todos_with_refs(sessions, source_for_session, citation_ref_for_turn);
     // Newest first, mirroring `aghist todos`.
     rows.sort_by(|a, b| {
         b.timestamp
@@ -201,17 +243,19 @@ pub(crate) fn ranked_todos(
     (total, rows)
 }
 
-pub(crate) fn clustered_threads(
+pub(crate) fn clustered_threads_with_refs(
     sessions: &[(Session, Vec<Message>)],
     limit: usize,
+    session_ref_for_session: impl Fn(&Session) -> String,
 ) -> (usize, Vec<Thread>) {
     let session_only: Vec<Session> = sessions.iter().map(|(s, _)| s.clone()).collect();
-    let mut rows = threads::cluster(
+    let mut rows = threads::cluster_with_session_refs(
         &session_only,
         ClusterOptions {
             gap: chrono::Duration::hours(DEFAULT_GAP_HOURS),
             min_sessions: 1,
         },
+        session_ref_for_session,
     );
     let total = rows.len();
     truncate_if_limited(&mut rows, limit);

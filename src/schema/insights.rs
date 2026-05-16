@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::common::provider_slug_enum;
+use super::common::{provider_slug_enum, SOURCE_QUALIFIED_SESSION_REF_PATTERN};
 
 mod project;
 mod report;
@@ -32,7 +32,12 @@ fn decision_candidate_item_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "ref": { "type": "string" },
+            "ref": {
+                "type": "string",
+                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
+            },
+            "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
             "provider": { "type": "string", "enum": provider_slug_enum() },
             "session_id": { "type": "string" },
             "turn": { "type": "integer", "minimum": 1 },
@@ -41,7 +46,7 @@ fn decision_candidate_item_schema() -> Value {
             "snippet": { "type": "string" },
             "timestamp": { "type": "string", "format": "date-time" }
         },
-        "required": ["ref", "provider", "session_id", "turn", "score", "markers", "snippet", "timestamp"]
+        "required": ["ref", "source", "provider", "session_id", "turn", "score", "markers", "snippet", "timestamp"]
     })
 }
 
@@ -49,7 +54,12 @@ fn todo_candidate_item_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "ref": { "type": "string" },
+            "ref": {
+                "type": "string",
+                "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
+            },
+            "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
             "provider": { "type": "string", "enum": provider_slug_enum() },
             "session_id": { "type": "string" },
             "turn": { "type": "integer", "minimum": 1 },
@@ -61,7 +71,7 @@ fn todo_candidate_item_schema() -> Value {
             "timestamp": { "type": "string", "format": "date-time" },
             "bd_id": { "type": ["string", "null"] }
         },
-        "required": ["ref", "provider", "session_id", "turn", "kind", "snippet", "timestamp"]
+        "required": ["ref", "source", "provider", "session_id", "turn", "kind", "snippet", "timestamp"]
     })
 }
 

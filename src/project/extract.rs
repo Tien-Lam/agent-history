@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::decisions::{self, DEFAULT_THRESHOLD as DECISIONS_THRESHOLD};
+use crate::federated;
 use crate::model::{Message, Provider, Session};
 use crate::todos::{self, TodoCandidate, TodoKind};
 
@@ -10,6 +11,7 @@ use crate::todos::{self, TodoCandidate, TodoKind};
 pub struct DecisionRow {
     #[serde(rename = "ref")]
     pub reference: String,
+    pub source: String,
     pub provider: Provider,
     pub session_id: String,
     pub turn: u32,
@@ -24,6 +26,7 @@ pub struct DecisionRow {
 pub struct TodoRow {
     #[serde(rename = "ref")]
     pub reference: String,
+    pub source: String,
     pub provider: Provider,
     pub session_id: String,
     pub turn: u32,
@@ -39,17 +42,28 @@ pub struct TodoRow {
 /// are unsorted; callers typically sort by `score` desc.
 #[must_use]
 pub fn collect_decisions(sessions: &[(Session, Vec<Message>)]) -> Vec<DecisionRow> {
+    collect_decisions_with_refs(
+        sessions,
+        |_| federated::LOCAL_SOURCE.to_string(),
+        default_citation_ref,
+    )
+}
+
+#[must_use]
+pub fn collect_decisions_with_refs(
+    sessions: &[(Session, Vec<Message>)],
+    source_for_session: impl Fn(&Session) -> String,
+    citation_ref_for_turn: impl Fn(&Session, u32) -> String,
+) -> Vec<DecisionRow> {
     let mut out = Vec::new();
     for (s, msgs) in sessions {
+        let source = source_for_session(s);
         for (idx, msg) in msgs.iter().enumerate() {
             let turn = u32::try_from(idx + 1).unwrap_or(u32::MAX);
             for c in decisions::extract_from_message(msg, turn, DECISIONS_THRESHOLD) {
-                let reference = s.citation_ref(c.turn).map_or_else(
-                    || format!("{}/{}#{}", s.provider.slug(), s.id.0, c.turn),
-                    |r| r.to_string(),
-                );
                 out.push(DecisionRow {
-                    reference,
+                    reference: citation_ref_for_turn(s, c.turn),
+                    source: source.clone(),
                     provider: s.provider,
                     session_id: s.id.0.clone(),
                     turn: c.turn,
@@ -68,13 +82,28 @@ pub fn collect_decisions(sessions: &[(Session, Vec<Message>)]) -> Vec<DecisionRo
 /// returned rows are unsorted; callers typically sort newest-first.
 #[must_use]
 pub fn collect_todos(sessions: &[(Session, Vec<Message>)]) -> Vec<TodoRow> {
+    collect_todos_with_refs(
+        sessions,
+        |_| federated::LOCAL_SOURCE.to_string(),
+        default_citation_ref,
+    )
+}
+
+#[must_use]
+pub fn collect_todos_with_refs(
+    sessions: &[(Session, Vec<Message>)],
+    source_for_session: impl Fn(&Session) -> String,
+    citation_ref_for_turn: impl Fn(&Session, u32) -> String,
+) -> Vec<TodoRow> {
     let mut out = Vec::new();
     for (s, msgs) in sessions {
+        let source = source_for_session(s);
         let candidates: Vec<TodoCandidate> =
             todos::extract_from_messages(s.provider, &s.id, msgs, &[]);
         for c in candidates {
             out.push(TodoRow {
-                reference: c.citation.to_string(),
+                reference: citation_ref_for_turn(s, c.citation.turn),
+                source: source.clone(),
                 provider: c.citation.provider,
                 session_id: c.citation.session_id.0.clone(),
                 turn: c.citation.turn,
@@ -86,4 +115,11 @@ pub fn collect_todos(sessions: &[(Session, Vec<Message>)]) -> Vec<TodoRow> {
         }
     }
     out
+}
+
+fn default_citation_ref(session: &Session, turn: u32) -> String {
+    session.citation_ref(turn).map_or_else(
+        || format!("{}/{}#{turn}", session.provider.slug(), session.id.0),
+        |reference| reference.to_string(),
+    )
 }

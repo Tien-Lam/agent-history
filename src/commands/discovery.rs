@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aghist::model::Session;
+use aghist::model::{QualifiedCitationRef, Session};
 use aghist::{config, federated, provider};
 
 pub(crate) fn federated_discovery_for_commands(
@@ -43,4 +43,25 @@ pub(crate) fn qualified_session_ref(
     } else {
         format!("{source}:{session_ref}")
     }
+}
+
+pub(crate) fn qualified_citation_ref(
+    source_by_session: &HashMap<String, String>,
+    session: &Session,
+    turn: u32,
+) -> String {
+    let source = source_for_session(source_by_session, session);
+    let Some(citation) = session.citation_ref(turn) else {
+        let raw_ref = format!("{}/{}#{turn}", session.provider.slug(), session.id.0);
+        return if source == federated::LOCAL_SOURCE {
+            raw_ref
+        } else {
+            format!("{source}:{raw_ref}")
+        };
+    };
+    QualifiedCitationRef::new(
+        (source != federated::LOCAL_SOURCE).then(|| source.to_string()),
+        citation,
+    )
+    .to_string()
 }
