@@ -1,13 +1,14 @@
 use serde_json::{json, Value};
 
 use super::args::{optional_provider, optional_str, optional_usize, required_str};
-use super::payload::{message_row, session_row, tool_error, tool_success};
+use super::payload::{message_row_with_source, session_row_with_source, tool_error, tool_success};
 use super::protocol::{RpcError, ERR_INVALID_PARAMS};
 use super::server::McpServer;
 
+use crate::federated::LOCAL_SOURCE;
 use crate::health::{run_health_checks, HealthStatus};
-use crate::model::{CitationRef, Session};
-use crate::provider::HistoryProvider;
+use crate::model::{Provider, QualifiedCitationRef, Session};
+use crate::provider;
 use crate::search::SearchIndex;
 
 mod search;
@@ -46,7 +47,8 @@ impl McpServer {
         let project_filter = optional_str(args, "project")?;
         let limit = optional_usize(args, "limit", 50, 1, 1_000)?;
 
-        let mut all = self.collect_sessions();
+        let discovery = self.collect_discovery();
+        let mut all = discovery.sessions.clone();
         all.sort_by_key(|s| std::cmp::Reverse(s.started_at));
 
         let filtered: Vec<&Session> = all
@@ -62,65 +64,54 @@ impl McpServer {
             .take(limit)
             .collect();
 
-        let rows: Vec<Value> = filtered.iter().map(|s| session_row(s)).collect();
+        let rows: Vec<Value> = filtered
+            .iter()
+            .map(|session| session_row_with_source(session, discovery.source_of_session(session)))
+            .collect();
 
         Ok(json!({
             "total": rows.len(),
             "sessions": rows,
+            "source_errors": discovery.failures.iter().map(|failure| json!({
+                "source": failure.source,
+                "error": failure.message,
+            })).collect::<Vec<_>>(),
         }))
     }
 
     fn tool_get_session(&self, args: &Value) -> Result<Value, String> {
         let session_id = required_str(args, "session_id")?;
-        self.with_session(&session_id, |session, provider| {
-            let messages = provider
-                .load_messages(session)
-                .map_err(|e| format!("failed to load messages for {}: {e}", session.id.0))?;
-            let turns: Vec<Value> = messages
-                .iter()
-                .enumerate()
-                .map(|(i, m)| message_row(session, m, i + 1))
-                .collect();
-            Ok(json!({
-                "session": session_row(session),
-                "turns": turns,
-            }))
-        })
+        let provider_filter = optional_provider(args, "provider")?;
+        let source_filter = optional_str(args, "source")?;
+        if let Some(source) = source_filter.as_deref() {
+            crate::config::validate_source_name(source)?;
+        }
+        let located =
+            self.find_session_by_prefix(&session_id, provider_filter, source_filter.as_deref())?;
+        let messages = provider::load_messages_for_session(&located.session, &self.providers)
+            .map_err(|e| format!("failed to load messages for {}: {e}", located.session.id.0))?;
+        let turns: Vec<Value> = messages
+            .iter()
+            .enumerate()
+            .map(|(i, m)| message_row_with_source(&located.session, m, i + 1, &located.source))
+            .collect();
+        Ok(json!({
+            "session": session_row_with_source(&located.session, &located.source),
+            "turns": turns,
+        }))
     }
 
     fn tool_get_message(&self, args: &Value) -> Result<Value, String> {
         let raw_ref = required_str(args, "ref")?;
-        let citation: CitationRef = raw_ref
+        let qualified: QualifiedCitationRef = raw_ref
             .parse()
             .map_err(|e| format!("invalid ref '{raw_ref}': {e}"))?;
         let include_context = optional_usize(args, "include_context", 0, 0, 100)?;
+        let citation = qualified.citation;
+        let source = qualified.source.as_deref().unwrap_or(LOCAL_SOURCE);
 
-        let provider = self
-            .providers
-            .iter()
-            .find(|p| p.provider() == citation.provider)
-            .ok_or_else(|| {
-                format!(
-                    "provider '{}' is not enabled or not detected",
-                    citation.provider.slug()
-                )
-            })?;
-
-        let sessions = provider
-            .discover_sessions()
-            .map_err(|e| format!("failed to discover sessions: {e}"))?;
-        let session = sessions
-            .iter()
-            .find(|s| s.id == citation.session_id)
-            .ok_or_else(|| {
-                format!(
-                    "session '{}' not found in provider '{}'",
-                    citation.session_id,
-                    citation.provider.slug()
-                )
-            })?;
-        let messages = provider
-            .load_messages(session)
+        let located = self.find_session_exact(citation.provider, &citation.session_id.0, source)?;
+        let messages = provider::load_messages_for_session(&located.session, &self.providers)
             .map_err(|e| format!("failed to load messages: {e}"))?;
 
         let total = messages.len();
@@ -139,7 +130,12 @@ impl McpServer {
             .iter()
             .enumerate()
             .map(|(i, m)| {
-                let mut row = message_row(session, m, start_idx + i + 1);
+                let mut row = message_row_with_source(
+                    &located.session,
+                    m,
+                    start_idx + i + 1,
+                    &located.source,
+                );
                 if let Some(obj) = row.as_object_mut() {
                     obj.insert("is_target".to_string(), json!(start_idx + i == target_idx));
                 }
@@ -147,9 +143,15 @@ impl McpServer {
             })
             .collect();
 
+        let response_ref = QualifiedCitationRef::new(
+            (located.source != LOCAL_SOURCE).then(|| located.source.clone()),
+            citation.clone(),
+        )
+        .to_string();
+
         Ok(json!({
-            "ref": citation.to_string(),
-            "session": session_row(session),
+            "ref": response_ref,
+            "session": session_row_with_source(&located.session, &located.source),
             "target_turn": citation.turn,
             "turns": turns,
         }))
@@ -158,33 +160,24 @@ impl McpServer {
     fn tool_reindex(&self, args: &Value) -> Result<Value, String> {
         let provider_filter = optional_provider(args, "provider")?;
         let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
-
-        let active: Vec<&Box<dyn HistoryProvider>> = self
-            .providers
-            .iter()
-            .filter(|p| provider_filter.is_none_or(|want| p.provider() == want))
-            .collect();
+        let provider_scope = self.provider_scope();
 
         if let Some(want) = provider_filter {
-            if active.is_empty() {
-                return Err(format!(
-                    "provider '{}' is not enabled or not detected",
-                    want.slug()
-                ));
+            if !provider_scope.contains(&want) {
+                return Err(format!("provider '{}' is not visible to MCP", want.slug()));
             }
         }
 
-        let mut sessions: Vec<Session> = Vec::new();
-        let mut errors: Vec<Value> = Vec::new();
-        for p in &active {
-            match p.discover_sessions() {
-                Ok(s) => sessions.extend(s),
-                Err(e) => errors.push(json!({
-                    "provider": p.provider().slug(),
-                    "error": e.to_string(),
-                })),
-            }
+        let mut discovery = self.collect_discovery();
+        if let Some(want) = provider_filter {
+            discovery.retain_providers(&std::collections::HashSet::from([want]));
         }
+        let errors: Vec<Value> = discovery
+            .failures
+            .iter()
+            .map(|failure| json!({ "source": failure.source, "error": failure.message }))
+            .collect();
+        let sessions: Vec<Session> = discovery.sessions;
 
         let index_dir = SearchIndex::default_index_dir();
         let index = SearchIndex::open_or_create(&index_dir)
@@ -196,9 +189,8 @@ impl McpServer {
                     .clear_providers(&prune_providers)
                     .map_err(|e| format!("failed to clear index: {e}"))?;
             } else {
-                let prune_providers = self.provider_scope();
                 index
-                    .clear_providers(&prune_providers)
+                    .clear_providers(&provider_scope)
                     .map_err(|e| format!("failed to clear index: {e}"))?;
             }
         }
@@ -209,12 +201,23 @@ impl McpServer {
             let prune_providers = std::collections::HashSet::from([want]);
             index.build_index_for_providers(&sessions, &self.providers, &tx, &prune_providers)
         } else {
-            let prune_providers = self.provider_scope();
-            index.build_index_for_providers(&sessions, &self.providers, &tx, &prune_providers)
+            index.build_index_for_providers(&sessions, &self.providers, &tx, &provider_scope)
         }
         .map_err(|e| format!("failed to build index: {e}"))?;
 
-        let provider_slugs: Vec<&str> = active.iter().map(|p| p.provider().slug()).collect();
+        let provider_slugs: Vec<&str> = if let Some(want) = provider_filter {
+            vec![want.slug()]
+        } else {
+            Provider::all()
+                .iter()
+                .copied()
+                .filter(|provider| {
+                    provider_scope.contains(provider)
+                        && sessions.iter().any(|session| session.provider == *provider)
+                })
+                .map(Provider::slug)
+                .collect()
+        };
 
         Ok(json!({
             "providers": provider_slugs,

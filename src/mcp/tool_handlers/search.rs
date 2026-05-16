@@ -6,7 +6,8 @@ use super::super::args::{optional_usize, required_str};
 use super::super::server::McpServer;
 
 use crate::action::Action;
-use crate::model::{Session, SessionOrTurnRef};
+use crate::federated::LOCAL_SOURCE;
+use crate::model::{QualifiedCitationRef, Session, SessionOrTurnRef};
 use crate::search::{HitKind, SearchIndex};
 
 impl McpServer {
@@ -17,7 +18,8 @@ impl McpServer {
         }
         let limit = optional_usize(args, "limit", 20, 1, 200)?;
 
-        let sessions = self.collect_sessions();
+        let discovery = self.collect_discovery();
+        let sessions = discovery.sessions.clone();
         let index_dir = SearchIndex::default_index_dir();
         let index = SearchIndex::open_or_create(&index_dir)
             .map_err(|e| format!("failed to open search index: {e}"))?;
@@ -71,12 +73,26 @@ impl McpServer {
                 HitKind::Message => {
                     let session = session_meta.get(h.session_key.as_str()).copied();
                     let turn = turn_lookup.get(h.message_key.as_str()).copied();
-                    let citation_ref = session
-                        .zip(turn)
-                        .and_then(|(s, t)| {
-                            u32::try_from(t).ok().and_then(|turn| s.citation_ref(turn))
+                    let source = session
+                        .and_then(|s| {
+                            discovery
+                                .source_by_session
+                                .get(s.identity_key().as_str())
+                                .map(String::as_str)
                         })
-                        .map(|r| r.to_string());
+                        .unwrap_or(LOCAL_SOURCE);
+                    let citation_ref = session.zip(turn).and_then(|(s, t)| {
+                        u32::try_from(t)
+                            .ok()
+                            .and_then(|turn| s.citation_ref(turn))
+                            .map(|citation| {
+                                QualifiedCitationRef::new(
+                                    (source != LOCAL_SOURCE).then(|| source.to_string()),
+                                    citation,
+                                )
+                                .to_string()
+                            })
+                    });
                     hits_json.push(json!({
                         "kind": HitKind::Message.slug(),
                         "ref": citation_ref,
@@ -86,6 +102,7 @@ impl McpServer {
                         "score": h.score,
                         "snippet": h.snippet,
                         "provider": session.map(|s| s.provider.slug()),
+                        "source": source,
                         "project": session.and_then(|s| s.project_name.as_deref()),
                         "started_at": session.map(|s| s.started_at),
                     }));
@@ -98,6 +115,10 @@ impl McpServer {
             "limit": limit,
             "total": hits_json.len(),
             "hits": hits_json,
+            "source_errors": discovery.failures.iter().map(|failure| json!({
+                "source": failure.source,
+                "error": failure.message,
+            })).collect::<Vec<_>>(),
         }))
     }
 
@@ -120,14 +141,8 @@ impl McpServer {
             let Some(session) = session_meta.get(h.session_key.as_str()).copied() else {
                 continue;
             };
-            let Some(provider) = self
-                .providers
-                .iter()
-                .find(|p| p.provider() == session.provider)
+            let Ok(messages) = crate::provider::load_messages_for_session(session, &self.providers)
             else {
-                continue;
-            };
-            let Ok(messages) = provider.load_messages(session) else {
                 continue;
             };
             for (i, m) in messages.iter().enumerate() {

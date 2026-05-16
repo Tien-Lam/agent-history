@@ -6,7 +6,7 @@ use super::list::list_sessions;
 use super::lookup_dispatch::dispatch_lookup_command;
 use super::metadata_dispatch::dispatch_metadata_command;
 use super::reports_dispatch::dispatch_report_command;
-use super::system::{run_mcp, schema_command};
+use super::system::{run_mcp_server, schema_command};
 use super::tui::run_tui;
 use aghist::cli_error::{ErrorEnvelope, EXIT_USAGE};
 use aghist::output::{CommandKind, OutputMode};
@@ -129,7 +129,13 @@ fn run_mcp_with_config(
         .into_iter()
         .filter(|p| exposed.contains(&p.provider()))
         .collect();
-    run_mcp(providers)
+    let server = aghist::mcp::McpServer::new_federated(
+        providers,
+        config.sources.clone(),
+        config::sources_cache_root(),
+        exposed,
+    );
+    run_mcp_server(&server)
 }
 
 fn dispatch_command(

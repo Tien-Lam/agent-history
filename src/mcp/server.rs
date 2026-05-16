@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::io::{self, BufRead, Write};
+use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
@@ -10,17 +11,47 @@ use super::protocol::{
 };
 use super::resources::resource_templates;
 
+use crate::config::RemoteSource;
+use crate::federated::{self, FederatedDiscovery, SourceFailure, LOCAL_SOURCE};
 use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
 
 /// Owns the providers + search index for the lifetime of a server run.
 pub struct McpServer {
     pub(super) providers: Vec<Box<dyn HistoryProvider>>,
+    sources: Vec<RemoteSource>,
+    sources_cache_root: Option<PathBuf>,
+    visible_providers: HashSet<Provider>,
+}
+
+pub(super) struct LocatedSession {
+    pub session: Session,
+    pub source: String,
 }
 
 impl McpServer {
     pub fn new(providers: Vec<Box<dyn HistoryProvider>>) -> Self {
-        Self { providers }
+        let visible_providers = providers.iter().map(|p| p.provider()).collect();
+        Self {
+            providers,
+            sources: Vec::new(),
+            sources_cache_root: None,
+            visible_providers,
+        }
+    }
+
+    pub fn new_federated(
+        providers: Vec<Box<dyn HistoryProvider>>,
+        sources: Vec<RemoteSource>,
+        sources_cache_root: Option<PathBuf>,
+        visible_providers: HashSet<Provider>,
+    ) -> Self {
+        Self {
+            providers,
+            sources,
+            sources_cache_root,
+            visible_providers,
+        }
     }
 
     /// Drives the loop reading newline-delimited JSON from `input` and writing
@@ -132,40 +163,124 @@ impl McpServer {
 
     // --- helpers -----------------------------------------------------------
 
-    pub(super) fn collect_sessions(&self) -> Vec<Session> {
+    pub(super) fn collect_discovery(&self) -> FederatedDiscovery {
+        let mut discovery = if let Some(cache_root) = self.sources_cache_root.as_ref() {
+            federated::discover_federated(&self.providers, &self.sources, cache_root)
+        } else {
+            let mut local = self.collect_local_discovery();
+            if !self.sources.is_empty() {
+                local.failures.push(SourceFailure {
+                    source: LOCAL_SOURCE.to_string(),
+                    message: "sources cache dir unavailable".to_string(),
+                });
+            }
+            local
+        };
+        discovery.retain_providers(&self.visible_providers);
+        discovery
+    }
+
+    fn collect_local_discovery(&self) -> FederatedDiscovery {
         let mut all = Vec::new();
         for p in &self.providers {
             if let Ok(found) = p.discover_sessions() {
                 all.extend(found);
             }
         }
-        all
+        let source_by_session = all
+            .iter()
+            .map(|session| (session.identity_key(), LOCAL_SOURCE.to_string()))
+            .collect();
+        FederatedDiscovery {
+            sessions: all,
+            source_by_session,
+            failures: Vec::new(),
+        }
     }
 
     pub(super) fn provider_scope(&self) -> HashSet<Provider> {
-        self.providers.iter().map(|p| p.provider()).collect()
+        self.visible_providers.clone()
     }
 
-    /// Walks providers, discovers sessions, and runs `f` against the matching
-    /// session and provider. Used by tools that need to operate on a single
-    /// session; keeps `Vec<Session>` alive only for the closure body so we
-    /// don't have to thread lifetimes through `Box<dyn HistoryProvider>`.
-    pub(super) fn with_session<T>(
+    pub(super) fn find_session_by_prefix(
         &self,
         session_id: &str,
-        f: impl FnOnce(&Session, &dyn HistoryProvider) -> Result<T, String>,
-    ) -> Result<T, String> {
-        for p in &self.providers {
-            let Ok(sessions) = p.discover_sessions() else {
-                continue;
-            };
-            if let Some(found) = sessions
-                .iter()
-                .find(|s| s.id.0 == session_id || s.id.0.starts_with(session_id))
-            {
-                return f(found, p.as_ref());
-            }
+        provider_filter: Option<Provider>,
+        source_filter: Option<&str>,
+    ) -> Result<LocatedSession, String> {
+        if let Some(provider) = provider_filter {
+            self.ensure_provider_visible(provider)?;
         }
-        Err(format!("session not found: {session_id}"))
+        let discovery = self.collect_discovery();
+        let candidates: Vec<LocatedSession> = discovery
+            .sessions
+            .iter()
+            .filter(|session| provider_filter.is_none_or(|want| session.provider == want))
+            .filter(|session| {
+                source_filter.is_none_or(|want| discovery.source_of_session(session) == want)
+            })
+            .filter(|session| session.id.0 == session_id || session.id.0.starts_with(session_id))
+            .map(|session| LocatedSession {
+                session: session.clone(),
+                source: discovery.source_of_session(session).to_string(),
+            })
+            .collect();
+
+        let exact: Vec<LocatedSession> = candidates
+            .iter()
+            .filter(|located| located.session.id.0 == session_id)
+            .map(|located| LocatedSession {
+                session: located.session.clone(),
+                source: located.source.clone(),
+            })
+            .collect();
+        let matches = if exact.is_empty() { candidates } else { exact };
+
+        match matches.len() {
+            0 => Err(format!("session not found: {session_id}")),
+            1 => Ok(matches.into_iter().next().expect("len checked")),
+            _ => Err(format!(
+                "session id '{session_id}' is ambiguous; specify provider and source"
+            )),
+        }
+    }
+
+    pub(super) fn find_session_exact(
+        &self,
+        provider: Provider,
+        session_id: &str,
+        source: &str,
+    ) -> Result<LocatedSession, String> {
+        self.ensure_provider_visible(provider)?;
+        let discovery = self.collect_discovery();
+        discovery
+            .sessions
+            .iter()
+            .find(|session| {
+                session.provider == provider
+                    && session.id.0 == session_id
+                    && discovery.source_of_session(session) == source
+            })
+            .map(|session| LocatedSession {
+                session: session.clone(),
+                source: discovery.source_of_session(session).to_string(),
+            })
+            .ok_or_else(|| {
+                format!(
+                    "session '{session_id}' not found in provider '{}' from source '{source}'",
+                    provider.slug()
+                )
+            })
+    }
+
+    fn ensure_provider_visible(&self, provider: Provider) -> Result<(), String> {
+        if self.visible_providers.contains(&provider) {
+            Ok(())
+        } else {
+            Err(format!(
+                "provider '{}' is not enabled or not visible to MCP",
+                provider.slug()
+            ))
+        }
     }
 }

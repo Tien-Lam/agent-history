@@ -23,6 +23,15 @@ fn run_session_with_config(
     config_path: Option<&Path>,
     requests: &[Value],
 ) -> Vec<Value> {
+    run_session_with_config_and_sources_cache(env_home, config_path, None, requests)
+}
+
+fn run_session_with_config_and_sources_cache(
+    env_home: &std::path::Path,
+    config_path: Option<&Path>,
+    sources_cache: Option<&Path>,
+    requests: &[Value],
+) -> Vec<Value> {
     let mut cmd = Command::new(aghist_bin());
     cmd.arg("mcp")
         .env("AGHIST_HOME", env_home)
@@ -32,6 +41,9 @@ fn run_session_with_config(
         .stderr(Stdio::piped());
     if let Some(p) = config_path {
         cmd.env("AGHIST_CONFIG", p);
+    }
+    if let Some(p) = sources_cache {
+        cmd.env("AGHIST_SOURCES_CACHE_DIR", p);
     }
     let mut child = cmd.spawn().expect("spawn aghist mcp");
 
@@ -286,6 +298,232 @@ fn mcp_list_sessions_finds_claude_fixture_via_provider_filter() {
         "expected at least one session, got: {structured}"
     );
     assert_eq!(sessions[0]["provider"], "claude-code");
+}
+
+#[test]
+fn mcp_remote_source_cache_round_trips_list_search_message_and_resource() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-mcp-session")
+        .project("remote-mcp-proj")
+        .user("REMOTE_MCP_TOKEN remote message body")
+        .assistant("remote answer")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"
+[[sources]]
+name = "laptop"
+host = "laptop.local"
+path = "/home/x/.claude"
+transport = "ssh"
+"#,
+    )
+    .unwrap();
+
+    let responses = run_session_with_config_and_sources_cache(
+        empty_home.path(),
+        Some(&config_path),
+        Some(&cache_dir),
+        &[
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_sessions",
+                    "arguments": { "provider": "claude-code" }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_sessions",
+                    "arguments": { "query": "REMOTE_MCP_TOKEN" }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "resources/list"
+            }),
+        ],
+    );
+
+    let (session_uri, hit_ref) = assert_remote_mcp_initial_responses(&responses);
+
+    let followup = run_session_with_config_and_sources_cache(
+        empty_home.path(),
+        Some(&config_path),
+        Some(&cache_dir),
+        &[
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_message",
+                    "arguments": { "ref": hit_ref, "include_context": 1 }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "resources/read",
+                "params": { "uri": session_uri }
+            }),
+        ],
+    );
+
+    assert_remote_mcp_followup(&followup, &hit_ref);
+}
+
+fn assert_remote_mcp_initial_responses(responses: &[Value]) -> (String, String) {
+    let sessions = responses[0]["result"]["structuredContent"]["sessions"]
+        .as_array()
+        .unwrap();
+    assert_eq!(sessions.len(), 1, "list response: {:#?}", responses[0]);
+    assert_eq!(sessions[0]["source"], "laptop");
+    assert_eq!(sessions[0]["provider"], "claude-code");
+    let session_uri = sessions[0]["uri"].as_str().unwrap().to_string();
+    assert!(
+        session_uri.starts_with("aghist://source/laptop/session/claude-code/"),
+        "unexpected remote session uri: {session_uri}"
+    );
+
+    let hits = responses[1]["result"]["structuredContent"]["hits"]
+        .as_array()
+        .unwrap();
+    assert!(!hits.is_empty(), "search response: {:#?}", responses[1]);
+    assert_eq!(hits[0]["source"], "laptop");
+    let hit_ref = hits[0]["ref"].as_str().unwrap().to_string();
+    assert!(
+        hit_ref.starts_with("laptop:claude-code/remote-mcp-session#"),
+        "unexpected remote ref: {hit_ref}"
+    );
+
+    let resources = responses[2]["result"]["resources"].as_array().unwrap();
+    assert!(
+        resources
+            .iter()
+            .any(|resource| resource["uri"].as_str() == Some(session_uri.as_str())),
+        "resources/list should include source-qualified URI: {resources:#?}"
+    );
+    (session_uri, hit_ref)
+}
+
+fn assert_remote_mcp_followup(followup: &[Value], hit_ref: &str) {
+    let message = &followup[0]["result"]["structuredContent"];
+    assert_eq!(message["session"]["source"], "laptop");
+    assert_eq!(message["ref"].as_str().unwrap(), hit_ref);
+    assert!(
+        message["turns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|turn| turn["is_target"].as_bool() == Some(true)),
+        "expected target turn in get_message response: {message:#?}"
+    );
+
+    let contents = followup[1]["result"]["contents"].as_array().unwrap();
+    let body: Value = serde_json::from_str(contents[0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(body["session"]["source"], "laptop");
+    assert_eq!(body["turns"].as_array().unwrap().len(), 2);
+    assert!(body["turns"][0]["uri"]
+        .as_str()
+        .unwrap()
+        .starts_with("aghist://source/laptop/session/claude-code/"));
+}
+
+#[test]
+fn mcp_exposed_subset_blocks_remote_source_providers() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-hidden-mcp")
+        .project("remote-hidden")
+        .user("REMOTE_HIDDEN_MCP_TOKEN")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"
+[providers]
+mcp_exposed = ["copilot-cli"]
+
+[[sources]]
+name = "laptop"
+host = "laptop.local"
+path = "/home/x/.claude"
+transport = "ssh"
+"#,
+    )
+    .unwrap();
+
+    let responses = run_session_with_config_and_sources_cache(
+        empty_home.path(),
+        Some(&config_path),
+        Some(&cache_dir),
+        &[
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_sessions",
+                    "arguments": { "provider": "claude-code" }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_sessions",
+                    "arguments": { "query": "REMOTE_HIDDEN_MCP_TOKEN" }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "resources/list"
+            }),
+        ],
+    );
+
+    let list_result = &responses[0]["result"];
+    assert_eq!(list_result["isError"], false, "got: {list_result}");
+    let listed = &list_result["structuredContent"];
+    assert_eq!(listed["total"], 0, "hidden remote list leaked: {listed}");
+    assert!(listed["sessions"].as_array().unwrap().is_empty());
+
+    let search = &responses[1]["result"]["structuredContent"];
+    assert_eq!(search["total"], 0, "hidden remote search leaked: {search}");
+    assert!(search["hits"].as_array().unwrap().is_empty());
+
+    let resources = responses[2]["result"]["resources"].as_array().unwrap();
+    assert!(
+        resources.is_empty(),
+        "hidden remote provider leaked resources: {resources:#?}"
+    );
 }
 
 #[test]

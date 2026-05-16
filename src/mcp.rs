@@ -8,17 +8,22 @@
 //! - `search_sessions` — full-text search, returns hits keyed by citation ref
 //! - `list_sessions`   — provider-aware session listing
 //! - `get_session`     — one session's metadata + ordered turns
-//! - `get_message`     — resolves a citation ref `<provider>/<id>#<turn>`
+//! - `get_message`     — resolves `<provider>/<id>#<turn>` or
+//!   `<source>:<provider>/<id>#<turn>`
 //! - `reindex`         — incremental or `--force` rebuild of the search index
 //! - `health`          — same checks as `aghist health`
 //!
 //! Resources exposed (see `resources/list` / `resources/read`):
 //! - `aghist://session/<provider>/<session-id>` — session metadata + all turns
 //! - `aghist://session/<provider>/<session-id>/turn/<n>` — single turn (1-based)
+//! - `aghist://source/<source>/session/<provider>/<session-id>` — remote
+//!   source session metadata + all turns
+//! - `aghist://source/<source>/session/<provider>/<session-id>/turn/<n>` —
+//!   single turn from a remote source
 //!
-//! The URI shape mirrors the citation-ref triple so URIs are stable across
-//! reindex: provider slug + session id are intrinsic to the source data, and
-//! turn `n` is the load-order position of the message within the session.
+//! Local URI shapes mirror the citation-ref triple. Remote sessions add an
+//! explicit source segment so duplicate provider/session ids from different
+//! machines remain round-trippable.
 //!
 //! ## Read-only contract
 //!
@@ -32,12 +37,12 @@
 //!
 //! ## Provider scoping
 //!
-//! The server only sees the providers handed to `McpServer::new`. `main` filters
-//! `config.enabled_providers()` further by `config.mcp_exposed_providers()` so
-//! users can hide a provider from MCP clients without disabling it for the TUI.
-//! When the resulting list is empty, every tool that walks providers returns
-//! an empty result rather than erroring — the same behaviour as having no
-//! sessions discovered.
+//! `main` filters `config.enabled_providers()` further by
+//! `config.mcp_exposed_providers()` so users can hide a provider from MCP
+//! clients without disabling it for the TUI. That same visible-provider set is
+//! applied to registered remote source caches. When the resulting list is
+//! empty, every tool that walks providers returns an empty result rather than
+//! erroring — the same behaviour as having no sessions discovered.
 
 mod args;
 mod payload;

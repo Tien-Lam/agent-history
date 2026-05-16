@@ -1,12 +1,16 @@
 use serde_json::{json, Value};
 
-use super::payload::{message_row, session_row};
+use super::payload::{message_row_with_source, session_row_with_source};
 use super::protocol::{RpcError, ERR_INVALID_PARAMS};
-use super::resources::{parse_aghist_uri, resource_descriptor, session_uri, turn_uri, ParsedUri};
+use super::resources::{
+    parse_aghist_uri, resource_descriptor_with_source, session_uri_for_source, turn_uri_for_source,
+    ParsedUri,
+};
 use super::server::McpServer;
 
-use crate::model::{Provider, Session};
-use crate::provider::HistoryProvider;
+use crate::federated::LOCAL_SOURCE;
+use crate::model::Provider;
+use crate::provider;
 
 impl McpServer {
     /// Lists every discoverable session as a top-level
@@ -15,9 +19,15 @@ impl McpServer {
     /// rather than enumerated, since the turn count would balloon the listing
     /// for large histories.
     pub(super) fn resources_list(&self, _params: &Value) -> Value {
-        let mut sessions = self.collect_sessions();
-        sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
-        let resources: Vec<Value> = sessions.iter().map(resource_descriptor).collect();
+        let discovery = self.collect_discovery();
+        let mut sessions = discovery.sessions.clone();
+        sessions.sort_by_key(|session| std::cmp::Reverse(session.started_at));
+        let resources: Vec<Value> = sessions
+            .iter()
+            .map(|session| {
+                resource_descriptor_with_source(session, discovery.source_of_session(session))
+            })
+            .collect();
         json!({ "resources": resources })
     }
 
@@ -32,14 +42,16 @@ impl McpServer {
 
         let payload = match parsed {
             ParsedUri::Session {
+                source,
                 provider,
                 session_id,
-            } => self.read_session_resource(provider, &session_id),
+            } => self.read_session_resource(source.as_deref(), provider, &session_id),
             ParsedUri::Turn {
+                source,
                 provider,
                 session_id,
                 turn,
-            } => self.read_turn_resource(provider, &session_id, turn),
+            } => self.read_turn_resource(source.as_deref(), provider, &session_id, turn),
         }
         .map_err(|e| RpcError::new(ERR_INVALID_PARAMS, e))?;
 
@@ -56,34 +68,36 @@ impl McpServer {
 
     fn read_session_resource(
         &self,
+        source: Option<&str>,
         provider_want: Provider,
         session_id: &str,
     ) -> Result<Value, String> {
-        let (session, provider) = self.find_session_strict(provider_want, session_id)?;
-        let messages = provider
-            .load_messages(&session)
+        let source = source.unwrap_or(LOCAL_SOURCE);
+        let located = self.find_session_exact(provider_want, session_id, source)?;
+        let messages = provider::load_messages_for_session(&located.session, &self.providers)
             .map_err(|e| format!("failed to load messages: {e}"))?;
         let turns: Vec<Value> = messages
             .iter()
             .enumerate()
-            .map(|(i, m)| message_row(&session, m, i + 1))
+            .map(|(i, m)| message_row_with_source(&located.session, m, i + 1, &located.source))
             .collect();
         Ok(json!({
-            "uri": session_uri(session.provider, &session.id.0),
-            "session": session_row(&session),
+            "uri": session_uri_for_source(&located.source, located.session.provider, &located.session.id.0),
+            "session": session_row_with_source(&located.session, &located.source),
             "turns": turns,
         }))
     }
 
     fn read_turn_resource(
         &self,
+        source: Option<&str>,
         provider_want: Provider,
         session_id: &str,
         turn: u32,
     ) -> Result<Value, String> {
-        let (session, provider) = self.find_session_strict(provider_want, session_id)?;
-        let messages = provider
-            .load_messages(&session)
+        let source = source.unwrap_or(LOCAL_SOURCE);
+        let located = self.find_session_exact(provider_want, session_id, source)?;
+        let messages = provider::load_messages_for_session(&located.session, &self.providers)
             .map_err(|e| format!("failed to load messages: {e}"))?;
         let total = messages.len();
         let turn_usize = turn as usize;
@@ -94,43 +108,9 @@ impl McpServer {
         }
         let msg = &messages[turn_usize - 1];
         Ok(json!({
-            "uri": turn_uri(session.provider, &session.id.0, turn),
-            "session": session_row(&session),
-            "turn": message_row(&session, msg, turn_usize),
+            "uri": turn_uri_for_source(&located.source, located.session.provider, &located.session.id.0, turn),
+            "session": session_row_with_source(&located.session, &located.source),
+            "turn": message_row_with_source(&located.session, msg, turn_usize, &located.source),
         }))
-    }
-
-    /// Provider-qualified session lookup. Unlike `with_session`, this does NOT
-    /// fall through to other providers; a URI names exactly one provider, so
-    /// resolving against a different one would silently mask typos.
-    fn find_session_strict(
-        &self,
-        provider_want: Provider,
-        session_id: &str,
-    ) -> Result<(Session, &dyn HistoryProvider), String> {
-        let provider = self
-            .providers
-            .iter()
-            .find(|p| p.provider() == provider_want)
-            .ok_or_else(|| {
-                format!(
-                    "provider '{}' is not enabled or not detected",
-                    provider_want.slug()
-                )
-            })?;
-        let sessions = provider
-            .discover_sessions()
-            .map_err(|e| format!("failed to discover sessions: {e}"))?;
-        let session = sessions
-            .into_iter()
-            .find(|s| s.id.0 == session_id)
-            .ok_or_else(|| {
-                format!(
-                    "session '{}' not found in provider '{}'",
-                    session_id,
-                    provider_want.slug()
-                )
-            })?;
-        Ok((session, provider.as_ref()))
     }
 }

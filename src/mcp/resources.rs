@@ -1,18 +1,47 @@
 use serde_json::{json, Value};
 
+use crate::federated::LOCAL_SOURCE;
 use crate::model::{Provider, Session};
 
 const URI_PREFIX: &str = "aghist://session/";
+const SOURCE_URI_PREFIX: &str = "aghist://source/";
 
 pub(super) fn session_uri(provider: Provider, session_id: &str) -> String {
     format!("{URI_PREFIX}{}/{session_id}", provider.slug())
+}
+
+pub(super) fn session_uri_for_source(source: &str, provider: Provider, session_id: &str) -> String {
+    if source == LOCAL_SOURCE {
+        session_uri(provider, session_id)
+    } else {
+        format!(
+            "{SOURCE_URI_PREFIX}{source}/session/{}/{session_id}",
+            provider.slug()
+        )
+    }
 }
 
 pub(super) fn turn_uri(provider: Provider, session_id: &str, turn: u32) -> String {
     format!("{URI_PREFIX}{}/{session_id}/turn/{turn}", provider.slug())
 }
 
-pub(super) fn resource_descriptor(s: &Session) -> Value {
+pub(super) fn turn_uri_for_source(
+    source: &str,
+    provider: Provider,
+    session_id: &str,
+    turn: u32,
+) -> String {
+    if source == LOCAL_SOURCE {
+        turn_uri(provider, session_id, turn)
+    } else {
+        format!(
+            "{SOURCE_URI_PREFIX}{source}/session/{}/{session_id}/turn/{turn}",
+            provider.slug()
+        )
+    }
+}
+
+pub(super) fn resource_descriptor_with_source(s: &Session, source: &str) -> Value {
     let title = s
         .summary
         .clone()
@@ -28,10 +57,11 @@ pub(super) fn resource_descriptor(s: &Session) -> Value {
             .unwrap_or_default(),
     );
     json!({
-        "uri": session_uri(s.provider, &s.id.0),
+        "uri": session_uri_for_source(source, s.provider, &s.id.0),
         "name": title,
         "description": description,
         "mimeType": "application/json",
+        "source": source,
     })
 }
 
@@ -58,16 +88,30 @@ pub(super) fn resource_templates() -> Value {
                             The triple `(provider, session_id, turn)` matches \
                             the citation-ref format.",
             "mimeType": "application/json"
+        },
+        {
+            "uriTemplate": "aghist://source/{source}/session/{provider}/{session_id}",
+            "name": "Remote source session",
+            "description": "Full session metadata + ordered turns from a registered remote source.",
+            "mimeType": "application/json"
+        },
+        {
+            "uriTemplate": "aghist://source/{source}/session/{provider}/{session_id}/turn/{turn}",
+            "name": "Remote source session turn",
+            "description": "A single 1-based turn within a source-qualified remote session.",
+            "mimeType": "application/json"
         }
     ])
 }
 
 pub(super) enum ParsedUri {
     Session {
+        source: Option<String>,
         provider: Provider,
         session_id: String,
     },
     Turn {
+        source: Option<String>,
         provider: Provider,
         session_id: String,
         turn: u32,
@@ -81,9 +125,24 @@ pub(super) enum ParsedUri {
 /// is the session id. We don't URL-decode: provider slugs are kebab-case
 /// ASCII, and every session id we discover today is filesystem-safe.
 pub(super) fn parse_aghist_uri(uri: &str) -> Result<ParsedUri, String> {
+    if let Some(rest) = uri.strip_prefix(SOURCE_URI_PREFIX) {
+        let (source, after_source) = rest
+            .split_once("/session/")
+            .ok_or_else(|| "missing '/session/' segment after source".to_string())?;
+        crate::config::validate_source_name(source)?;
+        if after_source.is_empty() {
+            return Err("missing provider segment".to_string());
+        }
+        return parse_provider_session_tail(Some(source.to_string()), after_source);
+    }
+
     let rest = uri
         .strip_prefix(URI_PREFIX)
         .ok_or_else(|| format!("uri must start with '{URI_PREFIX}'"))?;
+    parse_provider_session_tail(None, rest)
+}
+
+fn parse_provider_session_tail(source: Option<String>, rest: &str) -> Result<ParsedUri, String> {
     if rest.is_empty() {
         return Err("missing provider segment".to_string());
     }
@@ -114,6 +173,7 @@ pub(super) fn parse_aghist_uri(uri: &str) -> Result<ParsedUri, String> {
             return Err("turn must be >= 1".to_string());
         }
         return Ok(ParsedUri::Turn {
+            source,
             provider,
             session_id: session_id.to_string(),
             turn,
@@ -121,6 +181,7 @@ pub(super) fn parse_aghist_uri(uri: &str) -> Result<ParsedUri, String> {
     }
 
     Ok(ParsedUri::Session {
+        source,
         provider,
         session_id: after_provider.to_string(),
     })

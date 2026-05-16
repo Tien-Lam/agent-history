@@ -1,7 +1,7 @@
 use std::io::{self, Write as _};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK, EXIT_USAGE};
-use aghist::{mcp, provider, schema};
+use aghist::{mcp, schema};
 
 pub(crate) fn schema_command(
     subcommand: Option<&str>,
@@ -39,12 +39,9 @@ pub(crate) fn schema_command(
     Ok(EXIT_OK)
 }
 
-pub(crate) fn run_mcp(
-    providers: Vec<Box<dyn provider::HistoryProvider>>,
-) -> Result<i32, ErrorEnvelope> {
+pub(crate) fn run_mcp_server(server: &mcp::McpServer) -> Result<i32, ErrorEnvelope> {
     let stdin = io::stdin().lock();
     let stdout = io::stdout().lock();
-    let server = mcp::McpServer::new(providers);
     server
         .serve(stdin, stdout)
         .map_err(|e| ErrorEnvelope::new("io-error", format!("MCP server stdio error: {e}")))?;
