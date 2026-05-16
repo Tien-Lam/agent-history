@@ -9,6 +9,7 @@ use crate::model::{
     ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
     ToolResult,
 };
+use crate::provider::json_text::string_or_typed_text_array;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize)]
@@ -354,21 +355,9 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
 }
 
 fn extract_tool_result_text(item: &serde_json::Value) -> String {
-    match item.get("content") {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|c| {
-                if c.get("type").and_then(|v| v.as_str()) == Some("text") {
-                    c.get("text").and_then(|v| v.as_str()).map(String::from)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
-    }
+    item.get("content")
+        .map(|content| string_or_typed_text_array(content, "text", "text"))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

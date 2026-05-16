@@ -9,6 +9,7 @@ use crate::model::{
     ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
     ToolResult,
 };
+use crate::provider::json_text::string_or_object_field_or_pretty;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize)]
@@ -335,16 +336,5 @@ struct RawToolCall {
 }
 
 fn extract_tool_response_text(v: &serde_json::Value) -> String {
-    match v {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Object(map) => {
-            for key in ["output", "result", "content", "text"] {
-                if let Some(s) = map.get(key).and_then(serde_json::Value::as_str) {
-                    return s.to_string();
-                }
-            }
-            serde_json::to_string_pretty(v).unwrap_or_default()
-        }
-        _ => serde_json::to_string_pretty(v).unwrap_or_default(),
-    }
+    string_or_object_field_or_pretty(v, &["output", "result", "content", "text"])
 }

@@ -558,6 +558,7 @@ enum GeminiMessageSpec {
         input_tokens: u32,
         output_tokens: u32,
     },
+    Raw(String),
 }
 
 impl GeminiFixtureBuilder {
@@ -681,6 +682,13 @@ impl GeminiSessionBuilder {
         self
     }
 
+    pub fn raw_message(mut self, raw: &str) -> Self {
+        self.session_mut()
+            .messages
+            .push(GeminiMessageSpec::Raw(raw.to_string()));
+        self
+    }
+
     pub fn done(self) -> GeminiFixtureBuilder {
         self.parent
     }
@@ -711,6 +719,7 @@ fn render_gemini_message(msg: &GeminiMessageSpec) -> String {
                 escape_json(text),
             )
         }
+        GeminiMessageSpec::Raw(raw) => raw.clone(),
     }
 }
 

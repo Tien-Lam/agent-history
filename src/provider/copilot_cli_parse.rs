@@ -9,6 +9,7 @@ use crate::model::{
     ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
     ToolResult,
 };
+use crate::provider::json_text::string_or_object_field;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize)]
@@ -349,16 +350,7 @@ struct RawEventData {
 }
 
 fn extract_result_text(v: &serde_json::Value) -> String {
-    match v {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Object(map) => map
-            .get("detailedContent")
-            .and_then(serde_json::Value::as_str)
-            .or_else(|| map.get("content").and_then(serde_json::Value::as_str))
-            .map(str::to_owned)
-            .unwrap_or_default(),
-        _ => String::new(),
-    }
+    string_or_object_field(v, &["detailedContent", "content"])
 }
 
 #[derive(Deserialize)]

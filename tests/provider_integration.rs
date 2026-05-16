@@ -77,6 +77,25 @@ fn claude_load_messages() {
     assert!(has_code, "expected code block from markdown");
 }
 
+#[test]
+fn claude_tool_result_array_content_joins_text_parts() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("claude-tool-array")
+        .raw_line(
+            r#"{"type":"user","uuid":"msg-tool-result","timestamp":"2025-01-01T00:00:00Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-001","content":[{"type":"text","text":"first line"},{"type":"image","text":"ignored"},{"type":"text","text":"second line"}]}]}}"#,
+        )
+        .done()
+        .build();
+    let provider = ClaudeCodeProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+
+    assert_eq!(messages.len(), 1);
+    assert!(
+        matches!(&messages[0].content[0], ContentBlock::ToolResult(tr) if tr.tool_call_id == "tool-001" && tr.output == "first line\nsecond line")
+    );
+}
+
 // ─── Copilot CLI ─────────────────────────────────────────────────────────────
 
 #[test]
@@ -114,6 +133,25 @@ fn copilot_load_messages() {
     assert_eq!(messages[2].role, Role::Tool);
     assert!(
         matches!(&messages[2].content[0], ContentBlock::ToolUse(tc) if tc.name == "RunCommand")
+    );
+}
+
+#[test]
+fn copilot_tool_result_prefers_detailed_content() {
+    let fixture = common::fixtures::CopilotFixtureBuilder::new()
+        .add_session("copilot-tool-result")
+        .raw_line(
+            r#"{"id":"evt-result","type":"tool.execution_complete","timestamp":"2025-01-01T00:00:00Z","data":{"toolCallId":"call-1","success":true,"result":{"content":"short output","detailedContent":"long detailed output"}}}"#,
+        )
+        .done()
+        .build();
+    let provider = CopilotCliProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+
+    assert_eq!(messages.len(), 1);
+    assert!(
+        matches!(&messages[0].content[0], ContentBlock::ToolResult(tr) if tr.tool_call_id == "call-1" && tr.output == "long detailed output")
     );
 }
 
@@ -165,6 +203,29 @@ fn gemini_load_messages() {
     assert!(has_code, "expected code block");
     assert!(has_thinking, "expected thinking block");
     assert!(has_tool, "expected tool call");
+}
+
+#[test]
+fn gemini_tool_response_keeps_freeform_json() {
+    let fixture = common::fixtures::GeminiFixtureBuilder::new()
+        .add_session("gemini-tool-response")
+        .raw_message(
+            r#"{"id":"gm-tool","timestamp":"2025-01-01T00:00:00Z","type":"gemini","content":"running tool","toolCalls":[{"id":"tool-1","name":"inspect","args":{"path":"src/main.rs"},"response":{"nested":{"answer":42}}}],"model":"gemini-2.5-pro"}"#,
+        )
+        .done()
+        .build();
+    let provider = GeminiCliProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+
+    assert_eq!(messages.len(), 1);
+    let output = messages[0].content.iter().find_map(|block| match block {
+        ContentBlock::ToolResult(result) => Some(result.output.as_str()),
+        _ => None,
+    });
+    let output = output.expect("expected tool result output");
+    assert!(output.contains("\"nested\""));
+    assert!(output.contains("\"answer\": 42"));
 }
 
 // ─── Codex CLI ───────────────────────────────────────────────────────────────
