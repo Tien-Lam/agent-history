@@ -357,6 +357,78 @@ fn show_source_qualified_remote_ref_preserves_source_in_output() {
 }
 
 #[test]
+fn show_unique_unqualified_remote_ref_resolves_across_sources() {
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-show-remote-only")
+        .project("remote-show-project")
+        .user("remote body")
+        .assistant("remote answer")
+        .done()
+        .build();
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
+
+    let assert = aghist()
+        .args([
+            "show",
+            "claude-code/session-show-remote-only#2",
+            "--format",
+            "json",
+        ])
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(
+        parsed["ref"],
+        "laptop:claude-code/session-show-remote-only#2"
+    );
+    assert_eq!(parsed["project"], "remote-show-project");
+    assert!(parsed["messages"].to_string().contains("remote answer"));
+}
+
+#[test]
+fn show_unqualified_duplicate_ref_requires_source_prefix() {
+    let local = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-show-duplicate")
+        .project("local-show-project")
+        .user("local body")
+        .done()
+        .build();
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("session-show-duplicate")
+        .project("remote-show-project")
+        .user("remote body")
+        .done()
+        .build();
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
+    let home = local.base_path.parent().unwrap();
+
+    let assert = aghist()
+        .args([
+            "show",
+            "claude-code/session-show-duplicate#1",
+            "--format",
+            "json",
+        ])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
+        .assert()
+        .code(1);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|line| line.starts_with('{')).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "ambiguous-session");
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("laptop:claude-code/session-show-duplicate"));
+}
+
+#[test]
 fn show_invalid_ref_emits_usage_envelope() {
     let dir = tempfile::tempdir().unwrap();
     let assert = aghist()

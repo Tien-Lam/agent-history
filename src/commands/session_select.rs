@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use aghist::cli_error::ErrorEnvelope;
-use aghist::model::{Session, SessionRef};
+use aghist::model::{CitationRef, Session, SessionRef};
 use aghist::{config, federated};
 
 use super::discovery::{qualified_session_ref, source_for_session};
@@ -15,6 +15,12 @@ pub(crate) enum SelectorShape {
 pub(crate) struct SelectedSession<'a> {
     pub(crate) session: &'a Session,
     pub(crate) session_ref: String,
+}
+
+pub(crate) struct SelectedCitation<'a> {
+    pub(crate) session: &'a Session,
+    pub(crate) citation: CitationRef,
+    pub(crate) citation_ref: String,
 }
 
 fn split_source_prefix(raw: &str) -> Result<Option<(&str, &str)>, ErrorEnvelope> {
@@ -35,6 +41,18 @@ fn parse_session_ref(raw: &str, full_selector: &str) -> Result<SessionRef, Error
             format!("invalid session ref '{full_selector}': {e}"),
         )
         .with_hint("Format: <provider-slug>/<session-id> or <source>:<provider-slug>/<session-id>.")
+    })
+}
+
+fn parse_citation_ref(raw: &str, full_selector: &str) -> Result<CitationRef, ErrorEnvelope> {
+    raw.parse::<CitationRef>().map_err(|e| {
+        ErrorEnvelope::new(
+            "usage",
+            format!("invalid citation ref '{full_selector}': {e}"),
+        )
+        .with_hint(
+            "Format: <provider-slug>/<session-id>#<turn> or <source>:<provider-slug>/<session-id>#<turn>.",
+        )
     })
 }
 
@@ -153,4 +171,32 @@ pub(crate) fn resolve_session_selector<'a>(
         .filter(|session| session.id.0.starts_with(selector))
         .collect();
     unique_target(selector, &prefix_matches, source_by_session)
+}
+
+pub(crate) fn resolve_citation_selector<'a>(
+    sessions: &'a [Session],
+    source_by_session: &HashMap<String, String>,
+    selector: &str,
+) -> Result<SelectedCitation<'a>, ErrorEnvelope> {
+    let (source, citation) = if let Some((source, raw_ref)) = split_source_prefix(selector)? {
+        (Some(source), parse_citation_ref(raw_ref, selector)?)
+    } else {
+        (None, parse_citation_ref(selector, selector)?)
+    };
+
+    let matches: Vec<&Session> = sessions
+        .iter()
+        .filter(|session| {
+            session.provider == citation.provider
+                && session.id == citation.session_id
+                && source
+                    .is_none_or(|source| source_for_session(source_by_session, session) == source)
+        })
+        .collect();
+    let target = unique_target(selector, &matches, source_by_session)?;
+    Ok(SelectedCitation {
+        session: target.session,
+        citation_ref: format!("{}#{}", target.session_ref, citation.turn),
+        citation,
+    })
 }
