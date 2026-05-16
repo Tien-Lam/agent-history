@@ -142,10 +142,10 @@ fn dispatch_command(
         | Command::Search(_)
         | Command::Show(_)
         | Command::Diff(_)) => dispatch_lookup_command(cmd, ctx.providers, ctx.filters)?,
-        cmd @ (Command::Track { .. }
-        | Command::Decisions { .. }
-        | Command::Todos { .. }
-        | Command::Threads { .. }) => dispatch_analysis_command(cmd, ctx.providers, ctx.filters)?,
+        cmd @ (Command::Track(_)
+        | Command::Decisions(_)
+        | Command::Todos(_)
+        | Command::Threads(_)) => dispatch_analysis_command(cmd, ctx.providers, ctx.filters)?,
         cmd @ (Command::Sources { .. }
         | Command::Health
         | Command::Note { .. }

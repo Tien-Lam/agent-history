@@ -1,11 +1,12 @@
-use aghist::todos::TodoKind;
 use clap::Subcommand;
 
-use super::resolvers::{parse_todo_kind, parse_usage_group_by};
+use super::resolvers::parse_usage_group_by;
 
+mod analysis;
 mod lookup;
 mod metadata;
 
+use analysis::{DecisionsCommand, ThreadsCommand, TodosCommand, TrackCommand};
 use lookup::{DiffCommand, ExportCommand, IndexCommand, SearchCommand, ShowCommand};
 pub(crate) use metadata::{NoteCommand, SourcesCommand, TagCommand};
 
@@ -61,23 +62,7 @@ pub(crate) enum Command {
     /// Directions: `introduced`, `revised`, `confirmed`, `dropped`.
     ///
     /// Requires `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`).
-    Track {
-        /// Free-text topic to track (e.g. "auth middleware", "BM25 scoring").
-        #[arg(value_name = "TOPIC")]
-        topic: String,
-
-        /// Maximum sessions to scan for the topic (0 = no limit, default 50).
-        #[arg(long, short = 'n', default_value_t = 50)]
-        limit: usize,
-
-        /// Force JSON output (default: table on TTY, JSON on pipe).
-        #[arg(long)]
-        json: bool,
-
-        /// Override the LLM model id (default: from `AGHIST_LLM_MODEL` or claude-haiku-4-5).
-        #[arg(long, value_name = "MODEL")]
-        llm_model: Option<String>,
-    },
+    Track(TrackCommand),
     /// Heuristic-extract candidate architectural decisions from sessions.
     ///
     /// Default path is the deterministic regex/marker heuristic: scores each
@@ -92,36 +77,7 @@ pub(crate) enum Command {
     /// `AGHIST_LLM_MODEL` (defaults to claude-haiku-4-5). The system prompt
     /// is sent with `cache_control: ephemeral` so multi-session runs reuse
     /// Anthropic's prompt cache.
-    Decisions {
-        /// Restrict to a single session by id, unique id prefix, or full
-        /// citation ref `<provider>/<session-id>#<turn>` (turn ignored).
-        #[arg(long, short = 's', value_name = "SESSION_OR_REF")]
-        session: Option<String>,
-
-        /// Drop sentences whose score is below this threshold.
-        /// Default 3.0 keeps explicit decisions and pairs of soft markers.
-        #[arg(long, default_value_t = aghist::decisions::DEFAULT_THRESHOLD, value_name = "FLOAT")]
-        threshold: f32,
-
-        /// Maximum number of candidates to return across all sessions,
-        /// after sorting by score descending (heuristic) or by recency (--llm).
-        #[arg(long, short = 'n', default_value_t = 50)]
-        limit: usize,
-
-        /// Force JSON output (default: JSON on pipe, table on TTY).
-        #[arg(long)]
-        json: bool,
-
-        /// Route heuristic candidates through an LLM for structured extraction.
-        /// Requires `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`).
-        #[arg(long)]
-        llm: bool,
-
-        /// Override the LLM model id (default: claude-haiku-4-5-20251001
-        /// or `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
-        #[arg(long, value_name = "MODEL")]
-        llm_model: Option<String>,
-    },
+    Decisions(DecisionsCommand),
     /// Run a stdio MCP server exposing aghist's read paths to agents.
     ///
     /// Speaks JSON-RPC 2.0 over stdin/stdout with newline-delimited messages,
@@ -160,31 +116,7 @@ pub(crate) enum Command {
     /// Configured via env (`ANTHROPIC_API_KEY` / `AGHIST_LLM_API_KEY`,
     /// `AGHIST_LLM_ENDPOINT`, `AGHIST_LLM_MODEL`); the system prompt is sent
     /// with `cache_control: ephemeral` to cap re-invocation cost.
-    Todos {
-        /// Restrict to one or more kinds. Repeat the flag, or comma-separate.
-        /// Valid: `todo`, `follow-up`, `come-back-to`, `we-should`, `bd-ref`.
-        #[arg(long, value_delimiter = ',', value_parser = parse_todo_kind, value_name = "KIND")]
-        kind: Vec<TodoKind>,
-
-        /// Maximum number of candidates to emit (0 = no limit).
-        #[arg(long, short = 'n', default_value_t = 200)]
-        limit: usize,
-
-        /// Force JSON output (default: JSON on pipe, table on TTY).
-        #[arg(long)]
-        json: bool,
-
-        /// Route heuristic candidates through an LLM for structured extraction
-        /// (`description` / `target_session` / `status_inferred`). Requires
-        /// `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`).
-        #[arg(long)]
-        llm: bool,
-
-        /// Override the LLM model id (default: claude-haiku-4-5-20251001 or
-        /// `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
-        #[arg(long, value_name = "MODEL")]
-        llm_model: Option<String>,
-    },
+    Todos(TodosCommand),
     /// Cluster sessions into "threads" of related work.
     ///
     /// Default heuristic: bucket sessions by `project_name`, then walk each
@@ -198,41 +130,7 @@ pub(crate) enum Command {
     /// (`ANTHROPIC_API_KEY` / `AGHIST_LLM_API_KEY`, `AGHIST_LLM_ENDPOINT`,
     /// `AGHIST_LLM_MODEL`); the system prompt is sent with
     /// `cache_control: ephemeral` to cap re-invocation cost.
-    Threads {
-        /// Cluster gap in hours. Sessions in the same project within this gap
-        /// merge into one thread; longer gaps split. Ignored with `--llm`.
-        #[arg(long, default_value_t = aghist::threads::DEFAULT_GAP_HOURS, value_name = "HOURS")]
-        gap_hours: i64,
-
-        /// Drop threads with fewer than this many sessions. Ignored with `--llm`.
-        #[arg(long, default_value_t = 1, value_name = "N")]
-        min_sessions: usize,
-
-        /// Maximum number of threads to emit (0 = no limit).
-        #[arg(long, short = 'n', default_value_t = 50)]
-        limit: usize,
-
-        /// Force JSON output (default: JSON on pipe, table on TTY).
-        #[arg(long)]
-        json: bool,
-
-        /// Route session digests through an LLM for semantic topic clustering
-        /// across project boundaries. Requires `ANTHROPIC_API_KEY` (or
-        /// `AGHIST_LLM_API_KEY`).
-        #[arg(long)]
-        llm: bool,
-
-        /// Override the LLM model id (default: claude-haiku-4-5-20251001 or
-        /// `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
-        #[arg(long, value_name = "MODEL")]
-        llm_model: Option<String>,
-
-        /// Cap on session digests sent to the LLM (most recent kept). One
-        /// digest is ~150 bytes, so 200 ≈ 7.5K input tokens per call. Only
-        /// meaningful with `--llm`.
-        #[arg(long, default_value_t = 200, value_name = "N")]
-        llm_max_sessions: usize,
-    },
+    Threads(ThreadsCommand),
     /// Manage per-user notes attached to sessions or turns.
     ///
     /// Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`
