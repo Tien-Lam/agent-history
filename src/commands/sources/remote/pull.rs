@@ -90,7 +90,8 @@ pub(crate) fn sources_pull_remote(
     let mut out = stdout.lock();
     write_pull_results(&mut out, &results, &cache_root, mode)
         .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write pull output: {e}")))?;
-    let _ = out.flush();
+    out.flush()
+        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to flush pull output: {e}")))?;
     Ok(EXIT_OK)
 }
 

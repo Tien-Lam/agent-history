@@ -238,7 +238,14 @@ impl McpServer {
 
         match matches.len() {
             0 => Err(format!("session not found: {session_id}")),
-            1 => Ok(matches.into_iter().next().expect("len checked")),
+            1 => {
+                let mut matches = matches.into_iter();
+                if let Some(located) = matches.next() {
+                    Ok(located)
+                } else {
+                    Err(format!("session not found: {session_id}"))
+                }
+            }
             _ => Err(format!(
                 "session id '{session_id}' is ambiguous; specify provider and source"
             )),
