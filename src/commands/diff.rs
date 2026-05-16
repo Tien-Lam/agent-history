@@ -72,12 +72,12 @@ fn lcs_diff(left: &[DiffLine], right: &[DiffLine]) -> Vec<DiffOp> {
             ops.push(DiffOp::Same(row, col));
             row += 1;
             col += 1;
-        } else if col < cols && (row >= rows || dp[row + 1][col] >= dp[row][col + 1]) {
-            ops.push(DiffOp::Insert(col));
-            col += 1;
-        } else {
+        } else if row < rows && (col >= cols || dp[row + 1][col] >= dp[row][col + 1]) {
             ops.push(DiffOp::Delete(row));
             row += 1;
+        } else {
+            ops.push(DiffOp::Insert(col));
+            col += 1;
         }
     }
     ops

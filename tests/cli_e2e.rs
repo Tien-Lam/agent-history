@@ -24,6 +24,8 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) {
 mod analytics;
 #[path = "cli_e2e/basics.rs"]
 mod basics;
+#[path = "cli_e2e/diff.rs"]
+mod diff;
 #[path = "cli_e2e/export_show.rs"]
 mod export_show;
 #[path = "cli_e2e/health.rs"]
