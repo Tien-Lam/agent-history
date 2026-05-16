@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use super::aghist;
 use super::common;
 
@@ -5,6 +7,44 @@ use super::common;
 /// report's window includes them regardless of when the test is run.
 const FIXTURE_SINCE: &str = "2024-12-25T00:00:00Z";
 const FIXTURE_UNTIL: &str = "2025-01-02T00:00:00Z";
+
+struct RemoteSourceCache {
+    empty_home: tempfile::TempDir,
+    _workdir: tempfile::TempDir,
+    cache_dir: PathBuf,
+    config_path: PathBuf,
+}
+
+fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+    common::helpers::copy_dir_recursive(remote_base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    RemoteSourceCache {
+        empty_home,
+        _workdir: workdir,
+        cache_dir,
+        config_path,
+    }
+}
 
 #[test]
 fn usage_with_no_data_exits_three_for_empty() {
@@ -82,12 +122,6 @@ fn usage_by_provider_groups_across_models() {
 
 #[test]
 fn usage_includes_remote_source_cache_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-usage")
         .project("remote-proj")
@@ -95,28 +129,13 @@ fn usage_includes_remote_source_cache_without_local_provider() {
         .assistant("remote answer")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["usage", "--by", "provider", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
@@ -190,12 +209,6 @@ fn schema_subcommand_includes_usage() {
 
 #[test]
 fn threads_include_remote_source_refs_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-thread")
         .project("thread-proj")
@@ -203,28 +216,13 @@ fn threads_include_remote_source_refs_without_local_provider() {
         .assistant("thread answer")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["threads", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
@@ -247,12 +245,6 @@ fn threads_include_remote_source_refs_without_local_provider() {
 
 #[test]
 fn threads_llm_finds_remote_source_candidates_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-thread-llm")
         .project("thread-llm-proj")
@@ -260,28 +252,13 @@ fn threads_llm_finds_remote_source_candidates_without_local_provider() {
         .assistant("thread answer")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["threads", "--llm", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("AGHIST_LLM_API_KEY")
         .output()
@@ -296,12 +273,6 @@ fn threads_llm_finds_remote_source_candidates_without_local_provider() {
 
 #[test]
 fn decisions_include_remote_source_refs_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-decision")
         .project("decision-proj")
@@ -309,28 +280,13 @@ fn decisions_include_remote_source_refs_without_local_provider() {
         .assistant("We decided to keep SQLite instead of adding a service.")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["decisions", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
@@ -350,12 +306,6 @@ fn decisions_include_remote_source_refs_without_local_provider() {
 
 #[test]
 fn decisions_llm_finds_remote_source_candidates_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-decision-llm")
         .project("decision-llm-proj")
@@ -363,28 +313,13 @@ fn decisions_llm_finds_remote_source_candidates_without_local_provider() {
         .assistant("We decided to keep SQLite instead of adding a service.")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["decisions", "--llm", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("AGHIST_LLM_API_KEY")
         .output()
@@ -399,12 +334,6 @@ fn decisions_llm_finds_remote_source_candidates_without_local_provider() {
 
 #[test]
 fn todos_include_remote_source_refs_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-todo")
         .project("todo-proj")
@@ -412,28 +341,13 @@ fn todos_include_remote_source_refs_without_local_provider() {
         .assistant("noted")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["todos", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
@@ -453,12 +367,6 @@ fn todos_include_remote_source_refs_without_local_provider() {
 
 #[test]
 fn todos_llm_finds_remote_source_candidates_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-todo-llm")
         .project("todo-llm-proj")
@@ -466,28 +374,13 @@ fn todos_llm_finds_remote_source_candidates_without_local_provider() {
         .assistant("noted")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["todos", "--llm", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("AGHIST_LLM_API_KEY")
         .output()
@@ -625,12 +518,6 @@ fn project_aggregates_sessions_messages_tokens_and_emits_envelope() {
 
 #[test]
 fn project_includes_remote_source_refs_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-project")
         .project("remote-proj")
@@ -638,28 +525,13 @@ fn project_includes_remote_source_refs_without_local_provider() {
         .assistant("We decided to keep SQLite instead of adding a service.")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args(["project", "remote-proj", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
@@ -852,12 +724,6 @@ fn report_json_emits_structured_envelope() {
 
 #[test]
 fn report_includes_remote_source_refs_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-report")
         .project("remote-report-proj")
@@ -865,22 +731,7 @@ fn report_includes_remote_source_refs_without_local_provider() {
         .assistant("We decided to keep SQLite instead of adding a service.")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = laptop_remote_source(&remote.base_path);
 
     let output = aghist()
         .args([
@@ -891,9 +742,9 @@ fn report_includes_remote_source_refs_without_local_provider() {
             FIXTURE_UNTIL,
             "--json",
         ])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
