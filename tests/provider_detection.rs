@@ -1,8 +1,10 @@
 mod common;
 
 use std::fs;
+use std::path::Path;
 
 use assert_cmd::Command;
+use rusqlite::Connection;
 
 use aghist::config::Config;
 use aghist::model::Provider;
@@ -24,6 +26,7 @@ macro_rules! assert_empty_list {
         let output = aghist()
             .arg("--list")
             .env("AGHIST_HOME", $dir)
+            .env("AGHIST_CONFIG", $dir.join("missing-config.toml"))
             .output()
             .unwrap();
         assert_eq!(
@@ -53,51 +56,120 @@ macro_rules! assert_empty_list {
     }};
 }
 
+fn detected_providers(home: &Path) -> Vec<String> {
+    let index_dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .arg("health")
+        .arg("--json")
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", home.join("missing-config.toml"))
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(parsed["ok"], true);
+
+    parsed["provider_fidelity"]
+        .as_array()
+        .expect("provider_fidelity array")
+        .iter()
+        .map(|row| row["provider"].as_str().expect("provider slug").to_string())
+        .collect()
+}
+
+fn create_provider_marker(home: &Path, provider: Provider) {
+    match provider {
+        Provider::ClaudeCode => {
+            fs::create_dir_all(home.join(".claude")).unwrap();
+        }
+        Provider::CopilotCli => {
+            fs::create_dir_all(home.join(".copilot").join("session-state")).unwrap();
+        }
+        Provider::GeminiCli => {
+            fs::create_dir_all(home.join(".gemini")).unwrap();
+        }
+        Provider::CodexCli => {
+            fs::create_dir_all(home.join(".codex").join("sessions")).unwrap();
+        }
+        Provider::OpenCode => {
+            fs::create_dir_all(
+                home.join(".local")
+                    .join("share")
+                    .join("opencode")
+                    .join("storage"),
+            )
+            .unwrap();
+        }
+        Provider::Cursor => {
+            let db_path = home
+                .join(".config")
+                .join("Cursor")
+                .join("User")
+                .join("globalStorage")
+                .join("state.vscdb");
+            fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+            Connection::open(db_path).unwrap();
+        }
+        Provider::Aider => {
+            fs::create_dir_all(home.join("projects")).unwrap();
+        }
+        Provider::ZedAi => {
+            fs::create_dir_all(
+                home.join(".local")
+                    .join("share")
+                    .join("zed")
+                    .join("conversations"),
+            )
+            .unwrap();
+        }
+        Provider::Cline => {
+            fs::create_dir_all(
+                home.join(".config")
+                    .join("Code")
+                    .join("User")
+                    .join("globalStorage")
+                    .join("saoudrizwan.claude-dev")
+                    .join("tasks"),
+            )
+            .unwrap();
+        }
+        Provider::ContinueDev => {
+            fs::create_dir_all(home.join(".continue").join("sessions")).unwrap();
+        }
+    }
+}
+
 #[test]
 fn empty_home_detects_nothing() {
     let dir = tempfile::tempdir().unwrap();
     assert_empty_list!(dir.path());
+    assert!(detected_providers(dir.path()).is_empty());
 }
 
 #[test]
-fn detects_claude_when_dir_exists() {
-    let dir = tempfile::tempdir().unwrap();
-    let claude_dir = dir.path().join(".claude");
-    fs::create_dir_all(claude_dir.join("projects")).unwrap();
-    fs::write(claude_dir.join("history.jsonl"), "").unwrap();
-    assert_empty_list!(dir.path());
+fn detects_each_provider_when_marker_exists() {
+    for provider in Provider::all() {
+        let dir = tempfile::tempdir().unwrap();
+        create_provider_marker(dir.path(), *provider);
+        assert_empty_list!(dir.path());
+        assert_eq!(detected_providers(dir.path()), vec![provider.slug()]);
+    }
 }
 
 #[test]
-fn detects_copilot_when_dir_exists() {
+fn detects_all_provider_markers() {
     let dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(dir.path().join(".copilot").join("session-state")).unwrap();
+    for provider in Provider::all() {
+        create_provider_marker(dir.path(), *provider);
+    }
     assert_empty_list!(dir.path());
-}
-
-#[test]
-fn detects_gemini_when_dir_exists() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(dir.path().join(".gemini")).unwrap();
-    assert_empty_list!(dir.path());
-}
-
-#[test]
-fn detects_codex_when_dir_exists() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(dir.path().join(".codex").join("sessions")).unwrap();
-    assert_empty_list!(dir.path());
-}
-
-#[test]
-fn detects_multiple_providers() {
-    let dir = tempfile::tempdir().unwrap();
-    let claude_dir = dir.path().join(".claude");
-    fs::create_dir_all(claude_dir.join("projects")).unwrap();
-    fs::write(claude_dir.join("history.jsonl"), "").unwrap();
-    fs::create_dir_all(dir.path().join(".gemini")).unwrap();
-    fs::create_dir_all(dir.path().join(".codex").join("sessions")).unwrap();
-    assert_empty_list!(dir.path());
+    let expected: Vec<String> = Provider::all()
+        .iter()
+        .map(|provider| provider.slug().to_string())
+        .collect();
+    assert_eq!(detected_providers(dir.path()), expected);
 }
 
 #[test]
