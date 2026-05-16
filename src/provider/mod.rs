@@ -13,6 +13,7 @@ pub mod gemini_cli;
 pub mod opencode;
 pub mod registry;
 pub mod zed_ai;
+mod zed_ai_parse;
 
 use std::path::PathBuf;
 
