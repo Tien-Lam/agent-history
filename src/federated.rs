@@ -12,7 +12,7 @@
 //! source.
 
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::config::RemoteSource;
@@ -50,6 +50,17 @@ impl FederatedDiscovery {
         self.source_by_session
             .get(session.identity_key().as_str())
             .map_or(LOCAL_SOURCE, String::as_str)
+    }
+
+    /// Keep only sessions whose provider is in `allowed`, and drop source-map
+    /// entries for any removed sessions.
+    pub fn retain_providers(&mut self, allowed: &HashSet<Provider>) {
+        self.sessions
+            .retain(|session| allowed.contains(&session.provider));
+        let retained_keys: HashSet<String> =
+            self.sessions.iter().map(Session::identity_key).collect();
+        self.source_by_session
+            .retain(|key, _source| retained_keys.contains(key));
     }
 }
 

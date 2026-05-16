@@ -204,14 +204,17 @@ fn format_search_ref(source: &str, session: &Session, turn: usize) -> String {
 pub(crate) fn federated_discovery_for_search(
     providers: &[Box<dyn provider::HistoryProvider>],
 ) -> federated::FederatedDiscovery {
-    let sources = match config::Config::resolved_path() {
-        Some(path) => config::Config::load_from(&path).sources,
-        None => Vec::new(),
+    let config = match config::Config::resolved_path() {
+        Some(path) => config::Config::load_from(&path),
+        None => config::Config::default(),
     };
-    let Some(cache_root) = config::sources_cache_root() else {
-        return federated::discover_federated(providers, &[], std::path::Path::new(""));
+    let enabled = config.enabled_providers();
+    let mut result = if let Some(cache_root) = config::sources_cache_root() {
+        federated::discover_federated(providers, &config.sources, &cache_root)
+    } else {
+        federated::discover_federated(providers, &[], std::path::Path::new(""))
     };
-    let result = federated::discover_federated(providers, &sources, &cache_root);
+    result.retain_providers(&enabled);
     for failure in &result.failures {
         eprintln!("warning: source '{}': {}", failure.source, failure.message);
     }

@@ -93,6 +93,33 @@ fn remote_only_discovery_skips_local_source_tag() {
 }
 
 #[test]
+fn retain_providers_prunes_sessions_and_source_map() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    write_claude_fixture(&home, "local-1");
+
+    let cache = tmp.path().join("cache");
+    let remote_data = cache.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+    write_claude_fixture(&remote_data, "remote-1");
+
+    let local = ClaudeCodeProvider::new(vec![home.join(".claude")]);
+    let providers: Vec<Box<dyn HistoryProvider>> = vec![Box::new(local)];
+    let sources = vec![RemoteSource {
+        name: "laptop".to_string(),
+        host: "laptop.local".to_string(),
+        path: "/home/x".to_string(),
+        transport: Transport::Ssh,
+    }];
+
+    let mut result = discover_federated(&providers, &sources, &cache);
+    result.retain_providers(&HashSet::new());
+    assert!(result.sessions.is_empty());
+    assert!(result.source_by_session.is_empty());
+}
+
+#[test]
 fn raw_session_id_overlap_across_sources_is_preserved() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");

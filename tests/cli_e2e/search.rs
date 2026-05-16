@@ -95,6 +95,58 @@ fn search_federates_across_local_and_remote_source_caches() {
         "remote session should be tagged with source name: {by_session:?}"
     );
 }
+
+#[test]
+fn search_remote_sources_respect_enabled_provider_allowlist() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("disabled-remote")
+        .project("remote-proj")
+        .user("DISABLED_REMOTE_TOKEN body")
+        .done()
+        .build();
+    copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"
+[[sources]]
+name = "laptop"
+host = "laptop.local"
+path = "/home/x/.claude"
+transport = "ssh"
+
+[providers]
+enabled = []
+"#,
+    )
+    .unwrap();
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["search", "DISABLED_REMOTE_TOKEN", "--json"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "disabled remote provider should not leak into search; stdout: {}; stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Federated search must remain usable when a registered source has never
 /// been pulled — its absence is logged as a `warning:` line on stderr but
 /// search still surfaces local hits and exits 0.
