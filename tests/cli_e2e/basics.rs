@@ -125,3 +125,31 @@ fn reindex_does_not_clear_index_on_config_error() {
         "--reindex must not mutate the index before config validation succeeds"
     );
 }
+
+#[test]
+fn reindex_reports_index_open_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+    let index_path = root.path().join("not-a-directory");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(&index_path, "file, not a directory").unwrap();
+
+    let assert = aghist()
+        .args(["--reindex", "--list"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_INDEX_DIR", &index_path)
+        .assert()
+        .failure();
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr
+        .lines()
+        .find(|line| line.starts_with('{'))
+        .expect("expected JSON envelope on stderr");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+
+    assert_eq!(parsed["error"]["kind"], "index-error");
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("failed to open search index"));
+}

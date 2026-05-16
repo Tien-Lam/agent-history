@@ -37,7 +37,7 @@ pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
     }
 
     let config = load_config()?;
-    clear_search_index_if_requested(cli.reindex);
+    clear_search_index_if_requested(cli.reindex)?;
     let providers = detect_enabled_providers(&config);
     let Cli {
         list,
@@ -70,15 +70,27 @@ pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
     }
 }
 
-fn clear_search_index_if_requested(reindex: bool) {
+fn clear_search_index_if_requested(reindex: bool) -> Result<(), ErrorEnvelope> {
     if !reindex {
-        return;
+        return Ok(());
     }
     let index_dir = search::SearchIndex::default_index_dir();
-    if let Ok(index) = search::SearchIndex::open_or_create(&index_dir) {
-        let _ = index.clear();
-        eprintln!("Search index cleared. Will rebuild on next launch.");
-    }
+    let index = search::SearchIndex::open_or_create(&index_dir).map_err(|e| {
+        ErrorEnvelope::new(
+            "index-error",
+            format!("failed to open search index {}: {e}", index_dir.display()),
+        )
+        .with_hint("Set AGHIST_INDEX_DIR to a writable directory, or fix index permissions.")
+    })?;
+    index.clear().map_err(|e| {
+        ErrorEnvelope::new(
+            "index-error",
+            format!("failed to clear search index {}: {e}", index_dir.display()),
+        )
+        .with_hint("Set AGHIST_INDEX_DIR to a writable directory, or fix index permissions.")
+    })?;
+    eprintln!("Search index cleared. Will rebuild on next launch.");
+    Ok(())
 }
 
 fn reject_conflicting_output_flags(json: bool, ndjson: bool) -> Option<i32> {
