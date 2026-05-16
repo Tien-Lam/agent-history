@@ -2,6 +2,7 @@ use std::io::Cursor;
 
 use serde_json::Value;
 
+use super::payload::tool_definitions;
 use super::protocol::{ERR_INVALID_PARAMS, ERR_METHOD_NOT_FOUND, ERR_PARSE, PROTOCOL_VERSION};
 use super::resources::{
     parse_aghist_uri, session_uri, session_uri_for_source, turn_uri, turn_uri_for_source, ParsedUri,
@@ -74,6 +75,65 @@ fn tools_list_advertises_all_tools() {
             names.contains(&expected),
             "missing tool {expected} in {names:?}"
         );
+    }
+}
+
+#[test]
+fn tool_definitions_are_stable_and_closed() {
+    let tools = tool_definitions();
+    let tools = tools.as_array().unwrap();
+    let names: Vec<&str> = tools
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "search_sessions",
+            "list_sessions",
+            "get_session",
+            "get_message",
+            "reindex",
+            "health",
+        ]
+    );
+
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap();
+        let input_schema = &tool["inputSchema"];
+        assert_eq!(input_schema["type"], "object", "{name} inputSchema type");
+        assert!(
+            input_schema["properties"].is_object(),
+            "{name} inputSchema properties"
+        );
+        assert_eq!(
+            input_schema["additionalProperties"], false,
+            "{name} inputSchema should reject undocumented arguments"
+        );
+    }
+}
+
+#[test]
+fn tool_provider_enums_track_provider_registry() {
+    let expected: Vec<String> = Provider::all()
+        .iter()
+        .map(|provider| provider.slug().to_string())
+        .collect();
+    let tools = tool_definitions();
+    let tools = tools.as_array().unwrap();
+
+    for tool_name in ["list_sessions", "get_session", "reindex"] {
+        let tool = tools
+            .iter()
+            .find(|tool| tool["name"].as_str() == Some(tool_name))
+            .unwrap_or_else(|| panic!("missing tool {tool_name}"));
+        let actual: Vec<String> = tool["inputSchema"]["properties"]["provider"]["enum"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing provider enum for {tool_name}"))
+            .iter()
+            .map(|slug| slug.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(actual, expected, "{tool_name} provider enum drifted");
     }
 }
 

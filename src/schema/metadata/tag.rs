@@ -86,7 +86,8 @@ pub(in crate::schema) fn tag_schema() -> Value {
             "properties": {
                 "subcommand": { "type": "string", "enum": ["add", "list", "remove"] }
             },
-            "required": ["subcommand"]
+            "required": ["subcommand"],
+            "additionalProperties": false
         },
         "response": {
             "type": "object",

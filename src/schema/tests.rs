@@ -54,6 +54,33 @@ fn all_schemas_keyed_by_name() {
 }
 
 #[test]
+fn schema_command_fields_match_registry_names() {
+    for name in subcommands() {
+        let schema = schema_for(name).unwrap();
+        let expected = if name == "list" { "--list" } else { name };
+        assert_eq!(
+            schema["command"].as_str(),
+            Some(expected),
+            "subcommand '{name}' has a mismatched command field"
+        );
+    }
+}
+
+#[test]
+fn schema_params_are_closed_objects() {
+    for name in subcommands() {
+        let schema = schema_for(name).unwrap();
+        assert_closed_params(name, &schema["params"]);
+
+        if let Some(subcommands) = schema["subcommands"].as_object() {
+            for (subcommand, schema) in subcommands {
+                assert_closed_params(&format!("{name} {subcommand}"), &schema["params"]);
+            }
+        }
+    }
+}
+
+#[test]
 fn search_schema_describes_query_param() {
     let schema = schema_for("search").unwrap();
     let params = &schema["params"]["properties"];
@@ -129,6 +156,14 @@ fn provider_enum_tracks_provider_registry() {
         .map(|v| v.as_str().unwrap())
         .collect();
     assert_eq!(actual, expected);
+}
+
+fn assert_closed_params(label: &str, params: &Value) {
+    assert_eq!(params["type"], "object", "{label} params must be an object");
+    assert_eq!(
+        params["additionalProperties"], false,
+        "{label} params must reject undocumented properties"
+    );
 }
 
 /// Tiny helper: we don't pull a regex crate just for tests, so check a few

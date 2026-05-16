@@ -16,7 +16,8 @@ pub(super) fn tool_definitions() -> Value {
                     "query": { "type": "string", "description": "Tantivy query string. Matches the `content` and `project` fields." },
                     "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 20 }
                 },
-                "required": ["query"]
+                "required": ["query"],
+                "additionalProperties": false
             }
         },
         {
@@ -28,7 +29,8 @@ pub(super) fn tool_definitions() -> Value {
                     "provider": { "type": "string", "enum": provider_slugs.clone() },
                     "project": { "type": "string", "description": "Substring match on session project_name." },
                     "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 50 }
-                }
+                },
+                "additionalProperties": false
             }
         },
         {
@@ -41,7 +43,8 @@ pub(super) fn tool_definitions() -> Value {
                     "provider": { "type": "string", "enum": provider_slugs.clone() },
                     "source": { "type": "string", "description": "Source name from list_sessions. Omit for unique matches; use 'local' for local-only lookup." }
                 },
-                "required": ["session_id"]
+                "required": ["session_id"],
+                "additionalProperties": false
             }
         },
         {
@@ -53,7 +56,8 @@ pub(super) fn tool_definitions() -> Value {
                     "ref": { "type": "string", "description": "Citation ref. Example: claude-code/abc-123#7" },
                     "include_context": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0 }
                 },
-                "required": ["ref"]
+                "required": ["ref"],
+                "additionalProperties": false
             }
         },
         {
@@ -64,13 +68,14 @@ pub(super) fn tool_definitions() -> Value {
                 "properties": {
                     "provider": { "type": "string", "enum": provider_slugs },
                     "force": { "type": "boolean", "default": false, "description": "Clear the index first for a full rebuild." }
-                }
+                },
+                "additionalProperties": false
             }
         },
         {
             "name": "health",
             "description": "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
-            "inputSchema": { "type": "object", "properties": {} }
+            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
         }
     ])
 }

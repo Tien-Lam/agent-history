@@ -106,7 +106,8 @@ pub(in crate::schema) fn note_schema() -> Value {
             "properties": {
                 "subcommand": { "type": "string", "enum": ["add", "list", "edit", "remove"] }
             },
-            "required": ["subcommand"]
+            "required": ["subcommand"],
+            "additionalProperties": false
         },
         "response": {
             "type": "object",
