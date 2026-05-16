@@ -18,12 +18,12 @@ not a duplicate of an earlier TODO in the same input), return a structured \
 record.
 
 Schema, JSON only, no prose:
-{\"todos\":[{\"description\":\"<one short imperative phrase>\",\"raised_at\":<integer turn>,\"target_session\":\"<optional provider/session-id or bd-ref like ahist-y3o.7.2>\",\"status_inferred\":\"open|done|unclear\"}]}
+{\"todos\":[{\"description\":\"<one short imperative phrase>\",\"raised_at\":<integer turn>,\"target_session\":\"<optional provider/session-id, source:provider/session-id, or bd-ref like ahist-y3o.7.2>\",\"status_inferred\":\"open|done|unclear\"}]}
 
 Rules:
 - description: short imperative phrase naming the work to do (\"Revisit BM25 ranking\", \"Wire up SQLite migration\"). One phrase, present tense.
 - raised_at: copy the turn integer from the candidate that anchored the TODO.
-- target_session: include ONLY if the snippet explicitly names another session, file, or beads-style id where the followup should land (e.g. `ahist-y3o.7.2`, `claude-code/abc-123`). Omit the field if not stated.
+- target_session: include ONLY if the snippet explicitly names another session, file, or beads-style id where the followup should land (e.g. `ahist-y3o.7.2`, `claude-code/abc-123`, `laptop:claude-code/abc-123`). Omit the field if not stated.
 - status_inferred: `open` if the language reads as still-pending; `done` if the snippet itself indicates the TODO has been addressed/closed; `unclear` otherwise.
 - Skip candidates that are merely tool-name mentions (`TodoWrite`, `TodoCreate`), questions, restated commitments, or duplicates of an earlier TODO in the same input.
 - If no candidates name real work, return {\"todos\":[]}.";
@@ -139,10 +139,12 @@ pub fn parse_todos_response(body: &str) -> Result<Vec<StructuredTodo>, LlmError>
     Ok(parsed.todos)
 }
 
-/// Validate a `target_session` string. Accepts either a citation-style
-/// `<provider-slug>/<session-id>` ref or a beads-style `<prefix>-<suffix>`
-/// id (prefix = 2+ lowercase letters, suffix has at least one digit). Drops
-/// anything else so the LLM can't smuggle in arbitrary strings.
+/// Validate a `target_session` string. Accepts a citation-style
+/// `<provider-slug>/<session-id>` ref, a source-qualified
+/// `<source>:<provider-slug>/<session-id>` ref, or a beads-style
+/// `<prefix>-<suffix>` id (prefix = 2+ lowercase letters, suffix has at least
+/// one digit). Drops anything else so the LLM can't smuggle in arbitrary
+/// strings.
 pub(super) fn sanitize_target_session(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -153,7 +155,12 @@ pub(super) fn sanitize_target_session(raw: &str) -> Option<String> {
     if head.is_empty() {
         return None;
     }
-    if let Some((slug, rest)) = head.split_once('/') {
+    let session_ref = match head.split_once(':') {
+        Some((source, rest)) if valid_source_name(source) => rest,
+        Some((_source, _rest)) => "",
+        None => head,
+    };
+    if let Some((slug, rest)) = session_ref.split_once('/') {
         if !rest.is_empty() && Provider::all().iter().any(|p| p.slug() == slug) {
             return Some(head.to_string());
         }
@@ -172,6 +179,15 @@ pub(super) fn sanitize_target_session(raw: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn valid_source_name(source: &str) -> bool {
+    let mut bytes = source.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    first.is_ascii_alphanumeric()
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 /// Run extraction for one session's todo candidates. Mirrors

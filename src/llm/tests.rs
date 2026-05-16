@@ -701,6 +701,14 @@ fn sanitize_target_session_accepts_known_provider_slug() {
 }
 
 #[test]
+fn sanitize_target_session_accepts_source_qualified_provider_slug() {
+    assert_eq!(
+        sanitize_target_session("laptop:claude-code/abc"),
+        Some("laptop:claude-code/abc".to_string())
+    );
+}
+
+#[test]
 fn sanitize_target_session_rejects_unknown_provider_slug() {
     assert!(sanitize_target_session("bogus-tool/x").is_none());
 }
