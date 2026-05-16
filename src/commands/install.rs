@@ -1,4 +1,6 @@
 use std::io;
+#[cfg(feature = "self-update")]
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
@@ -135,9 +137,18 @@ fn self_update_impl() -> Result<i32, ErrorEnvelope> {
         .map_err(|e| ErrorEnvelope::new("update-failed", format!("update failed: {e}")))?;
 
     if status.updated() {
-        println!("Updated to v{}", status.version());
+        writeln!(io::stdout().lock(), "Updated to v{}", status.version()).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write update output: {e}"))
+        })?;
     } else {
-        println!("Already up to date (v{})", status.version());
+        writeln!(
+            io::stdout().lock(),
+            "Already up to date (v{})",
+            status.version()
+        )
+        .map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write update output: {e}"))
+        })?;
     }
     Ok(EXIT_OK)
 }

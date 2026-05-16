@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::io::Write as _;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::model::{Provider, Session};
@@ -95,7 +96,13 @@ pub(crate) fn run_index(
         "embeddings": embed_summary,
     });
 
-    println!("{summary}");
+    let mut out = std::io::stdout().lock();
+    serde_json::to_writer(&mut out, &summary).map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write index output: {e}"))
+    })?;
+    writeln!(out).map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write index output: {e}"))
+    })?;
     Ok(EXIT_OK)
 }
 

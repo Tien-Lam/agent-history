@@ -1,3 +1,5 @@
+use std::io::Write as _;
+
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::metadata::{self, Note};
 use aghist::model::Session;
@@ -179,7 +181,10 @@ pub(crate) fn export_session(
         })?;
         eprintln!("Exported to {}", path.display());
     } else {
-        print!("{content}");
+        let mut out = std::io::stdout().lock();
+        out.write_all(content.as_bytes()).map_err(|e| {
+            ErrorEnvelope::new("io-error", format!("failed to write export output: {e}"))
+        })?;
     }
 
     Ok(EXIT_OK)

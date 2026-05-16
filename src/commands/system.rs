@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Write as _};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK, EXIT_USAGE};
 use aghist::{mcp, provider, schema};
@@ -29,10 +29,13 @@ pub(crate) fn schema_command(
         return Ok(EXIT_USAGE);
     };
 
-    serde_json::to_writer(io::stdout().lock(), &payload).map_err(|e| {
+    let mut out = io::stdout().lock();
+    serde_json::to_writer(&mut out, &payload).map_err(|e| {
         ErrorEnvelope::new("io-error", format!("failed to write schema output: {e}"))
     })?;
-    println!();
+    writeln!(out).map_err(|e| {
+        ErrorEnvelope::new("io-error", format!("failed to write schema output: {e}"))
+    })?;
     Ok(EXIT_OK)
 }
 

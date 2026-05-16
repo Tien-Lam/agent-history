@@ -54,8 +54,9 @@ pub(super) fn print_search_json(
         "hits": rows,
         "meta": { "next_cursor": next_cursor, "total": total, "engine": engine },
     });
-    serde_json::to_writer(io::stdout().lock(), &doc)?;
-    println!();
+    let mut out = io::stdout().lock();
+    serde_json::to_writer(&mut out, &doc)?;
+    writeln!(out)?;
     Ok(())
 }
 
