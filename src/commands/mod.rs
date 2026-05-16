@@ -9,6 +9,7 @@ pub mod index;
 pub mod install;
 pub mod list;
 pub mod metadata;
+pub mod metadata_dispatch;
 pub mod reports;
 pub mod reports_dispatch;
 pub mod search;

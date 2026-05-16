@@ -1,23 +1,17 @@
 use super::super::cli::{
     resolve_export_args, resolve_index_args, resolve_show_args, Cli, Command, FilterArgs,
-    SourcesCommand,
 };
 use super::analysis_dispatch::dispatch_analysis_command;
 use super::diff::diff_command;
 use super::export::export_session;
 use super::filtering::resolve_metadata_filter;
-use super::health::health_command;
 use super::index::run_index;
 use super::install::{self_update, uninstall};
 use super::list::list_sessions;
-use super::metadata::{note_dispatch, star_command, stars_list, tag_dispatch, unstar_command};
+use super::metadata_dispatch::dispatch_metadata_command;
 use super::reports_dispatch::dispatch_report_command;
 use super::search_dispatch::{dispatch_search_command, SearchDispatchArgs, SearchDispatchMode};
 use super::show::show_command;
-use super::sources::{
-    sources_add_remote, sources_command, sources_list_remote, sources_pull_remote,
-    sources_remove_remote,
-};
 use super::system::{run_mcp, schema_command};
 use super::tui::run_tui;
 use aghist::cli_error::{ErrorEnvelope, EXIT_USAGE};
@@ -164,7 +158,9 @@ fn dispatch_command(
         | Command::Tag { .. }
         | Command::Star { .. }
         | Command::Unstar { .. }
-        | Command::Stars { .. }) => dispatch_metadata_command(cmd, ctx)?,
+        | Command::Stars { .. }) => {
+            dispatch_metadata_command(cmd, ctx.providers, ctx.output.mode(CommandKind::OneShot))?
+        }
         cmd @ (Command::Usage { .. } | Command::Project { .. } | Command::Report { .. }) => {
             dispatch_report_command(cmd, ctx.providers, ctx.filters)?
         }
@@ -258,49 +254,6 @@ fn dispatch_lookup_command(
             json,
         } => diff_command(ctx.providers, &session1, &session2, context, json),
         _ => unreachable!("lookup dispatch received unrelated command"),
-    }
-}
-
-fn dispatch_metadata_command(
-    command: Command,
-    ctx: &DispatchContext<'_>,
-) -> Result<i32, ErrorEnvelope> {
-    let one_shot = || ctx.output.mode(CommandKind::OneShot);
-    match command {
-        Command::Sources { command } => {
-            dispatch_sources_command(command, ctx.providers, one_shot())
-        }
-        Command::Health => health_command(ctx.providers, one_shot()),
-        Command::Note { command } => note_dispatch(command, one_shot()),
-        Command::Tag { command } => tag_dispatch(command, one_shot()),
-        Command::Star { reference } => star_command(&reference, one_shot()),
-        Command::Unstar { reference } => unstar_command(&reference, one_shot()),
-        Command::Stars { reference, json } => {
-            let mode = if json { OutputMode::Json } else { one_shot() };
-            stars_list(reference.as_deref(), mode)
-        }
-        _ => unreachable!("metadata dispatch received unrelated command"),
-    }
-}
-
-fn dispatch_sources_command(
-    command: Option<SourcesCommand>,
-    providers: &[Box<dyn provider::HistoryProvider>],
-    mode: OutputMode,
-) -> Result<i32, ErrorEnvelope> {
-    match command {
-        None => sources_command(providers, mode),
-        Some(SourcesCommand::List) => sources_list_remote(mode),
-        Some(SourcesCommand::Add {
-            name,
-            host,
-            path,
-            transport,
-        }) => sources_add_remote(&name, &host, &path, transport, mode),
-        Some(SourcesCommand::Remove { name }) => sources_remove_remote(&name, mode),
-        Some(SourcesCommand::Pull { name, all, dry_run }) => {
-            sources_pull_remote(name.as_deref(), all, dry_run, mode)
-        }
     }
 }
 
