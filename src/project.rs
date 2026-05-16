@@ -132,46 +132,9 @@ pub fn aggregate(
     let token_usage = aggregate_tokens(sessions);
     let matched_projects = collect_projects(sessions);
 
-    let mut decisions_all = collect_decisions(sessions);
-    decisions_all.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.timestamp.cmp(&a.timestamp))
-            .then_with(|| a.session_id.cmp(&b.session_id))
-            .then_with(|| a.turn.cmp(&b.turn))
-    });
-    let decisions_total = decisions_all.len();
-    if limits.decisions > 0 && decisions_all.len() > limits.decisions {
-        decisions_all.truncate(limits.decisions);
-    }
-
-    let mut todos_all = collect_todos(sessions);
-    // Newest first, mirroring `aghist todos`.
-    todos_all.sort_by(|a, b| {
-        b.timestamp
-            .cmp(&a.timestamp)
-            .then_with(|| a.session_id.cmp(&b.session_id))
-            .then_with(|| a.turn.cmp(&b.turn))
-            .then_with(|| (a.kind as u8).cmp(&(b.kind as u8)))
-    });
-    let todos_total = todos_all.len();
-    if limits.todos > 0 && todos_all.len() > limits.todos {
-        todos_all.truncate(limits.todos);
-    }
-
-    let session_only: Vec<Session> = sessions.iter().map(|(s, _)| s.clone()).collect();
-    let mut threads_all = threads::cluster(
-        &session_only,
-        ClusterOptions {
-            gap: chrono::Duration::hours(DEFAULT_GAP_HOURS),
-            min_sessions: 1,
-        },
-    );
-    let threads_total = threads_all.len();
-    if limits.threads > 0 && threads_all.len() > limits.threads {
-        threads_all.truncate(limits.threads);
-    }
+    let (decisions_total, decisions_all) = ranked_decisions(sessions, limits.decisions);
+    let (todos_total, todos_all) = ranked_todos(sessions, limits.todos);
+    let (threads_total, threads_all) = clustered_threads(sessions, limits.threads);
 
     let (top_files_all_count, top_files) = top_files(sessions, limits.files);
 
@@ -199,6 +162,65 @@ pub fn aggregate(
             thread_gap_hours: DEFAULT_GAP_HOURS,
             decisions_threshold: DECISIONS_THRESHOLD,
         },
+    }
+}
+
+pub(crate) fn ranked_decisions(
+    sessions: &[(Session, Vec<Message>)],
+    limit: usize,
+) -> (usize, Vec<DecisionRow>) {
+    let mut rows = collect_decisions(sessions);
+    rows.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.timestamp.cmp(&a.timestamp))
+            .then_with(|| a.session_id.cmp(&b.session_id))
+            .then_with(|| a.turn.cmp(&b.turn))
+    });
+    let total = rows.len();
+    truncate_if_limited(&mut rows, limit);
+    (total, rows)
+}
+
+pub(crate) fn ranked_todos(
+    sessions: &[(Session, Vec<Message>)],
+    limit: usize,
+) -> (usize, Vec<TodoRow>) {
+    let mut rows = collect_todos(sessions);
+    // Newest first, mirroring `aghist todos`.
+    rows.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then_with(|| a.session_id.cmp(&b.session_id))
+            .then_with(|| a.turn.cmp(&b.turn))
+            .then_with(|| (a.kind as u8).cmp(&(b.kind as u8)))
+    });
+    let total = rows.len();
+    truncate_if_limited(&mut rows, limit);
+    (total, rows)
+}
+
+pub(crate) fn clustered_threads(
+    sessions: &[(Session, Vec<Message>)],
+    limit: usize,
+) -> (usize, Vec<Thread>) {
+    let session_only: Vec<Session> = sessions.iter().map(|(s, _)| s.clone()).collect();
+    let mut rows = threads::cluster(
+        &session_only,
+        ClusterOptions {
+            gap: chrono::Duration::hours(DEFAULT_GAP_HOURS),
+            min_sessions: 1,
+        },
+    );
+    let total = rows.len();
+    truncate_if_limited(&mut rows, limit);
+    (total, rows)
+}
+
+fn truncate_if_limited<T>(rows: &mut Vec<T>, limit: usize) {
+    if limit > 0 && rows.len() > limit {
+        rows.truncate(limit);
     }
 }
 

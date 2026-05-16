@@ -15,9 +15,10 @@ use serde::Serialize;
 use crate::decisions::DEFAULT_THRESHOLD as DECISIONS_THRESHOLD;
 use crate::model::{Message, Session};
 use crate::project::{
-    aggregate_tokens, collect_decisions, collect_todos, DecisionRow, ProjectTokens, TodoRow,
+    aggregate_tokens, clustered_threads, ranked_decisions, ranked_todos, DecisionRow,
+    ProjectTokens, TodoRow,
 };
-use crate::threads::{self, ClusterOptions, Thread, DEFAULT_GAP_HOURS};
+use crate::threads::{Thread, DEFAULT_GAP_HOURS};
 
 mod projects;
 mod render;
@@ -158,45 +159,9 @@ pub fn aggregate(
 
     let (projects_total, top_projects) = top_projects(sessions, limits.top_projects);
 
-    let mut decisions_all = collect_decisions(sessions);
-    decisions_all.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.timestamp.cmp(&a.timestamp))
-            .then_with(|| a.session_id.cmp(&b.session_id))
-            .then_with(|| a.turn.cmp(&b.turn))
-    });
-    let decisions_total = decisions_all.len();
-    if limits.decisions > 0 && decisions_all.len() > limits.decisions {
-        decisions_all.truncate(limits.decisions);
-    }
-
-    let mut todos_all = collect_todos(sessions);
-    todos_all.sort_by(|a, b| {
-        b.timestamp
-            .cmp(&a.timestamp)
-            .then_with(|| a.session_id.cmp(&b.session_id))
-            .then_with(|| a.turn.cmp(&b.turn))
-            .then_with(|| (a.kind as u8).cmp(&(b.kind as u8)))
-    });
-    let todos_total = todos_all.len();
-    if limits.todos > 0 && todos_all.len() > limits.todos {
-        todos_all.truncate(limits.todos);
-    }
-
-    let session_only: Vec<Session> = sessions.iter().map(|(s, _)| s.clone()).collect();
-    let mut threads_all = threads::cluster(
-        &session_only,
-        ClusterOptions {
-            gap: chrono::Duration::hours(DEFAULT_GAP_HOURS),
-            min_sessions: 1,
-        },
-    );
-    let threads_total = threads_all.len();
-    if limits.threads > 0 && threads_all.len() > limits.threads {
-        threads_all.truncate(limits.threads);
-    }
+    let (decisions_total, decisions_all) = ranked_decisions(sessions, limits.decisions);
+    let (todos_total, todos_all) = ranked_todos(sessions, limits.todos);
+    let (threads_total, threads_all) = clustered_threads(sessions, limits.threads);
 
     ReportEnvelope {
         window,
