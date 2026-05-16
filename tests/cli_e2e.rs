@@ -1,9 +1,21 @@
 mod common;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use assert_cmd::Command;
 
+static COMMAND_ID: AtomicUsize = AtomicUsize::new(0);
+
 fn aghist() -> Command {
-    Command::cargo_bin("aghist").unwrap()
+    let id = COMMAND_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("aghist-cli-e2e-{}-{id}", std::process::id()));
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let mut cmd = Command::cargo_bin("aghist").unwrap();
+    cmd.env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", root.join("config.toml"));
+    cmd
 }
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) {
