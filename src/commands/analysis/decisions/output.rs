@@ -10,7 +10,7 @@ pub(super) fn render_llm_decisions_human<W: io::Write>(
 ) -> io::Result<()> {
     writeln!(out, "{:<36}  {:<60}  RATIONALE", "REF", "SUMMARY")?;
     for row in rows {
-        let reference = row.citation.to_string();
+        let reference = row.reference();
         let reference = truncate(&reference, 36);
         let summary = truncate(&row.decision.summary, 60);
         let rationale = truncate(&row.decision.rationale, 80);
@@ -27,6 +27,7 @@ pub(super) fn render_llm_decisions_json<W: io::Write>(
     struct JsonRow<'a> {
         #[serde(rename = "ref")]
         reference: String,
+        source: &'a str,
         provider: aghist::model::Provider,
         session_id: &'a str,
         turn: u32,
@@ -48,7 +49,8 @@ pub(super) fn render_llm_decisions_json<W: io::Write>(
     let decisions: Vec<JsonRow> = rows
         .iter()
         .map(|row| JsonRow {
-            reference: row.citation.to_string(),
+            reference: row.reference(),
+            source: row.source.as_str(),
             provider: row.citation.provider,
             session_id: row.citation.session_id.0.as_str(),
             turn: row.citation.turn,

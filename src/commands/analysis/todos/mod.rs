@@ -1,7 +1,7 @@
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
-use aghist::model::{CitationRef, Provider};
+use aghist::model::CitationRef;
 use aghist::provider;
 use aghist::todos::{TodoCandidate, TodoKind};
 use chrono::{DateTime, Utc};
@@ -12,7 +12,7 @@ mod collect;
 mod llm;
 mod output;
 
-use collect::{collect_federated_todo_candidates, collect_todo_candidates};
+use collect::collect_federated_todo_candidates;
 use llm::run_llm_todos;
 use output::{render_todos_human, render_todos_json};
 
@@ -30,8 +30,8 @@ pub(crate) fn todos_command(
     }
 
     if use_llm {
-        let (all, session_meta) = collect_todo_candidates(providers, filters, kinds, true);
-        return run_llm_todos(all, &session_meta, limit, force_json, llm_model);
+        let all = collect_federated_todo_candidates(providers, filters, kinds);
+        return run_llm_todos(all, limit, force_json, llm_model);
     }
 
     let mut all = collect_federated_todo_candidates(providers, filters, kinds);
@@ -76,6 +76,7 @@ pub(crate) fn todos_command(
 /// LLM-mode todo row with full metadata for rendering.
 struct LlmTodoRow {
     citation: CitationRef,
+    source: String,
     todo: aghist::llm::StructuredTodo,
     source_snippet: Option<String>,
     source_kind: Option<String>,
@@ -83,9 +84,21 @@ struct LlmTodoRow {
     started_at: DateTime<Utc>,
 }
 
+impl LlmTodoRow {
+    fn reference(&self) -> String {
+        if self.source == aghist::federated::LOCAL_SOURCE {
+            self.citation.to_string()
+        } else {
+            format!("{}:{}", self.source, self.citation)
+        }
+    }
+}
+
 struct TodoRow {
     candidate: TodoCandidate,
     source: String,
+    project: Option<String>,
+    started_at: DateTime<Utc>,
 }
 
 impl TodoRow {
@@ -97,8 +110,3 @@ impl TodoRow {
         }
     }
 }
-
-type SessionMetaMap = std::collections::HashMap<
-    (Provider, aghist::model::SessionId),
-    (Option<String>, DateTime<Utc>),
->;

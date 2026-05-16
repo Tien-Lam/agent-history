@@ -56,7 +56,8 @@ pub(super) fn render_llm_todos_json<W: io::Write>(
 ) -> io::Result<()> {
     let payload = serde_json::json!({
         "todos": rows.iter().map(|row| serde_json::json!({
-            "ref": row.citation.to_string(),
+            "ref": row.reference(),
+            "source": row.source,
             "provider": row.citation.provider,
             "session_id": row.citation.session_id.0,
             "turn": row.citation.turn,
@@ -91,7 +92,7 @@ pub(super) fn render_llm_todos_human<W: io::Write>(
             aghist::llm::TodoStatus::Done => "done",
             aghist::llm::TodoStatus::Unclear => "unclear",
         };
-        let reference = row.citation.to_string();
+        let reference = row.reference();
         let reference = truncate(&reference, 46);
         let description = truncate(&row.todo.description, 48);
         let target = row.todo.target_session.as_deref().unwrap_or("");

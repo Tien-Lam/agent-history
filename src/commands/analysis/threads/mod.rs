@@ -9,7 +9,7 @@ mod collect;
 mod llm;
 mod output;
 
-use collect::{collect_federated_sessions, collect_sessions};
+use collect::collect_federated_sessions;
 use llm::run_llm_threads;
 use output::{render_threads_human, render_threads_json};
 
@@ -50,8 +50,15 @@ pub(crate) fn threads_command(
     }
 
     if use_llm {
-        let sessions = collect_sessions(providers, filters);
-        return run_llm_threads(sessions, limit, llm_max_sessions, force_json, llm_model);
+        let discovery = collect_federated_sessions(providers, filters);
+        return run_llm_threads(
+            discovery.sessions,
+            &discovery.source_by_session,
+            limit,
+            llm_max_sessions,
+            force_json,
+            llm_model,
+        );
     }
 
     let discovery = collect_federated_sessions(providers, filters);

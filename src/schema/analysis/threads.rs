@@ -38,6 +38,30 @@ pub(in crate::schema) fn threads_schema() -> Value {
         "json".to_string(),
         json!({ "type": "boolean", "description": "Force JSON output." }),
     );
+    props.insert(
+        "llm".to_string(),
+        json!({
+            "type": "boolean",
+            "default": false,
+            "description": "Route session digests through an LLM for semantic topic clustering across project boundaries. Requires ANTHROPIC_API_KEY (or AGHIST_LLM_API_KEY)."
+        }),
+    );
+    props.insert(
+        "llm_model".to_string(),
+        json!({
+            "type": "string",
+            "description": "Override the LLM model id (default: claude-haiku-4-5-20251001 or AGHIST_LLM_MODEL). Only meaningful with --llm."
+        }),
+    );
+    props.insert(
+        "llm_max_sessions".to_string(),
+        json!({
+            "type": "integer",
+            "minimum": 0,
+            "default": 200,
+            "description": "Cap on session digests sent to the LLM (0 = no cap). Only meaningful with --llm."
+        }),
+    );
     for (name, schema) in filter_params_fragment() {
         props.insert(name.to_string(), schema);
     }
@@ -47,13 +71,22 @@ pub(in crate::schema) fn threads_schema() -> Value {
         "$id": "aghist:schema/threads",
         "title": "aghist threads",
         "command": "threads",
-        "description": "Cluster sessions into threads of related work (same project, time-adjacent). Heuristic: bucket by project_name, walk chronologically, split when the gap exceeds --gap-hours. No LLM.",
+        "description": "Cluster sessions into threads of related work. Default heuristic: bucket by project_name, walk chronologically, split when the gap exceeds --gap-hours. With --llm: route session digests through a Claude Messages API call for semantic topic clustering across projects.",
         "params": {
             "type": "object",
             "properties": Value::Object(props),
             "additionalProperties": false
         },
         "response": {
+            "oneOf": [threads_response_heuristic(), threads_response_llm()]
+        },
+        "exit_codes": exit_codes()
+    })
+}
+
+fn threads_response_heuristic() -> Value {
+    json!({
+        "title": "heuristic mode (default)",
             "type": "object",
             "description": "JSON output (when --json or stdout is not a TTY).",
             "properties": {
@@ -98,7 +131,58 @@ pub(in crate::schema) fn threads_schema() -> Value {
                 "count": { "type": "integer", "minimum": 0 }
             },
             "required": ["threads", "count"]
+    })
+}
+
+fn threads_response_llm() -> Value {
+    json!({
+        "title": "llm mode (--llm)",
+        "type": "object",
+        "description": "Structured topic clusters returned when --llm is set.",
+        "properties": {
+            "threads": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Stable short id derived from (topic_summary, first_member_ref). Format: `th-<hex16>`."
+                        },
+                        "topic_summary": { "type": "string" },
+                        "member_refs": {
+                            "type": "array",
+                            "items": { "type": "string", "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN },
+                            "description": "`<provider-slug>/<session-id>` for local sessions, or `<source>:<provider-slug>/<session-id>` for remote source sessions."
+                        },
+                        "time_span": {
+                            "type": "object",
+                            "properties": {
+                                "start": { "type": "string", "format": "date-time" },
+                                "end": { "type": "string", "format": "date-time" }
+                            },
+                            "required": ["start", "end"]
+                        },
+                        "providers": {
+                            "type": "array",
+                            "items": { "type": "string", "enum": provider_slug_enum() }
+                        },
+                        "projects": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        },
+                        "branches": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        },
+                        "message_count": { "type": "integer", "minimum": 0 }
+                    },
+                    "required": ["id", "topic_summary", "member_refs", "time_span", "providers", "projects", "branches", "message_count"]
+                }
+            },
+            "count": { "type": "integer", "minimum": 0 },
+            "mode": { "type": "string", "const": "llm" }
         },
-        "exit_codes": exit_codes()
+        "required": ["threads", "count", "mode"]
     })
 }

@@ -11,7 +11,7 @@ mod collect;
 mod llm;
 mod output;
 
-use collect::{collect_decision_rows, collect_federated_decision_rows};
+use collect::collect_federated_decision_rows;
 use llm::run_llm_decisions;
 use output::{render_decisions_human, render_decisions_json};
 
@@ -78,24 +78,14 @@ pub(crate) fn decisions_command(
         .map(str::to_lowercase)
         .filter(|s| !s.is_empty());
 
-    let mut rows = if use_llm {
-        collect_decision_rows(
-            providers,
-            filters,
-            project_needle.as_deref(),
-            session_needle.as_deref(),
-            threshold,
-        )
-    } else {
-        collect_federated_decision_rows(
-            providers,
-            filters,
-            project_needle.as_deref(),
-            session_needle.as_deref(),
-            source_needle.as_deref(),
-            threshold,
-        )
-    };
+    let mut rows = collect_federated_decision_rows(
+        providers,
+        filters,
+        project_needle.as_deref(),
+        session_needle.as_deref(),
+        source_needle.as_deref(),
+        threshold,
+    );
 
     rows.sort_by(|a, b| {
         b.candidate
@@ -136,10 +126,21 @@ pub(crate) fn decisions_command(
 
 struct LlmRow {
     citation: CitationRef,
+    source: String,
     decision: aghist::llm::StructuredDecision,
     source_snippet: Option<String>,
     project: Option<String>,
     started_at: DateTime<Utc>,
+}
+
+impl LlmRow {
+    fn reference(&self) -> String {
+        if self.source == aghist::federated::LOCAL_SOURCE {
+            self.citation.to_string()
+        } else {
+            format!("{}:{}", self.source, self.citation)
+        }
+    }
 }
 
 struct DecisionRow {

@@ -122,7 +122,12 @@ fn decisions_response_llm() -> Value {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "ref": { "type": "string", "pattern": "^[a-z0-9-]+/.+#[1-9][0-9]*$" },
+                        "ref": {
+                            "type": "string",
+                            "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                            "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
+                        },
+                        "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
                         "provider": { "type": "string", "enum": provider_slug_enum() },
                         "session_id": { "type": "string" },
                         "turn": { "type": "integer", "minimum": 1 },
@@ -133,7 +138,7 @@ fn decisions_response_llm() -> Value {
                         "project": { "type": ["string", "null"] },
                         "started_at": { "type": "string", "format": "date-time" }
                     },
-                    "required": ["ref", "provider", "session_id", "turn", "summary", "rationale", "alternatives", "started_at"]
+                    "required": ["ref", "source", "provider", "session_id", "turn", "summary", "rationale", "alternatives", "started_at"]
                 }
             },
             "count": { "type": "integer", "minimum": 0 },

@@ -34,6 +34,21 @@ pub(in crate::schema) fn todos_schema() -> Value {
             "description": "Force JSON output (default: JSON on pipe, table on TTY)."
         }),
     );
+    props.insert(
+        "llm".to_string(),
+        json!({
+            "type": "boolean",
+            "default": false,
+            "description": "Route heuristic candidates through an LLM for structured extraction (description/target_session/status_inferred). Requires ANTHROPIC_API_KEY (or AGHIST_LLM_API_KEY)."
+        }),
+    );
+    props.insert(
+        "llm_model".to_string(),
+        json!({
+            "type": "string",
+            "description": "Override the LLM model id (default: claude-haiku-4-5-20251001 or AGHIST_LLM_MODEL). Only meaningful with --llm."
+        }),
+    );
     for (name, schema) in filter_params_fragment() {
         props.insert(name.to_string(), schema);
     }
@@ -43,13 +58,22 @@ pub(in crate::schema) fn todos_schema() -> Value {
         "$id": "aghist:schema/todos",
         "title": "aghist todos",
         "command": "todos",
-        "description": "Heuristic scan for unresolved TODOs / follow-ups / open beads-style refs across indexed sessions. No LLM, no `bd` lookups — agents can post-process the JSON shape.",
+        "description": "Heuristic scan for unresolved TODOs / follow-ups / open beads-style refs across indexed sessions. With --llm: route candidates through a Claude Messages API call for structured records {description, target_session, status_inferred, ref}. Configured via env (ANTHROPIC_API_KEY, AGHIST_LLM_ENDPOINT, AGHIST_LLM_MODEL).",
         "params": {
             "type": "object",
             "properties": Value::Object(props),
             "additionalProperties": false
         },
         "response": {
+            "oneOf": [todos_response_heuristic(), todos_response_llm()]
+        },
+        "exit_codes": exit_codes()
+    })
+}
+
+fn todos_response_heuristic() -> Value {
+    json!({
+        "title": "heuristic mode (default)",
             "type": "object",
             "description": "JSON output (when --json or stdout is not a TTY).",
             "properties": {
@@ -89,7 +113,47 @@ pub(in crate::schema) fn todos_schema() -> Value {
                 "count": { "type": "integer", "minimum": 0 }
             },
             "required": ["todos", "count"]
+    })
+}
+
+fn todos_response_llm() -> Value {
+    json!({
+        "title": "llm mode (--llm)",
+        "type": "object",
+        "description": "Structured records returned when --llm is set. TODOs ordered by started_at descending.",
+        "properties": {
+            "todos": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "ref": {
+                            "type": "string",
+                            "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                            "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
+                        },
+                        "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
+                        "provider": { "type": "string", "enum": provider_slug_enum() },
+                        "session_id": { "type": "string" },
+                        "turn": { "type": "integer", "minimum": 1 },
+                        "description": { "type": "string" },
+                        "target_session": {
+                            "type": ["string", "null"],
+                            "pattern": SOURCE_QUALIFIED_SESSION_REF_PATTERN,
+                            "description": "Session ref targeted by the TODO when the model can infer one."
+                        },
+                        "status_inferred": { "type": "string", "enum": ["open", "done", "unclear"] },
+                        "source_snippet": { "type": ["string", "null"] },
+                        "source_kind": { "type": ["string", "null"] },
+                        "project": { "type": ["string", "null"] },
+                        "started_at": { "type": "string", "format": "date-time" }
+                    },
+                    "required": ["ref", "source", "provider", "session_id", "turn", "description", "status_inferred", "started_at"]
+                }
+            },
+            "count": { "type": "integer", "minimum": 0 },
+            "mode": { "type": "string", "const": "llm" }
         },
-        "exit_codes": exit_codes()
+        "required": ["todos", "count", "mode"]
     })
 }

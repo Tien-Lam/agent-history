@@ -64,14 +64,21 @@ pub(super) fn run_llm_decisions(
 /// Group heuristic rows by `(provider, session_id)`, preserving first-seen
 /// order so the API call sequence stays predictable.
 fn group_by_session(rows: Vec<DecisionRow>) -> Vec<SessionGroup> {
-    let mut order: Vec<(Provider, aghist::model::SessionId)> = Vec::new();
-    let mut grouped: std::collections::HashMap<(Provider, aghist::model::SessionId), SessionGroup> =
-        std::collections::HashMap::new();
+    let mut order: Vec<(String, Provider, aghist::model::SessionId)> = Vec::new();
+    let mut grouped: std::collections::HashMap<
+        (String, Provider, aghist::model::SessionId),
+        SessionGroup,
+    > = std::collections::HashMap::new();
     for row in rows {
-        let key = (row.citation.provider, row.citation.session_id.clone());
+        let key = (
+            row.source.clone(),
+            row.citation.provider,
+            row.citation.session_id.clone(),
+        );
         let entry = grouped.entry(key.clone()).or_insert_with(|| {
             order.push(key.clone());
             SessionGroup {
+                source: row.source.clone(),
                 provider: row.citation.provider,
                 session_id: row.citation.session_id.clone(),
                 project: row.project.clone(),
@@ -121,6 +128,7 @@ fn run_extraction<T: aghist::llm::LlmTransport + ?Sized>(
         for decision in extracted {
             out.push(LlmRow {
                 citation: decision.citation,
+                source: group.source.clone(),
                 decision: decision.decision,
                 source_snippet: decision.source_snippet,
                 project: group.project.clone(),
@@ -132,6 +140,7 @@ fn run_extraction<T: aghist::llm::LlmTransport + ?Sized>(
 }
 
 struct SessionGroup {
+    source: String,
     provider: Provider,
     session_id: aghist::model::SessionId,
     project: Option<String>,

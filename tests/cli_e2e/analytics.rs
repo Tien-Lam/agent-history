@@ -246,6 +246,55 @@ fn threads_include_remote_source_refs_without_local_provider() {
 }
 
 #[test]
+fn threads_llm_finds_remote_source_candidates_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-thread-llm")
+        .project("thread-llm-proj")
+        .user("thread context")
+        .assistant("thread answer")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["threads", "--llm", "--json"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("AGHIST_LLM_API_KEY")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("\"kind\":\"llm-error\""),
+        "stderr should carry llm-error envelope, got: {stderr:?}"
+    );
+}
+
+#[test]
 fn decisions_include_remote_source_refs_without_local_provider() {
     let empty_home = tempfile::tempdir().unwrap();
     let workdir = tempfile::tempdir().unwrap();
@@ -300,6 +349,55 @@ fn decisions_include_remote_source_refs_without_local_provider() {
 }
 
 #[test]
+fn decisions_llm_finds_remote_source_candidates_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-decision-llm")
+        .project("decision-llm-proj")
+        .user("architecture")
+        .assistant("We decided to keep SQLite instead of adding a service.")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["decisions", "--llm", "--json"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("AGHIST_LLM_API_KEY")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("\"kind\":\"llm-error\""),
+        "stderr should carry llm-error envelope, got: {stderr:?}"
+    );
+}
+
+#[test]
 fn todos_include_remote_source_refs_without_local_provider() {
     let empty_home = tempfile::tempdir().unwrap();
     let workdir = tempfile::tempdir().unwrap();
@@ -351,6 +449,104 @@ fn todos_include_remote_source_refs_without_local_provider() {
     assert_eq!(todos.len(), 1);
     assert_eq!(todos[0]["source"], "laptop");
     assert_eq!(todos[0]["ref"], "laptop:claude-code/remote-todo#1");
+}
+
+#[test]
+fn todos_llm_finds_remote_source_candidates_without_local_provider() {
+    let empty_home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let remote_data = cache_dir.join("laptop").join("data");
+    std::fs::create_dir_all(&remote_data).unwrap();
+
+    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("remote-todo-llm")
+        .project("todo-llm-proj")
+        .user("TODO: revisit remote LLM todo refs")
+        .assistant("noted")
+        .done()
+        .build();
+    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
+
+    let config_path = workdir.path().join("config.toml");
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "laptop.local",
+            "--path",
+            "/home/x/.claude",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["todos", "--llm", "--json"])
+        .env("AGHIST_HOME", empty_home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("AGHIST_LLM_API_KEY")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("\"kind\":\"llm-error\""),
+        "stderr should carry llm-error envelope, got: {stderr:?}"
+    );
+}
+
+#[test]
+fn schema_subcommand_includes_todos_llm_shape() {
+    let todos_schema = aghist().args(["schema", "todos"]).output().unwrap();
+    assert_eq!(todos_schema.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&todos_schema.stdout).unwrap().trim()).unwrap();
+    let props = &parsed["params"]["properties"];
+    assert_eq!(props["llm"]["type"], "boolean");
+    assert!(props["llm_model"].is_object());
+    let one_of = parsed["response"]["oneOf"].as_array().unwrap();
+    assert_eq!(one_of.len(), 2);
+    let llm_schema = one_of
+        .iter()
+        .find(|s| s["properties"].get("mode").is_some())
+        .expect("llm-mode schema variant present");
+    let item_props = &llm_schema["properties"]["todos"]["items"]["properties"];
+    for field in ["ref", "source", "description", "status_inferred"] {
+        assert!(
+            item_props.get(field).is_some(),
+            "llm response items must include {field}"
+        );
+    }
+}
+
+#[test]
+fn schema_subcommand_includes_threads_llm_shape() {
+    let threads_schema = aghist().args(["schema", "threads"]).output().unwrap();
+    assert_eq!(threads_schema.status.code(), Some(0));
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&threads_schema.stdout).unwrap().trim()).unwrap();
+    let props = &parsed["params"]["properties"];
+    assert_eq!(props["llm"]["type"], "boolean");
+    assert!(props["llm_model"].is_object());
+    assert_eq!(props["llm_max_sessions"]["default"], 200);
+    let one_of = parsed["response"]["oneOf"].as_array().unwrap();
+    assert_eq!(one_of.len(), 2);
+    let llm_schema = one_of
+        .iter()
+        .find(|s| s["properties"].get("mode").is_some())
+        .expect("llm-mode schema variant present");
+    let item_props = &llm_schema["properties"]["threads"]["items"]["properties"];
+    for field in ["topic_summary", "member_refs", "time_span"] {
+        assert!(
+            item_props.get(field).is_some(),
+            "llm response items must include {field}"
+        );
+    }
 }
 
 // ─── project subcommand ───────────────────────────────────────────────────
@@ -902,7 +1098,7 @@ fn decisions_schema_documents_llm_params_and_response() {
         .find(|s| s["properties"].get("mode").is_some())
         .expect("llm-mode schema variant present");
     let item_props = &llm_schema["properties"]["decisions"]["items"]["properties"];
-    for field in ["summary", "rationale", "alternatives", "ref"] {
+    for field in ["summary", "rationale", "alternatives", "ref", "source"] {
         assert!(
             item_props.get(field).is_some(),
             "llm response items must include {field}"

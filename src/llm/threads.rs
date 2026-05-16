@@ -20,11 +20,11 @@ Singleton sessions are fine; do not invent groupings just to use every \
 input row.
 
 Schema, JSON only, no prose:
-{\"threads\":[{\"topic_summary\":\"<one short noun phrase>\",\"member_refs\":[\"<provider-slug>/<session-id>\"],\"time_span\":{\"start\":\"<RFC3339>\",\"end\":\"<RFC3339>\"}}]}
+{\"threads\":[{\"topic_summary\":\"<one short noun phrase>\",\"member_refs\":[\"<provider-slug>/<session-id> or <source>:<provider-slug>/<session-id>\"],\"time_span\":{\"start\":\"<RFC3339>\",\"end\":\"<RFC3339>\"}}]}
 
 Rules:
 - topic_summary: short noun phrase (\"BM25 search ranking\", \"thread clustering CLI\"). No verbs, no full sentence.
-- member_refs: each entry must be a `provider/session-id` ref that appears verbatim in the input. Do not invent refs.
+- member_refs: each entry must be a session ref that appears verbatim in the input. Do not invent refs or strip source prefixes.
 - time_span.start: earliest started_at across the thread's members (copy from input).
 - time_span.end: latest ended_at across the thread's members (copy from input; fall back to started_at if no ended_at given).
 - Every input ref should appear in exactly one thread (singletons included).
@@ -35,6 +35,8 @@ Rules:
 /// needs to topic-cluster (ref, project, time range, optional summary).
 #[derive(Debug, Clone)]
 pub struct SessionDigest {
+    /// Registered remote source name. `None` means local host history.
+    pub source: Option<String>,
     pub provider: Provider,
     pub session_id: SessionId,
     pub project: Option<String>,
@@ -45,11 +47,16 @@ pub struct SessionDigest {
 }
 
 impl SessionDigest {
-    /// `<provider-slug>/<session-id>` — the round-trip identifier used in
-    /// `member_refs`. Matches the format produced by `crate::threads`.
+    /// `<provider-slug>/<session-id>` for local history, or
+    /// `<source>:<provider-slug>/<session-id>` for remote source history.
+    /// This is the round-trip identifier used in `member_refs`.
     #[must_use]
     pub fn session_ref(&self) -> String {
-        format!("{}/{}", self.provider.slug(), self.session_id.0)
+        let raw = format!("{}/{}", self.provider.slug(), self.session_id.0);
+        match self.source.as_deref().filter(|source| !source.is_empty()) {
+            Some(source) => format!("{source}:{raw}"),
+            None => raw,
+        }
     }
 }
 

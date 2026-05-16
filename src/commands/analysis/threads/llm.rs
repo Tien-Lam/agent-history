@@ -3,17 +3,20 @@ use std::io::{self, IsTerminal};
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::Session;
 
+use crate::commands::discovery::{qualified_session_ref, source_for_session};
+
 use super::super::common::map_llm_error;
 use super::output::{render_llm_threads_human, render_llm_threads_json};
 use super::LlmThreadRow;
 
-/// LLM-driven topic clustering. Builds one session digest per local
+/// LLM-driven topic clustering. Builds one source-qualified digest per
 /// `Session`, caps to the most recent `llm_max_sessions`, and routes
 /// everything through a single Messages API call. Augments each returned
 /// thread with derived metadata (providers / projects / `message_count`)
 /// so the JSON shape stays compatible with the heuristic where possible.
 pub(super) fn run_llm_threads(
     sessions: Vec<Session>,
+    source_by_session: &std::collections::HashMap<String, String>,
     limit: usize,
     llm_max_sessions: usize,
     force_json: bool,
@@ -24,7 +27,7 @@ pub(super) fn run_llm_threads(
     }
 
     let sorted = most_recent_sessions(sessions, llm_max_sessions);
-    let digests = session_digests(&sorted);
+    let digests = session_digests(&sorted, source_by_session);
 
     let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
     if let Some(model) = llm_model {
@@ -34,7 +37,7 @@ pub(super) fn run_llm_threads(
 
     let raw = aghist::llm::extract_threads(&transport, &config, &digests)
         .map_err(|e| map_llm_error(&e))?;
-    let mut rows = stitch_thread_rows(raw, &sorted);
+    let mut rows = stitch_thread_rows(raw, &sorted, source_by_session);
 
     rows.sort_by(|a, b| {
         b.time_span
@@ -71,16 +74,23 @@ fn most_recent_sessions(mut sessions: Vec<Session>, llm_max_sessions: usize) -> 
     sessions
 }
 
-fn session_digests(sessions: &[Session]) -> Vec<aghist::llm::SessionDigest> {
+fn session_digests(
+    sessions: &[Session],
+    source_by_session: &std::collections::HashMap<String, String>,
+) -> Vec<aghist::llm::SessionDigest> {
     sessions
         .iter()
-        .map(|session| aghist::llm::SessionDigest {
-            provider: session.provider,
-            session_id: session.id.clone(),
-            project: session.project_name.clone(),
-            started_at: session.started_at,
-            ended_at: session.ended_at,
-            summary: session.summary.clone(),
+        .map(|session| {
+            let source = source_for_session(source_by_session, session);
+            aghist::llm::SessionDigest {
+                source: (source != aghist::federated::LOCAL_SOURCE).then(|| source.to_string()),
+                provider: session.provider,
+                session_id: session.id.clone(),
+                project: session.project_name.clone(),
+                started_at: session.started_at,
+                ended_at: session.ended_at,
+                summary: session.summary.clone(),
+            }
         })
         .collect()
 }
@@ -88,11 +98,12 @@ fn session_digests(sessions: &[Session]) -> Vec<aghist::llm::SessionDigest> {
 fn stitch_thread_rows(
     raw: Vec<aghist::llm::StructuredThread>,
     sessions: &[Session],
+    source_by_session: &std::collections::HashMap<String, String>,
 ) -> Vec<LlmThreadRow> {
     let mut by_ref: std::collections::HashMap<String, &Session> =
         std::collections::HashMap::with_capacity(sessions.len());
     for session in sessions {
-        by_ref.insert(session.session_ref().to_string(), session);
+        by_ref.insert(qualified_session_ref(source_by_session, session), session);
     }
 
     let mut rows = Vec::with_capacity(raw.len());

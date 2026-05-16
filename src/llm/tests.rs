@@ -206,6 +206,7 @@ fn digest(
     summary: Option<&str>,
 ) -> SessionDigest {
     SessionDigest {
+        source: None,
         provider,
         session_id: SessionId(id.to_string()),
         project: project.map(str::to_string),
@@ -213,6 +214,22 @@ fn digest(
         ended_at: end.map(ts),
         summary: summary.map(str::to_string),
     }
+}
+
+#[test]
+fn user_message_threads_preserves_remote_source_refs() {
+    let digests = vec![SessionDigest {
+        source: Some("laptop".to_string()),
+        provider: Provider::ClaudeCode,
+        session_id: SessionId("abc-123".to_string()),
+        project: Some("alpha".to_string()),
+        started_at: ts(0),
+        ended_at: None,
+        summary: None,
+    }];
+
+    let msg = user_message_threads(&digests);
+    assert!(msg.contains("laptop:claude-code/abc-123"));
 }
 
 fn threads_assistant_response(inner: &str) -> String {
