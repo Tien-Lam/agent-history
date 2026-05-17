@@ -1,55 +1,21 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::hash::BuildHasher;
 
-use crate::cli_error::ErrorEnvelope;
-use crate::config;
-use crate::federated::LOCAL_SOURCE;
-use crate::model::{
-    split_source_prefix, CitationRef, Provider, QualifiedCitationRef, Session, SessionRef,
-};
+use crate::model::{CitationRef, Provider, Session, SessionRef};
+
+mod error;
+mod refs;
+mod source;
+
+pub use error::ResolutionError;
+pub use refs::{qualified_citation_ref, qualified_session_ref, source_for_session};
+use source::split_valid_source_prefix;
+pub use source::LookupSource;
 
 #[derive(Clone, Copy)]
 pub enum SelectorShape {
     SessionRefOnly,
     SessionRefOrIdPrefix,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LookupSource<'a> {
-    Any,
-    Local,
-    Named(&'a str),
-}
-
-impl<'a> LookupSource<'a> {
-    pub fn from_optional(source: Option<&'a str>) -> Result<Self, ResolutionError> {
-        source.map_or(Ok(Self::Any), Self::explicit)
-    }
-
-    pub fn explicit(source: &'a str) -> Result<Self, ResolutionError> {
-        validate_lookup_source(source)?;
-        Ok(if source == LOCAL_SOURCE {
-            Self::Local
-        } else {
-            Self::Named(source)
-        })
-    }
-
-    fn matches(self, actual: &str) -> bool {
-        match self {
-            Self::Any => true,
-            Self::Local => actual == LOCAL_SOURCE,
-            Self::Named(source) => actual == source,
-        }
-    }
-
-    fn qualify_selector(self, selector: &str) -> String {
-        match self {
-            Self::Named(source) => format!("{source}:{selector}"),
-            Self::Any | Self::Local => selector.to_string(),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -65,113 +31,6 @@ pub struct SelectedCitation<'a> {
     pub source: &'a str,
     pub citation: CitationRef,
     pub citation_ref: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResolutionError {
-    InvalidSourceName(String),
-    InvalidSessionRef {
-        selector: String,
-        message: String,
-    },
-    InvalidCitationRef {
-        selector: String,
-        message: String,
-    },
-    TurnRefForSession,
-    SessionRefRequired(String),
-    NotFound(String),
-    Ambiguous {
-        selector: String,
-        count: usize,
-        candidates: Vec<String>,
-    },
-}
-
-impl ResolutionError {
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::InvalidSourceName(_)
-            | Self::InvalidSessionRef { .. }
-            | Self::InvalidCitationRef { .. }
-            | Self::TurnRefForSession
-            | Self::SessionRefRequired(_) => "usage",
-            Self::NotFound(_) => "session-not-found",
-            Self::Ambiguous { .. } => "ambiguous-session",
-        }
-    }
-
-    pub fn hint(&self) -> Option<&'static str> {
-        match self {
-            Self::InvalidSessionRef { .. } => Some(
-                "Format: <provider-slug>/<session-id> or <source>:<provider-slug>/<session-id>.",
-            ),
-            Self::InvalidCitationRef { .. } => Some(
-                "Format: <provider-slug>/<session-id>#<turn> or <source>:<provider-slug>/<session-id>#<turn>.",
-            ),
-            Self::TurnRefForSession => Some(
-                "Use `aghist show <ref>` for a single turn, or remove the `#<turn>` suffix.",
-            ),
-            Self::SessionRefRequired(_) => {
-                Some("Use <source>:<provider>/<session-id> for remote-source sessions.")
-            }
-            Self::NotFound(_) => {
-                Some("Run `aghist --list --json` to see available sessions and sources.")
-            }
-            Self::Ambiguous { .. } => {
-                Some("Use <source>:<provider>/<session-id> to choose one session explicitly.")
-            }
-            Self::InvalidSourceName(_) => None,
-        }
-    }
-
-    pub fn into_error_envelope(self) -> ErrorEnvelope {
-        let hint = self.hint();
-        let mut envelope = ErrorEnvelope::new(self.kind(), self.to_string());
-        if let Some(hint) = hint {
-            envelope = envelope.with_hint(hint);
-        }
-        envelope
-    }
-}
-
-impl fmt::Display for ResolutionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidSourceName(message) => f.write_str(message),
-            Self::InvalidSessionRef { selector, message } => {
-                write!(f, "invalid session ref '{selector}': {message}")
-            }
-            Self::InvalidCitationRef { selector, message } => {
-                write!(f, "invalid citation ref '{selector}': {message}")
-            }
-            Self::TurnRefForSession => {
-                f.write_str("expected a session ref, not a turn-level citation ref")
-            }
-            Self::SessionRefRequired(selector) => {
-                write!(
-                    f,
-                    "invalid session ref '{selector}': expected <provider>/<session-id>"
-                )
-            }
-            Self::NotFound(selector) => write!(f, "Session not found: {selector}"),
-            Self::Ambiguous {
-                selector,
-                count,
-                candidates,
-            } => write!(
-                f,
-                "session selector '{selector}' matched {count} sessions: {}",
-                candidates.join(", ")
-            ),
-        }
-    }
-}
-
-impl From<ResolutionError> for ErrorEnvelope {
-    fn from(value: ResolutionError) -> Self {
-        value.into_error_envelope()
-    }
 }
 
 pub struct SessionResolver<'a, S = std::collections::hash_map::RandomState> {
@@ -349,67 +208,6 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
             candidates,
         }
     }
-}
-
-pub fn source_for_session<'a, S: BuildHasher>(
-    source_by_session: &'a HashMap<String, String, S>,
-    session: &Session,
-) -> &'a str {
-    source_by_session
-        .get(session.identity_key().as_str())
-        .map_or(LOCAL_SOURCE, String::as_str)
-}
-
-pub fn qualified_session_ref<S: BuildHasher>(
-    source_by_session: &HashMap<String, String, S>,
-    session: &Session,
-) -> String {
-    let session_ref = session.session_ref().to_string();
-    let source = source_for_session(source_by_session, session);
-    if source == LOCAL_SOURCE {
-        session_ref
-    } else {
-        format!("{source}:{session_ref}")
-    }
-}
-
-pub fn qualified_citation_ref<S: BuildHasher>(
-    source_by_session: &HashMap<String, String, S>,
-    session: &Session,
-    turn: u32,
-) -> String {
-    let source = source_for_session(source_by_session, session);
-    let Some(citation) = session.citation_ref(turn) else {
-        let raw_ref = format!("{}/{}#{turn}", session.provider.slug(), session.id.0);
-        return if source == LOCAL_SOURCE {
-            raw_ref
-        } else {
-            format!("{source}:{raw_ref}")
-        };
-    };
-    QualifiedCitationRef::new(
-        (source != LOCAL_SOURCE).then(|| source.to_string()),
-        citation,
-    )
-    .to_string()
-}
-
-fn split_valid_source_prefix(
-    raw: &str,
-) -> Result<Option<(LookupSource<'_>, &str)>, ResolutionError> {
-    let (source, rest) = split_source_prefix(raw);
-    if let Some(source) = source {
-        Ok(Some((LookupSource::explicit(source)?, rest)))
-    } else {
-        Ok(None)
-    }
-}
-
-fn validate_lookup_source(source: &str) -> Result<(), ResolutionError> {
-    if source == LOCAL_SOURCE {
-        return Ok(());
-    }
-    config::validate_source_name(source).map_err(ResolutionError::InvalidSourceName)
 }
 
 fn parse_session_ref(raw: &str, full_selector: &str) -> Result<SessionRef, ResolutionError> {
