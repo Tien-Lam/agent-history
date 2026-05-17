@@ -1,19 +1,13 @@
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use chrono::Utc;
-use crossterm::event::Event;
 use lru::LruCache;
-use ratatui::prelude::Backend;
-use ratatui::Terminal;
 
 use crate::action::Action;
 use crate::config::Config;
-use crate::embed;
-use crate::event::{map_key_event, CrosstermEventSource, EventSource};
-use crate::model::{Message, Provider, Session, SessionId};
+use crate::model::{Message, Session};
 use crate::provider::HistoryProvider;
 use crate::search::{SearchHit, SearchIndex};
 use crate::stars::StarStore;
@@ -24,8 +18,10 @@ use crate::ui::status_bar::StatusBarComponent;
 mod dispatch;
 mod export;
 mod loading;
+mod messages;
 mod overlays;
 mod render;
+mod runtime;
 mod search;
 mod state;
 pub use state::AppMode;
@@ -154,208 +150,5 @@ impl App {
 
     pub fn should_quit(&self) -> bool {
         self.should_quit
-    }
-
-    pub fn run<B: Backend<Error: Send + Sync + 'static>>(
-        &mut self,
-        terminal: &mut Terminal<B>,
-    ) -> anyhow::Result<()> {
-        self.run_with_event_source(terminal, CrosstermEventSource)
-    }
-
-    pub fn run_with_event_source<B: Backend<Error: Send + Sync + 'static>>(
-        &mut self,
-        terminal: &mut Terminal<B>,
-        mut events: impl EventSource,
-    ) -> anyhow::Result<()> {
-        self.index_dir = SearchIndex::default_index_dir();
-        self.search_index = SearchIndex::open_or_create(&self.index_dir)
-            .map(Arc::new)
-            .ok();
-        self.hybrid_available = embed::hybrid_ready(&self.index_dir);
-        // Default ON when the embedding pipeline is wired up — hybrid is
-        // strictly an improvement over lexical when the store is populated.
-        // Users can still hit the toggle to compare modes side-by-side.
-        self.hybrid_enabled = self.hybrid_available;
-
-        self.load_sessions();
-        self.start_indexing();
-
-        loop {
-            terminal.draw(|frame| self.render(frame))?;
-
-            if let Some(Event::Key(key)) = events.poll_event(Duration::from_millis(50))? {
-                if key.kind != crossterm::event::KeyEventKind::Press {
-                    continue;
-                }
-                let editing = self.filter.editing_field.is_some();
-                if let Some(action) = map_key_event(key, self.mode, editing) {
-                    self.dispatch(action);
-                }
-            }
-
-            while let Ok(action) = self.action_rx.try_recv() {
-                self.dispatch(action);
-            }
-
-            self.tick();
-
-            if self.should_quit {
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn display_sessions(&self) -> Vec<&Session> {
-        let base: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
-            ids.iter()
-                .filter_map(|id| self.sessions.iter().find(|s| s.identity_key() == *id))
-                .collect()
-        } else {
-            self.sessions.iter().collect()
-        };
-
-        let starred_only = self.filter.starred_only;
-        let msg_ids = self.msg_filter_session_ids.as_ref();
-        if self.filter.is_active() {
-            base.into_iter()
-                .filter(|s| self.filter.matches(s))
-                .filter(|s| !starred_only || self.stars.is_starred(s.provider, &s.id.0))
-                .filter(|s| msg_ids.is_none_or(|ids| ids.contains(&s.identity_key())))
-                .collect()
-        } else {
-            base
-        }
-    }
-
-    fn display_count(&self) -> usize {
-        self.display_sessions().len()
-    }
-
-    fn resolve_selected_session(&self) -> Option<(String, std::path::PathBuf, Provider)> {
-        let idx = self.session_list.selected_index()?;
-        let display = self.display_sessions();
-        display
-            .get(idx)
-            .map(|s| (s.id.0.clone(), s.source_path.clone(), s.provider))
-    }
-
-    /// Ensure the selection index sits within the displayed-session range.
-    /// Called after operations that may shrink the visible list (e.g.
-    /// unstarring while the starred-only filter is active).
-    fn clamp_selection(&mut self) {
-        let count = self.display_count();
-        let new_sel = match self.session_list.selected_index() {
-            _ if count == 0 => None,
-            Some(i) if i >= count => Some(count - 1),
-            Some(i) => Some(i),
-            None => Some(0),
-        };
-        self.session_list.state.select(new_sel);
-        self.preload_focused_session();
-    }
-
-    fn apply_filters(&mut self) {
-        let count = self.display_count();
-        self.session_list
-            .state
-            .select(if count > 0 { Some(0) } else { None });
-        self.preload_focused_session();
-    }
-
-    fn load_messages_cached(
-        &mut self,
-        session_id: &str,
-        source_path: &std::path::Path,
-        provider_type: Provider,
-    ) {
-        if self.message_cache.contains(session_id) {
-            tracing::debug!(session_id, "message cache hit");
-            return;
-        }
-
-        tracing::debug!(
-            session_id,
-            source_path = %source_path.display(),
-            provider = ?provider_type,
-            "loading messages (cache miss)"
-        );
-
-        let tmp_session = Session {
-            id: SessionId(session_id.to_string()),
-            provider: provider_type,
-            project_path: None,
-            project_name: None,
-            git_branch: None,
-            started_at: Utc::now(),
-            ended_at: None,
-            summary: None,
-            model: None,
-            token_usage: None,
-            message_count: 0,
-            source_path: source_path.to_path_buf(),
-        };
-
-        let provider = self
-            .providers
-            .iter()
-            .find(|p| p.provider() == provider_type);
-
-        if let Some(provider) = provider {
-            match provider.load_messages(&tmp_session) {
-                Ok(mut messages) => {
-                    tracing::info!(
-                        session_id,
-                        provider = ?provider_type,
-                        message_count = messages.len(),
-                        "messages loaded successfully"
-                    );
-                    let max = self.config.max_messages_per_session;
-                    if messages.len() > max {
-                        let total = messages.len();
-                        messages.truncate(max);
-                        self.warnings.push(format!(
-                            "Session truncated: showing {max} of {total} messages"
-                        ));
-                    }
-                    if messages.is_empty() {
-                        tracing::warn!(
-                            session_id,
-                            source_path = %source_path.display(),
-                            "provider returned 0 messages — possible format mismatch"
-                        );
-                    }
-                    self.message_cache.put(session_id.to_string(), messages);
-                }
-                Err(e) => {
-                    tracing::error!(
-                        session_id,
-                        source_path = %source_path.display(),
-                        error = %e,
-                        "failed to load messages"
-                    );
-                    let _ = self
-                        .action_tx
-                        .send(Action::LoadError(format!("Failed to load messages: {e}")));
-                }
-            }
-        } else {
-            tracing::error!(
-                session_id,
-                provider = ?provider_type,
-                "no matching provider found for session"
-            );
-        }
-    }
-
-    /// Load messages for whichever session is currently focused in the list,
-    /// so the message panel always shows content alongside the session list.
-    fn preload_focused_session(&mut self) {
-        if let Some((session_id, source_path, provider)) = self.resolve_selected_session() {
-            self.load_messages_cached(&session_id, &source_path, provider);
-            self.message_view.reset_scroll();
-        }
     }
 }
