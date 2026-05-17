@@ -1,5 +1,6 @@
 use super::aghist;
 use super::common;
+use super::common::cli;
 use predicates::prelude::*;
 
 #[test]
@@ -12,7 +13,7 @@ fn list_with_no_data_exits_three_for_empty() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(3));
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = cli::output_stdout(&output);
     // Empty list emits zero session rows; the trailing `{"meta": ...}` row
     // is always present so streaming consumers can detect end-of-stream.
     let session_rows: Vec<&str> = stdout
@@ -40,13 +41,7 @@ fn list_with_generated_claude_fixtures() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let rows: Vec<serde_json::Value> = stdout
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("each NDJSON line must parse"))
-        .filter(|v| v.get("id").is_some())
-        .collect();
+    let rows = cli::output_ndjson_session_rows(&output);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["provider"], "claude-code");
     assert_eq!(rows[0]["message_count"], 4);
@@ -79,17 +74,9 @@ fn list_with_multiple_providers() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let providers: std::collections::HashSet<String> = stdout
-        .lines()
-        .filter(|l| !l.is_empty())
-        .filter_map(|l| {
-            // Skip the trailing `{"meta": ...}` envelope row; only session
-            // rows carry a `provider` field.
-            serde_json::from_str::<serde_json::Value>(l)
-                .ok()
-                .and_then(|v| v["provider"].as_str().map(str::to_string))
-        })
+    let providers: std::collections::HashSet<String> = cli::output_ndjson_session_rows(&output)
+        .iter()
+        .filter_map(|row| row["provider"].as_str().map(str::to_string))
         .collect();
     assert!(providers.contains("claude-code"));
     assert!(providers.contains("codex-cli"));
@@ -147,7 +134,7 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         "stderr: {}",
         String::from_utf8_lossy(&page1.stderr)
     );
-    let doc1: serde_json::Value = serde_json::from_slice(&page1.stdout).unwrap();
+    let doc1 = cli::output_stdout_json(&page1);
     assert_eq!(doc1["meta"]["total"], 2);
     assert_eq!(doc1["sessions"].as_array().unwrap().len(), 1);
     let cursor = doc1["meta"]["next_cursor"].as_str().unwrap();
@@ -165,7 +152,7 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         "stderr: {}",
         String::from_utf8_lossy(&page2.stderr)
     );
-    let doc2: serde_json::Value = serde_json::from_slice(&page2.stdout).unwrap();
+    let doc2 = cli::output_stdout_json(&page2);
     assert_eq!(doc2["sessions"].as_array().unwrap().len(), 1);
     assert!(doc2["meta"]["next_cursor"].is_null());
 
@@ -194,7 +181,7 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         "stderr: {}",
         String::from_utf8_lossy(&tool_filtered.stderr)
     );
-    let filtered: serde_json::Value = serde_json::from_slice(&tool_filtered.stdout).unwrap();
+    let filtered = cli::output_stdout_json(&tool_filtered);
     let rows = filtered["sessions"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["source"], "laptop");
@@ -229,9 +216,7 @@ fn index_no_data_emits_zero_counts_json() {
         .assert()
         .success();
 
-    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("expected JSON on stdout, got {stdout:?}: {e}"));
+    let parsed = cli::assert_stdout_json(&output);
     assert_eq!(parsed["added"], 0);
     assert_eq!(parsed["updated"], 0);
     assert_eq!(parsed["unchanged"], 0);
@@ -257,8 +242,7 @@ fn index_idempotent_second_run_reports_unchanged() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .assert()
         .success();
-    let stdout = String::from_utf8(first.get_output().stdout.clone()).unwrap();
-    let first_json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let first_json = cli::assert_stdout_json(&first);
     assert_eq!(
         first_json["added"], 1,
         "first run should classify session as 'added'"
@@ -274,8 +258,7 @@ fn index_idempotent_second_run_reports_unchanged() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .assert()
         .success();
-    let stdout = String::from_utf8(second.get_output().stdout.clone()).unwrap();
-    let second_json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let second_json = cli::assert_stdout_json(&second);
     assert_eq!(second_json["added"], 0);
     assert_eq!(second_json["updated"], 0);
     assert_eq!(
@@ -311,8 +294,7 @@ fn index_provider_filter_restricts_scope() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .assert()
         .success();
-    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let parsed = cli::assert_stdout_json(&output);
     assert_eq!(parsed["providers"], serde_json::json!(["claude-code"]));
     assert_eq!(
         parsed["sessions_total"], 1,
@@ -362,9 +344,7 @@ fn index_provider_filter_includes_remote_cache_without_local_provider() {
         .assert()
         .success();
 
-    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("expected JSON on stdout, got {stdout:?}: {e}"));
+    let parsed = cli::assert_stdout_json(&output);
     assert_eq!(parsed["providers"], serde_json::json!(["claude-code"]));
     assert_eq!(parsed["sessions_total"], 1);
     assert_eq!(parsed["added"], 1);
@@ -382,12 +362,7 @@ fn index_unknown_provider_emits_usage_envelope_and_exits_two() {
         .env("AGHIST_HOME", home.path())
         .assert()
         .code(2);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
     assert!(parsed["error"]["message"]
         .as_str()
@@ -404,9 +379,7 @@ fn list_json_emits_single_object_with_sessions_array() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let doc: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect("--list --json must emit valid JSON");
+    let doc = cli::output_stdout_json(&output);
     let sessions = doc["sessions"].as_array().expect("sessions array");
     assert_eq!(sessions.len(), 1);
     assert!(sessions[0]["id"].is_string());
@@ -424,12 +397,7 @@ fn list_ndjson_emits_one_session_per_line() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let parsed: Vec<serde_json::Value> = stdout
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|l| serde_json::from_str(l).expect("each NDJSON line must be valid JSON"))
-        .collect();
+    let parsed = cli::output_ndjson_values(&output);
     // One session row + one trailing `{"meta": ...}` envelope row.
     assert_eq!(parsed.len(), 2);
     let session = &parsed[0];
@@ -453,7 +421,7 @@ fn list_json_empty_returns_three_with_empty_array() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(3));
-    let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let doc = cli::output_stdout_json(&output);
     assert_eq!(doc["sessions"].as_array().unwrap().len(), 0);
 }
 #[test]
@@ -464,12 +432,7 @@ fn list_rejects_json_and_ndjson_together() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(2);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let envelope: serde_json::Value = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .and_then(|l| serde_json::from_str(l).ok())
-        .expect("expected JSON envelope on stderr");
+    let envelope = cli::assert_stderr_error(&assert);
     assert_eq!(envelope["error"]["kind"], "usage");
 }
 #[test]
@@ -482,7 +445,7 @@ fn list_limit_caps_returned_sessions_and_emits_next_cursor() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let doc = cli::output_stdout_json(&output);
     let sessions = doc["sessions"].as_array().expect("sessions array");
     assert_eq!(sessions.len(), 2, "limit must cap returned rows");
     assert_eq!(doc["meta"]["total"], 5, "total reflects all matching rows");
@@ -503,7 +466,7 @@ fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
         .output()
         .unwrap();
     assert_eq!(page1.status.code(), Some(0));
-    let doc1: serde_json::Value = serde_json::from_slice(&page1.stdout).unwrap();
+    let doc1 = cli::output_stdout_json(&page1);
     let cursor1 = doc1["meta"]["next_cursor"].as_str().unwrap().to_string();
     let ids1: Vec<String> = doc1["sessions"]
         .as_array()
@@ -519,7 +482,7 @@ fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
         .output()
         .unwrap();
     assert_eq!(page2.status.code(), Some(0));
-    let doc2: serde_json::Value = serde_json::from_slice(&page2.stdout).unwrap();
+    let doc2 = cli::output_stdout_json(&page2);
     let ids2: Vec<String> = doc2["sessions"]
         .as_array()
         .unwrap()
@@ -536,7 +499,7 @@ fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
         .output()
         .unwrap();
     assert_eq!(page3.status.code(), Some(0));
-    let doc3: serde_json::Value = serde_json::from_slice(&page3.stdout).unwrap();
+    let doc3 = cli::output_stdout_json(&page3);
     let ids3: Vec<String> = doc3["sessions"]
         .as_array()
         .unwrap()
@@ -567,12 +530,7 @@ fn list_invalid_cursor_returns_usage_envelope() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(2);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let envelope: serde_json::Value = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .and_then(|l| serde_json::from_str(l).ok())
-        .expect("expected JSON envelope on stderr");
+    let envelope = cli::assert_stderr_error(&assert);
     assert_eq!(envelope["error"]["kind"], "usage");
 }
 #[test]
@@ -583,12 +541,7 @@ fn list_cursor_requires_list_flag() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(2);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let envelope: serde_json::Value = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .and_then(|l| serde_json::from_str(l).ok())
-        .expect("expected JSON envelope on stderr");
+    let envelope = cli::assert_stderr_error(&assert);
     assert_eq!(envelope["error"]["kind"], "usage");
 }
 #[test]
@@ -613,12 +566,7 @@ fn index_params_unknown_provider_slug_emits_usage() {
         .env("AGHIST_HOME", home.path())
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
 #[test]
@@ -645,9 +593,7 @@ fn index_summary_includes_embeddings_block() {
         .assert()
         .success();
 
-    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("expected JSON on stdout, got {stdout:?}: {e}"));
+    let parsed = cli::assert_stdout_json(&output);
     let block = &parsed["embeddings"];
     assert!(block.is_object(), "expected embeddings object, got {block}");
     let status = block["status"].as_str().unwrap_or("");

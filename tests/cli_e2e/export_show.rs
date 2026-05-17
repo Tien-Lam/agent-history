@@ -1,5 +1,6 @@
 use super::aghist;
 use super::common;
+use super::common::cli;
 use predicates::prelude::*;
 
 #[test]
@@ -10,12 +11,7 @@ fn export_nonexistent_session_emits_envelope_and_exits_one() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "session-not-found");
     assert!(parsed["error"]["message"]
         .as_str()
@@ -47,8 +43,7 @@ fn export_json_valid_output() {
         .assert()
         .success();
 
-    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let parsed = cli::assert_stdout_json(&output);
     assert!(parsed.get("session").is_some());
     assert!(parsed.get("messages").is_some());
 }
@@ -166,8 +161,7 @@ fn export_source_qualified_remote_session_with_source_qualified_notes() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
+    let parsed = cli::output_stdout_json(&output);
     assert_eq!(parsed["session"]["project_name"], "remote-export-project");
     assert!(parsed["messages"].to_string().contains("remote body"));
     assert!(!parsed["messages"].to_string().contains("local body"));
@@ -210,12 +204,7 @@ fn export_ambiguous_duplicate_session_id_requires_source_qualified_ref() {
         .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "ambiguous-session");
     assert!(parsed["error"]["message"]
         .as_str()
@@ -241,7 +230,7 @@ fn show_resolves_ref_md_default() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let stdout = cli::assert_stdout(&assert);
     // Title is the ref; only turn 2 should appear (no context).
     assert!(
         stdout.contains(reference),
@@ -279,7 +268,7 @@ fn show_includes_context_window() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let stdout = cli::assert_stdout(&assert);
     // turn 3 ± 1 → turns 2,3,4
     assert!(stdout.contains("Turn 2"));
     assert!(stdout.contains("Turn 3"));
@@ -307,8 +296,7 @@ fn show_json_format_emits_machine_readable() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let parsed = cli::assert_stdout_json(&assert);
     assert_eq!(parsed["ref"], "claude-code/session-show-json#1");
     assert_eq!(parsed["target_turn"], 1);
     assert_eq!(parsed["session_id"], "session-show-json");
@@ -349,8 +337,7 @@ fn show_source_qualified_remote_ref_preserves_source_in_output() {
         .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .assert()
         .success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let parsed = cli::assert_stdout_json(&assert);
     assert_eq!(parsed["ref"], "laptop:claude-code/session-show-shared#2");
     assert_eq!(parsed["project"], "remote-show-project");
     assert!(parsed["messages"].to_string().contains("remote answer"));
@@ -379,8 +366,7 @@ fn show_unique_unqualified_remote_ref_resolves_across_sources() {
         .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .assert()
         .success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let parsed = cli::assert_stdout_json(&assert);
     assert_eq!(
         parsed["ref"],
         "laptop:claude-code/session-show-remote-only#2"
@@ -418,9 +404,7 @@ fn show_unqualified_duplicate_ref_requires_source_prefix() {
         .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr.lines().find(|line| line.starts_with('{')).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "ambiguous-session");
     assert!(parsed["error"]["message"]
         .as_str()
@@ -436,9 +420,7 @@ fn show_invalid_ref_emits_usage_envelope() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
 #[test]
@@ -456,9 +438,7 @@ fn show_unknown_session_emits_session_not_found() {
         .env("AGHIST_HOME", home)
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "session-not-found");
 }
 #[test]
@@ -476,9 +456,7 @@ fn show_turn_out_of_range_emits_session_not_found() {
         .env("AGHIST_HOME", home)
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "session-not-found");
 }
 #[test]
@@ -508,8 +486,7 @@ fn export_turn_range_slices_messages() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
-    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let parsed = cli::assert_stdout_json(&output);
     let msgs = parsed["messages"].as_array().expect("messages array");
     assert_eq!(msgs.len(), 2, "expected 2 messages from --turn-range 2:3");
 }
@@ -538,8 +515,7 @@ fn export_turn_range_open_end_clamps_to_total() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
-    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let parsed = cli::assert_stdout_json(&output);
     assert_eq!(parsed["messages"].as_array().unwrap().len(), 2);
 }
 #[test]
@@ -566,12 +542,7 @@ fn export_turn_range_invalid_emits_usage_envelope() {
         .env("AGHIST_HOME", home)
         .assert()
         .code(1); // ErrorEnvelope without explicit EXIT_USAGE return → exit 1
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
 #[test]
@@ -582,12 +553,7 @@ fn invalid_export_format_emits_usage_envelope_and_exits_two() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(2);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
     assert!(parsed["error"]["message"].as_str().unwrap().contains("xml"));
 }
@@ -625,12 +591,7 @@ fn export_params_conflicts_with_format_flag() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(2);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
 #[test]
@@ -641,12 +602,7 @@ fn export_params_invalid_json_emits_usage_envelope() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(1); // ErrorEnvelope without explicit EXIT_USAGE return → exit 1
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
     assert!(parsed["error"]["message"]
         .as_str()
@@ -667,12 +623,7 @@ fn export_params_unknown_field_rejected() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
 #[test]
@@ -684,12 +635,7 @@ fn export_params_invalid_format_value_emits_usage() {
         .env("AGHIST_HOME", dir.path())
         .assert()
         .code(1);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
     assert!(parsed["error"]["message"]
         .as_str()
@@ -721,7 +667,7 @@ fn export_params_with_turn_range_slices_output() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let stdout = cli::assert_stdout(&assert);
     assert!(stdout.contains("second"));
     assert!(stdout.contains("third"));
     assert!(!stdout.contains("first"));
@@ -749,7 +695,6 @@ fn show_params_replaces_positional_ref() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let parsed = cli::assert_stdout_json(&assert);
     assert_eq!(parsed["target_turn"], 2);
 }

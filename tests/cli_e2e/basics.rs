@@ -1,4 +1,5 @@
 use super::aghist;
+use super::common::cli;
 use predicates::prelude::*;
 
 #[test]
@@ -22,12 +23,7 @@ fn version_flag_exits_zero() {
 #[test]
 fn unknown_subcommand_exits_two_with_usage_envelope() {
     let assert = aghist().arg("totally-unknown").assert().code(2);
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|l| l.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
 #[test]
@@ -54,12 +50,7 @@ fn uninstall_help_exits_zero() {
 #[test]
 fn update_from_build_tree_is_rejected_before_network() {
     let assert = aghist().arg("update").assert().failure();
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|line| line.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
 
     assert_eq!(parsed["error"]["kind"], "unsupported-install-method");
     assert!(parsed["error"]["message"]
@@ -71,12 +62,7 @@ fn update_from_build_tree_is_rejected_before_network() {
 #[test]
 fn uninstall_from_build_tree_is_rejected_before_prompt() {
     let assert = aghist().arg("uninstall").assert().failure();
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|line| line.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
 
     assert_eq!(parsed["error"]["kind"], "unsupported-install-method");
     assert!(parsed["error"]["message"]
@@ -140,12 +126,7 @@ fn reindex_reports_index_open_failure() {
         .env("AGHIST_INDEX_DIR", &index_path)
         .assert()
         .failure();
-    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
-    let line = stderr
-        .lines()
-        .find(|line| line.starts_with('{'))
-        .expect("expected JSON envelope on stderr");
-    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    let parsed = cli::assert_stderr_error(&assert);
 
     assert_eq!(parsed["error"]["kind"], "index-error");
     assert!(parsed["error"]["message"]

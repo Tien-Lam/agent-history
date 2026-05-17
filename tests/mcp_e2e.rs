@@ -1,76 +1,10 @@
 mod common;
 
-use std::io::Write;
-use std::path::Path;
-use std::process::{Command, Stdio};
-
 use serde_json::Value;
 
-fn aghist_bin() -> std::path::PathBuf {
-    common::helpers::aghist_bin()
-}
-
-/// Sends `requests` over stdin (one JSON-RPC line each) and returns the parsed
-/// response objects in order. EOF on stdin tells the server to exit, so we
-/// don't need an explicit `shutdown` call.
-fn run_session(env_home: &std::path::Path, requests: &[Value]) -> Vec<Value> {
-    run_session_with_config(env_home, None, requests)
-}
-
-fn run_session_with_config(
-    env_home: &std::path::Path,
-    config_path: Option<&Path>,
-    requests: &[Value],
-) -> Vec<Value> {
-    run_session_with_config_and_sources_cache(env_home, config_path, None, requests)
-}
-
-fn run_session_with_config_and_sources_cache(
-    env_home: &std::path::Path,
-    config_path: Option<&Path>,
-    sources_cache: Option<&Path>,
-    requests: &[Value],
-) -> Vec<Value> {
-    let mut cmd = Command::new(aghist_bin());
-    cmd.arg("mcp")
-        .env("AGHIST_HOME", env_home)
-        .env("AGHIST_INDEX_DIR", env_home.join("aghist-index"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(p) = config_path {
-        cmd.env("AGHIST_CONFIG", p);
-    }
-    if let Some(p) = sources_cache {
-        cmd.env("AGHIST_SOURCES_CACHE_DIR", p);
-    }
-    let mut child = cmd.spawn().expect("spawn aghist mcp");
-
-    {
-        let mut stdin = child.stdin.take().expect("child stdin");
-        for req in requests {
-            let line = serde_json::to_string(req).unwrap();
-            stdin.write_all(line.as_bytes()).unwrap();
-            stdin.write_all(b"\n").unwrap();
-        }
-        // Drop stdin → EOF → server exits.
-    }
-
-    let output = child.wait_with_output().expect("wait_with_output");
-    assert!(
-        output.status.success(),
-        "aghist mcp exited non-zero: {:?}\nstderr: {}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
-
-    stdout
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).expect("response is valid JSON"))
-        .collect()
-}
+use common::mcp::{
+    run_session, run_session_with_config, run_session_with_config_and_sources_cache,
+};
 
 #[test]
 fn mcp_initialize_advertises_protocol_and_tools() {
@@ -645,7 +579,7 @@ fn mcp_tool_calls_do_not_mutate_provider_history() {
     let fixture = common::fixtures::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
 
-    let before = snapshot_tree(&fixture.base_path);
+    let before = common::mcp::snapshot_tree(&fixture.base_path);
 
     let responses = run_session(
         home,
@@ -696,39 +630,9 @@ fn mcp_tool_calls_do_not_mutate_provider_history() {
         }
     }
 
-    let after = snapshot_tree(&fixture.base_path);
+    let after = common::mcp::snapshot_tree(&fixture.base_path);
     assert_eq!(
         before, after,
         "MCP tool calls mutated provider history files (read-only contract violated)"
     );
-}
-
-/// Reads every regular file under `root` into a (relative-path → bytes) map.
-/// Used by the read-only contract test to detect any change to provider files.
-fn snapshot_tree(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
-    let mut out = std::collections::BTreeMap::new();
-    walk_into(root, root, &mut out);
-    out
-}
-
-fn walk_into(
-    root: &Path,
-    dir: &Path,
-    out: &mut std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>,
-) {
-    for entry in std::fs::read_dir(dir).expect("read provider dir") {
-        let entry = entry.expect("dir entry");
-        let path = entry.path();
-        let ty = entry.file_type().expect("file type");
-        if ty.is_symlink() {
-            continue;
-        }
-        if ty.is_dir() {
-            walk_into(root, &path, out);
-        } else if ty.is_file() {
-            let rel = path.strip_prefix(root).unwrap().to_path_buf();
-            let bytes = std::fs::read(&path).expect("read provider file");
-            out.insert(rel, bytes);
-        }
-    }
 }
