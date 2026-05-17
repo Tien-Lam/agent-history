@@ -6,7 +6,7 @@ pub(crate) fn federated_discovery_for_commands(
 ) -> federated::FederatedDiscovery {
     let result = scope.discover_federated(providers);
     for failure in &result.failures {
-        eprintln!("warning: source '{}': {}", failure.source, failure.message);
+        eprintln!("{}", failure.warning_line());
     }
     result
 }

@@ -15,6 +15,8 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use serde::Serialize;
+
 use crate::config::RemoteSource;
 use crate::model::{Provider, Session};
 use crate::provider::{self, HistoryProvider};
@@ -39,6 +41,29 @@ pub struct FederatedDiscovery {
 pub struct SourceFailure {
     pub source: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SourceError {
+    pub source: String,
+    pub error: String,
+}
+
+impl SourceFailure {
+    pub fn to_error(&self) -> SourceError {
+        SourceError {
+            source: self.source.clone(),
+            error: self.message.clone(),
+        }
+    }
+
+    pub fn warning_line(&self) -> String {
+        format!("warning: source '{}': {}", self.source, self.message)
+    }
+}
+
+pub fn source_errors(failures: &[SourceFailure]) -> Vec<SourceError> {
+    failures.iter().map(SourceFailure::to_error).collect()
 }
 
 type DiscoveryOutcome = (String, Vec<Session>, Option<SourceFailure>);

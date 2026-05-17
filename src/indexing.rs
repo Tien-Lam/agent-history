@@ -46,7 +46,7 @@ pub struct IndexingSummary {
 #[serde(untagged)]
 pub enum IndexingError {
     Provider { provider: String, error: String },
-    Source { source: String, error: String },
+    Source(federated::SourceError),
 }
 
 struct IndexDiscovery<'a> {
@@ -190,10 +190,7 @@ fn discover_index_sessions<'a>(
     errors.extend(
         append_remote_sessions(&mut sessions, scope, filter)
             .into_iter()
-            .map(|failure| IndexingError::Source {
-                source: failure.source,
-                error: failure.message,
-            }),
+            .map(|failure| IndexingError::Source(failure.to_error())),
     );
 
     IndexDiscovery {

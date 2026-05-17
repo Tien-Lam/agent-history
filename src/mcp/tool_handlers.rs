@@ -5,7 +5,7 @@ use super::payload::{message_row_with_source, session_row_with_source, tool_erro
 use super::protocol::{RpcError, ERR_INVALID_PARAMS};
 use super::server::McpServer;
 
-use crate::federated::LOCAL_SOURCE;
+use crate::federated::{self, LOCAL_SOURCE};
 use crate::health::{run_health_checks, HealthStatus};
 use crate::indexing::{self, IndexingOptions, UnfilteredIndexScope};
 use crate::model::{QualifiedCitationRef, Session};
@@ -72,10 +72,7 @@ impl McpServer {
         Ok(json!({
             "total": rows.len(),
             "sessions": rows,
-            "source_errors": discovery.failures.iter().map(|failure| json!({
-                "source": failure.source,
-                "error": failure.message,
-            })).collect::<Vec<_>>(),
+            "source_errors": federated::source_errors(&discovery.failures),
         }))
     }
 

@@ -26,17 +26,32 @@ pub(in crate::schema) fn index_schema() -> Value {
                 "added": { "type": "integer", "minimum": 0 },
                 "updated": { "type": "integer", "minimum": 0 },
                 "unchanged": { "type": "integer", "minimum": 0 },
+                "removed": { "type": "integer", "minimum": 0 },
                 "messages_indexed": { "type": "integer", "minimum": 0 },
                 "force": { "type": "boolean" },
                 "index_dir": { "type": "string" },
                 "duration_ms": { "type": "integer", "minimum": 0 },
                 "errors": { "type": "array", "items": {
-                    "type": "object",
-                    "properties": {
-                        "provider": { "type": "string", "enum": provider_slug_enum() },
-                        "error": { "type": "string" }
-                    },
-                    "required": ["provider", "error"]
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "provider": { "type": "string", "enum": provider_slug_enum() },
+                                "error": { "type": "string" }
+                            },
+                            "required": ["provider", "error"],
+                            "additionalProperties": false
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "source": { "type": "string" },
+                                "error": { "type": "string" }
+                            },
+                            "required": ["source", "error"],
+                            "additionalProperties": false
+                        }
+                    ]
                 } },
                 "embeddings": {
                     "type": "object",
@@ -47,7 +62,7 @@ pub(in crate::schema) fn index_schema() -> Value {
                     "required": ["status"]
                 }
             },
-            "required": ["providers", "sessions_total", "added", "updated", "unchanged", "messages_indexed", "force", "index_dir", "duration_ms", "errors", "embeddings"]
+            "required": ["providers", "sessions_total", "added", "updated", "unchanged", "removed", "messages_indexed", "force", "index_dir", "duration_ms", "errors", "embeddings"]
         },
         "exit_codes": exit_codes()
     })

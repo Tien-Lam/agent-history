@@ -6,7 +6,7 @@ use super::super::args::{optional_usize, required_str};
 use super::super::server::McpServer;
 
 use crate::action::Action;
-use crate::federated::LOCAL_SOURCE;
+use crate::federated::{self, LOCAL_SOURCE};
 use crate::model::{QualifiedCitationRef, Session, SessionOrTurnRef};
 use crate::search::{HitKind, SearchIndex};
 
@@ -115,10 +115,7 @@ impl McpServer {
             "limit": limit,
             "total": hits_json.len(),
             "hits": hits_json,
-            "source_errors": discovery.failures.iter().map(|failure| json!({
-                "source": failure.source,
-                "error": failure.message,
-            })).collect::<Vec<_>>(),
+            "source_errors": federated::source_errors(&discovery.failures),
         }))
     }
 

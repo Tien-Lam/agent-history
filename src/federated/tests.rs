@@ -195,3 +195,21 @@ fn missing_remote_cache_records_failure_but_does_not_abort() {
     assert_eq!(result.failures.len(), 1);
     assert_eq!(result.failures[0].source, "desk");
 }
+
+#[test]
+fn source_errors_use_stable_json_shape() {
+    let failures = vec![SourceFailure {
+        source: "desk".to_string(),
+        message: "cache missing".to_string(),
+    }];
+
+    let errors = source_errors(&failures);
+    assert_eq!(
+        serde_json::to_value(&errors).unwrap(),
+        serde_json::json!([{ "source": "desk", "error": "cache missing" }])
+    );
+    assert_eq!(
+        failures[0].warning_line(),
+        "warning: source 'desk': cache missing"
+    );
+}
