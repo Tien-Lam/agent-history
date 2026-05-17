@@ -87,6 +87,23 @@ pub(crate) fn session_row_schema() -> Value {
     })
 }
 
+pub(crate) fn mcp_session_row_schema() -> Value {
+    let mut schema = session_row_schema();
+    let properties = schema["properties"]
+        .as_object_mut()
+        .expect("session row schema properties");
+    properties.insert(
+        "uri".to_string(),
+        json!({ "type": "string", "description": "MCP resource URI for this session." }),
+    );
+    properties.insert("model".to_string(), json!({ "type": ["string", "null"] }));
+    properties.insert(
+        "ended_at".to_string(),
+        json!({ "type": ["string", "null"], "format": "date-time" }),
+    );
+    schema
+}
+
 pub(crate) fn list_response_schema() -> Value {
     json!({
         "type": "object",
@@ -96,6 +113,31 @@ pub(crate) fn list_response_schema() -> Value {
             "meta": cursor_meta_schema()
         },
         "required": ["sessions", "meta"],
+        "additionalProperties": false
+    })
+}
+
+pub(crate) fn source_error_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "source": { "type": "string" },
+            "error": { "type": "string" }
+        },
+        "required": ["source", "error"],
+        "additionalProperties": false
+    })
+}
+
+pub(crate) fn mcp_list_response_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "sessions": { "type": "array", "items": mcp_session_row_schema() },
+            "source_errors": { "type": "array", "items": source_error_schema() }
+        },
+        "required": ["total", "sessions", "source_errors"],
         "additionalProperties": false
     })
 }
@@ -116,6 +158,72 @@ pub(crate) fn search_meta_schema() -> Value {
             }
         },
         "required": ["next_cursor", "total", "engine"],
+        "additionalProperties": false
+    })
+}
+
+pub(crate) fn message_row_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "ref": {
+                "type": ["string", "null"],
+                "pattern": source_qualified_citation_ref_pattern()
+            },
+            "uri": { "type": "string" },
+            "source": { "type": "string" },
+            "turn": { "type": "integer", "minimum": 1 },
+            "id": { "type": "string" },
+            "role": {
+                "type": "string",
+                "enum": ["user", "assistant", "system", "tool"]
+            },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "model": { "type": ["string", "null"] },
+            "content": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": { "type": "string" },
+                        "data": {}
+                    },
+                    "required": ["type"],
+                    "additionalProperties": false
+                }
+            },
+            "is_target": { "type": "boolean" }
+        },
+        "required": ["ref", "uri", "source", "turn", "id", "role", "timestamp", "model", "content"],
+        "additionalProperties": false
+    })
+}
+
+pub(crate) fn mcp_get_session_response_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "session": mcp_session_row_schema(),
+            "turns": { "type": "array", "items": message_row_schema() }
+        },
+        "required": ["session", "turns"],
+        "additionalProperties": false
+    })
+}
+
+pub(crate) fn mcp_get_message_response_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "ref": {
+                "type": "string",
+                "pattern": source_qualified_citation_ref_pattern()
+            },
+            "session": mcp_session_row_schema(),
+            "target_turn": { "type": "integer", "minimum": 1 },
+            "turns": { "type": "array", "items": message_row_schema() }
+        },
+        "required": ["ref", "session", "target_turn", "turns"],
         "additionalProperties": false
     })
 }
@@ -187,6 +295,21 @@ pub(crate) fn search_response_schema() -> Value {
             "meta": search_meta_schema()
         },
         "required": ["hits", "meta"],
+        "additionalProperties": false
+    })
+}
+
+pub(crate) fn mcp_search_response_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "query": { "type": "string" },
+            "limit": { "type": "integer", "minimum": 1 },
+            "total": { "type": "integer", "minimum": 0 },
+            "hits": { "type": "array", "items": search_hit_schema() },
+            "source_errors": { "type": "array", "items": source_error_schema() }
+        },
+        "required": ["query", "limit", "total", "hits", "source_errors"],
         "additionalProperties": false
     })
 }

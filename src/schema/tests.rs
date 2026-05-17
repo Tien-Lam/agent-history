@@ -3,8 +3,12 @@ use std::path::PathBuf;
 use chrono::{TimeZone, Utc};
 use serde_json::json;
 
-use crate::dto::{CursorMeta, ListEnvelope, SearchEnvelope, SearchHitJson, SearchMeta, SessionRow};
-use crate::model::{Provider, Session, SessionId};
+use crate::dto::{
+    CursorMeta, ListEnvelope, McpListResponse, McpSearchResponse, McpSessionRow, MessageRow,
+    SearchEnvelope, SearchHitJson, SearchMeta, SessionRow,
+};
+use crate::federated::SourceError;
+use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 
 use super::*;
 
@@ -185,12 +189,46 @@ fn dto_schema_fragments_cover_serialized_keys() {
         &crate::schema_fragments::session_row_schema(),
         &serde_json::to_value(SessionRow::from_session(&session, "local")).unwrap(),
     );
+    let mcp_session =
+        McpSessionRow::from_session(&session, "local", "aghist://local/claude-code/session-1");
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::mcp_session_row_schema(),
+        &serde_json::to_value(mcp_session.clone()).unwrap(),
+    );
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::list_response_schema(),
         &serde_json::to_value(ListEnvelope {
             sessions: vec![SessionRow::from_session(&session, "local")],
             meta: CursorMeta::new(1, Some("cursor-1")),
         })
+        .unwrap(),
+    );
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::mcp_list_response_schema(),
+        &serde_json::to_value(McpListResponse {
+            total: 1,
+            sessions: vec![mcp_session],
+            source_errors: vec![SourceError {
+                source: "remote".to_string(),
+                error: "missing".to_string(),
+            }],
+        })
+        .unwrap(),
+    );
+
+    let message = sample_message();
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::message_row_schema(),
+        &serde_json::to_value(
+            MessageRow::from_message(
+                &message,
+                "local",
+                1,
+                Some("claude-code/session-1#1".to_string()),
+                "aghist://local/claude-code/session-1/turns/1",
+            )
+            .with_target(true),
+        )
         .unwrap(),
     );
 
@@ -236,8 +274,22 @@ fn dto_schema_fragments_cover_serialized_keys() {
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::search_response_schema(),
         &serde_json::to_value(SearchEnvelope {
-            hits: vec![message_hit],
+            hits: vec![message_hit.clone()],
             meta: SearchMeta::new(1, None, "lexical"),
+        })
+        .unwrap(),
+    );
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::mcp_search_response_schema(),
+        &serde_json::to_value(McpSearchResponse {
+            query: "needle".to_string(),
+            limit: 20,
+            total: 1,
+            hits: vec![message_hit],
+            source_errors: vec![SourceError {
+                source: "remote".to_string(),
+                error: "missing".to_string(),
+            }],
         })
         .unwrap(),
     );
@@ -376,6 +428,17 @@ fn sample_session() -> Session {
         token_usage: None,
         message_count: 2,
         source_path: PathBuf::from("/tmp/project/session.jsonl"),
+    }
+}
+
+fn sample_message() -> Message {
+    Message {
+        id: MessageId("message-1".to_string()),
+        role: Role::Assistant,
+        timestamp: Utc.with_ymd_and_hms(2026, 1, 1, 0, 1, 0).unwrap(),
+        content: vec![ContentBlock::Text("hello".to_string())],
+        model: Some("model".to_string()),
+        token_usage: None,
     }
 }
 

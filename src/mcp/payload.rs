@@ -16,6 +16,10 @@ pub(super) fn tool_definitions() -> Value {
     let list_limit_max = schema_fragments::MCP_LIST_LIMIT_MAX;
     let include_context_default = schema_fragments::MCP_INCLUDE_CONTEXT_DEFAULT;
     let include_context_max = schema_fragments::MCP_INCLUDE_CONTEXT_MAX;
+    let mcp_get_message_response_schema = schema_fragments::mcp_get_message_response_schema();
+    let mcp_get_session_response_schema = schema_fragments::mcp_get_session_response_schema();
+    let mcp_list_response_schema = schema_fragments::mcp_list_response_schema();
+    let mcp_search_response_schema = schema_fragments::mcp_search_response_schema();
     json!([
         {
             "name": "search_sessions",
@@ -28,7 +32,8 @@ pub(super) fn tool_definitions() -> Value {
                 },
                 "required": ["query"],
                 "additionalProperties": false
-            }
+            },
+            "outputSchema": mcp_search_response_schema
         },
         {
             "name": "list_sessions",
@@ -41,7 +46,8 @@ pub(super) fn tool_definitions() -> Value {
                     "limit": { "type": "integer", "minimum": 1, "maximum": list_limit_max, "default": list_limit_default }
                 },
                 "additionalProperties": false
-            }
+            },
+            "outputSchema": mcp_list_response_schema
         },
         {
             "name": "get_session",
@@ -55,7 +61,8 @@ pub(super) fn tool_definitions() -> Value {
                 },
                 "required": ["session_id"],
                 "additionalProperties": false
-            }
+            },
+            "outputSchema": mcp_get_session_response_schema
         },
         {
             "name": "get_message",
@@ -72,7 +79,8 @@ pub(super) fn tool_definitions() -> Value {
                 },
                 "required": ["ref"],
                 "additionalProperties": false
-            }
+            },
+            "outputSchema": mcp_get_message_response_schema
         },
         {
             "name": "reindex",
