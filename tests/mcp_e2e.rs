@@ -235,12 +235,6 @@ fn mcp_list_sessions_finds_claude_fixture_via_provider_filter() {
 
 #[test]
 fn mcp_remote_source_cache_round_trips_list_search_message_and_resource() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-mcp-session")
         .project("remote-mcp-proj")
@@ -248,25 +242,12 @@ fn mcp_remote_source_cache_round_trips_list_search_message_and_resource() {
         .assistant("remote answer")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    std::fs::write(
-        &config_path,
-        r#"
-[[sources]]
-name = "laptop"
-host = "laptop.local"
-path = "/home/x/.claude"
-transport = "ssh"
-"#,
-    )
-    .unwrap();
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let responses = run_session_with_config_and_sources_cache(
-        empty_home.path(),
-        Some(&config_path),
-        Some(&cache_dir),
+        source.empty_home.path(),
+        Some(&source.config_path),
+        Some(&source.cache_dir),
         &[
             serde_json::json!({
                 "jsonrpc": "2.0",
@@ -301,9 +282,9 @@ transport = "ssh"
         .to_string();
 
     let followup = run_session_with_config_and_sources_cache(
-        empty_home.path(),
-        Some(&config_path),
-        Some(&cache_dir),
+        source.empty_home.path(),
+        Some(&source.config_path),
+        Some(&source.cache_dir),
         &[
             serde_json::json!({
                 "jsonrpc": "2.0",
@@ -398,40 +379,24 @@ fn assert_remote_mcp_followup(followup: &[Value], hit_ref: &str) {
 
 #[test]
 fn mcp_exposed_subset_blocks_remote_source_providers() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-hidden-mcp")
         .project("remote-hidden")
         .user("REMOTE_HIDDEN_MCP_TOKEN")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    std::fs::write(
-        &config_path,
+    let source = common::helpers::laptop_remote_source_with_config(
+        &remote.base_path,
         r#"
 [providers]
 mcp_exposed = ["copilot-cli"]
-
-[[sources]]
-name = "laptop"
-host = "laptop.local"
-path = "/home/x/.claude"
-transport = "ssh"
 "#,
-    )
-    .unwrap();
+    );
 
     let responses = run_session_with_config_and_sources_cache(
-        empty_home.path(),
-        Some(&config_path),
-        Some(&cache_dir),
+        source.empty_home.path(),
+        Some(&source.config_path),
+        Some(&source.cache_dir),
         &[
             serde_json::json!({
                 "jsonrpc": "2.0",

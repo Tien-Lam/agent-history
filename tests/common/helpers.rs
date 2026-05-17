@@ -100,6 +100,33 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) {
     }
 }
 
+pub struct FixtureHome {
+    dir: tempfile::TempDir,
+}
+
+impl FixtureHome {
+    pub fn new() -> Self {
+        Self {
+            dir: tempfile::tempdir().unwrap(),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        self.dir.path()
+    }
+
+    pub fn add_claude(&self, fixture: &super::fixtures::FixtureDir) {
+        copy_dir_recursive(&fixture.base_path, &self.path().join(".claude"));
+    }
+
+    pub fn add_codex(&self, fixture: &super::fixtures::FixtureDir) {
+        copy_dir_recursive(
+            &fixture.base_path,
+            &self.path().join(".codex").join("sessions"),
+        );
+    }
+}
+
 pub struct RemoteSourceCache {
     pub empty_home: tempfile::TempDir,
     pub _workdir: tempfile::TempDir,
@@ -108,6 +135,13 @@ pub struct RemoteSourceCache {
 }
 
 pub fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
+    laptop_remote_source_with_config(remote_base_path, "")
+}
+
+pub fn laptop_remote_source_with_config(
+    remote_base_path: &Path,
+    extra_config: &str,
+) -> RemoteSourceCache {
     let empty_home = tempfile::tempdir().unwrap();
     let workdir = tempfile::tempdir().unwrap();
     let cache_dir = workdir.path().join("cache");
@@ -118,12 +152,14 @@ pub fn laptop_remote_source(remote_base_path: &Path) -> RemoteSourceCache {
     let config_path = workdir.path().join("config.toml");
     fs::write(
         &config_path,
-        r#"[[sources]]
+        format!(
+            r#"[[sources]]
 name = "laptop"
 host = "laptop.local"
 path = "/home/x/.claude"
 transport = "ssh"
-"#,
+{extra_config}"#,
+        ),
     )
     .unwrap();
 

@@ -1,7 +1,6 @@
 use super::aghist;
 use super::common;
 use super::common::cli;
-use super::common::helpers::copy_dir_recursive;
 use predicates::prelude::*;
 
 /// Federated search: a registered remote source whose `data_dir` mirrors a
@@ -18,46 +17,20 @@ fn search_federates_across_local_and_remote_source_caches() {
         .build();
     let home = local.base_path.parent().unwrap();
 
-    // Remote source cache: a Claude tree under `<cache>/laptop/data/` with
-    // its own session matching the same token.
-    let cache_dir = tempfile::tempdir().unwrap();
-    let remote_data = cache_dir.path().join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("federated-remote")
         .project("remote-proj")
         .user("FEDERATED_TOKEN remote message body")
         .done()
         .build();
-    // The fixture builds at `<tmp>/.claude` — copy that into <cache>/laptop/data
-    // so providers_rooted_at(remote_data) finds it via the `.claude` subpath.
-    let remote_claude_src = remote.base_path.clone();
-    let remote_claude_dst = remote_data.join(".claude");
-    copy_dir_recursive(&remote_claude_src, &remote_claude_dst);
-
-    // Register the remote source so federated discovery picks it up.
-    let config_path = cache_dir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let index_dir = tempfile::tempdir().unwrap();
     let output = aghist()
         .args(["search", "FEDERATED_TOKEN", "--json"])
         .env("AGHIST_HOME", home)
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", cache_dir.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .output()
         .unwrap();
@@ -98,42 +71,26 @@ fn search_federates_across_local_and_remote_source_caches() {
 
 #[test]
 fn search_remote_sources_respect_enabled_provider_allowlist() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("disabled-remote")
         .project("remote-proj")
         .user("DISABLED_REMOTE_TOKEN body")
         .done()
         .build();
-    copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    std::fs::write(
-        &config_path,
-        r#"
-[[sources]]
-name = "laptop"
-host = "laptop.local"
-path = "/home/x/.claude"
-transport = "ssh"
-
+    let source = common::helpers::laptop_remote_source_with_config(
+        &remote.base_path,
+        r"
 [providers]
 enabled = []
-"#,
-    )
-    .unwrap();
+",
+    );
 
     let index_dir = tempfile::tempdir().unwrap();
     let output = aghist()
         .args(["search", "DISABLED_REMOTE_TOKEN", "--json"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .output()
         .unwrap();

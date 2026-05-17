@@ -61,16 +61,14 @@ fn list_with_multiple_providers() {
     let claude = common::fixtures::claude_single_session(2);
     let codex = common::fixtures::codex_single_session(2);
 
-    // Build a unified home dir with Claude and Codex fixtures
-    let home_dir = tempfile::tempdir().unwrap();
-    common::helpers::copy_dir_recursive(&claude.base_path, &home_dir.path().join(".claude"));
-    let codex_sessions = home_dir.path().join(".codex").join("sessions");
-    common::helpers::copy_dir_recursive(&codex.base_path, &codex_sessions);
+    let home = common::helpers::FixtureHome::new();
+    home.add_claude(&claude);
+    home.add_codex(&codex);
 
     // Under non-TTY, --list emits NDJSON. Assert both providers appear.
     let output = aghist()
         .arg("--list")
-        .env("AGHIST_HOME", home_dir.path())
+        .env("AGHIST_HOME", home.path())
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
@@ -92,11 +90,6 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         .build();
     let home = local.base_path.parent().unwrap();
 
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("shared-list-id")
         .project("remote-proj")
@@ -104,28 +97,13 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         .assistant_with_tool("using a tool", "Read", r#"{"file_path":"/tmp/remote.txt"}"#)
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let page1 = aghist()
         .args(["--list", "--json", "--limit", "1"])
         .env("AGHIST_HOME", home)
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
@@ -142,8 +120,8 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
     let page2 = aghist()
         .args(["--list", "--json", "--limit", "1", "--cursor", cursor])
         .env("AGHIST_HOME", home)
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
@@ -171,8 +149,8 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
     let tool_filtered = aghist()
         .args(["--list", "--json", "--has-tool-call"])
         .env("AGHIST_HOME", home)
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
     assert_eq!(
@@ -280,17 +258,14 @@ fn index_provider_filter_restricts_scope() {
         .build();
     let codex = common::fixtures::codex_single_session(2);
 
-    let home_dir = tempfile::tempdir().unwrap();
-    common::helpers::copy_dir_recursive(&claude.base_path, &home_dir.path().join(".claude"));
-    common::helpers::copy_dir_recursive(
-        &codex.base_path,
-        &home_dir.path().join(".codex").join("sessions"),
-    );
+    let home = common::helpers::FixtureHome::new();
+    home.add_claude(&claude);
+    home.add_codex(&codex);
     let index_dir = tempfile::tempdir().unwrap();
 
     let output = aghist()
         .args(["index", "--provider", "claude-code"])
-        .env("AGHIST_HOME", home_dir.path())
+        .env("AGHIST_HOME", home.path())
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .assert()
         .success();
@@ -305,41 +280,20 @@ fn index_provider_filter_restricts_scope() {
 
 #[test]
 fn index_provider_filter_includes_remote_cache_without_local_provider() {
-    let empty_home = tempfile::tempdir().unwrap();
-    let workdir = tempfile::tempdir().unwrap();
-    let cache_dir = workdir.path().join("cache");
-    let remote_data = cache_dir.join("laptop").join("data");
-    std::fs::create_dir_all(&remote_data).unwrap();
-
     let remote = common::fixtures::ClaudeFixtureBuilder::new()
         .add_session("remote-index-only")
         .project("remote-proj")
         .user("REMOTE_INDEX_TOKEN remote message body")
         .done()
         .build();
-    common::helpers::copy_dir_recursive(&remote.base_path, &remote_data.join(".claude"));
-
-    let config_path = workdir.path().join("config.toml");
-    aghist()
-        .args([
-            "sources",
-            "add",
-            "laptop",
-            "--host",
-            "laptop.local",
-            "--path",
-            "/home/x/.claude",
-        ])
-        .env("AGHIST_CONFIG", &config_path)
-        .assert()
-        .success();
+    let source = common::helpers::laptop_remote_source(&remote.base_path);
 
     let index_dir = tempfile::tempdir().unwrap();
     let output = aghist()
         .args(["index", "--provider", "claude-code"])
-        .env("AGHIST_HOME", empty_home.path())
-        .env("AGHIST_CONFIG", &config_path)
-        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_HOME", source.empty_home.path())
+        .env("AGHIST_CONFIG", &source.config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .assert()
         .success();
