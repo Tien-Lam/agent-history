@@ -10,6 +10,10 @@ use crate::health::{run_health_checks, HealthStatus};
 use crate::indexing::{self, IndexingOptions, UnfilteredIndexScope};
 use crate::model::{QualifiedCitationRef, Session};
 use crate::provider;
+use crate::schema_fragments::{
+    MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX, MCP_LIST_LIMIT_DEFAULT,
+    MCP_LIST_LIMIT_MAX,
+};
 
 mod search;
 
@@ -45,7 +49,7 @@ impl McpServer {
     fn tool_list_sessions(&self, args: &Value) -> Result<Value, String> {
         let provider_filter = optional_provider(args, "provider")?;
         let project_filter = optional_str(args, "project")?;
-        let limit = optional_usize(args, "limit", 50, 1, 1_000)?;
+        let limit = optional_usize(args, "limit", MCP_LIST_LIMIT_DEFAULT, 1, MCP_LIST_LIMIT_MAX)?;
 
         let discovery = self.collect_discovery();
         let mut all = discovery.sessions.clone();
@@ -100,7 +104,13 @@ impl McpServer {
         let qualified: QualifiedCitationRef = raw_ref
             .parse()
             .map_err(|e| format!("invalid ref '{raw_ref}': {e}"))?;
-        let include_context = optional_usize(args, "include_context", 0, 0, 100)?;
+        let include_context = optional_usize(
+            args,
+            "include_context",
+            MCP_INCLUDE_CONTEXT_DEFAULT,
+            0,
+            MCP_INCLUDE_CONTEXT_MAX,
+        )?;
         let citation = qualified.citation;
         let source = qualified.source.as_deref();
 

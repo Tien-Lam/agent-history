@@ -22,7 +22,7 @@ pub mod provider_diagnostic;
 pub mod query_scope;
 pub mod report;
 pub mod schema;
-mod schema_fragments;
+pub mod schema_fragments;
 pub mod search;
 pub mod session_resolver;
 pub mod stars;

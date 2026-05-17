@@ -8,6 +8,12 @@ use crate::schema_fragments;
 pub(super) fn tool_definitions() -> Value {
     let provider_slugs = schema_fragments::provider_slug_enum();
     let citation_ref_pattern = schema_fragments::source_qualified_citation_ref_pattern();
+    let search_limit_default = schema_fragments::SEARCH_LIMIT_DEFAULT;
+    let search_limit_max = schema_fragments::MCP_SEARCH_LIMIT_MAX;
+    let list_limit_default = schema_fragments::MCP_LIST_LIMIT_DEFAULT;
+    let list_limit_max = schema_fragments::MCP_LIST_LIMIT_MAX;
+    let include_context_default = schema_fragments::MCP_INCLUDE_CONTEXT_DEFAULT;
+    let include_context_max = schema_fragments::MCP_INCLUDE_CONTEXT_MAX;
     json!([
         {
             "name": "search_sessions",
@@ -16,7 +22,7 @@ pub(super) fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Tantivy query string. Matches the `content` and `project` fields." },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 20 }
+                    "limit": { "type": "integer", "minimum": 1, "maximum": search_limit_max, "default": search_limit_default }
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -30,7 +36,7 @@ pub(super) fn tool_definitions() -> Value {
                 "properties": {
                     "provider": { "type": "string", "enum": provider_slugs.clone() },
                     "project": { "type": "string", "description": "Substring match on session project_name." },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 50 }
+                    "limit": { "type": "integer", "minimum": 1, "maximum": list_limit_max, "default": list_limit_default }
                 },
                 "additionalProperties": false
             }
@@ -60,7 +66,7 @@ pub(super) fn tool_definitions() -> Value {
                         "pattern": citation_ref_pattern,
                         "description": "Citation ref. Example: claude-code/abc-123#7"
                     },
-                    "include_context": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0 }
+                    "include_context": { "type": "integer", "minimum": 0, "maximum": include_context_max, "default": include_context_default }
                 },
                 "required": ["ref"],
                 "additionalProperties": false

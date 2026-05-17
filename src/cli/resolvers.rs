@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::model::Provider;
+use aghist::schema_fragments::{SEARCH_LIMIT_DEFAULT, SHOW_INCLUDE_CONTEXT_DEFAULT};
 use aghist::todos::TodoKind;
 use aghist::{config, export};
 
@@ -53,7 +54,7 @@ struct SearchParams {
 
 impl SearchParams {
     fn default_limit() -> usize {
-        20
+        SEARCH_LIMIT_DEFAULT
     }
 }
 
@@ -64,13 +65,17 @@ struct ShowParams {
     reference: String,
     #[serde(default = "ShowParams::default_format")]
     format: String,
-    #[serde(default)]
+    #[serde(default = "ShowParams::default_include_context")]
     include_context: u32,
 }
 
 impl ShowParams {
     fn default_format() -> String {
         "md".to_string()
+    }
+
+    fn default_include_context() -> u32 {
+        SHOW_INCLUDE_CONTEXT_DEFAULT
     }
 }
 

@@ -1,5 +1,11 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::{
+    LIST_LIMIT_DEFAULT, SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT,
+    SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_ITERATIONS_DEFAULT,
+    SHOW_INCLUDE_CONTEXT_DEFAULT,
+};
+
 use super::super::common::{
     exit_codes, filter_params_fragment, provider_slug_enum, provider_slug_enum_nullable,
     session_row_schema, source_qualified_citation_ref_pattern,
@@ -15,6 +21,14 @@ fn list_params_properties() -> Value {
     props.insert(
         "ndjson".to_string(),
         json!({ "type": "boolean", "description": "Force NDJSON output (one session per line)." }),
+    );
+    props.insert(
+        "limit".to_string(),
+        json!({ "type": "integer", "minimum": 1, "default": LIST_LIMIT_DEFAULT }),
+    );
+    props.insert(
+        "cursor".to_string(),
+        json!({ "type": "string", "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
     );
     for (name, schema) in filter_params_fragment() {
         props.insert(name.to_string(), schema);
@@ -38,7 +52,11 @@ fn search_params_properties() -> Value {
     );
     props.insert(
         "limit".to_string(),
-        json!({ "type": "integer", "minimum": 1, "default": 20 }),
+        json!({ "type": "integer", "minimum": 1, "default": SEARCH_LIMIT_DEFAULT }),
+    );
+    props.insert(
+        "cursor".to_string(),
+        json!({ "type": "string", "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
     );
     props.insert(
         "json".to_string(),
@@ -50,11 +68,11 @@ fn search_params_properties() -> Value {
     );
     props.insert(
         "watch_interval_ms".to_string(),
-        json!({ "type": "integer", "minimum": 1, "default": 2000 }),
+        json!({ "type": "integer", "minimum": 1, "default": SEARCH_WATCH_INTERVAL_MS_DEFAULT }),
     );
     props.insert(
         "watch_iterations".to_string(),
-        json!({ "type": "integer", "minimum": 0, "default": 0, "description": "Stop after N polls (0 = run until interrupted)." }),
+        json!({ "type": "integer", "minimum": 0, "default": SEARCH_WATCH_ITERATIONS_DEFAULT, "description": "Stop after N polls (0 = run until interrupted)." }),
     );
     props.insert(
         "hybrid_weight".to_string(),
@@ -62,7 +80,7 @@ fn search_params_properties() -> Value {
             "type": "number",
             "minimum": 0.0,
             "maximum": 1.0,
-            "default": 0.0,
+            "default": SEARCH_HYBRID_WEIGHT_DEFAULT,
             "description": "RRF weight on the semantic side. 0.0 = lexical only (default), 1.0 = semantic only. Fails open to lexical when embeddings unavailable."
         }),
     );
@@ -228,7 +246,7 @@ pub(in crate::schema) fn show_schema() -> Value {
                 "include_context": {
                     "type": "integer",
                     "minimum": 0,
-                    "default": 0,
+                    "default": SHOW_INCLUDE_CONTEXT_DEFAULT,
                     "description": "Number of turns before and after the target to include."
                 }
             },

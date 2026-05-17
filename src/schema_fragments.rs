@@ -2,6 +2,19 @@ use serde_json::{json, Value};
 
 use crate::model::Provider;
 
+pub const LIST_LIMIT_DEFAULT: usize = 20;
+pub const SEARCH_LIMIT_DEFAULT: usize = 20;
+pub const SEARCH_WATCH_INTERVAL_MS_DEFAULT: u64 = 2_000;
+pub const SEARCH_WATCH_ITERATIONS_DEFAULT: u32 = 0;
+pub const SEARCH_HYBRID_WEIGHT_DEFAULT: f32 = 0.0;
+pub const SHOW_INCLUDE_CONTEXT_DEFAULT: u32 = 0;
+
+pub const MCP_SEARCH_LIMIT_MAX: usize = 200;
+pub const MCP_LIST_LIMIT_DEFAULT: usize = 50;
+pub const MCP_LIST_LIMIT_MAX: usize = 1_000;
+pub const MCP_INCLUDE_CONTEXT_DEFAULT: usize = 0;
+pub const MCP_INCLUDE_CONTEXT_MAX: usize = 100;
+
 fn provider_slug_pattern() -> String {
     Provider::all()
         .iter()

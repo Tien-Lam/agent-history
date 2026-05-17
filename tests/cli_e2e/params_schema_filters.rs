@@ -25,6 +25,13 @@ fn schema_for_search_is_valid_json_schema() {
     assert!(parsed["params"]["properties"]["query"].is_object());
     assert!(parsed["response"].is_object());
     assert!(parsed["exit_codes"]["0"].is_string());
+    assert_eq!(
+        parsed["params"]["properties"]["limit"]["default"],
+        serde_json::json!(aghist::schema_fragments::SEARCH_LIMIT_DEFAULT)
+    );
+    assert!(parsed["params"]["properties"]["cursor"].is_object());
+    assert!(parsed["response"]["properties"]["hits"].is_object());
+    assert!(parsed["response"]["properties"]["meta"].is_object());
 }
 #[test]
 fn schema_for_search_documents_filter_flags() {
@@ -59,6 +66,11 @@ fn schema_for_list_documents_filter_flags() {
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     let props = &parsed["params"]["properties"];
+    assert_eq!(
+        props["limit"]["default"],
+        serde_json::json!(aghist::schema_fragments::LIST_LIMIT_DEFAULT)
+    );
+    assert!(props["cursor"].is_object());
     for name in [
         "provider",
         "since",

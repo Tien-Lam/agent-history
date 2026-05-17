@@ -4,6 +4,8 @@ mod resolvers;
 
 use clap::Parser;
 
+use aghist::schema_fragments::LIST_LIMIT_DEFAULT;
+
 pub(crate) use commands::{Command, NoteCommand, SourcesCommand, TagCommand};
 pub(crate) use filters::FilterArgs;
 pub(crate) use resolvers::{
@@ -25,7 +27,7 @@ pub(crate) struct Cli {
 
     /// Maximum number of sessions to return when paired with `--list`.
     /// JSON output includes `meta.next_cursor` if more results remain.
-    #[arg(long, default_value_t = 20, requires = "list")]
+    #[arg(long, default_value_t = LIST_LIMIT_DEFAULT, requires = "list")]
     pub(crate) limit: usize,
 
     /// Opaque pagination cursor (from a prior `meta.next_cursor`) for `--list`.

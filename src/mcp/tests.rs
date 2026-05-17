@@ -154,12 +154,58 @@ fn tool_ref_patterns_use_shared_contract_fragments() {
 }
 
 #[test]
+fn tool_limit_schemas_use_shared_contract_constants() {
+    let tools = tool_definitions();
+    let tools = tools.as_array().unwrap();
+
+    let search = tool_by_name(tools, "search_sessions");
+    let search_limit = &search["inputSchema"]["properties"]["limit"];
+    assert_eq!(
+        search_limit["default"],
+        serde_json::json!(schema_fragments::SEARCH_LIMIT_DEFAULT)
+    );
+    assert_eq!(
+        search_limit["maximum"],
+        serde_json::json!(schema_fragments::MCP_SEARCH_LIMIT_MAX)
+    );
+
+    let list = tool_by_name(tools, "list_sessions");
+    let list_limit = &list["inputSchema"]["properties"]["limit"];
+    assert_eq!(
+        list_limit["default"],
+        serde_json::json!(schema_fragments::MCP_LIST_LIMIT_DEFAULT)
+    );
+    assert_eq!(
+        list_limit["maximum"],
+        serde_json::json!(schema_fragments::MCP_LIST_LIMIT_MAX)
+    );
+
+    let get_message = tool_by_name(tools, "get_message");
+    let include_context = &get_message["inputSchema"]["properties"]["include_context"];
+    assert_eq!(
+        include_context["default"],
+        serde_json::json!(schema_fragments::MCP_INCLUDE_CONTEXT_DEFAULT)
+    );
+    assert_eq!(
+        include_context["maximum"],
+        serde_json::json!(schema_fragments::MCP_INCLUDE_CONTEXT_MAX)
+    );
+}
+
+#[test]
 fn unknown_method_returns_method_not_found() {
     let resp = run_one(
         &server(),
         r#"{"jsonrpc":"2.0","id":3,"method":"nope/nope"}"#,
     );
     assert_eq!(resp["error"]["code"], ERR_METHOD_NOT_FOUND);
+}
+
+fn tool_by_name<'a>(tools: &'a [Value], name: &str) -> &'a Value {
+    tools
+        .iter()
+        .find(|tool| tool["name"].as_str() == Some(name))
+        .unwrap_or_else(|| panic!("missing tool {name}"))
 }
 
 #[test]

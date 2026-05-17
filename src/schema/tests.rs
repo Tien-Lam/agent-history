@@ -86,7 +86,35 @@ fn search_schema_describes_query_param() {
     let params = &schema["params"]["properties"];
     assert!(params["query"].is_object());
     assert!(params["limit"].is_object());
-    assert_eq!(params["limit"]["default"], 20);
+    assert_eq!(
+        params["limit"]["default"],
+        serde_json::json!(crate::schema_fragments::SEARCH_LIMIT_DEFAULT)
+    );
+    assert!(params["cursor"].is_object());
+    assert_eq!(
+        params["watch_interval_ms"]["default"],
+        serde_json::json!(crate::schema_fragments::SEARCH_WATCH_INTERVAL_MS_DEFAULT)
+    );
+    assert_eq!(
+        params["watch_iterations"]["default"],
+        serde_json::json!(crate::schema_fragments::SEARCH_WATCH_ITERATIONS_DEFAULT)
+    );
+    assert_eq!(
+        params["hybrid_weight"]["default"],
+        serde_json::json!(crate::schema_fragments::SEARCH_HYBRID_WEIGHT_DEFAULT)
+    );
+}
+
+#[test]
+fn list_schema_describes_pagination_params() {
+    let schema = schema_for("list").unwrap();
+    let params = &schema["params"]["properties"];
+    assert!(params["limit"].is_object());
+    assert_eq!(
+        params["limit"]["default"],
+        serde_json::json!(crate::schema_fragments::LIST_LIMIT_DEFAULT)
+    );
+    assert!(params["cursor"].is_object());
 }
 
 #[test]

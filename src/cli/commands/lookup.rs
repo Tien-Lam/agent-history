@@ -2,6 +2,10 @@ use std::path::PathBuf;
 
 use aghist::export;
 use aghist::model::Provider;
+use aghist::schema_fragments::{
+    SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_WATCH_INTERVAL_MS_DEFAULT,
+    SEARCH_WATCH_ITERATIONS_DEFAULT, SHOW_INCLUDE_CONTEXT_DEFAULT,
+};
 use clap::Args;
 
 use super::super::resolvers::{parse_provider_slug, ShowFormat};
@@ -100,7 +104,7 @@ pub(crate) struct SearchCommand {
     pub(crate) stdin: bool,
 
     /// Maximum number of hits to return
-    #[arg(long, short = 'n', default_value_t = 20, conflicts_with = "params")]
+    #[arg(long, short = 'n', default_value_t = SEARCH_LIMIT_DEFAULT, conflicts_with = "params")]
     pub(crate) limit: usize,
 
     /// Opaque pagination cursor from a prior `meta.next_cursor`.
@@ -123,7 +127,7 @@ pub(crate) struct SearchCommand {
     /// Poll interval in milliseconds when `--watch` is set (default 2000).
     #[arg(
         long,
-        default_value_t = 2000,
+        default_value_t = SEARCH_WATCH_INTERVAL_MS_DEFAULT,
         value_name = "MS",
         conflicts_with = "params"
     )]
@@ -132,7 +136,7 @@ pub(crate) struct SearchCommand {
     /// Stop watch mode after N polls (0 = run until interrupted; default 0).
     ///
     /// Mostly useful for tests and one-shot snapshots.
-    #[arg(long, default_value_t = 0, value_name = "N", conflicts_with = "params")]
+    #[arg(long, default_value_t = SEARCH_WATCH_ITERATIONS_DEFAULT, value_name = "N", conflicts_with = "params")]
     pub(crate) watch_iterations: u32,
 
     /// Show BM25 score breakdown per result (Tantivy explanation tree).
@@ -153,7 +157,7 @@ pub(crate) struct SearchCommand {
     /// score (small, ~0-0.03) - not a BM25 score.
     #[arg(
         long,
-        default_value_t = 0.0,
+        default_value_t = SEARCH_HYBRID_WEIGHT_DEFAULT,
         value_name = "FLOAT",
         conflicts_with = "params"
     )]
@@ -182,7 +186,7 @@ pub(crate) struct ShowCommand {
     pub(crate) format: ShowFormat,
 
     /// Include N turns before and after the target for context (default 0).
-    #[arg(long, default_value_t = 0, conflicts_with = "params")]
+    #[arg(long, default_value_t = SHOW_INCLUDE_CONTEXT_DEFAULT, conflicts_with = "params")]
     pub(crate) include_context: u32,
 
     /// JSON request body containing all params at once. Mutually exclusive

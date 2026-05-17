@@ -8,6 +8,7 @@ use super::super::server::McpServer;
 use crate::action::Action;
 use crate::federated::{self, LOCAL_SOURCE};
 use crate::model::{QualifiedCitationRef, Session, SessionOrTurnRef};
+use crate::schema_fragments::{MCP_SEARCH_LIMIT_MAX, SEARCH_LIMIT_DEFAULT};
 use crate::search::{HitKind, SearchIndex};
 
 impl McpServer {
@@ -16,7 +17,7 @@ impl McpServer {
         if query.trim().is_empty() {
             return Err("query is empty".to_string());
         }
-        let limit = optional_usize(args, "limit", 20, 1, 200)?;
+        let limit = optional_usize(args, "limit", SEARCH_LIMIT_DEFAULT, 1, MCP_SEARCH_LIMIT_MAX)?;
 
         let discovery = self.collect_discovery();
         let sessions = discovery.sessions.clone();
