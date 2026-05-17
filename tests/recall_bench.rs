@@ -1,7 +1,7 @@
 //! Recall@10 / MRR benchmark for the search index (ahist-y3o.4.4).
 //!
-//! Builds a synthetic Claude-format corpus of single-topic sessions, runs a
-//! labeled query set against it, and reports recall@10 + MRR for each
+//! Builds a mixed-provider synthetic corpus, runs a labeled query set against
+//! it, and reports recall@10 + MRR + coarse latency gates for each
 //! retrieval strategy:
 //!
 //! - **lexical**: BM25 via Tantivy, exactly what `aghist search` uses today.
@@ -26,8 +26,8 @@
 //!
 //! Setting `AGHIST_BENCH_WRITE_REPORT=1` rewrites `docs/SEARCH_BENCH.md` with
 //! the freshly measured numbers — useful when the corpus or queries change.
-//! The default test only asserts a sanity floor (lexical recall@10 ≥ 0.5) so
-//! the suite stays fast and never blocks on docs drift.
+//! The default test asserts conservative quality and latency floors so the
+//! suite stays fast while still catching meaningful regressions.
 
 // Pedantic lints we deliberately ignore in this bench:
 // - cast_precision_loss / cast_possible_truncation: usize→f32 for
@@ -47,12 +47,13 @@ mod common;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use aghist::provider::claude_code::ClaudeCodeProvider;
 use aghist::provider::HistoryProvider;
 use aghist::search::SearchIndex;
 
-use common::fixtures::ClaudeFixtureBuilder;
+use common::fixtures::{self, ClaudeFixtureBuilder};
 
 // ─── Corpus ─────────────────────────────────────────────────────────────────
 
@@ -170,9 +171,73 @@ const TOPICS: &[TopicSpec] = &[
         user_followup: "What about lock contention?",
         assistant_followup: "perf lock or `mutrace` surface the worst offenders; if it's a Rust binary, parking_lot's deadlock detection helps in dev.",
     },
+    TopicSpec {
+        id: "mcp-server",
+        project: "agent-tools",
+        user_prompt: "I need an MCP server that exposes search tools over stdio.",
+        assistant_reply: "Implement JSON-RPC 2.0 over stdin/stdout and advertise tools/list plus resources/list. The MCP client calls tools/call with structured params; keep responses as content blocks with text and optional structuredContent.",
+        user_followup: "How should sessions be exposed as resources?",
+        assistant_followup: "Use stable aghist://session/<provider>/<id> URIs and a turn URI for individual messages. Resource reads should be read-only and deterministic.",
+    },
+    TopicSpec {
+        id: "release-install",
+        project: "release-tooling",
+        user_prompt: "The installer needs to pull GitHub release archives safely.",
+        assistant_reply: "Package tar.gz artifacts on Unix and zip artifacts on Windows. Include an aghist.install marker with method=github-release, repo, target, and tag so update and uninstall can verify ownership.",
+        user_followup: "How do we test that before tagging?",
+        assistant_followup: "Run a release dry-run in CI: build the self-update binary, package a synthetic tag, install from the local archive, verify --version, then uninstall non-interactively.",
+    },
+    TopicSpec {
+        id: "sqlite-metadata",
+        project: "metadata",
+        user_prompt: "Where should user notes and tags live?",
+        assistant_reply: "Use a rusqlite sidecar database with migrations. Store stars, notes, and tags keyed by the stable session ref; keep metadata separate from provider history so aghist remains read-only against source files.",
+        user_followup: "What about schema upgrades?",
+        assistant_followup: "Run rusqlite_migration at open time and keep migrations additive. Tests should cover CRUD plus filtering by metadata-backed session keys.",
+    },
+    TopicSpec {
+        id: "ratatui-tui",
+        project: "terminal-ui",
+        user_prompt: "The terminal UI flickers when I scroll message history.",
+        assistant_reply: "Keep ratatui rendering pure from App state and mutate only through Action dispatch. Crossterm raw mode setup and teardown belongs at the runtime boundary; MessageView should own scroll offsets and wrapping.",
+        user_followup: "How do key bindings fit?",
+        assistant_followup: "Map KeyEvent to Action per AppMode, then let dispatch update state before render. Snapshot tests catch layout drift in browse, search, help, and filter overlays.",
+    },
+    TopicSpec {
+        id: "tantivy-index",
+        project: "search",
+        user_prompt: "Reindexing all sessions every run is wasteful.",
+        assistant_reply: "Keep a manifest of source file fingerprints and session keys. Tantivy can skip unchanged sessions, prune stale documents, and keep BM25 fields for provider, project, role, content, tool output, and timestamp.",
+        user_followup: "How do duplicate session IDs behave?",
+        assistant_followup: "Use provider plus source path plus session id as the internal identity key so duplicate raw IDs from different files do not overwrite each other.",
+    },
+    TopicSpec {
+        id: "embeddings-hybrid",
+        project: "search",
+        user_prompt: "Lexical search misses paraphrases in old conversations.",
+        assistant_reply: "Add optional FastEmbed vectors behind explicit download consent. Store embeddings by message content hash and combine semantic cosine ranking with BM25 using Reciprocal Rank Fusion.",
+        user_followup: "What if embeddings are not installed?",
+        assistant_followup: "Fail open to lexical search and report the engine in response metadata. Hybrid weights should never require a model download unless the user opted in.",
+    },
+    TopicSpec {
+        id: "federated-sources",
+        project: "sync",
+        user_prompt: "I want to search agent history from my laptop and workstation together.",
+        assistant_reply: "Register remote sources with host, path, and transport, then pull via rsync into a local cache. The indexer treats cached roots as provider candidate dirs and labels hits with the source name.",
+        user_followup: "How do local and remote duplicates work?",
+        assistant_followup: "Deduplicate by content hash and prefer the local source label when the same session appears in both places.",
+    },
+    TopicSpec {
+        id: "rust-error-handling",
+        project: "cli-contracts",
+        user_prompt: "The CLI needs machine-readable errors for scripts.",
+        assistant_reply: "Use thiserror for domain errors and convert failures to a single-line ErrorEnvelope on stderr. Keep stdout clean for JSON payloads and return semantic exit codes for success, usage errors, runtime errors, and empty results.",
+        user_followup: "Where should anyhow be used?",
+        assistant_followup: "Keep anyhow at the binary boundary where context is useful; library modules should expose typed errors so callers can classify failures.",
+    },
 ];
 
-fn build_corpus() -> common::fixtures::FixtureDir {
+fn build_topic_corpus() -> common::fixtures::FixtureDir {
     let mut builder = ClaudeFixtureBuilder::new();
     for topic in TOPICS {
         builder = builder
@@ -186,6 +251,58 @@ fn build_corpus() -> common::fixtures::FixtureDir {
             .done();
     }
     builder.build()
+}
+
+struct BenchCorpus {
+    _dirs: Vec<tempfile::TempDir>,
+    providers: Vec<Box<dyn HistoryProvider>>,
+    sessions: Vec<aghist::model::Session>,
+    semantic_texts: Vec<(String, String)>,
+    noise_sessions: usize,
+}
+
+fn build_corpus() -> BenchCorpus {
+    let topic_fixture = build_topic_corpus();
+    let mut dirs = vec![topic_fixture.dir];
+    let mut providers: Vec<Box<dyn HistoryProvider>> =
+        vec![Box::new(ClaudeCodeProvider::new(vec![
+            topic_fixture.base_path,
+        ]))];
+
+    let (mut noise_dirs, mut noise_providers) = fixtures::all_generated_providers(2, 4);
+    dirs.append(&mut noise_dirs);
+    providers.append(&mut noise_providers);
+
+    let mut sessions = Vec::new();
+    let mut semantic_texts = Vec::new();
+    let mut noise_sessions = 0;
+    for (provider_idx, provider) in providers.iter().enumerate() {
+        let provider_sessions = provider
+            .discover_sessions()
+            .unwrap_or_else(|e| panic!("discover bench sessions for {}: {e}", provider.provider()));
+        if provider_idx > 0 {
+            noise_sessions += provider_sessions.len();
+        }
+        for session in provider_sessions {
+            let messages = provider.load_messages(&session).unwrap_or_else(|e| {
+                panic!(
+                    "load bench messages for {} {}: {e}",
+                    provider.provider(),
+                    session.id.0
+                )
+            });
+            semantic_texts.push((session.id.0.clone(), render_messages_text(&messages)));
+            sessions.push(session);
+        }
+    }
+
+    BenchCorpus {
+        _dirs: dirs,
+        providers,
+        sessions,
+        semantic_texts,
+        noise_sessions,
+    }
 }
 
 // ─── Labeled query set ──────────────────────────────────────────────────────
@@ -217,6 +334,11 @@ fn load_queries() -> Vec<LabeledQuery> {
 
 const TOP_K: usize = 10;
 const RRF_K: f32 = 60.0;
+const MIN_LEXICAL_RECALL: f32 = 0.85;
+const MIN_HYBRID_RECALL: f32 = 0.85;
+const MIN_HYBRID_MRR: f32 = 0.80;
+const MAX_INDEX_BUILD_TIME: Duration = Duration::from_secs(10);
+const MAX_QUERY_P95: Duration = Duration::from_millis(750);
 
 /// One ranked hit returned by a strategy. `session_id` is what we score
 /// against the labeled answer; `score` is opaque (only the rank matters for
@@ -483,9 +605,37 @@ fn render_session_text(topic: &TopicSpec) -> String {
     )
 }
 
+fn render_messages_text(messages: &[aghist::model::Message]) -> String {
+    messages
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .map(content_block_text)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn content_block_text(block: &aghist::model::ContentBlock) -> String {
+    match block {
+        aghist::model::ContentBlock::Text(text)
+        | aghist::model::ContentBlock::Thinking(text)
+        | aghist::model::ContentBlock::Error(text) => text.clone(),
+        aghist::model::ContentBlock::CodeBlock { code, .. } => code.clone(),
+        aghist::model::ContentBlock::ToolUse(call) => {
+            format!("{} {}", call.name, call.arguments)
+        }
+        aghist::model::ContentBlock::ToolResult(result) => result.output.clone(),
+    }
+}
+
 // ─── Report rendering ───────────────────────────────────────────────────────
 
-fn render_report(reports: &[StrategyReport], n_queries: usize, n_sessions: usize) -> String {
+fn render_report(
+    reports: &[StrategyReport],
+    n_queries: usize,
+    n_sessions: usize,
+    noise_sessions: usize,
+    timings: &BenchTimings,
+) -> String {
     let mut out = String::new();
     out.push_str("# Search Recall Bench\n\n");
     out.push_str("Generated by `cargo test --test recall_bench`. See ");
@@ -493,7 +643,8 @@ fn render_report(reports: &[StrategyReport], n_queries: usize, n_sessions: usize
     out.push_str("and [`tests/fixtures/bench_recall/queries.json`](../tests/fixtures/bench_recall/queries.json) ");
     out.push_str("for the labeled query set.\n\n");
     out.push_str(&format!(
-        "Corpus: {n_sessions} synthetic single-topic Claude-format sessions, 4 messages each.\n"
+        "Corpus: {n_sessions} synthetic sessions ({topic_count} labeled Claude-format topics + {noise_sessions} mixed-provider distractors), 4 messages each.\n",
+        topic_count = TOPICS.len(),
     ));
     out.push_str(&format!("Query set: {n_queries} labeled queries.\n\n"));
 
@@ -535,6 +686,20 @@ fn render_report(reports: &[StrategyReport], n_queries: usize, n_sessions: usize
         }
     }
 
+    out.push_str("\n## Latency Gates\n\n");
+    out.push_str("| Measurement | Value | Gate |\n");
+    out.push_str("|---|---:|---:|\n");
+    out.push_str(&format!(
+        "| Index build | {} ms | <= {} ms |\n",
+        timings.index_build.as_millis(),
+        MAX_INDEX_BUILD_TIME.as_millis(),
+    ));
+    out.push_str(&format!(
+        "| Query p95 | {} ms | <= {} ms |\n",
+        timings.query_p95.as_millis(),
+        MAX_QUERY_P95.as_millis(),
+    ));
+
     out.push_str("\n## Methodology notes\n\n");
     out.push_str("- **lexical** is the production Tantivy BM25 index (`SearchIndex::search`).\n");
     out.push_str(
@@ -565,35 +730,52 @@ fn render_report(reports: &[StrategyReport], n_queries: usize, n_sessions: usize
     out
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BenchTimings {
+    index_build: Duration,
+    query_p95: Duration,
+}
+
+fn percentile_duration(mut durations: Vec<Duration>, percentile: f32) -> Duration {
+    if durations.is_empty() {
+        return Duration::ZERO;
+    }
+    durations.sort_unstable();
+    let max_idx = durations.len() - 1;
+    let idx = ((max_idx as f32) * percentile).ceil() as usize;
+    durations[idx.min(max_idx)]
+}
+
 // ─── Driver ─────────────────────────────────────────────────────────────────
 
 #[test]
 fn search_recall_benchmark() {
     let corpus = build_corpus();
-    let provider: Box<dyn HistoryProvider> =
-        Box::new(ClaudeCodeProvider::new(vec![corpus.base_path.clone()]));
-    let providers = vec![provider];
-    let sessions = providers[0]
-        .discover_sessions()
-        .expect("discover synthetic sessions");
     assert_eq!(
-        sessions.len(),
-        TOPICS.len(),
-        "every TOPICS entry should produce one session"
+        corpus.sessions.len(),
+        TOPICS.len() + corpus.noise_sessions,
+        "bench corpus session accounting drifted"
     );
 
     let index_dir = tempfile::tempdir().expect("tempdir for index");
     let index = SearchIndex::open_or_create(index_dir.path()).expect("open index");
     let (tx, _rx) = crossbeam_channel::unbounded();
+    let build_started = Instant::now();
     index
-        .build_index(&sessions, &providers, &tx)
+        .build_index(&corpus.sessions, &corpus.providers, &tx)
         .expect("build index");
+    let index_build = build_started.elapsed();
 
-    let session_texts: Vec<(String, String)> = TOPICS
-        .iter()
-        .map(|t| (t.id.to_string(), render_session_text(t)))
-        .collect();
-    let semantic = SemanticRanker::build(&session_texts);
+    let mut semantic_texts = corpus.semantic_texts.clone();
+    for topic in TOPICS {
+        if let Some((_, text)) = semantic_texts
+            .iter_mut()
+            .find(|(session_id, _)| session_id == topic.id)
+        {
+            *text = render_session_text(topic);
+        }
+    }
+    let semantic = SemanticRanker::build(&semantic_texts);
 
     let queries = load_queries();
     assert!(
@@ -611,6 +793,14 @@ fn search_recall_benchmark() {
             "labeled query targets unknown session id: {target}"
         );
     }
+    let mut seen_query_ids = HashSet::new();
+    for q in &queries {
+        assert!(
+            seen_query_ids.insert(q.id.as_str()),
+            "duplicate labeled query id: {}",
+            q.id
+        );
+    }
 
     let mut lexical_report = StrategyReport {
         strategy: "lexical".into(),
@@ -625,10 +815,13 @@ fn search_recall_benchmark() {
         ..Default::default()
     };
 
+    let mut query_latencies = Vec::with_capacity(queries.len());
     for q in &queries {
+        let query_started = Instant::now();
         let lex_hits = rank_lexical(&index, &q.query);
         let sem_hits = semantic.rank(&q.query);
         let hyb_hits = rank_hybrid(&lex_hits, &sem_hits);
+        query_latencies.push(query_started.elapsed());
 
         let lex_rank = rank_of(&lex_hits, &q.expected_session_id);
         let sem_rank = rank_of(&sem_hits, &q.expected_session_id);
@@ -666,7 +859,17 @@ fn search_recall_benchmark() {
         semantic_report.clone(),
         hybrid_report.clone(),
     ];
-    let report = render_report(&reports, queries.len(), TOPICS.len());
+    let timings = BenchTimings {
+        index_build,
+        query_p95: percentile_duration(query_latencies, 0.95),
+    };
+    let report = render_report(
+        &reports,
+        queries.len(),
+        corpus.sessions.len(),
+        corpus.noise_sessions,
+        &timings,
+    );
     eprintln!("\n{report}");
 
     if std::env::var_os("AGHIST_BENCH_WRITE_REPORT").is_some() {
@@ -675,14 +878,40 @@ fn search_recall_benchmark() {
         eprintln!("wrote {}", path.display());
     }
 
-    // Sanity floor: lexical BM25 over verbatim-keyword queries should always
-    // clear 0.5 recall@10 against this 12-session corpus. If it doesn't,
-    // either the index is broken or the fixture has drifted in a way that
-    // invalidates the labeled answers — fail loud.
+    // Quality and latency floors. These are intentionally conservative, but
+    // they make search regressions visible in CI instead of burying them in
+    // a markdown report.
     assert!(
-        lexical_report.overall.recall() >= 0.5,
-        "lexical recall@10 collapsed: got {:.3} on {} queries",
+        lexical_report.overall.recall() >= MIN_LEXICAL_RECALL,
+        "lexical recall@10 collapsed: got {:.3}, expected at least {:.3} on {} queries",
         lexical_report.overall.recall(),
+        MIN_LEXICAL_RECALL,
         queries.len()
+    );
+    assert!(
+        hybrid_report.overall.recall() >= MIN_HYBRID_RECALL,
+        "hybrid recall@10 collapsed: got {:.3}, expected at least {:.3} on {} queries",
+        hybrid_report.overall.recall(),
+        MIN_HYBRID_RECALL,
+        queries.len()
+    );
+    assert!(
+        hybrid_report.overall.mrr() >= MIN_HYBRID_MRR,
+        "hybrid MRR collapsed: got {:.3}, expected at least {:.3} on {} queries",
+        hybrid_report.overall.mrr(),
+        MIN_HYBRID_MRR,
+        queries.len()
+    );
+    assert!(
+        timings.index_build <= MAX_INDEX_BUILD_TIME,
+        "index build took {:?}, expected <= {:?}",
+        timings.index_build,
+        MAX_INDEX_BUILD_TIME
+    );
+    assert!(
+        timings.query_p95 <= MAX_QUERY_P95,
+        "query p95 took {:?}, expected <= {:?}",
+        timings.query_p95,
+        MAX_QUERY_P95
     );
 }

@@ -24,6 +24,22 @@
     { "id": "q21", "tag": "lexical", "query": "Apollo GraphQL resolver mutation", "expected_session_id": "graphql-schema" },
     { "id": "q22", "tag": "semantic", "query": "API subscription real-time pubsub", "expected_session_id": "graphql-schema" },
     { "id": "q23", "tag": "lexical", "query": "perf top flame graph", "expected_session_id": "linux-perf" },
-    { "id": "q24", "tag": "semantic", "query": "syscall latency tracing tool", "expected_session_id": "linux-perf" }
+    { "id": "q24", "tag": "semantic", "query": "syscall latency tracing tool", "expected_session_id": "linux-perf" },
+    { "id": "q25", "tag": "lexical", "query": "MCP JSON-RPC tools resources stdio", "expected_session_id": "mcp-server" },
+    { "id": "q26", "tag": "semantic", "query": "agent protocol exposes conversation resources", "expected_session_id": "mcp-server" },
+    { "id": "q27", "tag": "lexical", "query": "aghist.install github-release marker", "expected_session_id": "release-install" },
+    { "id": "q28", "tag": "semantic", "query": "local archive package smoke uninstall", "expected_session_id": "release-install" },
+    { "id": "q29", "tag": "lexical", "query": "rusqlite migrations notes tags stars", "expected_session_id": "sqlite-metadata" },
+    { "id": "q30", "tag": "semantic", "query": "sidecar database user annotations", "expected_session_id": "sqlite-metadata" },
+    { "id": "q31", "tag": "lexical", "query": "ratatui crossterm raw mode", "expected_session_id": "ratatui-tui" },
+    { "id": "q32", "tag": "semantic", "query": "terminal message scroll key bindings", "expected_session_id": "ratatui-tui" },
+    { "id": "q33", "tag": "lexical", "query": "Tantivy manifest fingerprints BM25", "expected_session_id": "tantivy-index" },
+    { "id": "q34", "tag": "semantic", "query": "incremental search index duplicate sessions", "expected_session_id": "tantivy-index" },
+    { "id": "q35", "tag": "lexical", "query": "FastEmbed Reciprocal Rank Fusion cosine", "expected_session_id": "embeddings-hybrid" },
+    { "id": "q36", "tag": "semantic", "query": "semantic vector search paraphrases", "expected_session_id": "embeddings-hybrid" },
+    { "id": "q37", "tag": "lexical", "query": "rsync remote sources cache", "expected_session_id": "federated-sources" },
+    { "id": "q38", "tag": "semantic", "query": "search history across laptop workstation", "expected_session_id": "federated-sources" },
+    { "id": "q39", "tag": "lexical", "query": "thiserror ErrorEnvelope stderr exit codes", "expected_session_id": "rust-error-handling" },
+    { "id": "q40", "tag": "semantic", "query": "typed failures machine readable CLI", "expected_session_id": "rust-error-handling" }
   ]
 }
