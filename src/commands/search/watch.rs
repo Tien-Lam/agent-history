@@ -11,7 +11,6 @@ use aghist::{provider, query_scope};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
 use super::super::filtering::qualified_session_metadata_key;
-use super::super::metadata::try_index_notes;
 use super::input::resolve_search_query;
 use super::output::write_watch_hit;
 
@@ -66,7 +65,7 @@ pub(crate) fn search_watch_command(
             ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
         })?;
 
-        try_index_notes(&index);
+        search::index_notes_best_effort(&index);
 
         let hits = index
             .search_with_filters(query, limit, filters)

@@ -1,8 +1,6 @@
 use aghist::cli_error::ErrorEnvelope;
 use aghist::metadata::{self, MetadataError};
 use aghist::model::Provider;
-use aghist::search;
-
 mod note;
 mod star;
 mod tag;
@@ -21,25 +19,6 @@ pub(super) fn json_to_io_error(error: serde_json::Error) -> std::io::Error {
     } else {
         std::io::Error::other(error)
     }
-}
-
-/// Best-effort: open the metadata sidecar and feed every note into the search
-/// index. Any failure is swallowed; metadata is optional and search must keep
-/// working without it.
-pub(crate) fn try_index_notes(index: &search::SearchIndex) {
-    let Some(path) = metadata::default_path() else {
-        return;
-    };
-    if !path.exists() {
-        return;
-    }
-    let Ok(conn) = metadata::open(&path) else {
-        return;
-    };
-    let Ok(notes) = metadata::note_list(&conn, None) else {
-        return;
-    };
-    let _ = index.index_notes(&notes);
 }
 
 pub(crate) fn metadata_error(err: &MetadataError) -> ErrorEnvelope {

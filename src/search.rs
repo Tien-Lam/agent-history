@@ -5,6 +5,7 @@ mod fields;
 mod fingerprint;
 mod index;
 mod query;
+mod service;
 mod snippet;
 mod storage;
 pub mod types;
@@ -13,6 +14,11 @@ pub mod types;
 mod tests;
 
 pub use index::SearchIndex;
+pub use service::{
+    index_notes_best_effort, next_search_cursor, resolve_search_hit_citations,
+    search_hit_is_after_cursor, SearchHitCitation, SearchService, SearchServiceError,
+    SearchServiceHit, SearchServiceOutput, SearchServiceRequest,
+};
 pub use types::{
     HitKind, IndexStats, NotesIndexStats, SearchError, SearchFilters, SearchHit, SemanticCandidate,
     RRF_K,
