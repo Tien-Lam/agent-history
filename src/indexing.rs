@@ -86,10 +86,10 @@ pub fn run_indexing(
     })?;
 
     if options.force {
-        force_clear_index(&index, scope, &options)?;
+        force_clear_index(&index, scope, options)?;
     }
 
-    let stats = build_index(&index, &discovery.sessions, providers, scope, &options)?;
+    let stats = build_index(&index, &discovery.sessions, providers, scope, options)?;
 
     let summary = IndexingSummary {
         providers: provider_slugs(
@@ -121,7 +121,7 @@ pub fn run_indexing(
 fn force_clear_index(
     index: &search::SearchIndex,
     scope: &query_scope::QueryScope,
-    options: &IndexingOptions,
+    options: IndexingOptions,
 ) -> Result<(), ErrorEnvelope> {
     if let Some(want) = options.provider_filter {
         let prune_providers = HashSet::from([want]);
@@ -145,7 +145,7 @@ fn build_index(
     sessions: &[Session],
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,
-    options: &IndexingOptions,
+    options: IndexingOptions,
 ) -> Result<search::IndexStats, ErrorEnvelope> {
     let (tx, _rx) = crossbeam_channel::unbounded();
     // SearchIndex still needs the full provider list for message-loading

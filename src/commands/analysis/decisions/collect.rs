@@ -10,17 +10,30 @@ use crate::commands::filtering::{
 
 use super::DecisionRow;
 
+#[derive(Clone, Copy)]
+pub(super) struct DecisionCollectRequest<'a> {
+    pub(super) filters: &'a FilterArgs,
+    pub(super) project_needle: Option<&'a str>,
+    pub(super) session_needle: Option<&'a str>,
+    pub(super) source_needle: Option<&'a str>,
+    pub(super) metadata_keys: Option<&'a HashSet<String>>,
+    pub(super) threshold: f32,
+}
+
 /// Run the heuristic across matching local + remote-source sessions.
 pub(super) fn collect_federated_decision_rows(
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,
-    filters: &FilterArgs,
-    project_needle: Option<&str>,
-    session_needle: Option<&str>,
-    source_needle: Option<&str>,
-    metadata_keys: Option<&HashSet<String>>,
-    threshold: f32,
+    request: DecisionCollectRequest<'_>,
 ) -> Vec<DecisionRow> {
+    let DecisionCollectRequest {
+        filters,
+        project_needle,
+        session_needle,
+        source_needle,
+        metadata_keys,
+        threshold,
+    } = request;
     let discovery = federated_discovery_for_commands(providers, scope);
     let mut rows: Vec<DecisionRow> = Vec::new();
     for session in discovery.sessions {

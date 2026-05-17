@@ -16,6 +16,16 @@ use super::common::map_llm_error;
 
 // ── track command ─────────────────────────────────────────────────────────────
 
+#[derive(Clone, Copy)]
+pub(crate) struct TrackCommandRequest<'a> {
+    pub(crate) filters: &'a FilterArgs,
+    pub(crate) metadata_keys: Option<&'a HashSet<String>>,
+    pub(crate) topic: &'a str,
+    pub(crate) limit: usize,
+    pub(crate) force_json: bool,
+    pub(crate) llm_model: Option<&'a str>,
+}
+
 /// Scan all providers for sessions mentioning `topic`, returning up to `limit` with excerpts.
 fn scan_topic_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -89,14 +99,17 @@ fn scan_topic_sessions(
 pub(crate) fn track_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,
-    filters: &FilterArgs,
-    metadata_keys: Option<&HashSet<String>>,
-    topic: &str,
-    limit: usize,
-    force_json: bool,
-    llm_model: Option<&str>,
+    request: TrackCommandRequest<'_>,
 ) -> Result<i32, ErrorEnvelope> {
     use std::io::Write as _;
+    let TrackCommandRequest {
+        filters,
+        metadata_keys,
+        topic,
+        limit,
+        force_json,
+        llm_model,
+    } = request;
     let matched = scan_topic_sessions(providers, scope, filters, metadata_keys, topic, limit);
 
     if matched.is_empty() {

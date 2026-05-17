@@ -3,7 +3,7 @@ use aghist::cli_error::ErrorEnvelope;
 use super::super::cli::Command;
 use super::analysis::{
     decisions_command, threads_command, todos_command, track_command, DecisionsCommandRequest,
-    ThreadsCommandRequest, TodosCommandRequest,
+    ThreadsCommandRequest, TodosCommandRequest, TrackCommandRequest,
 };
 use super::context::CommandContext;
 
@@ -19,12 +19,14 @@ pub(crate) fn dispatch_analysis_command(
         Command::Track(args) => track_command(
             providers,
             scope,
-            filters,
-            metadata_keys.as_ref(),
-            &args.topic,
-            args.limit,
-            args.json,
-            args.llm_model.as_deref(),
+            TrackCommandRequest {
+                filters,
+                metadata_keys: metadata_keys.as_ref(),
+                topic: &args.topic,
+                limit: args.limit,
+                force_json: args.json,
+                llm_model: args.llm_model.as_deref(),
+            },
         ),
         Command::Decisions(args) => decisions_command(
             providers,

@@ -12,7 +12,7 @@ mod collect;
 mod llm;
 mod output;
 
-use collect::collect_federated_decision_rows;
+use collect::{collect_federated_decision_rows, DecisionCollectRequest};
 use llm::run_llm_decisions;
 use output::{render_decisions_human, render_decisions_json};
 
@@ -85,12 +85,14 @@ pub(crate) fn decisions_command(
     let mut rows = collect_federated_decision_rows(
         providers,
         scope,
-        filters,
-        project_needle.as_deref(),
-        session_needle.as_deref(),
-        source_needle.as_deref(),
-        metadata_keys,
-        threshold,
+        DecisionCollectRequest {
+            filters,
+            project_needle: project_needle.as_deref(),
+            session_needle: session_needle.as_deref(),
+            source_needle: source_needle.as_deref(),
+            metadata_keys,
+            threshold,
+        },
     );
 
     rows.sort_by(|a, b| {
