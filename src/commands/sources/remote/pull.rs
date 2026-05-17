@@ -102,7 +102,17 @@ fn pull_one_source(
 ) -> Result<PullResult, ErrorEnvelope> {
     src.validate()
         .map_err(|message| ErrorEnvelope::new("usage", message))?;
+    let source_dir = src.cache_dir(cache_root);
+    ensure_existing_cache_dir_safe(&source_dir, "source cache dir")?;
+    std::fs::create_dir_all(&source_dir).map_err(|e| {
+        ErrorEnvelope::new(
+            "io-error",
+            format!("failed to create cache dir {}: {e}", source_dir.display()),
+        )
+    })?;
+
     let data_dir = src.data_dir(cache_root);
+    ensure_existing_cache_dir_safe(&data_dir, "source data dir")?;
     std::fs::create_dir_all(&data_dir).map_err(|e| {
         ErrorEnvelope::new(
             "io-error",
@@ -186,6 +196,27 @@ fn pull_one_source(
         file_count,
         pulled_at,
     })
+}
+
+fn ensure_existing_cache_dir_safe(path: &Path, label: &str) -> Result<(), ErrorEnvelope> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(ErrorEnvelope::new(
+            "unsafe-cache-dir",
+            format!("{label} {} is a symlink", path.display()),
+        )
+        .with_hint("Remove the symlink and retry; aghist will create an owned cache directory.")),
+        Ok(meta) if !meta.is_dir() => Err(ErrorEnvelope::new(
+            "unsafe-cache-dir",
+            format!("{label} {} is not a directory", path.display()),
+        )
+        .with_hint("Remove the path and retry; aghist will create an owned cache directory.")),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(ErrorEnvelope::new(
+            "io-error",
+            format!("failed to inspect {label} {}: {e}", path.display()),
+        )),
+    }
 }
 
 fn build_rsync_remote_url(src: &config::RemoteSource) -> String {

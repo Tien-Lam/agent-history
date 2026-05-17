@@ -323,6 +323,36 @@ fn search_index_schema_reset_refuses_unknown_files() {
     assert_eq!(fs::read_to_string(&keep).unwrap(), "do not delete");
 }
 
+#[cfg(unix)]
+#[test]
+fn search_index_schema_reset_refuses_symlink_entries() {
+    use std::os::unix::fs::symlink;
+    use tantivy::schema::{Schema, STORED, STRING};
+    use tantivy::Index;
+
+    let index_dir = tempfile::tempdir().unwrap();
+    {
+        let mut builder = Schema::builder();
+        builder.add_text_field("session_id", STRING | STORED);
+        let schema = builder.build();
+        Index::create_in_dir(index_dir.path(), schema).unwrap();
+    }
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("target.txt");
+    fs::write(&target, "do not touch").unwrap();
+    symlink(&target, index_dir.path().join("linked-target")).unwrap();
+
+    let Err(err) = SearchIndex::open_or_create(index_dir.path()) else {
+        panic!("schema reset should reject symlink entries");
+    };
+    assert!(
+        err.to_string()
+            .contains("refusing to reset index directory"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), "do not touch");
+}
+
 #[test]
 fn search_index_does_not_delete_arbitrary_meta_json() {
     let index_dir = tempfile::tempdir().unwrap();

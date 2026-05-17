@@ -46,3 +46,36 @@ fn release_marker_overrides_cargo_bin_path() {
         InstallSource::GithubRelease
     );
 }
+
+#[test]
+fn release_marker_does_not_override_build_tree_path() {
+    let root = tempfile::tempdir().unwrap();
+    let exe = exe_path(&root.path().join("target").join("debug"));
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(install_marker_path(&exe).unwrap(), INSTALL_MARKER_METHOD).unwrap();
+
+    assert_eq!(
+        detect_install_source_with(&exe, None, Some(root.path())),
+        InstallSource::BuildTree
+    );
+}
+
+#[test]
+fn release_marker_does_not_override_system_package_path() {
+    let root = tempfile::tempdir().unwrap();
+    let exe = exe_path(
+        &root
+            .path()
+            .join("scoop")
+            .join("apps")
+            .join("aghist")
+            .join("current"),
+    );
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(install_marker_path(&exe).unwrap(), INSTALL_MARKER_METHOD).unwrap();
+
+    assert_eq!(
+        detect_install_source_with(&exe, None, None),
+        InstallSource::SystemPackage
+    );
+}

@@ -22,20 +22,20 @@ fn detect_install_source_with(
     cargo_home: Option<&Path>,
     home: Option<&Path>,
 ) -> InstallSource {
-    if has_github_release_marker(exe) {
-        return InstallSource::GithubRelease;
-    }
-
     if is_build_tree_path(exe) {
         return InstallSource::BuildTree;
     }
 
-    if is_cargo_bin_path(exe, cargo_home, home) {
-        return InstallSource::Cargo;
-    }
-
     if is_system_package_path(exe) {
         return InstallSource::SystemPackage;
+    }
+
+    if has_github_release_marker(exe) {
+        return InstallSource::GithubRelease;
+    }
+
+    if is_cargo_bin_path(exe, cargo_home, home) {
+        return InstallSource::Cargo;
     }
 
     InstallSource::Unknown
