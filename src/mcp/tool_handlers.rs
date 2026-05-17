@@ -7,9 +7,9 @@ use super::server::McpServer;
 
 use crate::federated::LOCAL_SOURCE;
 use crate::health::{run_health_checks, HealthStatus};
-use crate::model::{Provider, QualifiedCitationRef, Session};
+use crate::indexing::{self, IndexingOptions, UnfilteredIndexScope};
+use crate::model::{QualifiedCitationRef, Session};
 use crate::provider;
-use crate::search::SearchIndex;
 
 mod search;
 
@@ -169,69 +169,19 @@ impl McpServer {
             }
         }
 
-        let mut discovery = self.collect_discovery();
-        if let Some(want) = provider_filter {
-            discovery.retain_providers(&std::collections::HashSet::from([want]));
-        }
-        let errors: Vec<Value> = discovery
-            .failures
-            .iter()
-            .map(|failure| json!({ "source": failure.source, "error": failure.message }))
-            .collect();
-        let sessions: Vec<Session> = discovery.sessions;
+        let outcome = indexing::run_indexing(
+            &self.providers,
+            self.scope(),
+            IndexingOptions {
+                provider_filter,
+                force,
+                unfiltered_scope: UnfilteredIndexScope::VisibleProviders,
+            },
+        )
+        .map_err(|e| e.message)?;
 
-        let index_dir = SearchIndex::default_index_dir();
-        let index = SearchIndex::open_or_create(&index_dir)
-            .map_err(|e| format!("failed to open index at {}: {e}", index_dir.display()))?;
-        if force {
-            if let Some(want) = provider_filter {
-                let prune_providers = std::collections::HashSet::from([want]);
-                index
-                    .clear_providers(&prune_providers)
-                    .map_err(|e| format!("failed to clear index: {e}"))?;
-            } else {
-                index
-                    .clear_providers(&provider_scope)
-                    .map_err(|e| format!("failed to clear index: {e}"))?;
-            }
-        }
-
-        let started = std::time::Instant::now();
-        let (tx, _rx) = crossbeam_channel::unbounded::<crate::action::Action>();
-        let stats = if let Some(want) = provider_filter {
-            let prune_providers = std::collections::HashSet::from([want]);
-            index.build_index_for_providers(&sessions, &self.providers, &tx, &prune_providers)
-        } else {
-            index.build_index_for_providers(&sessions, &self.providers, &tx, &provider_scope)
-        }
-        .map_err(|e| format!("failed to build index: {e}"))?;
-
-        let provider_slugs: Vec<&str> = if let Some(want) = provider_filter {
-            vec![want.slug()]
-        } else {
-            Provider::all()
-                .iter()
-                .copied()
-                .filter(|provider| {
-                    provider_scope.contains(provider)
-                        && sessions.iter().any(|session| session.provider == *provider)
-                })
-                .map(Provider::slug)
-                .collect()
-        };
-
-        Ok(json!({
-            "providers": provider_slugs,
-            "sessions_total": sessions.len(),
-            "added": stats.added,
-            "updated": stats.updated,
-            "unchanged": stats.unchanged,
-            "messages_indexed": stats.messages_indexed,
-            "force": force,
-            "index_dir": index_dir.display().to_string(),
-            "duration_ms": u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-            "errors": errors,
-        }))
+        serde_json::to_value(outcome.summary)
+            .map_err(|e| format!("failed to serialize reindex summary: {e}"))
     }
 
     fn tool_health(&self, _args: &Value) -> Value {

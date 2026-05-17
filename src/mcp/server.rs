@@ -202,6 +202,10 @@ impl McpServer {
         self.scope.providers().clone()
     }
 
+    pub(super) fn scope(&self) -> &QueryScope {
+        &self.scope
+    }
+
     pub(super) fn find_session_by_prefix(
         &self,
         session_id: &str,
