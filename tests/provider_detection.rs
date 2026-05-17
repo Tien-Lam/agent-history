@@ -10,7 +10,7 @@ use aghist::config::Config;
 use aghist::model::Provider;
 
 fn aghist() -> Command {
-    Command::cargo_bin("aghist").unwrap()
+    common::helpers::aghist_command()
 }
 
 // ─── detect_all_providers via CLI (subprocess, safe AGHIST_HOME override) ──

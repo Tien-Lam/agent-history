@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use std::{fs, path::Path};
 
+use assert_cmd::Command;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
@@ -14,6 +16,34 @@ use aghist::provider::copilot_cli::CopilotCliProvider;
 use aghist::provider::gemini_cli::GeminiCliProvider;
 use aghist::provider::opencode::OpenCodeProvider;
 use aghist::provider::HistoryProvider;
+
+static COMMAND_ID: AtomicUsize = AtomicUsize::new(0);
+
+pub fn aghist_bin() -> PathBuf {
+    assert_cmd::cargo::cargo_bin("aghist")
+}
+
+pub fn aghist_command() -> Command {
+    Command::cargo_bin("aghist").unwrap()
+}
+
+pub fn isolated_aghist(label: &str) -> Command {
+    let id = COMMAND_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("aghist-{label}-{}-{id}", std::process::id()));
+    let home = root.join("home");
+    fs::create_dir_all(&home).unwrap();
+
+    let mut cmd = aghist_command();
+    cmd.env("AGHIST_HOME", home)
+        .env("AGHIST_CONFIG", root.join("config.toml"));
+    cmd
+}
+
+pub fn parse_assert_stdout_json(assert: &assert_cmd::assert::Assert) -> serde_json::Value {
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|err| panic!("expected JSON stdout, got {stdout:?}: {err}"))
+}
 
 pub fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")

@@ -1,38 +1,18 @@
 mod common;
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command as StdCommand, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assert_cmd::Command;
 use serde_json::Value;
 
-static COMMAND_ID: AtomicUsize = AtomicUsize::new(0);
-
-fn temp_root(label: &str) -> PathBuf {
-    let id = COMMAND_ID.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "aghist-json-contract-{label}-{}-{id}",
-        std::process::id()
-    ))
-}
-
 fn aghist() -> Command {
-    let root = temp_root("cli");
-    let home = root.join("home");
-    std::fs::create_dir_all(&home).unwrap();
-
-    let mut cmd = Command::cargo_bin("aghist").unwrap();
-    cmd.env("AGHIST_HOME", home)
-        .env("AGHIST_CONFIG", root.join("config.toml"));
-    cmd
+    common::helpers::isolated_aghist("json-contract")
 }
 
 fn parse_stdout_json(output: &assert_cmd::assert::Assert) -> Value {
-    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("expected JSON stdout, got {stdout:?}: {e}"))
+    common::helpers::parse_assert_stdout_json(output)
 }
 
 fn assert_json_snapshot(name: &'static str, value: &Value) {
@@ -54,7 +34,7 @@ fn normalize_search_scores(doc: &mut Value) {
 }
 
 fn run_mcp_session(env_home: &Path, requests: &[Value]) -> Vec<Value> {
-    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("aghist"))
+    let mut child = StdCommand::new(common::helpers::aghist_bin())
         .arg("mcp")
         .env("AGHIST_HOME", env_home)
         .env("AGHIST_CONFIG", env_home.join("config.toml"))

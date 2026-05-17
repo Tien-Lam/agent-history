@@ -7,8 +7,7 @@ use std::process::{Command, Stdio};
 use serde_json::Value;
 
 fn aghist_bin() -> std::path::PathBuf {
-    // Resolve via assert_cmd so we exercise the same binary path tests use elsewhere.
-    assert_cmd::cargo::cargo_bin("aghist")
+    common::helpers::aghist_bin()
 }
 
 /// Sends `requests` over stdin (one JSON-RPC line each) and returns the parsed
