@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use aghist::model::{Message, Session};
-use aghist::provider;
+use aghist::{provider, query_scope};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
 use super::super::filtering::{metadata_filter_matches_source, session_matches};
@@ -24,11 +24,12 @@ pub(super) fn normalized_project_filter(filters: &FilterArgs) -> Option<String> 
 
 pub(super) fn collect_federated_filtered_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     project_needle: Option<&str>,
     metadata_keys: Option<&HashSet<String>>,
 ) -> Vec<Session> {
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     let source_by_session = discovery.source_by_session;
     discovery
         .sessions
@@ -46,12 +47,13 @@ pub(super) fn collect_federated_filtered_sessions(
 
 pub(super) fn collect_federated_message_bundles(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     project_needle: Option<&str>,
     metadata_keys: Option<&HashSet<String>>,
     include_session: impl Fn(&Session) -> bool,
 ) -> FederatedSessionBundles {
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     let source_by_session = discovery.source_by_session;
     let mut bundles = Vec::new();
     for session in discovery.sessions {

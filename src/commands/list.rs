@@ -4,7 +4,7 @@ use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
 use aghist::federated;
 use aghist::model::{Provider, Session};
 use aghist::output::OutputMode;
-use aghist::provider;
+use aghist::{provider, query_scope};
 
 use super::super::cli::FilterArgs;
 use super::discovery::{federated_discovery_for_commands, source_for_session};
@@ -14,6 +14,7 @@ use super::filtering::{
 
 pub(crate) fn list_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     mode: OutputMode,
     limit: usize,
     cursor: Option<&str>,
@@ -27,7 +28,7 @@ pub(crate) fn list_sessions(
         .map(str::to_lowercase)
         .filter(|s| !s.is_empty());
 
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     let source_by_session = discovery.source_by_session;
     let mut all_sessions: Vec<ListedSession> = discovery
         .sessions

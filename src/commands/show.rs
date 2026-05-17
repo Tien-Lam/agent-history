@@ -2,7 +2,7 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::model::{CitationRef, Message, Provider, Role, Session};
-use aghist::provider;
+use aghist::{provider, query_scope};
 
 use super::super::cli::ShowFormat;
 use super::discovery::federated_discovery_for_commands;
@@ -10,11 +10,12 @@ use super::session_select::resolve_citation_selector;
 
 pub(crate) fn show_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     raw_ref: &str,
     format: ShowFormat,
     include_context: u32,
 ) -> Result<i32, ErrorEnvelope> {
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     let target =
         resolve_citation_selector(&discovery.sessions, &discovery.source_by_session, raw_ref)?;
     let citation = target.citation;

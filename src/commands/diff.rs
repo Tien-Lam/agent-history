@@ -2,7 +2,7 @@ use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::{ContentBlock, Message, Role, Session};
-use aghist::provider;
+use aghist::{provider, query_scope};
 
 use super::discovery::federated_discovery_for_commands;
 use super::session_select::{resolve_session_selector, SelectedSession, SelectorShape};
@@ -100,12 +100,13 @@ fn load_session_messages(
 
 pub(crate) fn diff_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     raw1: &str,
     raw2: &str,
     context: usize,
     force_json: bool,
 ) -> Result<i32, ErrorEnvelope> {
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     let target1 = resolve_session_selector(
         &discovery.sessions,
         &discovery.source_by_session,

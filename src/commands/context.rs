@@ -21,6 +21,7 @@ impl OutputFlags {
 
 pub(crate) struct CommandContext {
     config: config::Config,
+    scope: query_scope::QueryScope,
     providers: Vec<Box<dyn provider::HistoryProvider>>,
     filters: FilterArgs,
     output: OutputFlags,
@@ -33,9 +34,11 @@ impl CommandContext {
         ndjson: bool,
     ) -> Result<Self, ErrorEnvelope> {
         let config = load_config()?;
+        let scope = query_scope::QueryScope::enabled(&config);
         let providers = query_scope::detect_enabled_providers(&config);
         Ok(Self {
             config,
+            scope,
             providers,
             filters,
             output: OutputFlags::new(json, ndjson),
@@ -44,6 +47,10 @@ impl CommandContext {
 
     pub(crate) fn providers(&self) -> &[Box<dyn provider::HistoryProvider>] {
         &self.providers
+    }
+
+    pub(crate) fn scope(&self) -> &query_scope::QueryScope {
+        &self.scope
     }
 
     pub(crate) fn filters(&self) -> &FilterArgs {

@@ -10,10 +10,12 @@ pub(crate) fn dispatch_report_command(
 ) -> Result<i32, ErrorEnvelope> {
     let filters = ctx.filters();
     let providers = ctx.providers();
+    let scope = ctx.scope();
     let metadata_keys = ctx.metadata_filter_keys()?;
     match command {
         Command::Usage(args) => usage_command(
             providers,
+            scope,
             filters,
             metadata_keys.as_ref(),
             args.by,
@@ -29,6 +31,7 @@ pub(crate) fn dispatch_report_command(
             };
             project_command(
                 providers,
+                scope,
                 filters,
                 metadata_keys.as_ref(),
                 &args.name,
@@ -52,6 +55,7 @@ pub(crate) fn dispatch_report_command(
             };
             report_command(
                 providers,
+                scope,
                 filters,
                 metadata_keys.as_ref(),
                 window_days,

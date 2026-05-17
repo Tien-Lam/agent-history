@@ -24,6 +24,7 @@ pub(crate) fn dispatch_lookup_command(
             )?;
             export_session(
                 ctx.providers(),
+                ctx.scope(),
                 resolved.format,
                 &resolved.session,
                 resolved.output.as_deref(),
@@ -34,7 +35,13 @@ pub(crate) fn dispatch_lookup_command(
         Command::Index(args) => {
             let (provider, force, accept_download) =
                 resolve_index_args(args.provider, args.force, args.accept_download, args.params)?;
-            run_index(ctx.providers(), provider, force, accept_download)
+            run_index(
+                ctx.providers(),
+                ctx.scope(),
+                provider,
+                force,
+                accept_download,
+            )
         }
         Command::Search(args) => dispatch_search_command(
             ctx,
@@ -66,10 +73,17 @@ pub(crate) fn dispatch_lookup_command(
                 args.include_context,
                 args.params,
             )?;
-            show_command(ctx.providers(), &reference, format, include_context)
+            show_command(
+                ctx.providers(),
+                ctx.scope(),
+                &reference,
+                format,
+                include_context,
+            )
         }
         Command::Diff(args) => diff_command(
             ctx.providers(),
+            ctx.scope(),
             &args.session1,
             &args.session2,
             args.context,

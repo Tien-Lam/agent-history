@@ -2,7 +2,7 @@ use std::io::Write as _;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::metadata::{self, Note};
-use aghist::{export, provider};
+use aghist::{export, provider, query_scope};
 
 use super::discovery::federated_discovery_for_commands;
 use super::session_select::{resolve_session_selector, SelectorShape};
@@ -104,13 +104,14 @@ fn load_session_notes(
 
 pub(crate) fn export_session(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     format: export::ExportFormat,
     session_id: &str,
     output: Option<&std::path::Path>,
     turn_range: Option<&str>,
     include_notes: bool,
 ) -> Result<i32, ErrorEnvelope> {
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     let target = resolve_session_selector(
         &discovery.sessions,
         &discovery.source_by_session,

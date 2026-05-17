@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
-use aghist::provider;
+use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
 
@@ -29,6 +29,7 @@ pub(crate) struct ThreadsCommandRequest<'a> {
 
 pub(crate) fn threads_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     request: ThreadsCommandRequest<'_>,
 ) -> Result<i32, ErrorEnvelope> {
     let ThreadsCommandRequest {
@@ -53,7 +54,7 @@ pub(crate) fn threads_command(
     }
 
     if use_llm {
-        let discovery = collect_federated_sessions(providers, filters, metadata_keys);
+        let discovery = collect_federated_sessions(providers, scope, filters, metadata_keys);
         return run_llm_threads(
             discovery.sessions,
             &discovery.source_by_session,
@@ -64,7 +65,7 @@ pub(crate) fn threads_command(
         );
     }
 
-    let discovery = collect_federated_sessions(providers, filters, metadata_keys);
+    let discovery = collect_federated_sessions(providers, scope, filters, metadata_keys);
     let opts = aghist::threads::ClusterOptions {
         gap: chrono::Duration::hours(gap_hours),
         min_sessions: min_sessions.max(1),

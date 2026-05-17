@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use aghist::cli_error::ErrorEnvelope;
-use aghist::provider;
 use aghist::search::SearchFilters;
+use aghist::{provider, query_scope};
 
 use super::super::cli::{resolve_search_args, SearchArgs};
 use super::context::CommandContext;
@@ -42,6 +42,7 @@ pub(crate) fn dispatch_search_command(
             iterations,
         } => search_watch_command(
             ctx.providers(),
+            ctx.scope(),
             SearchWatchRequest {
                 query: args.query.as_deref(),
                 query_file: args.query_file.as_deref(),
@@ -55,6 +56,7 @@ pub(crate) fn dispatch_search_command(
         ),
         SearchDispatchMode::Once { debug_search } => dispatch_one_shot_search(
             ctx.providers(),
+            ctx.scope(),
             args,
             &filters,
             metadata_keys.as_ref(),
@@ -65,6 +67,7 @@ pub(crate) fn dispatch_search_command(
 
 fn dispatch_one_shot_search(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     args: SearchDispatchArgs,
     filters: &SearchFilters,
     metadata_keys: Option<&HashSet<String>>,
@@ -84,6 +87,7 @@ fn dispatch_one_shot_search(
     )?;
     search_command(
         providers,
+        scope,
         SearchCommandRequest {
             query: resolved.query.as_deref(),
             query_file: resolved.query_file.as_deref(),

@@ -3,7 +3,7 @@ use std::io::Write as _;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::model::{Provider, Session};
-use aghist::{config, federated, provider, query_scope, search};
+use aghist::{federated, provider, query_scope, search};
 use serde::Serialize;
 
 mod embeddings;
@@ -39,16 +39,12 @@ struct IndexDiscovery<'a> {
 
 pub(crate) fn run_index(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filter: Option<Provider>,
     force: bool,
     accept_download: bool,
 ) -> Result<i32, ErrorEnvelope> {
-    let config = config::Config::try_load().map_err(|e| {
-        ErrorEnvelope::new("config-error", format!("{e}"))
-            .with_hint("Fix the TOML or set AGHIST_CONFIG to a known-good config file.")
-    })?;
-    let scope = query_scope::QueryScope::enabled(&config);
-    let summary = build_index_summary(providers, &scope, filter, force, accept_download)?;
+    let summary = build_index_summary(providers, scope, filter, force, accept_download)?;
     write_index_summary(&summary)?;
     Ok(EXIT_OK)
 }

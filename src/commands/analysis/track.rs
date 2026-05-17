@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::ContentBlock;
-use aghist::provider;
+use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
@@ -19,6 +19,7 @@ use super::common::map_llm_error;
 /// Scan all providers for sessions mentioning `topic`, returning up to `limit` with excerpts.
 fn scan_topic_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     metadata_keys: Option<&HashSet<String>>,
     topic: &str,
@@ -32,7 +33,7 @@ fn scan_topic_sessions(
         .map(str::to_lowercase)
         .filter(|s| !s.is_empty());
 
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     for session in discovery.sessions {
         if !session_matches(&session, filters, project_needle.as_deref()) {
             continue;
@@ -87,6 +88,7 @@ fn scan_topic_sessions(
 
 pub(crate) fn track_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     metadata_keys: Option<&HashSet<String>>,
     topic: &str,
@@ -95,7 +97,7 @@ pub(crate) fn track_command(
     llm_model: Option<&str>,
 ) -> Result<i32, ErrorEnvelope> {
     use std::io::Write as _;
-    let matched = scan_topic_sessions(providers, filters, metadata_keys, topic, limit);
+    let matched = scan_topic_sessions(providers, scope, filters, metadata_keys, topic, limit);
 
     if matched.is_empty() {
         return Ok(EXIT_EMPTY);

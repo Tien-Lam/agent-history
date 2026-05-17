@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
-use aghist::provider;
+use aghist::{provider, query_scope};
 use chrono::Utc;
 
 use super::super::cli::FilterArgs;
@@ -21,6 +21,7 @@ use output::{
 
 pub(crate) fn usage_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     metadata_keys: Option<&HashSet<String>>,
     group_by: aghist::usage::GroupBy,
@@ -30,6 +31,7 @@ pub(crate) fn usage_command(
     let project_needle = normalized_project_filter(filters);
     let sessions = collect_federated_filtered_sessions(
         providers,
+        scope,
         filters,
         project_needle.as_deref(),
         metadata_keys,
@@ -64,6 +66,7 @@ pub(crate) fn usage_command(
 
 pub(crate) fn project_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     metadata_keys: Option<&HashSet<String>>,
     name: &str,
@@ -79,6 +82,7 @@ pub(crate) fn project_command(
     let extra_project = normalized_project_filter(filters);
     let collected = collect_federated_message_bundles(
         providers,
+        scope,
         filters,
         extra_project.as_deref(),
         metadata_keys,
@@ -116,6 +120,7 @@ pub(crate) fn project_command(
 
 pub(crate) fn report_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     metadata_keys: Option<&HashSet<String>>,
     window_days: i64,
@@ -139,6 +144,7 @@ pub(crate) fn report_command(
     let project_needle = normalized_project_filter(filters);
     let collected = collect_federated_message_bundles(
         providers,
+        scope,
         filters,
         project_needle.as_deref(),
         metadata_keys,

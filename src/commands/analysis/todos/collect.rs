@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use aghist::provider;
 use aghist::todos::{self, TodoCandidate, TodoKind};
+use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
@@ -13,6 +13,7 @@ use super::TodoRow;
 
 pub(super) fn collect_federated_todo_candidates(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     metadata_keys: Option<&HashSet<String>>,
     kinds: &[TodoKind],
@@ -23,7 +24,7 @@ pub(super) fn collect_federated_todo_candidates(
         .map(str::to_lowercase)
         .filter(|s| !s.is_empty());
 
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     let mut candidates = Vec::new();
 
     for session in discovery.sessions {

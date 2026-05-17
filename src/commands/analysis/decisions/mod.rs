@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::CitationRef;
-use aghist::provider;
+use aghist::{provider, query_scope};
 use chrono::{DateTime, Utc};
 
 use crate::cli::FilterArgs;
@@ -30,6 +30,7 @@ pub(crate) struct DecisionsCommandRequest<'a> {
 
 pub(crate) fn decisions_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     request: DecisionsCommandRequest<'_>,
 ) -> Result<i32, ErrorEnvelope> {
     let DecisionsCommandRequest {
@@ -83,6 +84,7 @@ pub(crate) fn decisions_command(
 
     let mut rows = collect_federated_decision_rows(
         providers,
+        scope,
         filters,
         project_needle.as_deref(),
         session_needle.as_deref(),

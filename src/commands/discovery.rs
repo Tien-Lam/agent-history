@@ -1,13 +1,10 @@
-use aghist::{config, federated, provider, query_scope};
+use aghist::{federated, provider, query_scope};
 
 pub(crate) fn federated_discovery_for_commands(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
 ) -> federated::FederatedDiscovery {
-    let config = match config::Config::resolved_path() {
-        Some(path) => config::Config::load_from(&path),
-        None => config::Config::default(),
-    };
-    let result = query_scope::QueryScope::enabled(&config).discover_federated(providers);
+    let result = scope.discover_federated(providers);
     for failure in &result.failures {
         eprintln!("warning: source '{}': {}", failure.source, failure.message);
     }

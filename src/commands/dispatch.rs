@@ -129,6 +129,7 @@ fn dispatch_list(
     let metadata_keys = ctx.metadata_filter_keys()?;
     list_sessions(
         ctx.providers(),
+        ctx.scope(),
         ctx.output_mode(CommandKind::Streaming),
         limit,
         cursor,

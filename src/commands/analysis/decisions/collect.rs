@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use aghist::provider;
+use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
@@ -13,6 +13,7 @@ use super::DecisionRow;
 /// Run the heuristic across matching local + remote-source sessions.
 pub(super) fn collect_federated_decision_rows(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     filters: &FilterArgs,
     project_needle: Option<&str>,
     session_needle: Option<&str>,
@@ -20,7 +21,7 @@ pub(super) fn collect_federated_decision_rows(
     metadata_keys: Option<&HashSet<String>>,
     threshold: f32,
 ) -> Vec<DecisionRow> {
-    let discovery = federated_discovery_for_commands(providers);
+    let discovery = federated_discovery_for_commands(providers, scope);
     let mut rows: Vec<DecisionRow> = Vec::new();
     for session in discovery.sessions {
         let source = source_for_session(&discovery.source_by_session, &session).to_string();

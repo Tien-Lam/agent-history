@@ -13,10 +13,12 @@ pub(crate) fn dispatch_analysis_command(
 ) -> Result<i32, ErrorEnvelope> {
     let filters = ctx.filters();
     let providers = ctx.providers();
+    let scope = ctx.scope();
     let metadata_keys = ctx.metadata_filter_keys()?;
     match command {
         Command::Track(args) => track_command(
             providers,
+            scope,
             filters,
             metadata_keys.as_ref(),
             &args.topic,
@@ -26,6 +28,7 @@ pub(crate) fn dispatch_analysis_command(
         ),
         Command::Decisions(args) => decisions_command(
             providers,
+            scope,
             DecisionsCommandRequest {
                 session_filter: args.session.as_deref(),
                 threshold: args.threshold,
@@ -39,6 +42,7 @@ pub(crate) fn dispatch_analysis_command(
         ),
         Command::Todos(args) => todos_command(
             providers,
+            scope,
             TodosCommandRequest {
                 filters,
                 metadata_keys: metadata_keys.as_ref(),
@@ -51,6 +55,7 @@ pub(crate) fn dispatch_analysis_command(
         ),
         Command::Threads(args) => threads_command(
             providers,
+            scope,
             ThreadsCommandRequest {
                 filters,
                 metadata_keys: metadata_keys.as_ref(),

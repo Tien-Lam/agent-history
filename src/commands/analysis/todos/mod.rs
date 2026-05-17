@@ -3,8 +3,8 @@ use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::CitationRef;
-use aghist::provider;
 use aghist::todos::{TodoCandidate, TodoKind};
+use aghist::{provider, query_scope};
 use chrono::{DateTime, Utc};
 
 use crate::cli::FilterArgs;
@@ -30,6 +30,7 @@ pub(crate) struct TodosCommandRequest<'a> {
 
 pub(crate) fn todos_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     request: TodosCommandRequest<'_>,
 ) -> Result<i32, ErrorEnvelope> {
     let TodosCommandRequest {
@@ -46,11 +47,13 @@ pub(crate) fn todos_command(
     }
 
     if use_llm {
-        let all = collect_federated_todo_candidates(providers, filters, metadata_keys, kinds);
+        let all =
+            collect_federated_todo_candidates(providers, scope, filters, metadata_keys, kinds);
         return run_llm_todos(all, limit, force_json, llm_model);
     }
 
-    let mut all = collect_federated_todo_candidates(providers, filters, metadata_keys, kinds);
+    let mut all =
+        collect_federated_todo_candidates(providers, scope, filters, metadata_keys, kinds);
 
     // Newest matches first — most useful for "what's still hanging?".
     all.sort_by(|a, b| {

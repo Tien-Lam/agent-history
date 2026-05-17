@@ -6,8 +6,8 @@ use std::time::Duration;
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK, EXIT_USAGE};
 use aghist::metadata;
 use aghist::model::Session;
-use aghist::provider;
 use aghist::search::{self, SearchFilters};
+use aghist::{provider, query_scope};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
 use super::super::filtering::qualified_session_metadata_key;
@@ -17,6 +17,7 @@ use super::output::write_watch_hit;
 
 pub(crate) fn search_watch_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     request: SearchWatchRequest<'_>,
 ) -> Result<i32, ErrorEnvelope> {
     let SearchWatchRequest {
@@ -57,7 +58,7 @@ pub(crate) fn search_watch_command(
     loop {
         iteration += 1;
 
-        let federation = federated_discovery_for_commands(providers);
+        let federation = federated_discovery_for_commands(providers, scope);
         let sessions: Vec<Session> = federation.sessions;
 
         let (tx, _rx) = crossbeam_channel::unbounded::<aghist::action::Action>();

@@ -10,7 +10,7 @@ use std::path::Path;
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::{QualifiedCitationRef, Session};
 use aghist::search::{self, SearchFilters};
-use aghist::{federated, provider};
+use aghist::{federated, provider, query_scope};
 
 use super::discovery::federated_discovery_for_commands;
 use super::metadata::try_index_notes;
@@ -40,6 +40,7 @@ type SearchHitRow = (search::SearchHit, Option<search::Explanation>);
 
 pub(crate) fn search_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     request: SearchCommandRequest<'_>,
 ) -> Result<i32, ErrorEnvelope> {
     let SearchCommandRequest {
@@ -65,7 +66,7 @@ pub(crate) fn search_command(
         Err(exit) => return Ok(exit),
     };
 
-    let federation = federated_discovery_for_commands(providers);
+    let federation = federated_discovery_for_commands(providers, scope);
     let sessions: Vec<Session> = federation.sessions;
 
     let index_dir = search::SearchIndex::default_index_dir();
