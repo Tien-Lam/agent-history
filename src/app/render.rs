@@ -1,6 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout};
 
 use crate::model::{Message, Session};
+use crate::ui::status_bar::StatusBarProps;
 
 use super::overlays::{render_export_overlay, render_filter_overlay, render_help_overlay};
 use super::{App, AppMode};
@@ -85,14 +86,16 @@ impl App {
             None
         };
         self.status_bar.render(
-            self.mode,
-            self.loading,
-            &self.search_query,
-            self.index_progress,
-            warning_count,
-            self.filter.is_active(),
-            self.status_message.as_deref(),
-            engine_label,
+            StatusBarProps {
+                mode: self.mode,
+                loading: self.loading,
+                search_query: &self.search_query,
+                index_progress: self.index_progress,
+                warning_count,
+                filter_active: self.filter.is_active(),
+                status_message: self.status_message.as_deref(),
+                engine: engine_label,
+            },
             frame,
             main_layout[1],
         );

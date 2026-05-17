@@ -226,7 +226,12 @@ pub(crate) fn sources_remove_remote(name: &str, mode: OutputMode) -> Result<i32,
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    let removed = removed.expect("retain reported a removal");
+    let Some(removed) = removed else {
+        return Err(ErrorEnvelope::new(
+            "internal-error",
+            "source removal changed the list without retaining the removed source",
+        ));
+    };
     write_removed_source(&mut out, &removed, &config_path, mode).map_err(|e| {
         ErrorEnvelope::new("io-error", format!("failed to write sources output: {e}"))
     })?;

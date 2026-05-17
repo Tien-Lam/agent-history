@@ -270,15 +270,13 @@ fn render_project_time_of_day<W: io::Write>(
     Ok(())
 }
 
-#[allow(clippy::cast_precision_loss)]
-#[allow(clippy::cast_possible_truncation)]
-#[allow(clippy::cast_sign_loss)]
-#[allow(clippy::cast_possible_wrap)]
 fn bar_cells(count: u64, max: u64, max_cells: u64) -> usize {
     if max == 0 || count == 0 {
         return 0;
     }
-    let ratio = (count as f64 / max as f64).min(1.0);
-    let cells = (ratio * max_cells as f64).round() as u64;
-    cells.min(max_cells) as usize
+    let count = u128::from(count.min(max));
+    let max = u128::from(max);
+    let max_cells = u128::from(max_cells);
+    let cells = ((count * max_cells) + (max / 2)) / max;
+    usize::try_from(cells.min(max_cells)).unwrap_or(usize::MAX)
 }

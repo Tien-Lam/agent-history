@@ -146,11 +146,7 @@ impl SearchIndex {
         clauses.push((Occur::Must, user_query));
         self.add_filter_clauses(&mut clauses, filters);
 
-        let combined: Box<dyn Query> = if clauses.len() == 1 {
-            clauses.into_iter().next().expect("one clause").1
-        } else {
-            Box::new(BooleanQuery::new(clauses))
-        };
+        let combined = combined_query(clauses);
 
         // Project is post-filtered; over-fetch to keep results stable when a
         // restrictive project filter would otherwise prune the limit-N window.
@@ -221,11 +217,7 @@ impl SearchIndex {
                 Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
             ));
         }
-        let combined: Box<dyn Query> = if clauses.len() == 1 {
-            clauses.into_iter().next().expect("one clause").1
-        } else {
-            Box::new(BooleanQuery::new(clauses))
-        };
+        let combined = combined_query(clauses);
 
         // Walk every matching message and collect distinct internal session keys.
         // Ranking is irrelevant here; `DocSetCollector` is cheaper than
@@ -279,5 +271,13 @@ impl SearchIndex {
             note_id,
             note_session_ref,
         }
+    }
+}
+
+fn combined_query(mut clauses: Vec<(Occur, Box<dyn Query>)>) -> Box<dyn Query> {
+    if clauses.len() == 1 {
+        clauses.remove(0).1
+    } else {
+        Box::new(BooleanQuery::new(clauses))
     }
 }
