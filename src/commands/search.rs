@@ -8,6 +8,7 @@ use std::path::Path;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::search::{self, SearchFilters};
+use aghist::services::search as search_service;
 use aghist::{provider, query_scope};
 
 use super::discovery::federated_discovery_for_commands;
@@ -60,72 +61,44 @@ pub(crate) fn search_command(
     };
 
     let federation = federated_discovery_for_commands(providers, scope);
-    let service = search::SearchService::new(providers);
-    let search::SearchServiceOutput {
-        hits: ordered,
-        session_meta,
-        engine: engine_used,
-    } = service
-        .search(
-            &federation.sessions,
-            &federation.source_by_session,
-            search::SearchServiceRequest {
-                query,
-                limit,
-                filters,
-                debug_search,
-                hybrid_weight,
-                metadata_keys,
-                provider_scope: None,
-            },
-        )
-        .map_err(|e| ErrorEnvelope::new("index-error", e.to_string()))?;
-
-    let total = ordered.len();
-    if ordered.is_empty() {
-        return Ok(EXIT_EMPTY);
-    }
-
-    let page_start = match &after {
-        Some(c) => ordered
-            .iter()
-            .position(|(h, _)| search::search_hit_is_after_cursor(h, &session_meta, c))
-            .unwrap_or(ordered.len()),
-        None => 0,
-    };
-
-    let page_end = page_start.saturating_add(limit).min(ordered.len());
-    let page = &ordered[page_start..page_end];
-    if page.is_empty() {
-        return Ok(EXIT_EMPTY);
-    }
-
-    let next_cursor = search::next_search_cursor(page, page_end < ordered.len(), &session_meta);
-    let hit_refs = search::resolve_search_hit_citations(
-        page,
-        &session_meta,
-        &federation.source_by_session,
+    let page = search_service::search_sessions(
         providers,
-    );
+        &federation,
+        search_service::SearchSessionsRequest {
+            query,
+            limit,
+            cursor: after.as_ref(),
+            filters,
+            debug_search,
+            hybrid_weight,
+            metadata_keys,
+            provider_scope: None,
+        },
+    )
+    .map_err(|e| ErrorEnvelope::new("index-error", e.to_string()))?;
+
+    if page.hits.is_empty() {
+        return Ok(EXIT_EMPTY);
+    }
 
     let want_json = force_json || !io::stdout().is_terminal();
     if want_json {
         print_search_json(
-            page,
-            &session_meta,
+            &page.hits,
+            &page.session_meta,
             &federation.source_by_session,
-            &hit_refs,
-            total,
-            next_cursor.as_deref(),
-            engine_used,
+            &page.citations,
+            page.total,
+            page.next_cursor.as_deref(),
+            page.engine,
         )
         .map_err(|e| ErrorEnvelope::io("failed to write JSON output", e))?;
     } else {
         print_search_table(
-            page,
-            &session_meta,
+            &page.hits,
+            &page.session_meta,
             &federation.source_by_session,
-            next_cursor.as_deref(),
+            page.next_cursor.as_deref(),
         )
         .map_err(|e| ErrorEnvelope::io("failed to write search output", e))?;
     }
