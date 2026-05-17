@@ -6,7 +6,7 @@ fn aghist() -> Command {
     common::helpers::isolated_aghist("cli-e2e")
 }
 
-#[path = "cli_e2e/analytics.rs"]
+#[path = "cli_e2e/analytics/mod.rs"]
 mod analytics;
 #[path = "cli_e2e/basics.rs"]
 mod basics;
