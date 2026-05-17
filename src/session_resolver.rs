@@ -15,6 +15,43 @@ pub enum SelectorShape {
     SessionRefOrIdPrefix,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LookupSource<'a> {
+    Any,
+    Local,
+    Named(&'a str),
+}
+
+impl<'a> LookupSource<'a> {
+    pub fn from_optional(source: Option<&'a str>) -> Result<Self, ResolutionError> {
+        source.map_or(Ok(Self::Any), Self::explicit)
+    }
+
+    pub fn explicit(source: &'a str) -> Result<Self, ResolutionError> {
+        validate_lookup_source(source)?;
+        Ok(if source == LOCAL_SOURCE {
+            Self::Local
+        } else {
+            Self::Named(source)
+        })
+    }
+
+    fn matches(self, actual: &str) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Local => actual == LOCAL_SOURCE,
+            Self::Named(source) => actual == source,
+        }
+    }
+
+    fn qualify_selector(self, selector: &str) -> String {
+        match self {
+            Self::Named(source) => format!("{source}:{selector}"),
+            Self::Any | Self::Local => selector.to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SelectedSession<'a> {
     pub session: &'a Session,
@@ -179,7 +216,7 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
                 .filter(|session| {
                     session.provider == session_ref.provider
                         && session.id == session_ref.session_id
-                        && self.source_for_session(session) == source
+                        && source.matches(self.source_for_session(session))
                 })
                 .collect();
             return self.unique_target(selector, &matches);
@@ -201,7 +238,7 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
             return Err(ResolutionError::SessionRefRequired(selector.to_string()));
         }
 
-        self.find_by_id_prefix(selector, None, None)
+        self.find_by_id_prefix(selector, None, LookupSource::Any)
     }
 
     pub fn resolve_citation_selector(
@@ -221,7 +258,9 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
             .filter(|session| {
                 session.provider == citation.provider
                     && session.id == citation.session_id
-                    && source.is_none_or(|source| self.source_for_session(session) == source)
+                    && source
+                        .map_or(LookupSource::Any, |source| source)
+                        .matches(self.source_for_session(session))
             })
             .collect();
         let target = self.unique_target(selector, &matches)?;
@@ -237,18 +276,13 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
         &self,
         session_id: &str,
         provider_filter: Option<Provider>,
-        source_filter: Option<&str>,
+        source_filter: LookupSource<'_>,
     ) -> Result<SelectedSession<'a>, ResolutionError> {
-        if let Some(source) = source_filter {
-            validate_lookup_source(source)?;
-        }
         let candidates: Vec<&Session> = self
             .sessions
             .iter()
             .filter(|session| provider_filter.is_none_or(|want| session.provider == want))
-            .filter(|session| {
-                source_filter.is_none_or(|want| self.source_for_session(session) == want)
-            })
+            .filter(|session| source_filter.matches(self.source_for_session(session)))
             .filter(|session| session.id.0 == session_id || session.id.0.starts_with(session_id))
             .collect();
 
@@ -258,30 +292,24 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
             .filter(|session| session.id.0 == session_id)
             .collect();
         let matches = if exact.is_empty() { candidates } else { exact };
-        self.unique_target(session_id, &matches)
+        self.unique_target(&source_filter.qualify_selector(session_id), &matches)
     }
 
     pub fn find_exact(
         &self,
         provider: Provider,
         session_id: &str,
-        source_filter: Option<&str>,
+        source_filter: LookupSource<'_>,
     ) -> Result<SelectedSession<'a>, ResolutionError> {
-        if let Some(source) = source_filter {
-            validate_lookup_source(source)?;
-        }
-        let selector = if let Some(source) = source_filter {
-            format!("{source}:{}/{}", provider.slug(), session_id)
-        } else {
-            format!("{}/{}", provider.slug(), session_id)
-        };
+        let selector =
+            source_filter.qualify_selector(&format!("{}/{}", provider.slug(), session_id));
         let matches: Vec<&Session> = self
             .sessions
             .iter()
             .filter(|session| {
                 session.provider == provider
                     && session.id.0 == session_id
-                    && source_filter.is_none_or(|source| self.source_for_session(session) == source)
+                    && source_filter.matches(self.source_for_session(session))
             })
             .collect();
         self.unique_target(&selector, &matches)
@@ -366,11 +394,12 @@ pub fn qualified_citation_ref<S: BuildHasher>(
     .to_string()
 }
 
-fn split_valid_source_prefix(raw: &str) -> Result<Option<(&str, &str)>, ResolutionError> {
+fn split_valid_source_prefix(
+    raw: &str,
+) -> Result<Option<(LookupSource<'_>, &str)>, ResolutionError> {
     let (source, rest) = split_source_prefix(raw);
     if let Some(source) = source {
-        validate_lookup_source(source)?;
-        Ok(Some((source, rest)))
+        Ok(Some((LookupSource::explicit(source)?, rest)))
     } else {
         Ok(None)
     }

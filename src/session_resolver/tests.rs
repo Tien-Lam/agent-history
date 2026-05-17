@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 
-use super::{ResolutionError, SelectorShape, SessionResolver};
+use super::{LookupSource, ResolutionError, SelectorShape, SessionResolver};
 use crate::federated::LOCAL_SOURCE;
 use crate::model::{Provider, Session, SessionId};
 
@@ -91,11 +91,36 @@ fn explicit_local_source_is_valid_for_lookup() {
     let resolver = SessionResolver::new(&sessions, &sources);
 
     let selected = resolver
-        .find_exact(Provider::ClaudeCode, "only-local", Some(LOCAL_SOURCE))
+        .find_exact(Provider::ClaudeCode, "only-local", LookupSource::Local)
         .unwrap();
 
     assert_eq!(selected.source, LOCAL_SOURCE);
     assert_eq!(selected.session_ref, "claude-code/only-local");
+}
+
+#[test]
+fn exact_lookup_can_target_any_source_explicitly() {
+    let sessions = vec![
+        session(Provider::ClaudeCode, "shared", "/local/shared.jsonl"),
+        session(Provider::ClaudeCode, "shared", "/remote/shared.jsonl"),
+    ];
+    let sources = source_map(&sessions, "laptop");
+    let resolver = SessionResolver::new(&sessions, &sources);
+
+    let err = resolver
+        .find_exact(Provider::ClaudeCode, "shared", LookupSource::Any)
+        .unwrap_err();
+    assert!(matches!(err, ResolutionError::Ambiguous { .. }));
+
+    let selected = resolver
+        .find_exact(
+            Provider::ClaudeCode,
+            "shared",
+            LookupSource::Named("laptop"),
+        )
+        .unwrap();
+    assert_eq!(selected.source, "laptop");
+    assert_eq!(selected.session_ref, "laptop:claude-code/shared");
 }
 
 #[test]

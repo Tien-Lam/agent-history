@@ -16,7 +16,7 @@ use crate::federated::{self, FederatedDiscovery, SourceFailure, LOCAL_SOURCE};
 use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
 use crate::query_scope::QueryScope;
-use crate::session_resolver::SessionResolver;
+use crate::session_resolver::{LookupSource, SessionResolver};
 
 /// Owns the providers + search index for the lifetime of a server run.
 pub struct McpServer {
@@ -217,6 +217,8 @@ impl McpServer {
         }
         let discovery = self.collect_discovery();
         let resolver = SessionResolver::new(&discovery.sessions, &discovery.source_by_session);
+        let source_filter =
+            LookupSource::from_optional(source_filter).map_err(|e| e.to_string())?;
         let selected = resolver
             .find_by_id_prefix(session_id, provider_filter, source_filter)
             .map_err(|e| e.to_string())?;
@@ -232,7 +234,8 @@ impl McpServer {
         session_id: &str,
         source: &str,
     ) -> Result<LocatedSession, String> {
-        self.find_session_exact_with_optional_source(provider, session_id, Some(source))
+        let source = LookupSource::explicit(source).map_err(|e| e.to_string())?;
+        self.find_session_exact_with_source(provider, session_id, source)
     }
 
     pub(super) fn find_session_exact_with_optional_source(
@@ -240,6 +243,16 @@ impl McpServer {
         provider: Provider,
         session_id: &str,
         source: Option<&str>,
+    ) -> Result<LocatedSession, String> {
+        let source = LookupSource::from_optional(source).map_err(|e| e.to_string())?;
+        self.find_session_exact_with_source(provider, session_id, source)
+    }
+
+    fn find_session_exact_with_source(
+        &self,
+        provider: Provider,
+        session_id: &str,
+        source: LookupSource<'_>,
     ) -> Result<LocatedSession, String> {
         self.ensure_provider_visible(provider)?;
         let discovery = self.collect_discovery();
