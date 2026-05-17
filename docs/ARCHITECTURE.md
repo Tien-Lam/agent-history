@@ -9,16 +9,7 @@ aghist is a read-only TUI that aggregates conversation history from multiple AI 
 
 ```mermaid
 graph TD
-    CC["Claude Code<br><code>~/.claude/</code>"] --> HP
-    GC["Gemini CLI<br><code>~/.gemini/</code>"] --> HP
-    CP["Copilot CLI<br><code>~/.copilot/</code>"] --> HP
-    CX["Codex CLI"] --> HP
-    OC["OpenCode"] --> HP
-    CU["Cursor"] --> HP
-    AD["Aider"] --> HP
-    ZA["Zed AI"] --> HP
-    CL["Cline"] --> HP
-    CD["Continue.dev"] --> HP
+    PD["Local and remote<br>provider history dirs"] --> HP
 
     HP["<b>HistoryProvider trait</b><br>discover_sessions() / load_messages()"]
 
@@ -57,7 +48,7 @@ Successful command output goes to stdout as either a JSON document (machine mode
 
 ### Citation refs
 
-`<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`) is the canonical handle for a single message. Remote/federated refs add an optional source prefix: `<source>:<provider-slug>/<session-id>#<turn>`. Refs are *opaque-stable across reindex* — the same `(source, provider, session-id, turn)` points at the same message as long as the source files are unchanged. `src/model/citation.rs` defines `CitationRef`/`QualifiedCitationRef`; `src/session_resolver.rs` centralizes local, remote, and ambiguous lookup behavior for CLI and MCP callers.
+`<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`) is the canonical handle for a single message. Remote/federated refs add an optional source prefix: `<source>:<provider-slug>/<session-id>#<turn>`. Refs are *opaque-stable across reindex* — the same `(source, provider, session-id, turn)` points at the same message as long as the source files are unchanged. `src/model/citation.rs` defines `CitationRef`/`QualifiedCitationRef`; `src/session_resolver.rs` and its submodules centralize local, remote, and ambiguous lookup behavior for CLI and MCP callers.
 
 ## Provider system
 
@@ -175,7 +166,7 @@ Full-text search uses Tantivy. The index is persisted to disk (platform cache di
 - `build_index()` skips sessions whose hash matches the manifest.
 - `aghist index --force` clears the index and manifest, forcing a full rebuild.
 - The index schema stores: session ID, message ID, provider, project, role, content text, tool-call output text (separate field, indexed for `--has-tool-call`), source-cache name (for federation), and timestamp.
-- `tests/recall_bench.rs` builds a mixed-provider synthetic corpus and enforces conservative recall/MRR and latency gates. Regenerate [`docs/SEARCH_BENCH.md`](SEARCH_BENCH.md) with `AGHIST_BENCH_WRITE_REPORT=1 cargo test --test recall_bench -- --nocapture` after intentional benchmark changes.
+- `tests/recall_bench.rs` builds a mixed-provider synthetic corpus and enforces conservative recall/MRR and latency gates. Set `AGHIST_BENCH_WRITE_REPORT=1` when you need a local markdown report; measured reports are ignored so stale timing snapshots do not become source documentation.
 
 ### Filters and pagination
 

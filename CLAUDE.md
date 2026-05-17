@@ -1,7 +1,8 @@
 # aghist
 
-Cross-platform TUI for AI agent conversation history (Claude Code, Copilot CLI,
-Gemini, Codex, OpenCode, Cursor, Aider, Zed AI, Cline, Continue.dev).
+Cross-platform TUI and scriptable CLI for AI agent conversation history. Keep
+the user-facing provider list in `README.md`; implementation details belong in
+the provider registry and conformance tests.
 
 ## Build & Test
 
@@ -21,7 +22,7 @@ cargo insta review                   # after test failures that update snapshots
 - `App` (`src/app.rs`, `src/app/*`) — TEA loop: `Action` enum → `dispatch()` → re-render
 - `src/main.rs` — binary boundary: tracing, clap errors, dispatch entrypoint
 - `src/commands/` — CLI command routing and implementations
-- `src/session_resolver.rs` — local/remote/source-qualified session and citation lookup
+- `src/session_resolver.rs`, `src/session_resolver/` — local/remote/source-qualified session and citation lookup
 - `src/lib.rs` — re-exports everything for integration tests
 - Search index at `~/.cache/aghist/search-index/`; metadata sidecar at `~/.local/share/aghist/metadata.db`
 
@@ -38,6 +39,6 @@ cargo insta review                   # after test failures that update snapshots
 1. Add variant to `Provider` enum (`src/model/provider.rs`) — slug, `as_str`, `from_slug`, `all()`, `resume_command`
 2. Create `src/provider/<name>.rs` — implement `HistoryProvider`; use `AGHIST_HOME` for testability
 3. Register detection/stateless/remote-dir construction in `src/provider/registry.rs`
-4. Add color to `provider_color()` (`src/ui/mod.rs`)
+4. Add UI color treatment if the provider needs a distinct accent
 5. Add focused provider parser tests and generated fixture support under `tests/common/fixtures/`
 6. Run `cargo test --test provider_conformance`; update the provider contract snapshot only when the normalized output intentionally changes

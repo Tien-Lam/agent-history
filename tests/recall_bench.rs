@@ -24,10 +24,11 @@
 //! AGHIST_BENCH_WRITE_REPORT=1 cargo test --test recall_bench -- --nocapture
 //! ```
 //!
-//! Setting `AGHIST_BENCH_WRITE_REPORT=1` rewrites `docs/SEARCH_BENCH.md` with
-//! the freshly measured numbers — useful when the corpus or queries change.
-//! The default test asserts conservative quality and latency floors so the
-//! suite stays fast while still catching meaningful regressions.
+//! Setting `AGHIST_BENCH_WRITE_REPORT=1` writes an ignored local report to
+//! `docs/SEARCH_BENCH.md` with freshly measured numbers. The default test
+//! asserts conservative quality and latency floors so the suite stays fast
+//! while still catching meaningful regressions without committing stale timing
+//! snapshots.
 
 // Pedantic lints we deliberately ignore in this bench:
 // - cast_precision_loss / cast_possible_truncation: usize→f32 for
