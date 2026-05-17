@@ -50,6 +50,7 @@ pub(crate) fn build_session_from_file(
         .unwrap_or_else(Utc::now);
 
     let summary = meta.and_then(|m| m.title.clone());
+    let message_count = parse_jsonl(&path, &started_at).map_or(0, |m| m.len());
 
     Session {
         id: SessionId(session_id),
@@ -62,7 +63,7 @@ pub(crate) fn build_session_from_file(
         summary,
         model: None,
         token_usage: None,
-        message_count: 0,
+        message_count,
         source_path: path,
     }
 }

@@ -39,6 +39,7 @@ pub(crate) fn parse_task_dir(path: &Path) -> Option<Session> {
 
     let started_at = started_at_for(path, &task_id);
     let summary = task_summary(path);
+    let message_count = parse_api_history(&history_path, &started_at).map_or(0, |m| m.len());
 
     Some(Session {
         id: SessionId(task_id),
@@ -51,7 +52,7 @@ pub(crate) fn parse_task_dir(path: &Path) -> Option<Session> {
         summary,
         model: None,
         token_usage: None,
-        message_count: 0,
+        message_count,
         source_path: path.to_path_buf(),
     })
 }
