@@ -1,7 +1,8 @@
 use chrono::{TimeZone, Utc};
 
 use super::cursor_format::{millis_to_datetime, BubbleData, ToolCallData, ToolFormerData};
-use crate::model::{ContentBlock, Message, MessageId, Role, ToolCall, ToolResult};
+use crate::model::{ContentBlock, Message, MessageId, Role};
+use crate::provider::parse_common::{tool_result_block, tool_use_block};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub(crate) fn build_message(
@@ -75,21 +76,16 @@ fn push_tool(tool: &ToolFormerData, content: &mut Vec<ContentBlock>) {
     let name = tool.name.clone().unwrap_or_else(|| String::from("tool"));
     let arguments = stringify_json(&tool.params);
 
-    content.push(ContentBlock::ToolUse(ToolCall {
-        id: id.clone(),
-        name,
-        arguments,
-    }));
+    content.push(tool_use_block(id.clone(), name, arguments));
 
     if !tool.result.is_null() {
-        content.push(ContentBlock::ToolResult(ToolResult {
-            tool_call_id: id,
-            success: tool
-                .status
+        content.push(tool_result_block(
+            id,
+            tool.status
                 .as_deref()
                 .is_none_or(|s| !s.eq_ignore_ascii_case("error")),
-            output: stringify_json(&tool.result),
-        }));
+            stringify_json(&tool.result),
+        ));
     }
 }
 
@@ -98,21 +94,16 @@ fn push_tool_v2(tc: &ToolCallData, content: &mut Vec<ContentBlock>) {
     let name = tc.name.clone().unwrap_or_else(|| String::from("tool"));
     let arguments = stringify_json(&tc.arguments);
 
-    content.push(ContentBlock::ToolUse(ToolCall {
-        id: id.clone(),
-        name,
-        arguments,
-    }));
+    content.push(tool_use_block(id.clone(), name, arguments));
 
     if !tc.result.is_null() {
-        content.push(ContentBlock::ToolResult(ToolResult {
-            tool_call_id: id,
-            success: tc
-                .status
+        content.push(tool_result_block(
+            id,
+            tc.status
                 .as_deref()
                 .is_none_or(|s| !s.eq_ignore_ascii_case("error")),
-            output: stringify_json(&tc.result),
-        }));
+            stringify_json(&tc.result),
+        ));
     }
 }
 

@@ -21,6 +21,7 @@ mod gemini_cli_parse;
 mod json_text;
 pub mod opencode;
 mod opencode_parse;
+mod parse_common;
 pub mod registry;
 mod text_blocks;
 pub mod zed_ai;

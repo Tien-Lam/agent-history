@@ -6,10 +6,13 @@ use serde::Deserialize;
 
 use super::ProviderError;
 use crate::model::{
-    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
-    ToolResult,
+    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage,
 };
 use crate::provider::json_text::string_or_object_field_or_pretty;
+use crate::provider::parse_common::{
+    nonzero_token_usage, parse_utc, parse_utc_or_now, pretty_json_opt, tool_result_block,
+    tool_use_block,
+};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize)]
@@ -54,8 +57,8 @@ pub(crate) fn build_session_from_file(
         return None;
     }
 
-    let started_at = raw.start_time.parse::<DateTime<Utc>>().ok()?;
-    let ended_at = raw.last_updated.parse::<DateTime<Utc>>().ok();
+    let started_at = parse_utc(&raw.start_time)?;
+    let ended_at = parse_utc(&raw.last_updated);
 
     let project_path = project_map.get(project_slug).map(PathBuf::from);
 
@@ -83,16 +86,7 @@ pub(crate) fn build_session_from_file(
         }
     });
 
-    let token_usage = if input_total > 0 || output_total > 0 {
-        Some(TokenUsage {
-            input_tokens: input_total,
-            output_tokens: output_total,
-            cache_read_tokens: None,
-            cache_write_tokens: None,
-        })
-    } else {
-        None
-    };
+    let token_usage = nonzero_token_usage(input_total, output_total, None, None);
 
     Some(Session {
         id: SessionId(raw.session_id),
@@ -169,8 +163,7 @@ fn raw_role(msg_type: &str) -> Option<Role> {
 }
 
 fn message_timestamp(raw: Option<&str>) -> DateTime<Utc> {
-    raw.and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-        .unwrap_or_else(Utc::now)
+    parse_utc_or_now(raw)
 }
 
 fn message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
@@ -227,15 +220,11 @@ fn append_tool_calls(content: &mut Vec<ContentBlock>, tool_calls: Option<&[RawTo
 
     for tc in tool_calls {
         let id = tc.id.clone().unwrap_or_default();
-        content.push(ContentBlock::ToolUse(ToolCall {
-            id: id.clone(),
-            name: tc.name.clone().unwrap_or_else(|| "unknown".to_string()),
-            arguments: tc
-                .args
-                .as_ref()
-                .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
-                .unwrap_or_default(),
-        }));
+        content.push(tool_use_block(
+            id.clone(),
+            tc.name.clone().unwrap_or_else(|| "unknown".to_string()),
+            pretty_json_opt(tc.args.as_ref()),
+        ));
 
         append_tool_response(content, tc, id);
     }
@@ -247,11 +236,7 @@ fn append_tool_response(content: &mut Vec<ContentBlock>, tc: &RawToolCall, id: S
     };
 
     if !output.is_empty() {
-        content.push(ContentBlock::ToolResult(ToolResult {
-            tool_call_id: id,
-            success: tc.error.is_none(),
-            output,
-        }));
+        content.push(tool_result_block(id, tc.error.is_none(), output));
     }
 }
 

@@ -5,8 +5,9 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::ProviderError;
-use crate::model::{
-    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, ToolCall, ToolResult,
+use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
+use crate::provider::parse_common::{
+    parse_utc, parse_utc_or_now, pretty_json_opt, tool_result_block, tool_use_block,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -30,7 +31,7 @@ pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
         };
 
         if let Some(ts) = &entry.timestamp {
-            if let Ok(dt) = ts.parse::<DateTime<Utc>>() {
+            if let Some(dt) = parse_utc(ts) {
                 if first_timestamp.is_none() {
                     first_timestamp = Some(dt);
                 }
@@ -172,11 +173,7 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
 }
 
 fn entry_timestamp(entry: &RawEntry) -> DateTime<Utc> {
-    entry
-        .timestamp
-        .as_deref()
-        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-        .unwrap_or_else(Utc::now)
+    parse_utc_or_now(entry.timestamp.as_deref())
 }
 
 fn message(role: Role, timestamp: DateTime<Utc>, content: Vec<ContentBlock>) -> Message {
@@ -240,14 +237,14 @@ fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
         "function_call" => messages.push(message(
             Role::Tool,
             timestamp,
-            vec![ContentBlock::ToolUse(ToolCall {
-                id: payload.call_id.clone().unwrap_or_default(),
-                name: payload
+            vec![tool_use_block(
+                payload.call_id.clone().unwrap_or_default(),
+                payload
                     .name
                     .clone()
                     .unwrap_or_else(|| "unknown".to_string()),
-                arguments: payload.arguments.clone().unwrap_or_default(),
-            })],
+                payload.arguments.clone().unwrap_or_default(),
+            )],
         )),
         "function_call_output" => {
             let output = payload.output.clone().unwrap_or_default();
@@ -255,11 +252,11 @@ fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
                 messages.push(message(
                     Role::Tool,
                     timestamp,
-                    vec![ContentBlock::ToolResult(ToolResult {
-                        tool_call_id: payload.call_id.clone().unwrap_or_default(),
-                        success: true,
+                    vec![tool_result_block(
+                        payload.call_id.clone().unwrap_or_default(),
+                        true,
                         output,
-                    })],
+                    )],
                 ));
             }
         }
@@ -273,15 +270,11 @@ fn legacy_content(entry: &RawEntry, role: Role) -> Vec<ContentBlock> {
         return content;
     };
     if role == Role::Tool {
-        content.push(ContentBlock::ToolUse(ToolCall {
-            id: String::new(),
-            name: text.clone(),
-            arguments: entry
-                .tool_calls
-                .as_ref()
-                .map(|tc| serde_json::to_string_pretty(tc).unwrap_or_default())
-                .unwrap_or_default(),
-        }));
+        content.push(tool_use_block(
+            String::new(),
+            text.clone(),
+            pretty_json_opt(entry.tool_calls.as_ref()),
+        ));
     } else {
         content.extend(parse_text_with_code_blocks(text));
     }

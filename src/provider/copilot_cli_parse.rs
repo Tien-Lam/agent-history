@@ -5,11 +5,11 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::{project_name_from_path, ProviderError};
-use crate::model::{
-    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
-    ToolResult,
-};
+use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::string_or_object_field;
+use crate::provider::parse_common::{
+    parse_utc, parse_utc_or_now, pretty_json_opt, token_usage, tool_result_block, tool_use_block,
+};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize)]
@@ -31,15 +31,9 @@ pub(crate) fn build_session(session_dir: &Path, workspace_path: &Path) -> Option
             .map(String::from)
     })?;
 
-    let started_at = workspace
-        .created_at
-        .as_deref()
-        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())?;
+    let started_at = workspace.created_at.as_deref().and_then(parse_utc)?;
 
-    let ended_at = workspace
-        .updated_at
-        .as_deref()
-        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok());
+    let ended_at = workspace.updated_at.as_deref().and_then(parse_utc);
 
     let project_name = workspace.cwd.as_deref().and_then(project_name_from_path);
     let project_path = workspace.cwd.map(PathBuf::from);
@@ -165,11 +159,7 @@ pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderEr
 }
 
 fn event_timestamp(event: &RawEvent) -> DateTime<Utc> {
-    event
-        .timestamp
-        .as_deref()
-        .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-        .unwrap_or_else(Utc::now)
+    parse_utc_or_now(event.timestamp.as_deref())
 }
 
 fn event_message(
@@ -184,11 +174,13 @@ fn event_message(
         timestamp,
         content,
         model: event.model.clone(),
-        token_usage: event.usage.as_ref().map(|u| TokenUsage {
-            input_tokens: u.input_tokens.unwrap_or(0),
-            output_tokens: u.output_tokens.unwrap_or(0),
-            cache_read_tokens: None,
-            cache_write_tokens: None,
+        token_usage: event.usage.as_ref().map(|u| {
+            token_usage(
+                u.input_tokens.unwrap_or(0),
+                u.output_tokens.unwrap_or(0),
+                None,
+                None,
+            )
         }),
     }
 }
@@ -210,18 +202,13 @@ fn push_tool_execution_start(messages: &mut Vec<Message>, event: &RawEvent) {
     };
     messages.push(tool_message(
         event,
-        vec![ContentBlock::ToolUse(ToolCall {
-            id: data.tool_call_id.clone().unwrap_or_default(),
-            name: data
-                .tool_name
+        vec![tool_use_block(
+            data.tool_call_id.clone().unwrap_or_default(),
+            data.tool_name
                 .clone()
                 .unwrap_or_else(|| "unknown".to_string()),
-            arguments: data
-                .arguments
-                .as_ref()
-                .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
-                .unwrap_or_default(),
-        })],
+            pretty_json_opt(data.arguments.as_ref()),
+        )],
     ));
 }
 
@@ -239,11 +226,11 @@ fn push_tool_result(messages: &mut Vec<Message>, event: &RawEvent) {
     }
     messages.push(tool_message(
         event,
-        vec![ContentBlock::ToolResult(ToolResult {
-            tool_call_id: data.tool_call_id.clone().unwrap_or_default(),
-            success: data.success.unwrap_or(true),
+        vec![tool_result_block(
+            data.tool_call_id.clone().unwrap_or_default(),
+            data.success.unwrap_or(true),
             output,
-        })],
+        )],
     ));
 }
 
@@ -263,15 +250,11 @@ fn event_content(event: &RawEvent) -> Vec<ContentBlock> {
 
 fn push_top_level_tool_use(content: &mut Vec<ContentBlock>, event: &RawEvent) {
     if let Some(tool_name) = &event.tool_name {
-        content.push(ContentBlock::ToolUse(ToolCall {
-            id: event.tool_call_id.clone().unwrap_or_default(),
-            name: tool_name.clone(),
-            arguments: event
-                .tool_args
-                .as_ref()
-                .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
-                .unwrap_or_default(),
-        }));
+        content.push(tool_use_block(
+            event.tool_call_id.clone().unwrap_or_default(),
+            tool_name.clone(),
+            pretty_json_opt(event.tool_args.as_ref()),
+        ));
     }
 }
 
@@ -280,15 +263,11 @@ fn push_nested_tool_requests(content: &mut Vec<ContentBlock>, data: Option<&RawE
         return;
     };
     for tr in tool_requests {
-        content.push(ContentBlock::ToolUse(ToolCall {
-            id: tr.tool_call_id.clone().unwrap_or_default(),
-            name: tr.name.clone().unwrap_or_else(|| "unknown".to_string()),
-            arguments: tr
-                .arguments
-                .as_ref()
-                .map(|a| serde_json::to_string_pretty(a).unwrap_or_default())
-                .unwrap_or_default(),
-        }));
+        content.push(tool_use_block(
+            tr.tool_call_id.clone().unwrap_or_default(),
+            tr.name.clone().unwrap_or_else(|| "unknown".to_string()),
+            pretty_json_opt(tr.arguments.as_ref()),
+        ));
     }
 }
 

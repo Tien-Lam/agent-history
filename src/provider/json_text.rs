@@ -65,7 +65,7 @@ fn direct_string_or_object_field(value: &Value, fields: &[&str]) -> Option<Strin
         .find_map(|key| map.get(*key).and_then(Value::as_str).map(str::to_owned))
 }
 
-fn pretty_json(value: &Value) -> String {
+pub(crate) fn pretty_json(value: &Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_default()
 }
 

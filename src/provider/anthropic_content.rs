@@ -1,7 +1,8 @@
 use serde::Deserialize;
 
-use crate::model::{ContentBlock, ToolCall, ToolResult};
+use crate::model::ContentBlock;
 use crate::provider::json_text::{string_or_pretty, string_or_typed_text_array_or_pretty};
+use crate::provider::parse_common::{tool_result_block, tool_use_block};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize, Default)]
@@ -51,24 +52,24 @@ fn block_to_content(block: AnthropicBlock) -> Vec<ContentBlock> {
                 parse_text_with_code_blocks(&text)
             }
         }
-        "tool_use" => vec![ContentBlock::ToolUse(ToolCall {
-            id: block.id.unwrap_or_default(),
-            name: block.name.unwrap_or_default(),
-            arguments: block
+        "tool_use" => vec![tool_use_block(
+            block.id.unwrap_or_default(),
+            block.name.unwrap_or_default(),
+            block
                 .input
                 .as_ref()
                 .map(string_or_pretty)
                 .unwrap_or_default(),
-        })],
-        "tool_result" => vec![ContentBlock::ToolResult(ToolResult {
-            tool_call_id: block.tool_use_id.unwrap_or_default(),
-            success: true,
-            output: block
+        )],
+        "tool_result" => vec![tool_result_block(
+            block.tool_use_id.unwrap_or_default(),
+            true,
+            block
                 .content
                 .as_ref()
                 .map(|value| string_or_typed_text_array_or_pretty(value, "text", "text"))
                 .unwrap_or_default(),
-        })],
+        )],
         _ => vec![],
     }
 }

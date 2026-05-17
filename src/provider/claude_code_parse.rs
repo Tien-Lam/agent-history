@@ -1,15 +1,16 @@
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::ProviderError;
-use crate::model::{
-    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
-    ToolResult,
-};
+use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::string_or_typed_text_array;
+use crate::provider::parse_common::{
+    millis_to_utc, nonzero_token_usage, parse_utc, parse_utc_or_now, pretty_json_opt, token_usage,
+    tool_result_block, tool_use_block,
+};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize)]
@@ -79,7 +80,7 @@ pub(crate) fn build_session_metadata(
         };
 
         if let Some(ts) = &entry.timestamp {
-            if let Ok(dt) = ts.parse::<DateTime<Utc>>() {
+            if let Some(dt) = parse_utc(ts) {
                 if first_timestamp.is_none() {
                     first_timestamp = Some(dt);
                 }
@@ -133,19 +134,10 @@ pub(crate) fn build_session_metadata(
             .iter()
             .find(|e| e.session_id.as_deref() == Some(session_id))
             .and_then(|e| e.timestamp)
-            .and_then(|ts| Utc.timestamp_millis_opt(ts.cast_signed()).single())
+            .and_then(|ts| millis_to_utc(ts.cast_signed()))
     })?;
 
-    let token_usage = if total_input_tokens > 0 || total_output_tokens > 0 {
-        Some(TokenUsage {
-            input_tokens: total_input_tokens,
-            output_tokens: total_output_tokens,
-            cache_read_tokens: None,
-            cache_write_tokens: None,
-        })
-    } else {
-        None
-    };
+    let token_usage = nonzero_token_usage(total_input_tokens, total_output_tokens, None, None);
 
     Some(Session {
         id: SessionId(session_id.to_string()),
@@ -238,11 +230,7 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
             continue;
         };
 
-        let timestamp = entry
-            .timestamp
-            .as_deref()
-            .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-            .unwrap_or_else(Utc::now);
+        let timestamp = parse_utc_or_now(entry.timestamp.as_deref());
 
         let id = entry.uuid.unwrap_or_default();
 
@@ -253,11 +241,13 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
             continue;
         }
 
-        let token_usage = msg.usage.as_ref().map(|u| TokenUsage {
-            input_tokens: u.input_tokens.unwrap_or(0),
-            output_tokens: u.output_tokens.unwrap_or(0),
-            cache_read_tokens: u.cache_read_input_tokens,
-            cache_write_tokens: u.cache_creation_input_tokens,
+        let token_usage = msg.usage.as_ref().map(|u| {
+            token_usage(
+                u.input_tokens.unwrap_or(0),
+                u.output_tokens.unwrap_or(0),
+                u.cache_read_input_tokens,
+                u.cache_creation_input_tokens,
+            )
         });
 
         messages.push(Message {
@@ -318,15 +308,8 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        let arguments = item
-                            .get("input")
-                            .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
-                            .unwrap_or_default();
-                        blocks.push(ContentBlock::ToolUse(ToolCall {
-                            id,
-                            name,
-                            arguments,
-                        }));
+                        let arguments = pretty_json_opt(item.get("input"));
+                        blocks.push(tool_use_block(id, name, arguments));
                     }
                     "tool_result" if role == Role::User => {
                         let tool_call_id = item
@@ -339,11 +322,7 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
                             .and_then(serde_json::Value::as_bool)
                             .unwrap_or(false);
                         let output = extract_tool_result_text(item);
-                        blocks.push(ContentBlock::ToolResult(ToolResult {
-                            tool_call_id,
-                            success: !is_error,
-                            output,
-                        }));
+                        blocks.push(tool_result_block(tool_call_id, !is_error, output));
                     }
                     _ => {}
                 }

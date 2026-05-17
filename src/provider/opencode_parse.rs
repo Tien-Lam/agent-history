@@ -1,18 +1,16 @@
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::Utc;
 use serde::Deserialize;
 
 use super::project_name_from_path;
 use crate::model::{
-    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage, ToolCall,
-    ToolResult,
+    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage,
+};
+use crate::provider::parse_common::{
+    millis_to_utc, parse_utc, pretty_json_opt, tool_result_block, tool_use_block,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
-
-fn millis_to_datetime(millis: i64) -> Option<DateTime<Utc>> {
-    Utc.timestamp_millis_opt(millis).single()
-}
 
 pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> {
     let data = std::fs::read_to_string(path).ok()?;
@@ -23,23 +21,15 @@ pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Optio
         .time
         .as_ref()
         .and_then(|t| t.created)
-        .and_then(millis_to_datetime)
-        .or_else(|| {
-            raw.created_at
-                .as_deref()
-                .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-        })?;
+        .and_then(millis_to_utc)
+        .or_else(|| raw.created_at.as_deref().and_then(parse_utc))?;
 
     let ended_at = raw
         .time
         .as_ref()
         .and_then(|t| t.updated)
-        .and_then(millis_to_datetime)
-        .or_else(|| {
-            raw.updated_at
-                .as_deref()
-                .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-        });
+        .and_then(millis_to_utc)
+        .or_else(|| raw.updated_at.as_deref().and_then(parse_utc));
 
     // New format uses "directory", legacy uses "cwd"
     let project_string = raw.directory.or(raw.cwd);
@@ -93,12 +83,8 @@ pub(crate) fn parse_message_file(path: &Path, part_dir: &Path) -> Option<Message
         .time
         .as_ref()
         .and_then(|t| t.created)
-        .and_then(millis_to_datetime)
-        .or_else(|| {
-            raw.timestamp
-                .as_deref()
-                .and_then(|ts| ts.parse::<DateTime<Utc>>().ok())
-        })
+        .and_then(millis_to_utc)
+        .or_else(|| raw.timestamp.as_deref().and_then(parse_utc))
         .unwrap_or_else(Utc::now);
 
     let msg_id = raw.id.clone().unwrap_or_default();
@@ -210,17 +196,8 @@ fn load_parts_into_content(part_dir: &Path, content: &mut Vec<ContentBlock>) {
             "tool" => {
                 let tool_name = part.tool.clone().unwrap_or_else(|| "unknown".to_string());
                 let call_id = part.call_id.clone().unwrap_or_default();
-                let arguments = part
-                    .state
-                    .as_ref()
-                    .and_then(|s| s.input.as_ref())
-                    .map(|input| serde_json::to_string_pretty(input).unwrap_or_default())
-                    .unwrap_or_default();
-                content.push(ContentBlock::ToolUse(ToolCall {
-                    id: call_id,
-                    name: tool_name,
-                    arguments,
-                }));
+                let arguments = pretty_json_opt(part.state.as_ref().and_then(|s| s.input.as_ref()));
+                content.push(tool_use_block(call_id, tool_name, arguments));
 
                 // Include tool output as a result
                 if let Some(ref state) = part.state {
@@ -228,11 +205,7 @@ fn load_parts_into_content(part_dir: &Path, content: &mut Vec<ContentBlock>) {
                         if !output.is_empty() {
                             let tool_call_id = part.call_id.clone().unwrap_or_default();
                             let success = state.status.as_deref() == Some("completed");
-                            content.push(ContentBlock::ToolResult(ToolResult {
-                                tool_call_id,
-                                success,
-                                output: output.clone(),
-                            }));
+                            content.push(tool_result_block(tool_call_id, success, output.clone()));
                         }
                     }
                 }
