@@ -23,6 +23,11 @@ fn assert_json_snapshot(name: &'static str, value: &Value) {
 fn normalize_index_summary(summary: &mut Value) {
     summary["duration_ms"] = serde_json::json!(0);
     summary["index_dir"] = serde_json::json!("[index-dir]");
+    if summary.get("embeddings").is_some() {
+        summary["embeddings"] = serde_json::json!({
+            "status": "[feature-dependent]"
+        });
+    }
 }
 
 fn normalize_search_scores(doc: &mut Value) {
@@ -130,8 +135,8 @@ fn index_empty_summary_contract_snapshot() {
         .assert()
         .success();
     let mut summary = parse_stdout_json(&output);
-    normalize_index_summary(&mut summary);
     assert_index_schema_matches_output(&summary);
+    normalize_index_summary(&mut summary);
 
     assert_json_snapshot("index_empty_summary_contract", &summary);
 }

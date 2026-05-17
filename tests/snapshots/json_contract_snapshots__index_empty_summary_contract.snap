@@ -6,9 +6,7 @@ expression: pretty
   "added": 0,
   "duration_ms": 0,
   "embeddings": {
-    "accept_download_requested": false,
-    "reason": "binary built without `embeddings` feature",
-    "status": "disabled"
+    "status": "[feature-dependent]"
   },
   "errors": [],
   "force": false,
