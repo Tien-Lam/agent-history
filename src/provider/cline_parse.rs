@@ -1,10 +1,13 @@
 use std::path::Path;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
+use crate::provider::parse_common::{
+    file_modified_utc, millis_to_utc, timestamp_with_index_millis,
+};
 
 pub(crate) const API_HISTORY_FILE: &str = "api_conversation_history.json";
 pub(crate) const UI_MESSAGES_FILE: &str = "ui_messages.json";
@@ -66,9 +69,7 @@ fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
     if let Ok(bytes) = std::fs::read(&meta_path) {
         if let Ok(meta) = serde_json::from_slice::<TaskMetadata>(&bytes) {
             if let Some(ms) = meta.created_at {
-                let secs = ms / 1000;
-                let nsecs = u32::try_from((ms % 1000) * 1_000_000).unwrap_or(0);
-                if let Some(dt) = Utc.timestamp_opt(secs, nsecs).single() {
+                if let Some(dt) = millis_to_utc(ms) {
                     return dt;
                 }
             }
@@ -76,16 +77,12 @@ fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
     }
 
     if let Ok(ms) = task_id.parse::<i64>() {
-        let secs = ms / 1000;
-        let nsecs = u32::try_from((ms % 1000) * 1_000_000).unwrap_or(0);
-        if let Some(dt) = Utc.timestamp_opt(secs, nsecs).single() {
+        if let Some(dt) = millis_to_utc(ms) {
             return dt;
         }
     }
 
-    path.metadata()
-        .and_then(|m| m.modified())
-        .map_or_else(|_| Utc::now(), DateTime::<Utc>::from)
+    file_modified_utc(path).unwrap_or_else(Utc::now)
 }
 
 /// Extract a human-readable summary from `ui_messages.json` first entry's text.
@@ -124,7 +121,7 @@ pub(crate) fn parse_api_history(
         }
 
         // Spread messages 1 ms apart so ordering is stable even without embedded timestamps
-        let timestamp = *base_ts + chrono::Duration::milliseconds(i64::try_from(idx).unwrap_or(0));
+        let timestamp = timestamp_with_index_millis(*base_ts, idx);
 
         messages.push(Message {
             id: MessageId(format!("msg-{idx}")),

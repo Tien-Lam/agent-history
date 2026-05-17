@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::{project_name_from_path, ProviderError};
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
+use crate::provider::parse_common::{epoch_timestamp_for_index, file_modified_utc, millis_to_utc};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Debug, Deserialize)]
@@ -47,7 +48,7 @@ impl Timestamp {
             Self::Iso(s) => DateTime::parse_from_rfc3339(s)
                 .ok()
                 .map(|dt| dt.with_timezone(&Utc)),
-            Self::Millis(m) => Utc.timestamp_millis_opt(*m).single(),
+            Self::Millis(m) => millis_to_utc(*m),
         }
     }
 }
@@ -80,7 +81,7 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
         .as_ref()
         .and_then(Timestamp::to_utc)
         .or_else(|| earliest_message_ts(&raw))
-        .or_else(|| file_mtime(path));
+        .or_else(|| file_modified_utc(path));
     let Some(started_at) = started_at else {
         return Ok(None);
     };
@@ -146,14 +147,6 @@ fn latest_message_ts(conv: &ZedConversation) -> Option<DateTime<Utc>> {
         .max()
 }
 
-fn file_mtime(path: &Path) -> Option<DateTime<Utc>> {
-    let meta = std::fs::metadata(path).ok()?;
-    let modified = meta.modified().ok()?;
-    let dur = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
-    let secs = i64::try_from(dur.as_secs()).ok()?;
-    Utc.timestamp_opt(secs, dur.subsec_nanos()).single()
-}
-
 fn build_message(raw: ZedMessage, idx: usize) -> Option<Message> {
     let role = parse_role(raw.role.as_deref())?;
     let body = raw.text.unwrap_or_default();
@@ -162,11 +155,7 @@ fn build_message(raw: ZedMessage, idx: usize) -> Option<Message> {
         .timestamp
         .as_ref()
         .and_then(Timestamp::to_utc)
-        .unwrap_or_else(|| {
-            Utc.timestamp_opt(i64::try_from(idx).unwrap_or(0), 0)
-                .single()
-                .unwrap_or_else(Utc::now)
-        });
+        .unwrap_or_else(|| epoch_timestamp_for_index(idx));
 
     let id = raw.id.unwrap_or_else(|| format!("zed-msg-{idx}"));
     let content = if body.is_empty() {

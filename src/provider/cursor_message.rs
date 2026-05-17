@@ -1,8 +1,6 @@
-use chrono::{TimeZone, Utc};
-
 use super::cursor_format::{millis_to_datetime, BubbleData, ToolCallData, ToolFormerData};
 use crate::model::{ContentBlock, Message, MessageId, Role};
-use crate::provider::parse_common::{tool_result_block, tool_use_block};
+use crate::provider::parse_common::{epoch_timestamp_for_index, tool_result_block, tool_use_block};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub(crate) fn build_message(
@@ -26,11 +24,7 @@ pub(crate) fn build_message(
     let timestamp = raw
         .created_at
         .and_then(millis_to_datetime)
-        .unwrap_or_else(|| {
-            Utc.timestamp_opt(i64::try_from(idx).unwrap_or(0), 0)
-                .single()
-                .unwrap_or_else(Utc::now)
-        });
+        .unwrap_or_else(|| epoch_timestamp_for_index(idx));
 
     let mut content: Vec<ContentBlock> = Vec::new();
 

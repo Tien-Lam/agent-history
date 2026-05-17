@@ -1,4 +1,3 @@
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -8,8 +7,8 @@ use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::string_or_typed_text_array;
 use crate::provider::parse_common::{
-    millis_to_utc, nonzero_token_usage, parse_utc, parse_utc_or_now, pretty_json_opt, token_usage,
-    tool_result_block, tool_use_block,
+    millis_to_utc, nonzero_token_usage, parse_jsonl_records, parse_utc, parse_utc_or_now,
+    pretty_json_opt, token_usage, tool_result_block, tool_use_block, visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -24,21 +23,11 @@ pub(crate) struct HistoryEntry {
 }
 
 pub(crate) fn parse_history_index(path: &Path) -> Result<Vec<HistoryEntry>, ProviderError> {
-    let file = std::fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut entries = Vec::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Ok(entry) = serde_json::from_str::<HistoryEntry>(&line) {
-            entries.push(entry);
-        }
-    }
-
-    Ok(entries)
+    Ok(parse_jsonl_records::<HistoryEntry>(path)?
+        .records
+        .into_iter()
+        .map(|record| record.value)
+        .collect())
 }
 
 /// Decode the project directory name back to a readable path.
@@ -56,9 +45,6 @@ pub(crate) fn build_session_metadata(
     history_entries: &[HistoryEntry],
 ) -> Option<Session> {
     // Quick scan of the session file for timestamps and message count
-    let file = std::fs::File::open(source_path).ok()?;
-    let reader = BufReader::new(file);
-
     let mut first_timestamp: Option<DateTime<Utc>> = None;
     let mut last_timestamp: Option<DateTime<Utc>> = None;
     let mut message_count: usize = 0;
@@ -68,55 +54,51 @@ pub(crate) fn build_session_metadata(
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
 
-    for line in reader.lines() {
-        let Ok(line) = line else { continue };
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let entry: RawSessionEntry = match serde_json::from_str(&line) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-
-        if let Some(ts) = &entry.timestamp {
-            if let Some(dt) = parse_utc(ts) {
-                if first_timestamp.is_none() {
-                    first_timestamp = Some(dt);
-                }
-                last_timestamp = Some(dt);
-            }
-        }
-
-        if let Some("user" | "assistant") = entry.entry_type.as_deref() {
-            message_count += 1;
-
-            if git_branch.is_none() {
-                if let Some(ref branch) = entry.git_branch {
-                    git_branch = Some(branch.clone());
-                }
-            }
-            if cwd.is_none() {
-                if let Some(ref c) = entry.cwd {
-                    cwd = Some(c.clone());
+    visit_jsonl_records::<RawSessionEntry, _, _>(
+        source_path,
+        |record| {
+            let entry = record.value;
+            if let Some(ts) = &entry.timestamp {
+                if let Some(dt) = parse_utc(ts) {
+                    if first_timestamp.is_none() {
+                        first_timestamp = Some(dt);
+                    }
+                    last_timestamp = Some(dt);
                 }
             }
 
-            if entry.entry_type.as_deref() == Some("assistant") {
-                if let Some(ref msg) = entry.message {
-                    if model.is_none() {
-                        if let Some(ref m) = msg.model {
-                            model = Some(m.clone());
+            if let Some("user" | "assistant") = entry.entry_type.as_deref() {
+                message_count += 1;
+
+                if git_branch.is_none() {
+                    if let Some(ref branch) = entry.git_branch {
+                        git_branch = Some(branch.clone());
+                    }
+                }
+                if cwd.is_none() {
+                    if let Some(ref c) = entry.cwd {
+                        cwd = Some(c.clone());
+                    }
+                }
+
+                if entry.entry_type.as_deref() == Some("assistant") {
+                    if let Some(ref msg) = entry.message {
+                        if model.is_none() {
+                            if let Some(ref m) = msg.model {
+                                model = Some(m.clone());
+                            }
+                        }
+                        if let Some(ref usage) = msg.usage {
+                            total_input_tokens += usage.input_tokens.unwrap_or(0);
+                            total_output_tokens += usage.output_tokens.unwrap_or(0);
                         }
                     }
-                    if let Some(ref usage) = msg.usage {
-                        total_input_tokens += usage.input_tokens.unwrap_or(0);
-                        total_output_tokens += usage.output_tokens.unwrap_or(0);
-                    }
                 }
             }
-        }
-    }
+        },
+        |_| {},
+    )
+    .ok()?;
 
     if message_count == 0 {
         return None;
@@ -187,83 +169,72 @@ struct RawUsage {
 
 pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Claude Code messages");
-    let file = std::fs::File::open(path)?;
-    let reader = BufReader::new(file);
     let mut messages = Vec::new();
-    let mut line_count: usize = 0;
-    let mut parse_errors: usize = 0;
     let mut skipped_types: usize = 0;
     let mut empty_content: usize = 0;
 
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        line_count += 1;
+    let stats = visit_jsonl_records::<RawSessionEntry, _, _>(
+        path,
+        |record| {
+            let line_number = record.line_number;
+            let entry = record.value;
+            let role = match entry.entry_type.as_deref() {
+                Some("user") => Role::User,
+                Some("assistant") => Role::Assistant,
+                Some(other) => {
+                    skipped_types += 1;
+                    tracing::trace!(entry_type = other, "skipping non-message entry");
+                    return;
+                }
+                None => {
+                    skipped_types += 1;
+                    return;
+                }
+            };
 
-        let entry: RawSessionEntry = match serde_json::from_str(&line) {
-            Ok(e) => e,
-            Err(e) => {
-                parse_errors += 1;
-                tracing::warn!(line_num = line_count, error = %e, "failed to parse JSONL line");
-                continue;
+            let Some(ref msg) = entry.message else {
+                tracing::warn!(line_num = line_number, role = ?role, uuid = ?entry.uuid, "entry has no message field");
+                return;
+            };
+
+            let timestamp = parse_utc_or_now(entry.timestamp.as_deref());
+
+            let id = entry.uuid.unwrap_or_default();
+
+            let content = parse_message_content(msg, role);
+            if content.is_empty() {
+                empty_content += 1;
+                tracing::trace!(line_num = line_number, msg_id = %id, role = ?role, "skipping message with empty content");
+                return;
             }
-        };
 
-        let role = match entry.entry_type.as_deref() {
-            Some("user") => Role::User,
-            Some("assistant") => Role::Assistant,
-            Some(other) => {
-                skipped_types += 1;
-                tracing::trace!(entry_type = other, "skipping non-message entry");
-                continue;
-            }
-            None => {
-                skipped_types += 1;
-                continue;
-            }
-        };
+            let token_usage = msg.usage.as_ref().map(|u| {
+                token_usage(
+                    u.input_tokens.unwrap_or(0),
+                    u.output_tokens.unwrap_or(0),
+                    u.cache_read_input_tokens,
+                    u.cache_creation_input_tokens,
+                )
+            });
 
-        let Some(ref msg) = entry.message else {
-            tracing::warn!(role = ?role, uuid = ?entry.uuid, "entry has no message field");
-            continue;
-        };
-
-        let timestamp = parse_utc_or_now(entry.timestamp.as_deref());
-
-        let id = entry.uuid.unwrap_or_default();
-
-        let content = parse_message_content(msg, role);
-        if content.is_empty() {
-            empty_content += 1;
-            tracing::trace!(msg_id = %id, role = ?role, "skipping message with empty content");
-            continue;
-        }
-
-        let token_usage = msg.usage.as_ref().map(|u| {
-            token_usage(
-                u.input_tokens.unwrap_or(0),
-                u.output_tokens.unwrap_or(0),
-                u.cache_read_input_tokens,
-                u.cache_creation_input_tokens,
-            )
-        });
-
-        messages.push(Message {
-            id: MessageId(id),
-            role,
-            timestamp,
-            content,
-            model: msg.model.clone(),
-            token_usage,
-        });
-    }
+            messages.push(Message {
+                id: MessageId(id),
+                role,
+                timestamp,
+                content,
+                model: msg.model.clone(),
+                token_usage,
+            });
+        },
+        |error| {
+            tracing::warn!(line_num = error.line_number, error = %error.error, "failed to parse JSONL line");
+        },
+    )?;
 
     tracing::info!(
         path = %path.display(),
-        lines = line_count,
-        parse_errors,
+        lines = stats.line_count,
+        parse_errors = stats.parse_errors,
         skipped_types,
         empty_content,
         messages = messages.len(),

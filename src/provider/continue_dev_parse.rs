@@ -5,6 +5,9 @@ use serde::Deserialize;
 
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
+use crate::provider::parse_common::{
+    file_modified_utc, parse_utc_opt, timestamp_with_index_millis,
+};
 
 pub(crate) const INDEX_FILE: &str = "index.json";
 
@@ -39,14 +42,8 @@ pub(crate) fn build_session_from_file(
     let meta = index.and_then(|idx| idx.iter().find(|e| e.session_id == session_id));
 
     let started_at = meta
-        .and_then(|m| m.date_created.as_deref())
-        .and_then(|s| s.parse::<DateTime<Utc>>().ok())
-        .or_else(|| {
-            path.metadata()
-                .and_then(|m| m.modified())
-                .map(DateTime::<Utc>::from)
-                .ok()
-        })
+        .and_then(|m| parse_utc_opt(m.date_created.as_deref()))
+        .or_else(|| file_modified_utc(&path))
         .unwrap_or_else(Utc::now);
 
     let summary = meta.and_then(|m| m.title.clone());
@@ -92,7 +89,7 @@ pub(crate) fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Me
             continue;
         }
 
-        let timestamp = *base_ts + chrono::Duration::milliseconds(i64::try_from(idx).unwrap_or(0));
+        let timestamp = timestamp_with_index_millis(*base_ts, idx);
 
         messages.push(Message {
             id: MessageId(format!("msg-{idx}")),

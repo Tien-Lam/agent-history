@@ -1,4 +1,3 @@
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
@@ -8,63 +7,60 @@ use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::parse_common::{
     parse_utc, parse_utc_or_now, pretty_json_opt, tool_result_block, tool_use_block,
+    visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
-    let file = std::fs::File::open(path).ok()?;
-    let reader = BufReader::new(file);
-
     let mut first_timestamp: Option<DateTime<Utc>> = None;
     let mut last_timestamp: Option<DateTime<Utc>> = None;
     let mut message_count: usize = 0;
     let mut first_user_message: Option<String> = None;
 
-    for line in reader.lines().map_while(Result::ok) {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let entry: RawEntry = match serde_json::from_str(&line) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-
-        if let Some(ts) = &entry.timestamp {
-            if let Some(dt) = parse_utc(ts) {
-                if first_timestamp.is_none() {
-                    first_timestamp = Some(dt);
-                }
-                last_timestamp = Some(dt);
-            }
-        }
-
-        match entry.entry_type.as_deref() {
-            Some("user" | "assistant") => {
-                message_count += 1;
-                if entry.entry_type.as_deref() == Some("user") && first_user_message.is_none() {
-                    first_user_message = entry.content.map(|c| c.chars().take(80).collect());
+    visit_jsonl_records::<RawEntry, _, _>(
+        path,
+        |record| {
+            let entry = record.value;
+            if let Some(ts) = &entry.timestamp {
+                if let Some(dt) = parse_utc(ts) {
+                    if first_timestamp.is_none() {
+                        first_timestamp = Some(dt);
+                    }
+                    last_timestamp = Some(dt);
                 }
             }
-            Some("event_msg") => {
-                // Newer Codex format
-                if let Some(ref payload) = entry.payload {
-                    if let Some("user_message" | "agent_message") = payload.entry_type.as_deref() {
-                        message_count += 1;
-                        if payload.entry_type.as_deref() == Some("user_message")
-                            && first_user_message.is_none()
+
+            match entry.entry_type.as_deref() {
+                Some("user" | "assistant") => {
+                    message_count += 1;
+                    if entry.entry_type.as_deref() == Some("user") && first_user_message.is_none() {
+                        first_user_message = entry.content.map(|c| c.chars().take(80).collect());
+                    }
+                }
+                Some("event_msg") => {
+                    // Newer Codex format
+                    if let Some(ref payload) = entry.payload {
+                        if let Some("user_message" | "agent_message") =
+                            payload.entry_type.as_deref()
                         {
-                            first_user_message = payload
-                                .message
-                                .as_ref()
-                                .map(|m| m.chars().take(80).collect());
+                            message_count += 1;
+                            if payload.entry_type.as_deref() == Some("user_message")
+                                && first_user_message.is_none()
+                            {
+                                first_user_message = payload
+                                    .message
+                                    .as_ref()
+                                    .map(|m| m.chars().take(80).collect());
+                            }
                         }
                     }
                 }
+                _ => {}
             }
-            _ => {}
-        }
-    }
+        },
+        |_| {},
+    )
+    .ok()?;
 
     if message_count == 0 {
         return None;
@@ -94,75 +90,68 @@ pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
 
 pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Codex CLI messages");
-    let file = std::fs::File::open(path)?;
-    let reader = BufReader::new(file);
     let mut messages = Vec::new();
-    let mut line_count: usize = 0;
-    let mut parse_errors: usize = 0;
     let mut skipped_types: usize = 0;
     let mut empty_content: usize = 0;
 
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        line_count += 1;
-
-        let entry: RawEntry = match serde_json::from_str(&line) {
-            Ok(e) => e,
-            Err(e) => {
-                parse_errors += 1;
-                tracing::warn!(line_num = line_count, error = %e, "failed to parse JSONL line");
-                continue;
-            }
-        };
-
-        let entry_type = entry.entry_type.as_deref().unwrap_or("");
-        let role = match entry_type {
-            "user" => Role::User,
-            "assistant" => Role::Assistant,
-            "tool_use" => Role::Tool,
-            "error" => {
-                if let Some(error_msg) = entry.error.as_deref() {
-                    messages.push(error_message(
-                        entry_timestamp(&entry),
-                        error_msg.to_string(),
-                    ));
+    let stats = visit_jsonl_records::<RawEntry, _, _>(
+        path,
+        |record| {
+            let line_number = record.line_number;
+            let entry = record.value;
+            let entry_type = entry.entry_type.as_deref().unwrap_or("");
+            let role = match entry_type {
+                "user" => Role::User,
+                "assistant" => Role::Assistant,
+                "tool_use" => Role::Tool,
+                "error" => {
+                    if let Some(error_msg) = entry.error.as_deref() {
+                        messages.push(error_message(
+                            entry_timestamp(&entry),
+                            error_msg.to_string(),
+                        ));
+                    }
+                    return;
                 }
-                continue;
-            }
-            "event_msg" => {
-                push_event_msg(&mut messages, &entry);
-                continue;
-            }
-            "response_item" => {
-                push_response_item(&mut messages, &entry);
-                continue;
-            }
-            _ => {
-                skipped_types += 1;
-                tracing::trace!(entry_type, "skipping non-message entry");
-                continue;
-            }
-        };
+                "event_msg" => {
+                    push_event_msg(&mut messages, &entry);
+                    return;
+                }
+                "response_item" => {
+                    push_response_item(&mut messages, &entry);
+                    return;
+                }
+                _ => {
+                    skipped_types += 1;
+                    tracing::trace!(entry_type, "skipping non-message entry");
+                    return;
+                }
+            };
 
-        let timestamp = entry_timestamp(&entry);
-        let content = legacy_content(&entry, role);
+            let timestamp = entry_timestamp(&entry);
+            let content = legacy_content(&entry, role);
 
-        if content.is_empty() {
-            empty_content += 1;
-            tracing::trace!(entry_type, "skipping entry with empty content");
-            continue;
-        }
+            if content.is_empty() {
+                empty_content += 1;
+                tracing::trace!(
+                    line_num = line_number,
+                    entry_type,
+                    "skipping entry with empty content"
+                );
+                return;
+            }
 
-        messages.push(message(role, timestamp, content));
-    }
+            messages.push(message(role, timestamp, content));
+        },
+        |error| {
+            tracing::warn!(line_num = error.line_number, error = %error.error, "failed to parse JSONL line");
+        },
+    )?;
 
     tracing::info!(
         path = %path.display(),
-        lines = line_count,
-        parse_errors,
+        lines = stats.line_count,
+        parse_errors = stats.parse_errors,
         skipped_types,
         empty_content,
         messages = messages.len(),
