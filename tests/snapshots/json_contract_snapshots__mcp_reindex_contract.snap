@@ -1,0 +1,19 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "added": 1,
+  "duration_ms": 0,
+  "errors": [],
+  "force": true,
+  "index_dir": "[index-dir]",
+  "messages_indexed": 2,
+  "providers": [
+    "claude-code"
+  ],
+  "removed": 0,
+  "sessions_total": 1,
+  "unchanged": 0,
+  "updated": 0
+}

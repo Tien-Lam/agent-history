@@ -40,6 +40,19 @@ fn assert_json_snapshot(name: &'static str, value: &Value) {
     insta::assert_snapshot!(name, pretty);
 }
 
+fn normalize_index_summary(summary: &mut Value) {
+    summary["duration_ms"] = serde_json::json!(0);
+    summary["index_dir"] = serde_json::json!("[index-dir]");
+}
+
+fn normalize_search_scores(doc: &mut Value) {
+    if let Some(hits) = doc.get_mut("hits").and_then(Value::as_array_mut) {
+        for hit in hits {
+            hit["score"] = serde_json::json!(0.0);
+        }
+    }
+}
+
 fn run_mcp_session(env_home: &Path, requests: &[Value]) -> Vec<Value> {
     let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("aghist"))
         .arg("mcp")
@@ -88,8 +101,7 @@ fn index_empty_summary_contract_snapshot() {
         .assert()
         .success();
     let mut summary = parse_stdout_json(&output);
-    summary["duration_ms"] = serde_json::json!(0);
-    summary["index_dir"] = serde_json::json!("[index-dir]");
+    normalize_index_summary(&mut summary);
 
     assert_json_snapshot("index_empty_summary_contract", &summary);
 }
@@ -116,6 +128,88 @@ fn list_json_session_contract_snapshot() {
 }
 
 #[test]
+fn search_json_contract_snapshot() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("json-contract-search")
+        .project("contract-project")
+        .user("ordinary prompt")
+        .assistant("CONTRACT_SEARCH_TOKEN answer")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args(["search", "CONTRACT_SEARCH_TOKEN", "--json"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .assert()
+        .success();
+    let mut doc = parse_stdout_json(&output);
+    normalize_search_scores(&mut doc);
+
+    assert_json_snapshot("search_json_contract", &doc);
+}
+
+#[test]
+fn show_json_contract_snapshot() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("json-contract-show")
+        .project("contract-project")
+        .user("show alpha")
+        .assistant("show beta")
+        .user("show gamma")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let output = aghist()
+        .args([
+            "show",
+            "claude-code/json-contract-show#2",
+            "--format",
+            "json",
+            "--include-context",
+            "1",
+        ])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .success();
+
+    assert_json_snapshot("show_json_contract", &parse_stdout_json(&output));
+}
+
+#[test]
+fn diff_json_contract_snapshot() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("json-contract-diff-a")
+        .project("contract-project")
+        .user("same prompt")
+        .assistant("old answer")
+        .done()
+        .add_session("json-contract-diff-b")
+        .project("contract-project")
+        .user("same prompt")
+        .assistant("new answer")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let output = aghist()
+        .args([
+            "diff",
+            "claude-code/json-contract-diff-a",
+            "claude-code/json-contract-diff-b",
+            "--json",
+        ])
+        .env("AGHIST_HOME", home)
+        .assert()
+        .success();
+
+    assert_json_snapshot("diff_json_contract", &parse_stdout_json(&output));
+}
+
+#[test]
 fn mcp_tools_list_contract_snapshot() {
     let home = tempfile::tempdir().unwrap();
     let responses = run_mcp_session(
@@ -129,4 +223,34 @@ fn mcp_tools_list_contract_snapshot() {
 
     assert_eq!(responses.len(), 1, "got: {responses:#?}");
     assert_json_snapshot("mcp_tools_list_contract", &responses[0]["result"]);
+}
+
+#[test]
+fn mcp_reindex_contract_snapshot() {
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("json-contract-mcp-reindex")
+        .project("contract-project")
+        .user("mcp reindex prompt")
+        .assistant("mcp reindex answer")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let responses = run_mcp_session(
+        home,
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "reindex",
+                "arguments": { "force": true }
+            }
+        })],
+    );
+
+    assert_eq!(responses.len(), 1, "got: {responses:#?}");
+    let mut summary = responses[0]["result"]["structuredContent"].clone();
+    normalize_index_summary(&mut summary);
+    assert_json_snapshot("mcp_reindex_contract", &summary);
 }

@@ -1,0 +1,39 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "changed": 2,
+  "ops": [
+    {
+      "op": "same",
+      "role": "user",
+      "snippet": "same prompt",
+      "turn_a": 1,
+      "turn_b": 1
+    },
+    {
+      "op": "delete",
+      "role": "assistant",
+      "snippet": "old answer",
+      "turn_a": 2
+    },
+    {
+      "op": "insert",
+      "role": "assistant",
+      "snippet": "new answer",
+      "turn_b": 2
+    }
+  ],
+  "same": 1,
+  "session1": {
+    "ref": "claude-code/json-contract-diff-a",
+    "started_at": "2025-01-01T00:00:05Z",
+    "turns": 2
+  },
+  "session2": {
+    "ref": "claude-code/json-contract-diff-b",
+    "started_at": "2025-01-01T00:00:05Z",
+    "turns": 2
+  }
+}

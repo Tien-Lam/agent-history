@@ -1,0 +1,49 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "messages": [
+    {
+      "content": [
+        {
+          "data": "show alpha",
+          "type": "text"
+        }
+      ],
+      "is_target": false,
+      "role": "user",
+      "timestamp": "2025-01-01T00:00:05Z",
+      "turn": 1
+    },
+    {
+      "content": [
+        {
+          "data": "show beta",
+          "type": "text"
+        }
+      ],
+      "is_target": true,
+      "role": "assistant",
+      "timestamp": "2025-01-01T00:00:10Z",
+      "turn": 2
+    },
+    {
+      "content": [
+        {
+          "data": "show gamma",
+          "type": "text"
+        }
+      ],
+      "is_target": false,
+      "role": "user",
+      "timestamp": "2025-01-01T00:00:15Z",
+      "turn": 3
+    }
+  ],
+  "project": "contract-project",
+  "provider": "claude-code",
+  "ref": "claude-code/json-contract-show#2",
+  "session_id": "json-contract-show",
+  "target_turn": 2
+}

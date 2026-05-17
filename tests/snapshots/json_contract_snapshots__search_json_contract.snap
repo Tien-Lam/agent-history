@@ -1,0 +1,25 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "hits": [
+    {
+      "kind": "message",
+      "message_id": "msg-002",
+      "project": "contract-project",
+      "provider": "claude-code",
+      "ref": "claude-code/json-contract-search#2",
+      "score": 0.0,
+      "session_id": "json-contract-search",
+      "snippet": "CONTRACT_SEARCH_TOKEN answer",
+      "source": "local",
+      "started_at": "2025-01-01T00:00:05Z"
+    }
+  ],
+  "meta": {
+    "engine": "lexical",
+    "next_cursor": null,
+    "total": 1
+  }
+}
