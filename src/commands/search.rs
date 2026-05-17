@@ -106,10 +106,7 @@ pub(crate) fn search_command(
         &session_meta,
         &federation.source_by_session,
         providers,
-    )
-    .into_iter()
-    .map(|(message_key, citation)| (message_key, citation.ref_))
-    .collect();
+    );
 
     let want_json = force_json || !io::stdout().is_terminal();
     if want_json {

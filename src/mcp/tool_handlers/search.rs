@@ -4,11 +4,9 @@ use super::super::args::{optional_usize, required_str};
 use super::super::server::McpServer;
 
 use crate::dto::{McpSearchResponse, SearchHitJson};
-use crate::federated::{self, LOCAL_SOURCE};
+use crate::federated;
 use crate::schema_fragments::{MCP_SEARCH_LIMIT_MAX, SEARCH_LIMIT_DEFAULT};
-use crate::search::{
-    HitKind, SearchFilters, SearchService, SearchServiceOutput, SearchServiceRequest,
-};
+use crate::search::{SearchFilters, SearchService, SearchServiceOutput, SearchServiceRequest};
 
 impl McpServer {
     pub(super) fn tool_search_sessions(&self, args: &Value) -> Result<Value, String> {
@@ -49,38 +47,13 @@ impl McpServer {
 
         let mut hits_json = Vec::with_capacity(hits.len());
         for (h, _explanation) in &hits {
-            match h.kind {
-                HitKind::Note => {
-                    hits_json.push(SearchHitJson::from_hit(
-                        h,
-                        None,
-                        crate::dto::source_from_note_ref(h.note_session_ref.as_deref()),
-                        h.note_session_ref.clone(),
-                        None,
-                        None,
-                    ));
-                }
-                HitKind::Message => {
-                    let session = session_meta.get(h.session_key.as_str()).copied();
-                    let source = session
-                        .and_then(|s| {
-                            discovery
-                                .source_by_session
-                                .get(s.identity_key().as_str())
-                                .map(String::as_str)
-                        })
-                        .unwrap_or(LOCAL_SOURCE);
-                    let citation = citations.get(h.message_key.as_str());
-                    hits_json.push(SearchHitJson::from_hit(
-                        h,
-                        session,
-                        source,
-                        citation.map(|citation| citation.ref_.clone()),
-                        citation.map(|citation| citation.turn),
-                        None,
-                    ));
-                }
-            }
+            hits_json.push(SearchHitJson::from_search_hit(
+                h,
+                None,
+                &session_meta,
+                &discovery.source_by_session,
+                Some(&citations),
+            ));
         }
 
         let response = McpSearchResponse {

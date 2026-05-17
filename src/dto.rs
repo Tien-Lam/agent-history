@@ -1,10 +1,13 @@
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::federated::{SourceError, LOCAL_SOURCE};
 use crate::model::{ContentBlock, Message, Provider, Role, Session};
-use crate::search::{Explanation, HitKind, SearchHit};
+use crate::search::{Explanation, HitKind, SearchHit, SearchHitCitation};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CursorMeta {
@@ -141,6 +144,42 @@ pub struct SearchHitJson {
 }
 
 impl SearchHitJson {
+    pub fn from_search_hit<SessionHasher, SourceHasher>(
+        hit: &SearchHit,
+        explanation: Option<&Explanation>,
+        sessions: &HashMap<String, &Session, SessionHasher>,
+        source_by_session: &HashMap<String, String, SourceHasher>,
+        citations: Option<&HashMap<String, SearchHitCitation>>,
+    ) -> Self
+    where
+        SessionHasher: BuildHasher,
+        SourceHasher: BuildHasher,
+    {
+        match hit.kind {
+            HitKind::Note => Self::from_hit(
+                hit,
+                None,
+                source_from_note_ref(hit.note_session_ref.as_deref()),
+                hit.note_session_ref.clone(),
+                None,
+                explanation,
+            ),
+            HitKind::Message => {
+                let session = sessions.get(hit.session_key.as_str()).copied();
+                let source = source_for_search_hit(hit, session, source_by_session);
+                let citation = citations.and_then(|refs| refs.get(hit.message_key.as_str()));
+                Self::from_hit(
+                    hit,
+                    session,
+                    source,
+                    citation.map(|citation| citation.ref_.clone()),
+                    citation.map(|citation| citation.turn),
+                    explanation,
+                )
+            }
+        }
+    }
+
     pub fn from_hit(
         hit: &SearchHit,
         session: Option<&Session>,
@@ -182,6 +221,25 @@ impl SearchHitJson {
             },
         }
     }
+}
+
+fn source_for_search_hit<'a, SourceHasher>(
+    hit: &SearchHit,
+    session: Option<&Session>,
+    source_by_session: &'a HashMap<String, String, SourceHasher>,
+) -> &'a str
+where
+    SourceHasher: BuildHasher,
+{
+    if let Some(source) = source_by_session.get(hit.session_key.as_str()) {
+        return source;
+    }
+    let Some(session) = session else {
+        return LOCAL_SOURCE;
+    };
+    source_by_session
+        .get(session.identity_key().as_str())
+        .map_or(LOCAL_SOURCE, String::as_str)
 }
 
 #[derive(Debug, Clone, Serialize)]

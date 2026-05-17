@@ -15,7 +15,7 @@ pub(super) fn print_search_json(
     hits: &[SearchHitRow],
     sessions: &HashMap<String, &Session>,
     source_by_session: &HashMap<String, String>,
-    hit_refs: &HashMap<String, String>,
+    hit_refs: &HashMap<String, search::SearchHitCitation>,
     total: usize,
     next_cursor: Option<&str>,
     engine: &str,
@@ -23,7 +23,7 @@ pub(super) fn print_search_json(
     let rows: Vec<SearchHitJson> = hits
         .iter()
         .map(|(h, explain)| {
-            json_hit(
+            SearchHitJson::from_search_hit(
                 h,
                 explain.as_ref(),
                 sessions,
@@ -92,41 +92,8 @@ pub(super) fn write_watch_hit<W: Write>(
     sessions: &HashMap<String, &Session>,
     source_by_session: &HashMap<String, String>,
 ) -> io::Result<()> {
-    let row = json_hit(hit, None, sessions, source_by_session, None);
+    let row = SearchHitJson::from_search_hit(hit, None, sessions, source_by_session, None);
     write_json_line(out, &row)
-}
-
-fn json_hit<'a>(
-    hit: &'a search::SearchHit,
-    explanation: Option<&'a search::Explanation>,
-    sessions: &'a HashMap<String, &'a Session>,
-    source_by_session: &'a HashMap<String, String>,
-    hit_refs: Option<&'a HashMap<String, String>>,
-) -> SearchHitJson {
-    match hit.kind {
-        search::HitKind::Note => SearchHitJson::from_hit(
-            hit,
-            None,
-            aghist::dto::source_from_note_ref(hit.note_session_ref.as_deref()),
-            hit.note_session_ref.clone(),
-            None,
-            explanation,
-        ),
-        search::HitKind::Message => {
-            let session = sessions.get(hit.session_key.as_str()).copied();
-            let source = source_by_session
-                .get(hit.session_key.as_str())
-                .map_or(federated::LOCAL_SOURCE, String::as_str);
-            SearchHitJson::from_hit(
-                hit,
-                session,
-                source,
-                hit_refs.and_then(|refs| refs.get(&hit.message_key).cloned()),
-                None,
-                explanation,
-            )
-        }
-    }
 }
 
 fn write_table_row<W: Write>(
