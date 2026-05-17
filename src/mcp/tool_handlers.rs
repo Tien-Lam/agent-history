@@ -3,8 +3,10 @@ use serde_json::{json, Value};
 use super::args::{optional_provider, optional_str, optional_usize, required_str};
 use super::payload::{message_row_with_source, session_row_with_source, tool_error, tool_success};
 use super::protocol::{RpcError, ERR_INVALID_PARAMS};
+use super::resources::session_uri_for_source;
 use super::server::McpServer;
 
+use crate::dto::{McpListResponse, McpSessionRow};
 use crate::federated::{self, LOCAL_SOURCE};
 use crate::health::{run_health_checks, HealthStatus};
 use crate::indexing::{self, IndexingOptions, UnfilteredIndexScope};
@@ -68,16 +70,25 @@ impl McpServer {
             .take(limit)
             .collect();
 
-        let rows: Vec<Value> = filtered
+        let rows: Vec<McpSessionRow> = filtered
             .iter()
-            .map(|session| session_row_with_source(session, discovery.source_of_session(session)))
+            .map(|session| {
+                let source = discovery.source_of_session(session);
+                McpSessionRow::from_session(
+                    session,
+                    source,
+                    session_uri_for_source(source, session.provider, &session.id.0),
+                )
+            })
             .collect();
 
-        Ok(json!({
-            "total": rows.len(),
-            "sessions": rows,
-            "source_errors": federated::source_errors(&discovery.failures),
-        }))
+        let response = McpListResponse {
+            total: rows.len(),
+            sessions: rows,
+            source_errors: federated::source_errors(&discovery.failures),
+        };
+        serde_json::to_value(response)
+            .map_err(|e| format!("failed to serialize list response: {e}"))
     }
 
     fn tool_get_session(&self, args: &Value) -> Result<Value, String> {

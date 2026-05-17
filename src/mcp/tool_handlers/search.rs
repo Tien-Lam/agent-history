@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::super::args::{optional_usize, required_str};
 use super::super::server::McpServer;
 
 use crate::action::Action;
+use crate::dto::{McpSearchResponse, SearchHitJson};
 use crate::federated::{self, LOCAL_SOURCE};
 use crate::model::{QualifiedCitationRef, Session, SessionOrTurnRef};
 use crate::schema_fragments::{MCP_SEARCH_LIMIT_MAX, SEARCH_LIMIT_DEFAULT};
@@ -61,15 +62,14 @@ impl McpServer {
         for h in &hits {
             match h.kind {
                 HitKind::Note => {
-                    // Notes carry their own ref shape (`<provider>/<id>[#<turn>]`)
-                    // so we surface it directly. Per-message fields do not apply.
-                    hits_json.push(json!({
-                        "kind": HitKind::Note.slug(),
-                        "ref": h.note_session_ref,
-                        "note_id": h.note_id,
-                        "score": h.score,
-                        "snippet": h.snippet,
-                    }));
+                    hits_json.push(SearchHitJson::from_hit(
+                        h,
+                        None,
+                        crate::dto::source_from_note_ref(h.note_session_ref.as_deref()),
+                        h.note_session_ref.clone(),
+                        None,
+                        None,
+                    ));
                 }
                 HitKind::Message => {
                     let session = session_meta.get(h.session_key.as_str()).copied();
@@ -94,30 +94,27 @@ impl McpServer {
                                 .to_string()
                             })
                     });
-                    hits_json.push(json!({
-                        "kind": HitKind::Message.slug(),
-                        "ref": citation_ref,
-                        "session_id": h.session_id,
-                        "message_id": h.message_id,
-                        "turn": turn,
-                        "score": h.score,
-                        "snippet": h.snippet,
-                        "provider": session.map(|s| s.provider.slug()),
-                        "source": source,
-                        "project": session.and_then(|s| s.project_name.as_deref()),
-                        "started_at": session.map(|s| s.started_at),
-                    }));
+                    hits_json.push(SearchHitJson::from_hit(
+                        h,
+                        session,
+                        source,
+                        citation_ref,
+                        turn,
+                        None,
+                    ));
                 }
             }
         }
 
-        Ok(json!({
-            "query": query,
-            "limit": limit,
-            "total": hits_json.len(),
-            "hits": hits_json,
-            "source_errors": federated::source_errors(&discovery.failures),
-        }))
+        let response = McpSearchResponse {
+            query: query.clone(),
+            limit,
+            total: hits_json.len(),
+            hits: hits_json,
+            source_errors: federated::source_errors(&discovery.failures),
+        };
+        serde_json::to_value(response)
+            .map_err(|e| format!("failed to serialize search response: {e}"))
     }
 
     fn turn_lookup_for_hits(

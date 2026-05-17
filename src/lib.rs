@@ -5,6 +5,7 @@ pub mod command_spec;
 pub mod config;
 pub mod cursor;
 pub mod decisions;
+pub mod dto;
 pub mod embed;
 pub mod event;
 pub mod export;

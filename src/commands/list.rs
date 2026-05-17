@@ -1,6 +1,7 @@
 use std::io::{self, Write as _};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
+use aghist::dto::{CursorMeta, ListEnvelope, SessionRow};
 use aghist::federated;
 use aghist::model::{Provider, Session};
 use aghist::output::OutputMode;
@@ -219,44 +220,16 @@ fn render_list_human(
     Ok(())
 }
 
-#[derive(serde::Serialize)]
-struct SessionRow<'a> {
-    id: &'a str,
-    source: &'a str,
-    provider: aghist::model::Provider,
-    project: Option<&'a str>,
-    branch: Option<&'a str>,
-    summary: Option<&'a str>,
-    started_at: chrono::DateTime<chrono::Utc>,
-    message_count: usize,
-}
-
-impl<'a> SessionRow<'a> {
-    fn from_listed(listed: &'a ListedSession) -> Self {
-        let s = &listed.session;
-        Self {
-            id: s.id.0.as_str(),
-            source: listed.source.as_str(),
-            provider: s.provider,
-            project: s.project_name.as_deref(),
-            branch: s.git_branch.as_deref(),
-            summary: s.summary.as_deref(),
-            started_at: s.started_at,
-            message_count: s.message_count,
-        }
-    }
-}
-
 fn render_list_json(
     sessions: &[ListedSession],
     total: usize,
     next_cursor: Option<&str>,
 ) -> std::io::Result<()> {
-    let rows: Vec<SessionRow<'_>> = sessions.iter().map(SessionRow::from_listed).collect();
-    let doc = serde_json::json!({
-        "sessions": rows,
-        "meta": { "next_cursor": next_cursor, "total": total },
-    });
+    let rows: Vec<SessionRow> = sessions.iter().map(session_row).collect();
+    let doc = ListEnvelope {
+        sessions: rows,
+        meta: CursorMeta::new(total, next_cursor),
+    };
     let mut out = std::io::stdout().lock();
     serde_json::to_writer(&mut out, &doc).map_err(std::io::Error::other)?;
     writeln!(out)?;
@@ -270,7 +243,7 @@ fn render_list_ndjson(
 ) -> std::io::Result<()> {
     let mut out = std::io::stdout().lock();
     for s in sessions {
-        let row = SessionRow::from_listed(s);
+        let row = session_row(s);
         serde_json::to_writer(&mut out, &row).map_err(std::io::Error::other)?;
         writeln!(out)?;
     }
@@ -283,4 +256,8 @@ fn render_list_ndjson(
     serde_json::to_writer(&mut out, &meta).map_err(std::io::Error::other)?;
     writeln!(out)?;
     Ok(())
+}
+
+fn session_row(listed: &ListedSession) -> SessionRow {
+    SessionRow::from_session(&listed.session, &listed.source)
 }

@@ -1,9 +1,11 @@
 use serde_json::{json, Value};
 
-use super::resources::{session_uri_for_source, turn_uri_for_source};
+use crate::dto::{McpSessionRow, MessageRow};
 use crate::federated::LOCAL_SOURCE;
 use crate::model::{Message, QualifiedCitationRef, Session};
 use crate::schema_fragments;
+
+use super::resources::{session_uri_for_source, turn_uri_for_source};
 
 pub(super) fn tool_definitions() -> Value {
     let provider_slugs = schema_fragments::provider_slug_enum();
@@ -111,19 +113,12 @@ pub(super) fn tool_error(message: impl Into<String>) -> Value {
 }
 
 pub(super) fn session_row_with_source(s: &Session, source: &str) -> Value {
-    json!({
-        "id": s.id.0,
-        "uri": session_uri_for_source(source, s.provider, &s.id.0),
-        "provider": s.provider.slug(),
-        "source": source,
-        "project": s.project_name,
-        "branch": s.git_branch,
-        "summary": s.summary,
-        "model": s.model,
-        "started_at": s.started_at,
-        "ended_at": s.ended_at,
-        "message_count": s.message_count,
-    })
+    let row = McpSessionRow::from_session(
+        s,
+        source,
+        session_uri_for_source(source, s.provider, &s.id.0),
+    );
+    serde_json::to_value(row).unwrap_or(Value::Null)
 }
 
 pub(super) fn message_row_with_source(
@@ -140,15 +135,12 @@ pub(super) fn message_row_with_source(
         )
         .to_string()
     });
-    json!({
-        "ref": ref_,
-        "uri": turn_uri_for_source(source, session.provider, &session.id.0, turn_u32),
-        "source": source,
-        "turn": turn,
-        "id": msg.id.0,
-        "role": msg.role,
-        "timestamp": msg.timestamp,
-        "model": msg.model,
-        "content": msg.content,
-    })
+    let row = MessageRow::from_message(
+        msg,
+        source,
+        turn,
+        ref_,
+        turn_uri_for_source(source, session.provider, &session.id.0, turn_u32),
+    );
+    serde_json::to_value(row).unwrap_or(Value::Null)
 }
