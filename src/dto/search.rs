@@ -5,122 +5,9 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::federated::{SourceError, LOCAL_SOURCE};
-use crate::model::{ContentBlock, Message, Provider, Role, Session};
+use crate::federated::LOCAL_SOURCE;
+use crate::model::{Provider, Session};
 use crate::search::{Explanation, HitKind, SearchHit, SearchHitCitation};
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CursorMeta {
-    pub next_cursor: Option<String>,
-    pub total: usize,
-}
-
-impl CursorMeta {
-    pub fn new(total: usize, next_cursor: Option<&str>) -> Self {
-        Self {
-            next_cursor: next_cursor.map(str::to_string),
-            total,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SessionRow {
-    pub id: String,
-    pub source: String,
-    pub provider: Provider,
-    pub project: Option<String>,
-    pub branch: Option<String>,
-    pub summary: Option<String>,
-    pub started_at: DateTime<Utc>,
-    pub message_count: usize,
-}
-
-impl SessionRow {
-    pub fn from_session(session: &Session, source: &str) -> Self {
-        Self {
-            id: session.id.0.clone(),
-            source: source.to_string(),
-            provider: session.provider,
-            project: session.project_name.clone(),
-            branch: session.git_branch.clone(),
-            summary: session.summary.clone(),
-            started_at: session.started_at,
-            message_count: session.message_count,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct McpSessionRow {
-    #[serde(flatten)]
-    pub session: SessionRow,
-    pub uri: String,
-    pub model: Option<String>,
-    pub ended_at: Option<DateTime<Utc>>,
-}
-
-impl McpSessionRow {
-    pub fn from_session(session: &Session, source: &str, uri: impl Into<String>) -> Self {
-        Self {
-            session: SessionRow::from_session(session, source),
-            uri: uri.into(),
-            model: session.model.clone(),
-            ended_at: session.ended_at,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ListEnvelope {
-    pub sessions: Vec<SessionRow>,
-    pub meta: CursorMeta,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct MessageRow {
-    #[serde(rename = "ref")]
-    pub ref_: Option<String>,
-    pub uri: String,
-    pub source: String,
-    pub turn: usize,
-    pub id: String,
-    pub role: Role,
-    pub timestamp: DateTime<Utc>,
-    pub model: Option<String>,
-    pub content: Vec<ContentBlock>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_target: Option<bool>,
-}
-
-impl MessageRow {
-    pub fn from_message(
-        message: &Message,
-        source: &str,
-        turn: usize,
-        ref_: Option<String>,
-        uri: impl Into<String>,
-    ) -> Self {
-        Self {
-            ref_,
-            uri: uri.into(),
-            source: source.to_string(),
-            turn,
-            id: message.id.0.clone(),
-            role: message.role,
-            timestamp: message.timestamp,
-            model: message.model.clone(),
-            content: message.content.clone(),
-            is_target: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_target(mut self, is_target: bool) -> Self {
-        self.is_target = Some(is_target);
-        self
-    }
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchHitJson {
@@ -223,25 +110,6 @@ impl SearchHitJson {
     }
 }
 
-fn source_for_search_hit<'a, SourceHasher>(
-    hit: &SearchHit,
-    session: Option<&Session>,
-    source_by_session: &'a HashMap<String, String, SourceHasher>,
-) -> &'a str
-where
-    SourceHasher: BuildHasher,
-{
-    if let Some(source) = source_by_session.get(hit.session_key.as_str()) {
-        return source;
-    }
-    let Some(session) = session else {
-        return LOCAL_SOURCE;
-    };
-    source_by_session
-        .get(session.identity_key().as_str())
-        .map_or(LOCAL_SOURCE, String::as_str)
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchMeta {
     pub next_cursor: Option<String>,
@@ -265,22 +133,6 @@ pub struct SearchEnvelope {
     pub meta: SearchMeta,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct McpListResponse {
-    pub total: usize,
-    pub sessions: Vec<McpSessionRow>,
-    pub source_errors: Vec<SourceError>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct McpSearchResponse {
-    pub query: String,
-    pub limit: usize,
-    pub total: usize,
-    pub hits: Vec<SearchHitJson>,
-    pub source_errors: Vec<SourceError>,
-}
-
 pub fn source_from_note_ref(reference: Option<&str>) -> &str {
     let Some(reference) = reference else {
         return LOCAL_SOURCE;
@@ -291,6 +143,25 @@ pub fn source_from_note_ref(reference: Option<&str>) -> &str {
         (Some(c), Some(s)) if c < s => &reference[..c],
         _ => LOCAL_SOURCE,
     }
+}
+
+fn source_for_search_hit<'a, SourceHasher>(
+    hit: &SearchHit,
+    session: Option<&Session>,
+    source_by_session: &'a HashMap<String, String, SourceHasher>,
+) -> &'a str
+where
+    SourceHasher: BuildHasher,
+{
+    if let Some(source) = source_by_session.get(hit.session_key.as_str()) {
+        return source;
+    }
+    let Some(session) = session else {
+        return LOCAL_SOURCE;
+    };
+    source_by_session
+        .get(session.identity_key().as_str())
+        .map_or(LOCAL_SOURCE, String::as_str)
 }
 
 fn explanation_value(explanation: &Explanation) -> Option<Value> {
