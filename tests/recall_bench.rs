@@ -39,7 +39,8 @@
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::format_push_string,
-    clippy::doc_markdown
+    clippy::doc_markdown,
+    clippy::too_many_lines
 )]
 
 mod common;
@@ -733,13 +734,13 @@ struct BenchTimings {
     query_p95: Duration,
 }
 
-fn percentile_duration(mut durations: Vec<Duration>, percentile: f32) -> Duration {
+fn percentile_duration(mut durations: Vec<Duration>, percentile_percent: usize) -> Duration {
     if durations.is_empty() {
         return Duration::ZERO;
     }
     durations.sort_unstable();
     let max_idx = durations.len() - 1;
-    let idx = ((max_idx as f32) * percentile).ceil() as usize;
+    let idx = max_idx.saturating_mul(percentile_percent).div_ceil(100);
     durations[idx.min(max_idx)]
 }
 
@@ -858,7 +859,7 @@ fn search_recall_benchmark() {
     ];
     let timings = BenchTimings {
         index_build,
-        query_p95: percentile_duration(query_latencies, 0.95),
+        query_p95: percentile_duration(query_latencies, 95),
     };
     let report = render_report(
         &reports,
