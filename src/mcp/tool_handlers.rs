@@ -10,12 +10,14 @@ use crate::dto::{McpListResponse, McpSessionRow};
 use crate::federated::{self, LOCAL_SOURCE};
 use crate::health::{run_health_checks, HealthStatus};
 use crate::indexing::{self, IndexingOptions, UnfilteredIndexScope};
-use crate::model::{QualifiedCitationRef, Session};
+use crate::model::QualifiedCitationRef;
 use crate::provider;
 use crate::schema_fragments::{
     MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX, MCP_LIST_LIMIT_DEFAULT,
     MCP_LIST_LIMIT_MAX,
 };
+use crate::search::SearchFilters;
+use crate::services::list as list_service;
 
 mod search;
 
@@ -54,38 +56,44 @@ impl McpServer {
         let limit = optional_usize(args, "limit", MCP_LIST_LIMIT_DEFAULT, 1, MCP_LIST_LIMIT_MAX)?;
 
         let discovery = self.collect_discovery();
-        let mut all = discovery.sessions.clone();
-        all.sort_by_key(|s| std::cmp::Reverse(s.started_at));
+        let source_errors = federated::source_errors(&discovery.failures);
+        let filters = SearchFilters {
+            provider: provider_filter,
+            project: project_filter.clone(),
+            ..SearchFilters::default()
+        };
+        let page = list_service::list_sessions_page(
+            &self.providers,
+            discovery,
+            list_service::ListSessionsRequest {
+                limit,
+                cursor: None,
+                filters: &filters,
+                metadata_keys: None,
+            },
+        )
+        .map_err(|e| e.to_string())?;
 
-        let filtered: Vec<&Session> = all
+        let rows: Vec<McpSessionRow> = page
+            .sessions
             .iter()
-            .filter(|s| provider_filter.is_none_or(|want| s.provider == want))
-            .filter(|s| {
-                project_filter.as_deref().is_none_or(|want| {
-                    s.project_name
-                        .as_deref()
-                        .is_some_and(|got| got.contains(want))
-                })
-            })
-            .take(limit)
-            .collect();
-
-        let rows: Vec<McpSessionRow> = filtered
-            .iter()
-            .map(|session| {
-                let source = discovery.source_of_session(session);
+            .map(|listed| {
                 McpSessionRow::from_session(
-                    session,
-                    source,
-                    session_uri_for_source(source, session.provider, &session.id.0),
+                    &listed.session,
+                    &listed.source,
+                    session_uri_for_source(
+                        &listed.source,
+                        listed.session.provider,
+                        &listed.session.id.0,
+                    ),
                 )
             })
             .collect();
 
         let response = McpListResponse {
-            total: rows.len(),
+            total: page.total,
             sessions: rows,
-            source_errors: federated::source_errors(&discovery.failures),
+            source_errors,
         };
         serde_json::to_value(response)
             .map_err(|e| format!("failed to serialize list response: {e}"))

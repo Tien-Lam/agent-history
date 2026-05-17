@@ -2,16 +2,13 @@ use std::io::{self, Write as _};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
 use aghist::dto::{CursorMeta, ListEnvelope, SessionRow};
-use aghist::federated;
-use aghist::model::{Provider, Session};
+use aghist::model::Provider;
 use aghist::output::{write_json_line, OutputMode};
+use aghist::services::list as list_service;
 use aghist::{provider, query_scope};
 
 use super::super::cli::FilterArgs;
-use super::discovery::{federated_discovery_for_commands, source_for_session};
-use super::filtering::{
-    metadata_filter_matches_source, session_has_matching_message, session_matches,
-};
+use super::discovery::federated_discovery_for_commands;
 
 pub(crate) fn list_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -22,160 +19,63 @@ pub(crate) fn list_sessions(
     filters: &FilterArgs,
     metadata_keys: Option<&std::collections::HashSet<String>>,
 ) -> Result<i32, ErrorEnvelope> {
-    let needs_messages = filters.role.is_some() || filters.has_tool_call;
-    let project_needle = filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
-
     let discovery = federated_discovery_for_commands(providers, scope);
-    let source_by_session = discovery.source_by_session;
-    let mut all_sessions: Vec<ListedSession> = discovery
-        .sessions
-        .into_iter()
-        .filter(|s| session_matches(s, filters, project_needle.as_deref()))
-        .filter(|s| {
-            metadata_filter_matches_source(
-                s,
-                source_for_session(&source_by_session, s),
-                metadata_keys,
-            )
-        })
-        .filter(|s| !needs_messages || session_has_matching_message(providers, s, filters))
-        .map(|session| {
-            let source = source_by_session
-                .get(session.identity_key().as_str())
-                .map_or(federated::LOCAL_SOURCE, String::as_str)
-                .to_string();
-            ListedSession { source, session }
-        })
-        .collect();
-    let provider_counts = (!mode.is_machine()).then(|| source_provider_counts(&all_sessions));
-
-    // Canonical sort: started_at DESC, session_id ASC, identity key ASC. The
-    // identity key keeps pagination total when local and remote sources reuse
-    // a provider session id.
-    all_sessions.sort_by(compare_listed_sessions);
-
-    let total = all_sessions.len();
-
-    let after = if let Some(token) = cursor {
-        if let Ok(c) = aghist::cursor::ListCursor::decode(token) {
-            Some(c)
-        } else {
+    let search_filters = filters.to_search_filters();
+    let page = match list_service::list_sessions_page(
+        providers,
+        discovery,
+        list_service::ListSessionsRequest {
+            limit,
+            cursor,
+            filters: &search_filters,
+            metadata_keys,
+        },
+    ) {
+        Ok(page) => page,
+        Err(list_service::ListSessionsError::InvalidCursor) => {
             ErrorEnvelope::new("usage", "invalid --cursor token")
                 .with_hint("Cursors are opaque; pass back the `meta.next_cursor` value verbatim.")
                 .emit();
             return Ok(EXIT_USAGE);
         }
-    } else {
-        None
     };
-
-    let page_start = match &after {
-        Some(c) => all_sessions
-            .iter()
-            .position(|listed| {
-                // Match the canonical order: started_at DESC, id ASC. We want
-                // the first session strictly *after* the cursor key.
-                listed_session_is_after_cursor(listed, c)
-            })
-            .unwrap_or(all_sessions.len()),
-        None => 0,
-    };
-
-    let page_end = page_start.saturating_add(limit).min(all_sessions.len());
-    let page = &all_sessions[page_start..page_end];
-
-    let next_cursor = if page_end < all_sessions.len() {
-        page.last().map(|listed| {
-            aghist::cursor::ListCursor {
-                started_at: listed.session.started_at,
-                session_id: listed.session.id.0.clone(),
-                session_key: listed.session.identity_key(),
-            }
-            .encode()
-        })
-    } else {
-        None
-    };
+    let provider_counts = (!mode.is_machine()).then(|| page.provider_counts.as_slice());
 
     match mode {
         OutputMode::Human => {
             let provider_counts = provider_counts.unwrap_or_default();
-            render_list_human(&provider_counts, page, total, next_cursor.as_deref())
-                .map_err(|e| ErrorEnvelope::io("failed to write list output", e))?;
+            render_list_human(
+                &provider_counts,
+                &page.sessions,
+                page.total,
+                page.next_cursor.as_deref(),
+            )
+            .map_err(|e| ErrorEnvelope::io("failed to write list output", e))?;
         }
-        OutputMode::Json => render_list_json(page, total, next_cursor.as_deref())
-            .map_err(|e| ErrorEnvelope::io("failed to write JSON output", e))?,
+        OutputMode::Json => {
+            render_list_json(&page.sessions, page.total, page.next_cursor.as_deref())
+                .map_err(|e| ErrorEnvelope::io("failed to write JSON output", e))?;
+        }
         OutputMode::Ndjson => {
-            render_list_ndjson(page, total, next_cursor.as_deref())
+            render_list_ndjson(&page.sessions, page.total, page.next_cursor.as_deref())
                 .map_err(|e| ErrorEnvelope::io("failed to write NDJSON output", e))?;
         }
     }
 
-    if all_sessions.is_empty() {
+    if page.total == 0 {
         Ok(EXIT_EMPTY)
     } else {
         Ok(EXIT_OK)
     }
 }
 
-struct ListedSession {
-    source: String,
-    session: Session,
-}
-
-fn compare_listed_sessions(a: &ListedSession, b: &ListedSession) -> std::cmp::Ordering {
-    b.session
-        .started_at
-        .cmp(&a.session.started_at)
-        .then_with(|| a.session.id.0.cmp(&b.session.id.0))
-        .then_with(|| a.session.identity_key().cmp(&b.session.identity_key()))
-}
-
-fn listed_session_is_after_cursor(
-    listed: &ListedSession,
-    cursor: &aghist::cursor::ListCursor,
-) -> bool {
-    if listed.session.started_at != cursor.started_at {
-        return listed.session.started_at < cursor.started_at;
-    }
-    if listed.session.id.0 != cursor.session_id {
-        return listed.session.id.0 > cursor.session_id;
-    }
-
-    if cursor.session_key.is_empty() {
-        return false;
-    }
-    listed.session.identity_key().as_str() > cursor.session_key.as_str()
-}
-
-fn source_provider_counts(sessions: &[ListedSession]) -> Vec<(String, usize)> {
-    let mut counts: Vec<(String, usize)> = Vec::new();
-    for listed in sessions {
-        let label = source_provider_label(&listed.source, listed.session.provider);
-        if let Some((_, count)) = counts.iter_mut().find(|(existing, _)| existing == &label) {
-            *count += 1;
-        } else {
-            counts.push((label, 1));
-        }
-    }
-    counts
-}
-
 fn source_provider_label(source: &str, provider: Provider) -> String {
-    if source == federated::LOCAL_SOURCE {
-        provider.to_string()
-    } else {
-        format!("{source}/{provider}")
-    }
+    list_service::source_provider_label(source, provider)
 }
 
 fn render_list_human(
     provider_counts: &[(String, usize)],
-    sessions: &[ListedSession],
+    sessions: &[list_service::ListedSession],
     total: usize,
     next_cursor: Option<&str>,
 ) -> io::Result<()> {
@@ -218,7 +118,7 @@ fn render_list_human(
 }
 
 fn render_list_json(
-    sessions: &[ListedSession],
+    sessions: &[list_service::ListedSession],
     total: usize,
     next_cursor: Option<&str>,
 ) -> std::io::Result<()> {
@@ -232,7 +132,7 @@ fn render_list_json(
 }
 
 fn render_list_ndjson(
-    sessions: &[ListedSession],
+    sessions: &[list_service::ListedSession],
     total: usize,
     next_cursor: Option<&str>,
 ) -> std::io::Result<()> {
@@ -250,6 +150,6 @@ fn render_list_ndjson(
     write_json_line(&mut out, &meta)
 }
 
-fn session_row(listed: &ListedSession) -> SessionRow {
+fn session_row(listed: &list_service::ListedSession) -> SessionRow {
     SessionRow::from_session(&listed.session, &listed.source)
 }

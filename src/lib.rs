@@ -25,6 +25,7 @@ pub mod report;
 pub mod schema;
 pub mod schema_fragments;
 pub mod search;
+pub mod services;
 pub mod session_resolver;
 pub mod stars;
 pub mod threads;

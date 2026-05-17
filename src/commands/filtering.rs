@@ -4,7 +4,6 @@ use aghist::cli_error::ErrorEnvelope;
 use aghist::federated;
 use aghist::metadata;
 use aghist::model::{ContentBlock, Message, Session};
-use aghist::provider;
 
 use super::super::cli::FilterArgs;
 use super::metadata::{metadata_error, open_metadata_db};
@@ -103,21 +102,6 @@ pub(crate) fn metadata_filter_matches_source(
         return true;
     };
     keys.contains(&qualified_session_metadata_key(session, source))
-}
-
-/// Returns true if the session contains at least one message satisfying the
-/// message-level filters (`--role`, `--has-tool-call`). Loads messages on
-/// demand; corrupt/unreadable sessions are silently dropped (consistent with
-/// the rest of the pipeline).
-pub(crate) fn session_has_matching_message(
-    providers: &[Box<dyn provider::HistoryProvider>],
-    session: &Session,
-    filters: &FilterArgs,
-) -> bool {
-    let Ok(messages) = provider::load_messages_for_session(session, providers) else {
-        return false;
-    };
-    messages.iter().any(|m| message_matches(m, filters))
 }
 
 pub(crate) fn message_matches(message: &Message, filters: &FilterArgs) -> bool {
