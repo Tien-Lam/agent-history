@@ -169,6 +169,8 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
         "Codex CLI message loading complete"
     );
 
+    assign_fallback_message_ids(&mut messages);
+
     Ok(messages)
 }
 
@@ -184,6 +186,14 @@ fn message(role: Role, timestamp: DateTime<Utc>, content: Vec<ContentBlock>) -> 
         content,
         model: None,
         token_usage: None,
+    }
+}
+
+fn assign_fallback_message_ids(messages: &mut [Message]) {
+    for (idx, message) in messages.iter_mut().enumerate() {
+        if message.id.0.is_empty() {
+            message.id = MessageId(format!("codex-turn-{}", idx + 1));
+        }
     }
 }
 

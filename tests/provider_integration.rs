@@ -251,6 +251,8 @@ fn codex_load_messages() {
 
     // user + assistant + tool_use + error + assistant = 5
     assert_eq!(messages.len(), 5);
+    assert_eq!(messages[0].id.0, "codex-turn-1");
+    assert!(messages.iter().all(|message| !message.id.0.is_empty()));
 
     assert_eq!(messages[0].role, Role::User);
     assert_eq!(messages[1].role, Role::Assistant);
