@@ -90,6 +90,83 @@ fn search_schema_describes_query_param() {
 }
 
 #[test]
+fn search_schema_describes_json_envelope() {
+    let schema = schema_for("search").unwrap();
+    let response = &schema["response"];
+    assert_eq!(response["type"], "object");
+    assert_eq!(string_array(&response["required"]), vec!["hits", "meta"]);
+
+    let hit = &response["properties"]["hits"]["items"];
+    assert_eq!(hit["type"], "object");
+    assert_eq!(
+        hit["properties"]["kind"]["enum"],
+        serde_json::json!(["message", "note"])
+    );
+    for field in [
+        "kind",
+        "session_id",
+        "message_id",
+        "score",
+        "snippet",
+        "provider",
+        "project",
+        "started_at",
+        "source",
+    ] {
+        assert!(
+            string_array(&hit["required"]).contains(&field),
+            "search hit schema missing required field {field}"
+        );
+    }
+    assert!(hit["properties"]["ref"]["pattern"].is_string());
+    assert!(hit["properties"]["explanation"].is_object());
+
+    let meta = &response["properties"]["meta"];
+    assert_eq!(meta["type"], "object");
+    assert_eq!(
+        string_array(&meta["required"]),
+        vec!["next_cursor", "total", "engine"]
+    );
+    assert_eq!(
+        meta["properties"]["engine"]["enum"],
+        serde_json::json!(["lexical", "hybrid"])
+    );
+}
+
+#[test]
+fn index_schema_describes_summary_contract() {
+    let schema = schema_for("index").unwrap();
+    let response = &schema["response"];
+    for field in [
+        "providers",
+        "sessions_total",
+        "added",
+        "updated",
+        "unchanged",
+        "removed",
+        "messages_indexed",
+        "force",
+        "index_dir",
+        "duration_ms",
+        "errors",
+        "embeddings",
+    ] {
+        assert!(
+            string_array(&response["required"]).contains(&field),
+            "index schema missing required summary field {field}"
+        );
+        assert!(
+            response["properties"][field].is_object(),
+            "index schema missing property for {field}"
+        );
+    }
+    assert_eq!(
+        response["properties"]["embeddings"]["properties"]["status"]["enum"],
+        serde_json::json!(["disabled", "awaiting-consent", "enabled"])
+    );
+}
+
+#[test]
 fn show_schema_includes_reference_pattern() {
     let schema = schema_for("show").unwrap();
     let pattern = &schema["params"]["properties"]["reference"]["pattern"];
@@ -164,6 +241,15 @@ fn assert_closed_params(label: &str, params: &Value) {
         params["additionalProperties"], false,
         "{label} params must reject undocumented properties"
     );
+}
+
+fn string_array(value: &Value) -> Vec<&str> {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap())
+        .collect()
 }
 
 /// Tiny helper: we don't pull a regex crate just for tests, so check a few

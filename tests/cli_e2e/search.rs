@@ -566,24 +566,46 @@ fn search_hybrid_weight_zero_behaves_like_lexical() {
 }
 #[test]
 fn search_json_output_wraps_hits_in_meta_envelope() {
-    let fixture = common::fixtures::claude_multi_session(2, 4);
+    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+        .add_session("search-json-envelope")
+        .project("search-contract")
+        .user("SEARCH_JSON_ENVELOPE_TOKEN prompt")
+        .assistant("ordinary answer")
+        .done()
+        .build();
     let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
     let output = aghist()
-        .args(["search", "User", "--limit", "5", "--json"])
+        .args([
+            "search",
+            "SEARCH_JSON_ENVELOPE_TOKEN",
+            "--limit",
+            "5",
+            "--json",
+        ])
         .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
         .output()
         .unwrap();
-    // EXIT_OK or EXIT_EMPTY (3) — both are acceptable; we only assert the
-    // envelope shape when hits exist.
-    if output.status.code() == Some(0) {
-        let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert!(
-            doc["hits"].is_array(),
-            "search JSON must wrap rows in 'hits'"
-        );
-        assert!(doc["meta"].is_object(), "search JSON must include 'meta'");
-        assert!(doc["meta"]["total"].is_number());
-    }
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let hits = doc["hits"].as_array().expect("search JSON hits array");
+    assert_eq!(hits.len(), 1, "unique fixture token should produce one hit");
+    assert!(doc["meta"].is_object(), "search JSON must include 'meta'");
+    assert!(doc["meta"]["total"].is_number());
+    assert_eq!(doc["meta"]["engine"], "lexical");
+
+    let hit = &hits[0];
+    assert_eq!(hit["kind"], "message");
+    assert_eq!(hit["source"], "local");
+    assert_eq!(hit["session_id"], "search-json-envelope");
+    assert!(hit["ref"].as_str().unwrap().ends_with("#1"));
 }
 #[test]
 fn search_watch_help_documents_flags() {

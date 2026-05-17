@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use super::super::common::{
     exit_codes, filter_params_fragment, provider_slug_enum, provider_slug_enum_nullable,
     session_row_schema, source_qualified_citation_ref_pattern,
-    source_qualified_session_only_ref_pattern, SCHEMA_DRAFT,
+    source_qualified_session_only_ref_pattern, source_qualified_session_ref_pattern, SCHEMA_DRAFT,
 };
 
 fn list_params_properties() -> Value {
@@ -118,24 +118,90 @@ pub(in crate::schema) fn search_schema() -> Value {
             "properties": search_params_properties(),
             "additionalProperties": false
         },
-        "response": {
-            "type": "array",
-            "description": "Array of hits, ordered by score descending then started_at descending.",
-            "items": {
+        "response": search_response_schema(),
+        "exit_codes": exit_codes()
+    })
+}
+
+fn search_response_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "JSON envelope emitted by `aghist search --json`; watch mode emits one hit object per NDJSON line.",
+        "properties": {
+            "hits": {
+                "type": "array",
+                "description": "Hits ordered by score descending then started_at descending.",
+                "items": search_hit_schema()
+            },
+            "meta": {
                 "type": "object",
                 "properties": {
-                    "session_id": { "type": "string" },
-                    "message_id": { "type": "string" },
-                    "score": { "type": "number" },
-                    "snippet": { "type": "string" },
-                    "provider": { "type": ["string", "null"], "enum": provider_slug_enum_nullable() },
-                    "project": { "type": ["string", "null"] },
-                    "started_at": { "type": ["string", "null"], "format": "date-time" }
+                    "next_cursor": {
+                        "type": ["string", "null"],
+                        "description": "Opaque pagination cursor; pass back with --cursor."
+                    },
+                    "total": { "type": "integer", "minimum": 0 },
+                    "engine": {
+                        "type": "string",
+                        "enum": ["lexical", "hybrid"],
+                        "description": "Search engine that produced the results."
+                    }
                 },
-                "required": ["session_id", "message_id", "score", "snippet"]
+                "required": ["next_cursor", "total", "engine"],
+                "additionalProperties": false
             }
         },
-        "exit_codes": exit_codes()
+        "required": ["hits", "meta"],
+        "additionalProperties": false
+    })
+}
+
+fn search_hit_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "kind": {
+                "type": "string",
+                "enum": ["message", "note"],
+                "description": "Whether the hit points at a session message or a metadata note."
+            },
+            "session_id": { "type": "string" },
+            "message_id": { "type": "string" },
+            "score": { "type": "number" },
+            "snippet": { "type": "string" },
+            "provider": { "type": ["string", "null"], "enum": provider_slug_enum_nullable() },
+            "project": { "type": ["string", "null"] },
+            "started_at": { "type": ["string", "null"], "format": "date-time" },
+            "source": {
+                "type": "string",
+                "description": "`local` for this host, or a registered remote source name."
+            },
+            "note_id": {
+                "type": "integer",
+                "description": "Present for note hits; absent for message hits."
+            },
+            "ref": {
+                "type": "string",
+                "pattern": source_qualified_session_ref_pattern(),
+                "description": "Citation ref for message hits, or the note's stored session ref for note hits."
+            },
+            "explanation": {
+                "type": "object",
+                "description": "Present only with --debug-search; Tantivy score explanation tree."
+            }
+        },
+        "required": [
+            "kind",
+            "session_id",
+            "message_id",
+            "score",
+            "snippet",
+            "provider",
+            "project",
+            "started_at",
+            "source"
+        ],
+        "additionalProperties": false
     })
 }
 

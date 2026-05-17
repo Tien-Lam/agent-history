@@ -33,6 +33,55 @@ fn normalize_search_scores(doc: &mut Value) {
     }
 }
 
+fn command_schema(name: &str) -> Value {
+    let output = aghist().args(["schema", name]).assert().success();
+    parse_stdout_json(&output)
+}
+
+fn required_fields(schema: &Value) -> Vec<&str> {
+    schema["required"]
+        .as_array()
+        .expect("schema required array")
+        .iter()
+        .map(|item| item.as_str().expect("required field name"))
+        .collect()
+}
+
+fn assert_required_fields_present(schema: &Value, doc: &Value, label: &str) {
+    for field in required_fields(schema) {
+        assert!(
+            doc.get(field).is_some(),
+            "{label} is missing schema-required field {field}: {doc:#}"
+        );
+    }
+}
+
+fn assert_index_schema_matches_output(doc: &Value) {
+    let schema = command_schema("index");
+    assert_required_fields_present(&schema["response"], doc, "index response");
+    assert_required_fields_present(
+        &schema["response"]["properties"]["embeddings"],
+        &doc["embeddings"],
+        "index embeddings",
+    );
+}
+
+fn assert_search_schema_matches_output(doc: &Value) {
+    let schema = command_schema("search");
+    let response = &schema["response"];
+    assert_required_fields_present(response, doc, "search response");
+    assert_eq!(response["type"], "object");
+    assert_eq!(response["properties"]["hits"]["type"], "array");
+    assert_eq!(response["properties"]["meta"]["type"], "object");
+
+    assert_required_fields_present(&response["properties"]["meta"], &doc["meta"], "search meta");
+
+    let hit_schema = &response["properties"]["hits"]["items"];
+    let hits = doc["hits"].as_array().expect("search hits array");
+    assert!(!hits.is_empty(), "contract fixture should produce a hit");
+    assert_required_fields_present(hit_schema, &hits[0], "search hit");
+}
+
 fn run_mcp_session(env_home: &Path, requests: &[Value]) -> Vec<Value> {
     let mut child = StdCommand::new(common::helpers::aghist_bin())
         .arg("mcp")
@@ -82,6 +131,7 @@ fn index_empty_summary_contract_snapshot() {
         .success();
     let mut summary = parse_stdout_json(&output);
     normalize_index_summary(&mut summary);
+    assert_index_schema_matches_output(&summary);
 
     assert_json_snapshot("index_empty_summary_contract", &summary);
 }
@@ -127,6 +177,7 @@ fn search_json_contract_snapshot() {
         .success();
     let mut doc = parse_stdout_json(&output);
     normalize_search_scores(&mut doc);
+    assert_search_schema_matches_output(&doc);
 
     assert_json_snapshot("search_json_contract", &doc);
 }
