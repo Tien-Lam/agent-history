@@ -43,8 +43,16 @@ where
     W: Write,
     T: Serialize + ?Sized,
 {
-    serde_json::to_writer(&mut *out, value).map_err(io::Error::other)?;
+    serde_json::to_writer(&mut *out, value).map_err(json_to_io_error)?;
     writeln!(out)
+}
+
+fn json_to_io_error(error: serde_json::Error) -> io::Error {
+    if let Some(kind) = error.io_error_kind() {
+        io::Error::new(kind, error)
+    } else {
+        io::Error::other(error)
+    }
 }
 
 #[cfg(test)]
@@ -73,5 +81,24 @@ mod tests {
             OutputMode::resolve(true, true, CommandKind::OneShot),
             OutputMode::Ndjson
         );
+    }
+
+    #[test]
+    fn write_json_line_preserves_writer_error_kind() {
+        struct BrokenWriter;
+
+        impl Write for BrokenWriter {
+            fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut out = BrokenWriter;
+        let err = write_json_line(&mut out, &serde_json::json!({"ok": true})).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
     }
 }
