@@ -27,6 +27,11 @@ pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         filters,
         command,
     } = cli;
+
+    if let Some(exit) = dispatch_context_free_command(command.as_ref())? {
+        return Ok(exit);
+    }
+
     let ctx = CommandContext::load(filters, json, ndjson)?;
     clear_search_index_if_requested(reindex)?;
 
@@ -47,6 +52,23 @@ pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
             run_tui(providers, config)
         }
     }
+}
+
+fn dispatch_context_free_command(command: Option<&Command>) -> Result<Option<i32>, ErrorEnvelope> {
+    let Some(command) = command else {
+        return Ok(None);
+    };
+    let exit = match command {
+        Command::Schema {
+            subcommand,
+            list,
+            all,
+        } => schema_command(subcommand.as_deref(), *list, *all)?,
+        Command::Update => self_update()?,
+        Command::Uninstall => uninstall()?,
+        _ => return Ok(None),
+    };
+    Ok(Some(exit))
 }
 
 fn clear_search_index_if_requested(reindex: bool) -> Result<(), ErrorEnvelope> {
@@ -95,9 +117,11 @@ fn dispatch_command(
             subcommand,
             list,
             all,
-        } => schema_command(subcommand.as_deref(), list, all)?,
-        Command::Update => self_update()?,
-        Command::Uninstall => uninstall()?,
+        } => unreachable!(
+            "schema is handled before context load ({subcommand:?}, list={list}, all={all})"
+        ),
+        Command::Update => unreachable!("update is handled before context load"),
+        Command::Uninstall => unreachable!("uninstall is handled before context load"),
         cmd @ (Command::Export(_)
         | Command::Index(_)
         | Command::Search(_)

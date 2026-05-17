@@ -33,6 +33,23 @@ fn schema_for_search_is_valid_json_schema() {
     assert!(parsed["response"]["properties"]["hits"].is_object());
     assert!(parsed["response"]["properties"]["meta"].is_object());
 }
+
+#[test]
+fn schema_command_does_not_require_loadable_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("broken.toml");
+    std::fs::write(&config, "not = [valid").unwrap();
+
+    let assert = aghist()
+        .args(["schema", "search"])
+        .env("AGHIST_CONFIG", &config)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(parsed["command"], "search");
+}
+
 #[test]
 fn schema_for_search_documents_filter_flags() {
     let assert = aghist().args(["schema", "search"]).assert().success();
