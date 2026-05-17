@@ -20,10 +20,6 @@ pub(super) fn provider_slug_enum() -> Value {
     schema_fragments::provider_slug_enum()
 }
 
-pub(super) fn provider_slug_enum_nullable() -> Value {
-    schema_fragments::provider_slug_enum_nullable()
-}
-
 pub(super) fn exit_codes() -> Value {
     json!({
         "0": "success with results",
@@ -108,20 +104,15 @@ pub(super) fn filter_params_fragment() -> Vec<(&'static str, Value)> {
 }
 
 pub(super) fn session_row_schema() -> Value {
-    json!({
-        "type": "object",
-        "properties": {
-            "id": { "type": "string" },
-            "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
-            "provider": { "type": "string", "enum": provider_slug_enum() },
-            "project": { "type": ["string", "null"] },
-            "branch": { "type": ["string", "null"] },
-            "summary": { "type": ["string", "null"] },
-            "started_at": { "type": "string", "format": "date-time" },
-            "message_count": { "type": "integer", "minimum": 0 }
-        },
-        "required": ["id", "source", "provider", "started_at", "message_count"]
-    })
+    schema_fragments::session_row_schema()
+}
+
+pub(super) fn list_response_schema() -> Value {
+    schema_fragments::list_response_schema()
+}
+
+pub(super) fn search_response_schema() -> Value {
+    schema_fragments::search_response_schema()
 }
 
 pub(super) fn count_array_response(field: &str, item_ref: &str) -> Value {

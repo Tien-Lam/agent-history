@@ -1,4 +1,10 @@
-use crate::model::Provider;
+use std::path::PathBuf;
+
+use chrono::{TimeZone, Utc};
+use serde_json::json;
+
+use crate::dto::{CursorMeta, ListEnvelope, SearchEnvelope, SearchHitJson, SearchMeta, SessionRow};
+use crate::model::{Provider, Session, SessionId};
 
 use super::*;
 
@@ -115,6 +121,16 @@ fn list_schema_describes_pagination_params() {
         serde_json::json!(crate::schema_fragments::LIST_LIMIT_DEFAULT)
     );
     assert!(params["cursor"].is_object());
+
+    let json_response = &schema["response"]["oneOf"][0];
+    assert_eq!(
+        string_array(&json_response["required"]),
+        vec!["sessions", "meta"]
+    );
+    assert_eq!(
+        string_array(&json_response["properties"]["meta"]["required"]),
+        vec!["next_cursor", "total"]
+    );
 }
 
 #[test]
@@ -147,6 +163,7 @@ fn search_schema_describes_json_envelope() {
         );
     }
     assert!(hit["properties"]["ref"]["pattern"].is_string());
+    assert!(hit["properties"]["turn"].is_object());
     assert!(hit["properties"]["explanation"].is_object());
 
     let meta = &response["properties"]["meta"];
@@ -158,6 +175,71 @@ fn search_schema_describes_json_envelope() {
     assert_eq!(
         meta["properties"]["engine"]["enum"],
         serde_json::json!(["lexical", "hybrid"])
+    );
+}
+
+#[test]
+fn dto_schema_fragments_cover_serialized_keys() {
+    let session = sample_session();
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::session_row_schema(),
+        &serde_json::to_value(SessionRow::from_session(&session, "local")).unwrap(),
+    );
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::list_response_schema(),
+        &serde_json::to_value(ListEnvelope {
+            sessions: vec![SessionRow::from_session(&session, "local")],
+            meta: CursorMeta::new(1, Some("cursor-1")),
+        })
+        .unwrap(),
+    );
+
+    let started_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+    let message_hit = SearchHitJson {
+        kind: "message",
+        session_id: "session-1".to_string(),
+        message_id: "message-1".to_string(),
+        score: 1.0,
+        snippet: "snippet".to_string(),
+        provider: Some(Provider::ClaudeCode),
+        project: Some("project".to_string()),
+        started_at: Some(started_at),
+        source: "local".to_string(),
+        note_id: None,
+        ref_: Some("claude-code/session-1#1".to_string()),
+        turn: Some(1),
+        explanation: Some(json!({ "value": 1.0 })),
+    };
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::search_hit_schema(),
+        &serde_json::to_value(message_hit.clone()).unwrap(),
+    );
+    let note_hit = SearchHitJson {
+        kind: "note",
+        session_id: String::new(),
+        message_id: String::new(),
+        score: 1.0,
+        snippet: "note".to_string(),
+        provider: None,
+        project: None,
+        started_at: None,
+        source: "local".to_string(),
+        note_id: Some(42),
+        ref_: Some("claude-code/session-1".to_string()),
+        turn: None,
+        explanation: None,
+    };
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::search_hit_schema(),
+        &serde_json::to_value(note_hit).unwrap(),
+    );
+    assert_schema_covers_serialized_keys(
+        &crate::schema_fragments::search_response_schema(),
+        &serde_json::to_value(SearchEnvelope {
+            hits: vec![message_hit],
+            meta: SearchMeta::new(1, None, "lexical"),
+        })
+        .unwrap(),
     );
 }
 
@@ -278,6 +360,36 @@ fn string_array(value: &Value) -> Vec<&str> {
         .iter()
         .map(|item| item.as_str().unwrap())
         .collect()
+}
+
+fn sample_session() -> Session {
+    Session {
+        id: SessionId("session-1".to_string()),
+        provider: Provider::ClaudeCode,
+        project_path: Some(PathBuf::from("/tmp/project")),
+        project_name: Some("project".to_string()),
+        git_branch: Some("main".to_string()),
+        started_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+        ended_at: None,
+        summary: Some("summary".to_string()),
+        model: Some("model".to_string()),
+        token_usage: None,
+        message_count: 2,
+        source_path: PathBuf::from("/tmp/project/session.jsonl"),
+    }
+}
+
+fn assert_schema_covers_serialized_keys(schema: &Value, value: &Value) {
+    let properties = schema["properties"]
+        .as_object()
+        .expect("schema has properties object");
+    let object = value.as_object().expect("serialized DTO is an object");
+    for key in object.keys() {
+        assert!(
+            properties.contains_key(key),
+            "schema missing property for serialized key {key}: {schema:#}"
+        );
+    }
 }
 
 /// Tiny helper: we don't pull a regex crate just for tests, so check a few
