@@ -22,11 +22,11 @@ pub(super) fn disabled_embeddings_summary(accept_download: bool) -> serde_json::
 mod enabled {
     use std::{collections::HashSet, path::Path};
 
-    use aghist::cli_error::ErrorEnvelope;
-    use aghist::model::{ContentBlock, Message, Session};
-    use aghist::{embed, provider};
+    use crate::cli_error::ErrorEnvelope;
+    use crate::model::{ContentBlock, Message, Session};
+    use crate::{embed, provider};
 
-    pub(in crate::commands::index) fn run_embeddings(
+    pub(super) fn run_embeddings(
         index_dir: &Path,
         sessions: &[Session],
         providers: &[Box<dyn provider::HistoryProvider>],
