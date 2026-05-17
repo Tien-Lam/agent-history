@@ -54,9 +54,7 @@ pub(super) fn run_llm_decisions(
     } else {
         render_llm_decisions_human(&mut sink, &out)
     }
-    .map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write decisions output: {e}"))
-    })?;
+    .map_err(|e| ErrorEnvelope::io("failed to write decisions output", e))?;
 
     Ok(EXIT_OK)
 }

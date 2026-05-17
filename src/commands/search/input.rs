@@ -32,20 +32,17 @@ pub(super) fn resolve_search_query(
 
     let mut buf = String::new();
     if stdin {
-        io::stdin().read_to_string(&mut buf).map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to read query from stdin: {e}"))
-        })?;
+        io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| ErrorEnvelope::io("failed to read query from stdin", e))?;
     } else if let Some(path) = query_file {
         if path == Path::new("-") {
-            io::stdin().read_to_string(&mut buf).map_err(|e| {
-                ErrorEnvelope::new("io-error", format!("failed to read query from stdin: {e}"))
-            })?;
+            io::stdin()
+                .read_to_string(&mut buf)
+                .map_err(|e| ErrorEnvelope::io("failed to read query from stdin", e))?;
         } else {
             buf = std::fs::read_to_string(path).map_err(|e| {
-                ErrorEnvelope::new(
-                    "io-error",
-                    format!("failed to read query file {}: {e}", path.display()),
-                )
+                ErrorEnvelope::io(format!("failed to read query file {}", path.display()), e)
             })?;
         }
     }

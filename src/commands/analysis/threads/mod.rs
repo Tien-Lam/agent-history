@@ -91,7 +91,7 @@ pub(crate) fn threads_command(
     } else {
         render_threads_human(&mut out, &threads)
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write threads output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write threads output", e))?;
 
     Ok(EXIT_OK)
 }

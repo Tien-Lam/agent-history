@@ -60,7 +60,7 @@ pub(super) fn run_llm_threads(
     } else {
         render_llm_threads_human(&mut out, &rows)
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write threads output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write threads output", e))?;
 
     Ok(EXIT_OK)
 }

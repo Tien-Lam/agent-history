@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::config;
-use aghist::output::OutputMode;
+use aghist::output::{write_json_line, OutputMode};
 
 mod pull;
 
@@ -32,24 +32,14 @@ fn write_sources_payload<W: io::Write>(
                 "sources": sources,
                 "config_path": config_path.display().to_string(),
             });
-            serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-            writeln!(out)
+            write_json_line(out, &payload)
         }
         OutputMode::Ndjson => {
             for s in sources {
-                serde_json::to_writer(&mut *out, s).map_err(json_to_io_error)?;
-                writeln!(out)?;
+                write_json_line(out, s)?;
             }
             Ok(())
         }
-    }
-}
-
-fn json_to_io_error(error: serde_json::Error) -> io::Error {
-    if let Some(kind) = error.io_error_kind() {
-        io::Error::new(kind, error)
-    } else {
-        io::Error::other(error)
     }
 }
 
@@ -64,8 +54,7 @@ fn write_added_source<W: io::Write>(
             "added": source,
             "config_path": config_path.display().to_string(),
         });
-        serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-        writeln!(out)
+        write_json_line(out, &payload)
     } else {
         writeln!(
             out,
@@ -90,8 +79,7 @@ fn write_removed_source<W: io::Write>(
             "removed": source,
             "config_path": config_path.display().to_string(),
         });
-        serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-        writeln!(out)
+        write_json_line(out, &payload)
     } else {
         writeln!(out, "Removed source '{}'", source.name)?;
         writeln!(out, "Config: {}", config_path.display())
@@ -136,9 +124,8 @@ pub(crate) fn sources_list_remote(mode: OutputMode) -> Result<i32, ErrorEnvelope
     let config = config::Config::load_from(&config_path);
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    write_sources_payload(&mut out, &config.sources, &config_path, mode).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write sources output: {e}"))
-    })?;
+    write_sources_payload(&mut out, &config.sources, &config_path, mode)
+        .map_err(|e| ErrorEnvelope::io("failed to write sources output", e))?;
     if config.sources.is_empty() {
         Ok(EXIT_EMPTY)
     } else {
@@ -191,9 +178,8 @@ pub(crate) fn sources_add_remote(
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    write_added_source(&mut out, &new_source, &config_path, mode).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write sources output: {e}"))
-    })?;
+    write_added_source(&mut out, &new_source, &config_path, mode)
+        .map_err(|e| ErrorEnvelope::io("failed to write sources output", e))?;
     Ok(EXIT_OK)
 }
 
@@ -232,9 +218,8 @@ pub(crate) fn sources_remove_remote(name: &str, mode: OutputMode) -> Result<i32,
             "source removal changed the list without retaining the removed source",
         ));
     };
-    write_removed_source(&mut out, &removed, &config_path, mode).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write sources output: {e}"))
-    })?;
+    write_removed_source(&mut out, &removed, &config_path, mode)
+        .map_err(|e| ErrorEnvelope::io("failed to write sources output", e))?;
     Ok(EXIT_OK)
 }
 

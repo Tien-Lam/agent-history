@@ -1,8 +1,7 @@
-use std::io::Write as _;
-
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::indexing::{self, IndexingOptions, UnfilteredIndexScope};
 use aghist::model::Provider;
+use aghist::output::write_json_line;
 use aghist::{provider, query_scope};
 use serde::Serialize;
 
@@ -62,11 +61,6 @@ fn build_index_summary(
 
 fn write_index_summary(summary: &IndexSummary) -> Result<(), ErrorEnvelope> {
     let mut out = std::io::stdout().lock();
-    serde_json::to_writer(&mut out, &summary).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write index output: {e}"))
-    })?;
-    writeln!(out).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write index output: {e}"))
-    })?;
-    Ok(())
+    write_json_line(&mut out, summary)
+        .map_err(|e| ErrorEnvelope::io("failed to write index output", e))
 }

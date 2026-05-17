@@ -87,7 +87,7 @@ pub(crate) fn todos_command(
     } else {
         render_todos_human(&mut out, &all)
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write todos output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write todos output", e))?;
 
     Ok(EXIT_OK)
 }

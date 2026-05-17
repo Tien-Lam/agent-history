@@ -1,6 +1,7 @@
 use std::io::{self, Write as _};
 
 use aghist::cli_error::ErrorEnvelope;
+use aghist::output::write_json_line;
 
 use super::{DiffOp, DiffRenderInput};
 
@@ -23,7 +24,7 @@ pub(super) fn render_diff_text(
         render.lines1.len(),
         raw1 = render.raw1,
     )
-    .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write diff output", e))?;
     writeln!(
         out,
         "+++ {raw2}  ({}  {} msgs)",
@@ -31,7 +32,7 @@ pub(super) fn render_diff_text(
         render.lines2.len(),
         raw2 = render.raw2,
     )
-    .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write diff output", e))?;
 
     let flat: Vec<FlatOp> = render
         .ops
@@ -64,7 +65,7 @@ pub(super) fn render_diff_text(
 
     if changed.is_empty() {
         writeln!(out, "(sessions are identical)")
-            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+            .map_err(|e| ErrorEnvelope::io("failed to write diff output", e))?;
         return Ok(());
     }
 
@@ -93,7 +94,7 @@ pub(super) fn render_diff_text(
             .filter(|f| f.side_b.is_some())
             .count();
         writeln!(out, "@@ -{a_start},{a_count} +{b_start},{b_count} @@")
-            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+            .map_err(|e| ErrorEnvelope::io("failed to write diff output", e))?;
         for f in &flat[hunk_start..hunk_end] {
             let line = match (f.side_a, f.side_b) {
                 (Some(a), _) => &render.lines1[a],
@@ -101,7 +102,7 @@ pub(super) fn render_diff_text(
                 _ => continue,
             };
             writeln!(out, "{}{}: {}", f.marker, line.role, line.snippet)
-                .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+                .map_err(|e| ErrorEnvelope::io("failed to write diff output", e))?;
         }
     }
     Ok(())
@@ -151,8 +152,7 @@ pub(super) fn render_diff_json(render: &DiffRenderInput<'_>) -> Result<(), Error
     });
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    serde_json::to_writer(&mut out, &payload)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("json: {e}")))?;
-    writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+    write_json_line(&mut out, &payload)
+        .map_err(|e| ErrorEnvelope::io("failed to write diff output", e))?;
     Ok(())
 }

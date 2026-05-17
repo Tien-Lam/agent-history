@@ -167,9 +167,8 @@ pub(crate) fn export_session(
         eprintln!("Exported to {}", path.display());
     } else {
         let mut out = std::io::stdout().lock();
-        out.write_all(content.as_bytes()).map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to write export output: {e}"))
-        })?;
+        out.write_all(content.as_bytes())
+            .map_err(|e| ErrorEnvelope::io("failed to write export output", e))?;
     }
 
     Ok(EXIT_OK)

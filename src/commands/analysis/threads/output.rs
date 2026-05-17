@@ -1,5 +1,7 @@
 use std::io;
 
+use aghist::output::write_json_line;
+
 use crate::commands::text::truncate;
 
 use super::LlmThreadRow;
@@ -13,9 +15,7 @@ pub(super) fn render_llm_threads_json<W: io::Write>(
         "count": rows.len(),
         "mode": "llm",
     });
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, &payload)
 }
 
 pub(super) fn render_llm_threads_human<W: io::Write>(
@@ -54,9 +54,7 @@ pub(super) fn render_threads_json<W: io::Write>(
         "threads": threads,
         "count": threads.len(),
     });
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, &payload)
 }
 
 pub(super) fn render_threads_human<W: io::Write>(

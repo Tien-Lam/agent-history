@@ -1,6 +1,7 @@
 use std::io;
 
 use aghist::cli_error::ErrorEnvelope;
+use aghist::output::write_json_line;
 
 use super::super::text::truncate;
 
@@ -19,9 +20,7 @@ pub(super) fn render_usage_json<W: io::Write>(
             "total_row_count": total_rows,
         },
     });
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, &payload)
 }
 
 pub(super) fn render_usage_human<W: io::Write>(
@@ -82,9 +81,7 @@ pub(super) fn render_project_json<W: io::Write>(
     out: &mut W,
     report: &aghist::project::ProjectReport,
 ) -> io::Result<()> {
-    serde_json::to_writer(&mut *out, report).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, report)
 }
 
 pub(super) fn render_project_human<W: io::Write>(
@@ -105,14 +102,11 @@ pub(super) fn render_report<W: io::Write>(
     force_json: bool,
 ) -> Result<(), ErrorEnvelope> {
     if force_json {
-        serde_json::to_writer(&mut *out, envelope)
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to encode report: {e}")))?;
-        writeln!(out)
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write report: {e}")))?;
+        write_json_line(out, envelope)
+            .map_err(|e| ErrorEnvelope::io("failed to write report", e))?;
     } else {
         let md = aghist::report::render_markdown(envelope);
-        write!(out, "{md}")
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write report: {e}")))?;
+        write!(out, "{md}").map_err(|e| ErrorEnvelope::io("failed to write report", e))?;
     }
     Ok(())
 }

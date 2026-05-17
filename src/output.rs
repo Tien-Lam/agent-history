@@ -1,4 +1,6 @@
-use std::io::IsTerminal;
+use std::io::{self, IsTerminal, Write};
+
+use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
@@ -34,6 +36,15 @@ impl OutputMode {
     pub fn is_machine(self) -> bool {
         matches!(self, Self::Json | Self::Ndjson)
     }
+}
+
+pub fn write_json_line<W, T>(out: &mut W, value: &T) -> io::Result<()>
+where
+    W: Write,
+    T: Serialize + ?Sized,
+{
+    serde_json::to_writer(&mut *out, value).map_err(io::Error::other)?;
+    writeln!(out)
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@
 //!
 //! The canonical list of `kind` values lives in `AGENTS.md`.
 
+use std::fmt;
 use std::io::{self, Write};
 
 use serde::Serialize;
@@ -42,6 +43,10 @@ impl ErrorEnvelope {
             message: message.into(),
             hint: None,
         }
+    }
+
+    pub fn io(action: impl AsRef<str>, error: impl fmt::Display) -> Self {
+        Self::new("io-error", format!("{}: {error}", action.as_ref()))
     }
 
     #[must_use]

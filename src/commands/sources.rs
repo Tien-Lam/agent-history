@@ -2,7 +2,7 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::Provider;
-use aghist::output::OutputMode;
+use aghist::output::{write_json_line, OutputMode};
 use aghist::{provider, search};
 
 mod remote;
@@ -34,7 +34,7 @@ pub(crate) fn sources_command(
         OutputMode::Json => render_sources_json(&mut out, &rows, &index_dir, last_indexed_at),
         OutputMode::Ndjson => render_sources_ndjson(&mut out, &rows),
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write sources output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write sources output", e))?;
 
     if rows.is_empty() {
         Ok(EXIT_EMPTY)
@@ -178,15 +178,12 @@ fn render_sources_json<W: io::Write>(
             "last_indexed_at": last_indexed_at,
         },
     });
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, &payload)
 }
 
 fn render_sources_ndjson<W: io::Write>(out: &mut W, rows: &[SourceRow]) -> io::Result<()> {
     for row in rows {
-        serde_json::to_writer(&mut *out, row).map_err(std::io::Error::other)?;
-        writeln!(out)?;
+        write_json_line(out, row)?;
     }
     Ok(())
 }

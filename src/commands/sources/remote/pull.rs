@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::config;
-use aghist::output::OutputMode;
+use aghist::output::{write_json_line, OutputMode};
 use chrono::{DateTime, Utc};
 
 use super::super::format_bytes;
@@ -89,9 +89,9 @@ pub(crate) fn sources_pull_remote(
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_pull_results(&mut out, &results, &cache_root, mode)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write pull output: {e}")))?;
+        .map_err(|e| ErrorEnvelope::io("failed to write pull output", e))?;
     out.flush()
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to flush pull output: {e}")))?;
+        .map_err(|e| ErrorEnvelope::io("failed to flush pull output", e))?;
     Ok(EXIT_OK)
 }
 
@@ -296,13 +296,11 @@ fn write_pull_results<W: io::Write>(
                 "results": results,
                 "cache_dir": cache_root.display().to_string(),
             });
-            serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-            writeln!(out)
+            write_json_line(out, &payload)
         }
         OutputMode::Ndjson => {
             for r in results {
-                serde_json::to_writer(&mut *out, r).map_err(std::io::Error::other)?;
-                writeln!(out)?;
+                write_json_line(out, r)?;
             }
             Ok(())
         }

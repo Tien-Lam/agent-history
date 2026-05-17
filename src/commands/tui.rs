@@ -21,16 +21,13 @@ pub(crate) fn run_tui(
         default_hook(info);
     }));
 
-    enable_raw_mode()
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to enable raw mode: {e}")))?;
+    enable_raw_mode().map_err(|e| ErrorEnvelope::io("failed to enable raw mode", e))?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to enter alternate screen: {e}"))
-    })?;
+    execute!(stdout, EnterAlternateScreen)
+        .map_err(|e| ErrorEnvelope::io("failed to enter alternate screen", e))?;
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to construct terminal: {e}"))
-    })?;
+    let mut terminal =
+        Terminal::new(backend).map_err(|e| ErrorEnvelope::io("failed to construct terminal", e))?;
 
     let mut app = app::App::new(providers, config);
     let result = app.run(&mut terminal);

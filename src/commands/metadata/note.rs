@@ -2,10 +2,10 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::metadata::{self, Note};
-use aghist::output::OutputMode;
+use aghist::output::{write_json_line, OutputMode};
 
 use super::super::super::cli::NoteCommand;
-use super::{json_to_io_error, metadata_error, open_metadata_db};
+use super::{metadata_error, open_metadata_db};
 
 pub(crate) fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let conn = open_metadata_db()?;
@@ -63,27 +63,21 @@ fn read_note_body(
     }
     let mut buf = String::new();
     if stdin {
-        io::stdin().read_to_string(&mut buf).map_err(|e| {
-            ErrorEnvelope::new(
-                "io-error",
-                format!("failed to read note body from stdin: {e}"),
-            )
-        })?;
+        io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| ErrorEnvelope::io("failed to read note body from stdin", e))?;
         return Ok(buf);
     }
     if let Some(path) = body_file {
         if path == std::path::Path::new("-") {
-            io::stdin().read_to_string(&mut buf).map_err(|e| {
-                ErrorEnvelope::new(
-                    "io-error",
-                    format!("failed to read note body from stdin: {e}"),
-                )
-            })?;
+            io::stdin()
+                .read_to_string(&mut buf)
+                .map_err(|e| ErrorEnvelope::io("failed to read note body from stdin", e))?;
         } else {
             buf = std::fs::read_to_string(path).map_err(|e| {
-                ErrorEnvelope::new(
-                    "io-error",
-                    format!("failed to read note body from {}: {e}", path.display()),
+                ErrorEnvelope::io(
+                    format!("failed to read note body from {}", path.display()),
+                    e,
                 )
             })?;
         }
@@ -99,7 +93,7 @@ fn emit_note_payload(note: &Note, action: &str, mode: OutputMode) -> Result<(), 
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_note_payload(&mut out, note, action, mode)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write note output: {e}")))
+        .map_err(|e| ErrorEnvelope::io("failed to write note output", e))
 }
 
 fn write_note_payload<W: io::Write>(
@@ -110,8 +104,7 @@ fn write_note_payload<W: io::Write>(
 ) -> io::Result<()> {
     if mode.is_machine() {
         let payload = serde_json::json!({ action: note });
-        serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-        writeln!(out)?;
+        write_json_line(out, &payload)?;
     } else {
         writeln!(out, "{action} note {} on {}", note.id, note.session_ref)?;
         for line in note.body.lines() {
@@ -125,20 +118,18 @@ fn emit_note_list(notes: &[Note], mode: OutputMode) -> Result<(), ErrorEnvelope>
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_note_list(&mut out, notes, mode)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write note output: {e}")))
+        .map_err(|e| ErrorEnvelope::io("failed to write note output", e))
 }
 
 fn write_note_list<W: io::Write>(out: &mut W, notes: &[Note], mode: OutputMode) -> io::Result<()> {
     match mode {
         OutputMode::Json => {
             let payload = serde_json::json!({ "notes": notes, "count": notes.len() });
-            serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-            writeln!(out)?;
+            write_json_line(out, &payload)?;
         }
         OutputMode::Ndjson => {
             for note in notes {
-                serde_json::to_writer(&mut *out, note).map_err(json_to_io_error)?;
-                writeln!(out)?;
+                write_json_line(out, note)?;
             }
         }
         OutputMode::Human => {

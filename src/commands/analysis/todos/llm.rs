@@ -52,7 +52,7 @@ pub(super) fn run_llm_todos(
     } else {
         render_llm_todos_human(&mut sink, &out)
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write todos output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write todos output", e))?;
 
     Ok(EXIT_OK)
 }

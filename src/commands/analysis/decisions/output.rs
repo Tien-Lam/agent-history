@@ -1,5 +1,7 @@
 use std::io;
 
+use aghist::output::write_json_line;
+
 use crate::commands::text::truncate;
 
 use super::{DecisionRow, LlmRow};
@@ -68,8 +70,7 @@ pub(super) fn render_llm_decisions_json<W: io::Write>(
         mode: "llm",
         decisions,
     };
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)
+    write_json_line(out, &payload)
 }
 
 pub(super) fn render_decisions_human<W: io::Write>(
@@ -145,6 +146,5 @@ pub(super) fn render_decisions_json<W: io::Write>(
         count: decisions.len(),
         decisions,
     };
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)
+    write_json_line(out, &payload)
 }

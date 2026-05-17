@@ -54,7 +54,7 @@ pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
     let mut input = String::new();
     io::stdin()
         .read_line(&mut input)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to read confirmation: {e}")))?;
+        .map_err(|e| ErrorEnvelope::io("failed to read confirmation", e))?;
     if !input.trim().eq_ignore_ascii_case("y") {
         eprintln!("Aborted.");
         return Err(ErrorEnvelope::new("aborted", "uninstall cancelled by user"));
@@ -155,18 +155,15 @@ fn self_update_impl() -> Result<i32, ErrorEnvelope> {
         .map_err(|e| ErrorEnvelope::new("update-failed", format!("update failed: {e}")))?;
 
     if status.updated() {
-        writeln!(io::stdout().lock(), "Updated to v{}", status.version()).map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to write update output: {e}"))
-        })?;
+        writeln!(io::stdout().lock(), "Updated to v{}", status.version())
+            .map_err(|e| ErrorEnvelope::io("failed to write update output", e))?;
     } else {
         writeln!(
             io::stdout().lock(),
             "Already up to date (v{})",
             status.version()
         )
-        .map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to write update output: {e}"))
-        })?;
+        .map_err(|e| ErrorEnvelope::io("failed to write update output", e))?;
     }
     Ok(EXIT_OK)
 }
@@ -181,8 +178,7 @@ fn self_update_impl() -> Result<i32, ErrorEnvelope> {
 }
 
 fn current_exe() -> Result<PathBuf, ErrorEnvelope> {
-    std::env::current_exe()
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("current_exe failed: {e}")))
+    std::env::current_exe().map_err(|e| ErrorEnvelope::io("current_exe failed", e))
 }
 
 fn release_install_marker_path(exe: &Path) -> Option<PathBuf> {

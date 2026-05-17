@@ -1,5 +1,7 @@
 use std::io;
 
+use aghist::output::write_json_line;
+
 use crate::commands::text::truncate;
 
 use super::{LlmTodoRow, TodoRow};
@@ -20,9 +22,7 @@ pub(super) fn render_todos_json<W: io::Write>(out: &mut W, todos: &[TodoRow]) ->
         })).collect::<Vec<_>>(),
         "count": todos.len(),
     });
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, &payload)
 }
 
 pub(super) fn render_todos_human<W: io::Write>(out: &mut W, todos: &[TodoRow]) -> io::Result<()> {
@@ -72,9 +72,7 @@ pub(super) fn render_llm_todos_json<W: io::Write>(
         "count": rows.len(),
         "mode": "llm",
     });
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, &payload)
 }
 
 pub(super) fn render_llm_todos_human<W: io::Write>(

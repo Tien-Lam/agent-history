@@ -125,9 +125,7 @@ pub(crate) fn decisions_command(
     } else {
         render_decisions_human(&mut sink, &rows)
     }
-    .map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write decisions output: {e}"))
-    })?;
+    .map_err(|e| ErrorEnvelope::io("failed to write decisions output", e))?;
 
     Ok(EXIT_OK)
 }

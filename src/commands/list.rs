@@ -4,7 +4,7 @@ use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
 use aghist::dto::{CursorMeta, ListEnvelope, SessionRow};
 use aghist::federated;
 use aghist::model::{Provider, Session};
-use aghist::output::OutputMode;
+use aghist::output::{write_json_line, OutputMode};
 use aghist::{provider, query_scope};
 
 use super::super::cli::FilterArgs;
@@ -104,17 +104,14 @@ pub(crate) fn list_sessions(
     match mode {
         OutputMode::Human => {
             let provider_counts = provider_counts.unwrap_or_default();
-            render_list_human(&provider_counts, page, total, next_cursor.as_deref()).map_err(
-                |e| ErrorEnvelope::new("io-error", format!("failed to write list output: {e}")),
-            )?;
+            render_list_human(&provider_counts, page, total, next_cursor.as_deref())
+                .map_err(|e| ErrorEnvelope::io("failed to write list output", e))?;
         }
-        OutputMode::Json => render_list_json(page, total, next_cursor.as_deref()).map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}"))
-        })?,
+        OutputMode::Json => render_list_json(page, total, next_cursor.as_deref())
+            .map_err(|e| ErrorEnvelope::io("failed to write JSON output", e))?,
         OutputMode::Ndjson => {
-            render_list_ndjson(page, total, next_cursor.as_deref()).map_err(|e| {
-                ErrorEnvelope::new("io-error", format!("failed to write NDJSON output: {e}"))
-            })?;
+            render_list_ndjson(page, total, next_cursor.as_deref())
+                .map_err(|e| ErrorEnvelope::io("failed to write NDJSON output", e))?;
         }
     }
 
@@ -231,9 +228,7 @@ fn render_list_json(
         meta: CursorMeta::new(total, next_cursor),
     };
     let mut out = std::io::stdout().lock();
-    serde_json::to_writer(&mut out, &doc).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(&mut out, &doc)
 }
 
 fn render_list_ndjson(
@@ -244,8 +239,7 @@ fn render_list_ndjson(
     let mut out = std::io::stdout().lock();
     for s in sessions {
         let row = session_row(s);
-        serde_json::to_writer(&mut out, &row).map_err(std::io::Error::other)?;
-        writeln!(out)?;
+        write_json_line(&mut out, &row)?;
     }
     // Trailing meta record terminates the stream so consumers can detect EOF
     // without watching stdin close. Keyed by `meta` so it never collides with
@@ -253,9 +247,7 @@ fn render_list_ndjson(
     let meta = serde_json::json!({
         "meta": { "next_cursor": next_cursor, "total": total },
     });
-    serde_json::to_writer(&mut out, &meta).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(&mut out, &meta)
 }
 
 fn session_row(listed: &ListedSession) -> SessionRow {

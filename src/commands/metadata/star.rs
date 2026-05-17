@@ -2,9 +2,9 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::metadata::{self, Star};
-use aghist::output::OutputMode;
+use aghist::output::{write_json_line, OutputMode};
 
-use super::{json_to_io_error, metadata_error, open_metadata_db};
+use super::{metadata_error, open_metadata_db};
 
 pub(crate) fn star_command(reference: &str, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let conn = open_metadata_db()?;
@@ -35,7 +35,7 @@ fn emit_star_payload(star: &Star, action: &str, mode: OutputMode) -> Result<(), 
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_star_payload(&mut out, star, action, mode)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write star output: {e}")))
+        .map_err(|e| ErrorEnvelope::io("failed to write star output", e))
 }
 
 fn write_star_payload<W: io::Write>(
@@ -46,8 +46,7 @@ fn write_star_payload<W: io::Write>(
 ) -> io::Result<()> {
     if mode.is_machine() {
         let payload = serde_json::json!({ action: star });
-        serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-        writeln!(out)?;
+        write_json_line(out, &payload)?;
     } else {
         writeln!(out, "{action} {}", star.session_ref)?;
     }
@@ -58,20 +57,18 @@ fn emit_star_list(stars: &[Star], mode: OutputMode) -> Result<(), ErrorEnvelope>
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_star_list(&mut out, stars, mode)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write star output: {e}")))
+        .map_err(|e| ErrorEnvelope::io("failed to write star output", e))
 }
 
 fn write_star_list<W: io::Write>(out: &mut W, stars: &[Star], mode: OutputMode) -> io::Result<()> {
     match mode {
         OutputMode::Json => {
             let payload = serde_json::json!({ "stars": stars, "count": stars.len() });
-            serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-            writeln!(out)?;
+            write_json_line(out, &payload)?;
         }
         OutputMode::Ndjson => {
             for star in stars {
-                serde_json::to_writer(&mut *out, star).map_err(json_to_io_error)?;
-                writeln!(out)?;
+                write_json_line(out, star)?;
             }
         }
         OutputMode::Human => {

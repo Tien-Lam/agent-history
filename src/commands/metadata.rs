@@ -13,14 +13,6 @@ pub(crate) fn open_metadata_db() -> Result<rusqlite::Connection, ErrorEnvelope> 
     metadata::open_default().map_err(|e| metadata_error(&e))
 }
 
-pub(super) fn json_to_io_error(error: serde_json::Error) -> std::io::Error {
-    if let Some(kind) = error.io_error_kind() {
-        std::io::Error::new(kind, error)
-    } else {
-        std::io::Error::other(error)
-    }
-}
-
 pub(crate) fn metadata_error(err: &MetadataError) -> ErrorEnvelope {
     match err {
         MetadataError::NoPath => {

@@ -2,6 +2,7 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::model::{CitationRef, Message, Provider, Role, Session};
+use aghist::output::write_json_line;
 use aghist::{provider, query_scope};
 
 use super::super::cli::ShowFormat;
@@ -68,7 +69,7 @@ pub(crate) fn show_command(
             render_show_text(&mut out, &target.citation_ref, slice, start_idx, target_idx)
         }
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write show output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write show output", e))?;
 
     Ok(EXIT_OK)
 }
@@ -149,9 +150,7 @@ fn render_show_json<W: io::Write>(
         messages,
     };
 
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, &payload)
 }
 
 fn render_show_text<W: io::Write>(

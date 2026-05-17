@@ -2,10 +2,10 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::metadata::{self, Tag};
-use aghist::output::OutputMode;
+use aghist::output::{write_json_line, OutputMode};
 
 use super::super::super::cli::TagCommand;
-use super::{json_to_io_error, metadata_error, open_metadata_db};
+use super::{metadata_error, open_metadata_db};
 
 pub(crate) fn tag_dispatch(command: TagCommand, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let conn = open_metadata_db()?;
@@ -43,7 +43,7 @@ fn emit_tag_payload(tag: &Tag, action: &str, mode: OutputMode) -> Result<(), Err
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_tag_payload(&mut out, tag, action, mode)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write tag output: {e}")))
+        .map_err(|e| ErrorEnvelope::io("failed to write tag output", e))
 }
 
 fn write_tag_payload<W: io::Write>(
@@ -54,8 +54,7 @@ fn write_tag_payload<W: io::Write>(
 ) -> io::Result<()> {
     if mode.is_machine() {
         let payload = serde_json::json!({ action: tag });
-        serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-        writeln!(out)?;
+        write_json_line(out, &payload)?;
     } else {
         writeln!(out, "{action} tag '{}' on {}", tag.tag, tag.session_ref)?;
     }
@@ -66,20 +65,18 @@ fn emit_tag_list(tags: &[Tag], mode: OutputMode) -> Result<(), ErrorEnvelope> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_tag_list(&mut out, tags, mode)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write tag output: {e}")))
+        .map_err(|e| ErrorEnvelope::io("failed to write tag output", e))
 }
 
 fn write_tag_list<W: io::Write>(out: &mut W, tags: &[Tag], mode: OutputMode) -> io::Result<()> {
     match mode {
         OutputMode::Json => {
             let payload = serde_json::json!({ "tags": tags, "count": tags.len() });
-            serde_json::to_writer(&mut *out, &payload).map_err(json_to_io_error)?;
-            writeln!(out)?;
+            write_json_line(out, &payload)?;
         }
         OutputMode::Ndjson => {
             for tag in tags {
-                serde_json::to_writer(&mut *out, tag).map_err(json_to_io_error)?;
-                writeln!(out)?;
+                write_json_line(out, tag)?;
             }
         }
         OutputMode::Human => {

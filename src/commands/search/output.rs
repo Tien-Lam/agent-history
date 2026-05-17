@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use aghist::dto::{SearchEnvelope, SearchHitJson, SearchMeta};
 use aghist::federated;
 use aghist::model::Session;
+use aghist::output::write_json_line;
 use aghist::search;
 
 use super::super::filtering::strip_turn_suffix;
@@ -37,9 +38,7 @@ pub(super) fn print_search_json(
         meta: SearchMeta::new(total, next_cursor, engine),
     };
     let mut out = io::stdout().lock();
-    serde_json::to_writer(&mut out, &doc)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(&mut out, &doc)
 }
 
 pub(super) fn print_search_table(
@@ -94,9 +93,7 @@ pub(super) fn write_watch_hit<W: Write>(
     source_by_session: &HashMap<String, String>,
 ) -> io::Result<()> {
     let row = json_hit(hit, None, sessions, source_by_session, None);
-    serde_json::to_writer(&mut *out, &row)?;
-    out.write_all(b"\n")?;
-    Ok(())
+    write_json_line(out, &row)
 }
 
 fn json_hit<'a>(

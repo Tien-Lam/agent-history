@@ -122,7 +122,7 @@ pub(crate) fn search_command(
             next_cursor.as_deref(),
             engine_used,
         )
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write JSON output: {e}")))?;
+        .map_err(|e| ErrorEnvelope::io("failed to write JSON output", e))?;
     } else {
         print_search_table(
             page,
@@ -130,9 +130,7 @@ pub(crate) fn search_command(
             &federation.source_by_session,
             next_cursor.as_deref(),
         )
-        .map_err(|e| {
-            ErrorEnvelope::new("io-error", format!("failed to write search output: {e}"))
-        })?;
+        .map_err(|e| ErrorEnvelope::io("failed to write search output", e))?;
     }
 
     Ok(EXIT_OK)

@@ -1,6 +1,7 @@
-use std::io::{self, Write as _};
+use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK, EXIT_USAGE};
+use aghist::output::write_json_line;
 use aghist::{mcp, schema};
 
 pub(crate) fn schema_command(
@@ -30,12 +31,8 @@ pub(crate) fn schema_command(
     };
 
     let mut out = io::stdout().lock();
-    serde_json::to_writer(&mut out, &payload).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write schema output: {e}"))
-    })?;
-    writeln!(out).map_err(|e| {
-        ErrorEnvelope::new("io-error", format!("failed to write schema output: {e}"))
-    })?;
+    write_json_line(&mut out, &payload)
+        .map_err(|e| ErrorEnvelope::io("failed to write schema output", e))?;
     Ok(EXIT_OK)
 }
 
@@ -44,6 +41,6 @@ pub(crate) fn run_mcp_server(server: &mcp::McpServer) -> Result<i32, ErrorEnvelo
     let stdout = io::stdout().lock();
     server
         .serve(stdin, stdout)
-        .map_err(|e| ErrorEnvelope::new("io-error", format!("MCP server stdio error: {e}")))?;
+        .map_err(|e| ErrorEnvelope::io("MCP server stdio error", e))?;
     Ok(EXIT_OK)
 }

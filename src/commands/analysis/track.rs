@@ -3,6 +3,7 @@ use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::ContentBlock;
+use aghist::output::write_json_line;
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
@@ -138,23 +139,22 @@ pub(crate) fn track_command(
         });
         let stdout = io::stdout();
         let mut out = stdout.lock();
-        serde_json::to_writer(&mut out, &payload)
-            .map_err(|e| ErrorEnvelope::new("io-error", format!("json: {e}")))?;
-        writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        write_json_line(&mut out, &payload)
+            .map_err(|e| ErrorEnvelope::io("failed to write track output", e))?;
     } else {
         let stdout = io::stdout();
         let mut out = stdout.lock();
         writeln!(out, "Topic: {topic}")
-            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+            .map_err(|e| ErrorEnvelope::io("failed to write track output", e))?;
         writeln!(out, "Sessions scanned: {}", matched.len())
-            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
-        writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+            .map_err(|e| ErrorEnvelope::io("failed to write track output", e))?;
+        writeln!(out).map_err(|e| ErrorEnvelope::io("failed to write track output", e))?;
         writeln!(
             out,
             "{:<10}  {:<42}  {:<12}  EVENT",
             "DATE", "REF", "DIRECTION"
         )
-        .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        .map_err(|e| ErrorEnvelope::io("failed to write track output", e))?;
         for ev in &events {
             let ref_short = truncate(&ev.session_ref, 42);
             let event_short = truncate(&ev.event, 80);
@@ -163,11 +163,11 @@ pub(crate) fn track_command(
                 "{:<10}  {:<42}  {:<12}  {}",
                 ev.date, ref_short, ev.direction, event_short
             )
-            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+            .map_err(|e| ErrorEnvelope::io("failed to write track output", e))?;
         }
-        writeln!(out).map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+        writeln!(out).map_err(|e| ErrorEnvelope::io("failed to write track output", e))?;
         writeln!(out, "Total: {} event(s)", events.len())
-            .map_err(|e| ErrorEnvelope::new("io-error", e.to_string()))?;
+            .map_err(|e| ErrorEnvelope::io("failed to write track output", e))?;
     }
 
     Ok(EXIT_OK)

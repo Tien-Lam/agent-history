@@ -59,7 +59,7 @@ pub(crate) fn usage_command(
     } else {
         render_usage_human(&mut out, &trimmed, group_by, total_rows)
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write usage output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write usage output", e))?;
 
     Ok(EXIT_OK)
 }
@@ -113,7 +113,7 @@ pub(crate) fn project_command(
     } else {
         render_project_human(&mut out, &report)
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write project output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write project output", e))?;
 
     Ok(EXIT_OK)
 }

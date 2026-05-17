@@ -2,7 +2,7 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_ERROR, EXIT_OK};
 use aghist::health::{self, HealthCheck, HealthStatus};
-use aghist::output::OutputMode;
+use aghist::output::{write_json_line, OutputMode};
 use aghist::provider;
 use aghist::provider_diagnostic::ProviderDiagnostic;
 
@@ -22,7 +22,7 @@ pub(crate) fn health_command(
             render_health_json(&mut out, &checks, &fidelity, !any_failed)
         }
     }
-    .map_err(|e| ErrorEnvelope::new("io-error", format!("failed to write health output: {e}")))?;
+    .map_err(|e| ErrorEnvelope::io("failed to write health output", e))?;
 
     Ok(if any_failed { EXIT_ERROR } else { EXIT_OK })
 }
@@ -98,7 +98,5 @@ fn render_health_json<W: io::Write>(
         "summary": summary,
         "provider_fidelity": fidelity,
     });
-    serde_json::to_writer(&mut *out, &payload).map_err(std::io::Error::other)?;
-    writeln!(out)?;
-    Ok(())
+    write_json_line(out, &payload)
 }
