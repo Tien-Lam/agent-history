@@ -1,4 +1,4 @@
-//! Recall@10 / MRR benchmark for the search index (ahist-y3o.4.4).
+//! Recall@10 / MRR benchmark for the search index.
 //!
 //! Builds a mixed-provider synthetic corpus, runs a labeled query set against
 //! it, and reports recall@10 + MRR + coarse latency gates for each
@@ -9,13 +9,13 @@
 //!   embedding. This is *not* the production embedder (fastembed / MiniLM is
 //!   feature-gated and downloads a model on first run); it's a stand-in that
 //!   gives us a non-lexical signal we can run anywhere, including CI without
-//!   network. When ahist-y3o.4 wires up real embeddings, the harness can be
-//!   re-run with the production ranker by swapping the `SemanticRanker` impl.
+//!   network. The harness can be re-run with the production ranker by swapping
+//!   the `SemanticRanker` impl.
 //! - **hybrid**: Reciprocal Rank Fusion (RRF) of the lexical and semantic
 //!   ranked lists with `k = 60` (the value used in the original RRF paper and
-//!   in most public hybrid-search implementations). RRF is what
-//!   ahist-y3o.4.2 will land in production; we bench it here so the fixture
-//!   can be reused as a regression gate.
+//!   in most public hybrid-search implementations). RRF is the production
+//!   hybrid-search fusion method; we bench it here so the fixture can be
+//!   reused as a regression gate.
 //!
 //! ## How to run
 //!
@@ -711,10 +711,7 @@ fn render_report(
     out.push_str(
         "runs in CI without network and so the hybrid row has a non-trivial second signal. ",
     );
-    out.push_str(
-        "When ahist-y3o.4.2 wires fastembed into the index, swap `SemanticRanker` for the ",
-    );
-    out.push_str("real embedder and rerun.\n");
+    out.push_str("Swap `SemanticRanker` for the production embedder when comparing against real FastEmbed output.\n");
     out.push_str("- **hybrid** = Reciprocal Rank Fusion of the two lists, k = 60.\n");
     out.push_str("- recall@10 = fraction of queries whose target is in the top 10.\n");
     out.push_str(

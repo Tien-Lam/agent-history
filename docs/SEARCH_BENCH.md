@@ -28,13 +28,13 @@ Query set: 40 labeled queries.
 
 | Measurement | Value | Gate |
 |---|---:|---:|
-| Index build | 112 ms | <= 10000 ms |
+| Index build | 115 ms | <= 10000 ms |
 | Query p95 | 0 ms | <= 750 ms |
 
 ## Methodology notes
 
 - **lexical** is the production Tantivy BM25 index (`SearchIndex::search`).
-- **semantic** is a deterministic hashed-bag-of-words IDF cosine ranker baked into the harness — *not* the production fastembed/MiniLM embedder. It exists so the bench runs in CI without network and so the hybrid row has a non-trivial second signal. When ahist-y3o.4.2 wires fastembed into the index, swap `SemanticRanker` for the real embedder and rerun.
+- **semantic** is a deterministic hashed-bag-of-words IDF cosine ranker baked into the harness — *not* the production fastembed/MiniLM embedder. It exists so the bench runs in CI without network and so the hybrid row has a non-trivial second signal. Swap `SemanticRanker` for the production embedder when comparing against real FastEmbed output.
 - **hybrid** = Reciprocal Rank Fusion of the two lists, k = 60.
 - recall@10 = fraction of queries whose target is in the top 10.
 - MRR = mean of 1/rank for each query (rank counted from 1; 0 if outside top 10).

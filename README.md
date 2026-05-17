@@ -27,7 +27,7 @@ Providers are auto-detected based on platform-specific default paths.
 - Browse sessions across all providers in a unified TUI
 - Full-text search (Tantivy BM25, optional FastEmbed semantic + RRF hybrid)
 - Filter by provider, project, date range, role, presence of tool calls
-- Stable citation refs: `<provider>/<session-id>#<turn>` round-trip across reindex
+- Stable citation refs: `<provider>/<session-id>#<turn>` and remote `<source>:<provider>/<session-id>#<turn>` round-trip across reindex
 - Export sessions to Markdown, JSON, or HTML; slice by `--turn-range`
 - Built-in `aghist mcp` stdio MCP server — agents can query their own history without parsing CLI
 - `aghist sources add/list/remove/pull` — aggregate sessions across hosts via rsync, federated search across local + remote caches
@@ -138,6 +138,7 @@ aghist --list --limit 50 --cursor "$CURSOR" --json          # continue
 
 # Resolve a citation ref
 aghist show claude-code/abc-123#7                           # one message
+aghist show work:claude-code/abc-123#7                      # source-qualified remote ref
 aghist show claude-code/abc-123#7 --include-context 3       # ±3 turns of context
 
 # Export
@@ -162,6 +163,7 @@ aghist sources add work --host me@laptop --path ~/.claude   # register a remote
 aghist sources pull work                                    # rsync remote → local cache
 aghist sources pull --all                                   # pull everything
 aghist search "x"                                           # federates across local + remote caches
+aghist show work:claude-code/abc-123#7                      # disambiguate duplicate remote refs
 
 # JSON-Schema introspection (for agent self-discovery)
 aghist schema --list                                        # available subcommands

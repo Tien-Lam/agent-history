@@ -39,7 +39,12 @@ graph TD
 
 ## Entry point
 
-`src/main.rs` handles two broad execution paths:
+`src/main.rs` is intentionally thin: it initializes tracing/panic reporting,
+normalizes clap errors into the JSON error envelope, and hands the parsed CLI
+to `src/commands/dispatch.rs`. Command implementations live under
+`src/commands/`.
+
+The dispatcher handles two broad execution paths:
 
 1. **TUI mode** (no subcommand, no `--list`) — sets up the terminal with crossterm, creates `App`, runs the event loop, then restores terminal state on exit.
 2. **One-shot CLI subcommands** — see the full surface in [`CLAUDE.md`](../CLAUDE.md#agent-friendly-cli-surface). Each subcommand emits stable JSON on a pipe, uses semantic exit codes, and has a discoverable JSON-Schema (`aghist schema <subcmd>`).
@@ -52,7 +57,7 @@ Successful command output goes to stdout as either a JSON document (machine mode
 
 ### Citation refs
 
-`<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`) is the canonical handle for a single message. Refs are *opaque-stable across reindex* — the same `(provider, session-id, turn)` always points at the same message as long as the source files are unchanged. `src/model/citation.rs` defines `CitationRef` with parser/builder/Display. The `aghist show <ref>` resolver and the `aghist://session/<provider>/<id>/turn/<n>` MCP resource both consume this format.
+`<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`) is the canonical handle for a single message. Remote/federated refs add an optional source prefix: `<source>:<provider-slug>/<session-id>#<turn>`. Refs are *opaque-stable across reindex* — the same `(source, provider, session-id, turn)` points at the same message as long as the source files are unchanged. `src/model/citation.rs` defines `CitationRef`/`QualifiedCitationRef`; `src/session_resolver.rs` centralizes local, remote, and ambiguous lookup behavior for CLI and MCP callers.
 
 ## Provider system
 
@@ -69,24 +74,14 @@ pub trait HistoryProvider: Send + Sync {
 }
 ```
 
-Each provider implements `detect() -> Option<Self>` to check whether its data directory exists. `detect_all_providers()` in `src/provider/mod.rs` calls each one and collects the ones that are present.
+Each provider implements `detect() -> Option<Self>` to check whether its data directory exists. `src/provider/registry.rs` is the single runtime registry for local detection, stateless fallback loading, explicit provider construction from directories, and remote-cache candidate dirs.
 
-The `Send + Sync` bound allows providers to be shared across threads (wrapped in `Arc<Vec<Box<dyn HistoryProvider>>>`).
+The `Send + Sync` bound allows providers to be shared across threads as `Box<dyn HistoryProvider>`.
 
-Current implementations:
-
-| Provider | Module | Data location | Format |
-|----------|--------|---------------|--------|
-| Claude Code | `claude_code.rs` | `~/.claude/projects/` | JSONL (one event per line) |
-| Copilot CLI | `copilot_cli.rs` | `~/.copilot/session-state/` | JSONL + YAML workspace |
-| Gemini CLI | `gemini_cli.rs` | `~/.gemini/tmp/` | JSON |
-| Codex CLI | `codex_cli.rs` | User-configurable | JSONL (rollout files) |
-| OpenCode | `opencode.rs` | `~/OpenCode/` | Session/message structure |
-| Cursor | `cursor.rs` | Platform-specific Cursor `state.vscdb` | SQLite composer/chat rows |
-| Aider | `aider.rs` | Project `.aider.chat.history.md` files | Markdown transcript |
-| Zed AI | `zed_ai.rs` | Platform-specific `zed/conversations/` | JSON |
-| Cline | `cline.rs` | VS Code-compatible global storage task dirs | Anthropic Messages JSON |
-| Continue.dev | `continue_dev.rs` | `~/.continue/sessions/` | JSONL + index |
+The user-facing provider list belongs in the README. The source of truth for
+runtime behavior is the `Provider` enum plus `src/provider/registry.rs`; avoid
+duplicating provider paths/formats here because those details drift as upstream
+tools change their storage.
 
 All providers respect `AGHIST_HOME` as an override for the home directory, primarily used in tests.
 
@@ -95,8 +90,9 @@ All providers respect `AGHIST_HOME` as an override for the home directory, prima
 1. Create `src/provider/your_tool.rs` implementing `HistoryProvider`.
 2. Add a `detect()` constructor that returns `None` if the data directory doesn't exist.
 3. Add the provider variant and `ProviderSpec` entry in `src/model/provider.rs`.
-4. Register detection/stateless construction in `src/provider/registry.rs`.
-5. Add generated and missing-directory conformance cases under `tests/common/`.
+4. Register detection/stateless/remote-dir construction in `src/provider/registry.rs`.
+5. Add focused parser tests plus generated fixture support under `tests/common/fixtures/`.
+6. Run `cargo test --test provider_conformance`; update the generated provider contract snapshot only when the normalized model change is intentional.
 
 ## Unified model
 
@@ -176,9 +172,10 @@ Messages for a selected session are loaded synchronously on the main thread but 
 Full-text search uses Tantivy. The index is persisted to disk (platform cache directory, overridable via `AGHIST_INDEX_DIR`) and rebuilt incrementally:
 
 - A **manifest** (`manifest.json`) tracks which session files have been indexed and their content hashes.
-- `build_index()` skips sessions whose hash matches the manifest — first run on ~1k sessions is ~1.5s, subsequent runs ~150 ms.
+- `build_index()` skips sessions whose hash matches the manifest.
 - `aghist index --force` clears the index and manifest, forcing a full rebuild.
 - The index schema stores: session ID, message ID, provider, project, role, content text, tool-call output text (separate field, indexed for `--has-tool-call`), source-cache name (for federation), and timestamp.
+- `tests/recall_bench.rs` builds a mixed-provider synthetic corpus and enforces conservative recall/MRR and latency gates. Regenerate [`docs/SEARCH_BENCH.md`](SEARCH_BENCH.md) with `AGHIST_BENCH_WRITE_REPORT=1 cargo test --test recall_bench -- --nocapture` after intentional benchmark changes.
 
 ### Filters and pagination
 
@@ -192,7 +189,7 @@ The system **fails open**: without consent or without the `embeddings` build fea
 
 ### Federated (cross-machine)
 
-`aghist sources add` registers a remote (`<host>:<path>`) and `sources pull` rsyncs `<host>:<path>/` to `~/.cache/aghist/sources/<name>/data/` (cache root overridable via `AGHIST_SOURCES_CACHE_DIR`). The indexer treats every cache as an additional `~/.claude`-shaped tree, normalised through the same provider implementations. Search results carry a `source` field (`local` or `<remote-name>`); when a session exists in both local and a remote cache, the local label wins (the indexer dedupes by content hash and prefers the local-fast-path label).
+`aghist sources add` registers a remote (`<host>:<path>`) and `sources pull` rsyncs `<host>:<path>/` to `~/.cache/aghist/sources/<name>/data/` (cache root overridable via `AGHIST_SOURCES_CACHE_DIR`). Remote caches can be full home mirrors or exact provider history dirs; `provider::registry::remote_candidate_dirs` supplies both interpretations for each provider. Search/list/show/export/diff results carry a `source` field (`local` or `<remote-name>`); source-qualified refs (`work:claude-code/abc#7`) disambiguate duplicates.
 
 ## MCP server
 
@@ -200,16 +197,12 @@ The system **fails open**: without consent or without the `embeddings` build fea
 
 `aghist mcp` runs a JSON-RPC 2.0 server over stdio per the [MCP stdio transport](https://modelcontextprotocol.io/). It exposes aghist's read paths to agent clients without requiring them to parse the CLI:
 
-| Tool | Purpose |
-|------|---------|
-| `search_sessions` | BM25/hybrid search; same filters as the CLI |
-| `list_sessions` | Paginated session listing |
-| `get_session` | Load all messages for a session |
-| `get_message` | Resolve a citation ref to one message |
-| `reindex` | Trigger an incremental index rebuild |
-| `health` | Machine-readable doctor (same as `aghist health`) |
+Tool definitions live in `src/mcp/payload.rs` and handlers under
+`src/mcp/tool_handlers/`; keep those as the source of truth. At a high level,
+the server exposes search/list/get-message/get-session, reindex, and health
+paths with the same read-only constraints as the CLI.
 
-Resources are exposed as `aghist://session/<provider>/<session-id>` and `aghist://session/<provider>/<session-id>/turn/<n>` — agents can attach an entire session or a single turn as context.
+Resources are exposed as `aghist://session/<provider>/<session-id>` and `aghist://session/<provider>/<session-id>/turn/<n>` for local sessions, plus `aghist://source/<source>/session/<provider>/<session-id>` forms for remote-source sessions — agents can attach an entire session or a single turn as context.
 
 The server is implicitly read-only (no tools mutate session content; `reindex` only refreshes the search index). The `provider.mcp_exposed` config narrows which providers are visible to MCP clients independently of the CLI's `enabled` list — useful for hiding personal accounts from work agents on the same machine.
 
@@ -242,3 +235,11 @@ Three output formats, all producing a complete standalone document:
 - `color_eyre` installed for panic reports.
 - Corrupt or missing session files are skipped with warnings, never crash the app.
 - `unsafe` code is forbidden via `#![forbid(unsafe_code)]` lint.
+
+## Release and install safety
+
+Release packaging is shared through `scripts/package-release.sh`. CI runs a
+release dry-run on every main/PR CI pass: build a self-updating release binary,
+package a synthetic archive, install it locally with `install.sh --archive`,
+verify the binary and `aghist.install` marker, then uninstall it. The tag
+release workflow uses the same packaging script before publishing artifacts.
