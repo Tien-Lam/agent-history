@@ -88,6 +88,11 @@ jobs:
       - name: Test all-features lib
         run: cargo test --all-features --lib
 
+      - name: Smoke all-features embeddings contract
+        env:
+          CARGO_BUILD_JOBS: 1
+        run: cargo test --all-features --test json_contract_snapshots index_embeddings_feature_awaits_consent_without_download -- --nocapture
+
   supply-chain:
     name: ubuntu-24.04 / supply-chain
     runs-on: ubuntu-24.04

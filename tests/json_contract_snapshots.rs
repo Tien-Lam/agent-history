@@ -141,6 +141,25 @@ fn index_empty_summary_contract_snapshot() {
     assert_json_snapshot("index_empty_summary_contract", &summary);
 }
 
+#[cfg(feature = "embeddings")]
+#[test]
+fn index_embeddings_feature_awaits_consent_without_download() {
+    let home = tempfile::tempdir().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .arg("index")
+        .env("AGHIST_HOME", home.path())
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .assert()
+        .success();
+    let summary = parse_stdout_json(&output);
+
+    assert_eq!(summary["embeddings"]["status"], "awaiting-consent");
+    assert!(summary["embeddings"]["model"].is_string());
+    assert!(summary["embeddings"]["hint"].is_string());
+}
+
 #[test]
 fn list_json_session_contract_snapshot() {
     let fixture = common::fixtures::ClaudeFixtureBuilder::new()

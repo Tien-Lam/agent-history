@@ -26,7 +26,7 @@ mod enabled {
     use crate::model::{ContentBlock, Message, Session};
     use crate::{embed, provider};
 
-    pub(super) fn run_embeddings(
+    pub(in crate::services::index) fn run_embeddings(
         index_dir: &Path,
         sessions: &[Session],
         providers: &[Box<dyn provider::HistoryProvider>],
