@@ -39,13 +39,13 @@ pub(crate) fn list_sessions(
             return Ok(EXIT_USAGE);
         }
     };
-    let provider_counts = (!mode.is_machine()).then(|| page.provider_counts.as_slice());
+    let provider_counts = (!mode.is_machine()).then_some(page.provider_counts.as_slice());
 
     match mode {
         OutputMode::Human => {
             let provider_counts = provider_counts.unwrap_or_default();
             render_list_human(
-                &provider_counts,
+                provider_counts,
                 &page.sessions,
                 page.total,
                 page.next_cursor.as_deref(),

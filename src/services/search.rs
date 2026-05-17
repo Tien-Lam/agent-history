@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasher;
 
 use crate::cursor::SearchCursor;
 use crate::dto::SearchHitJson;
@@ -84,15 +85,17 @@ pub fn search_sessions<'a>(
     })
 }
 
-pub fn search_hit_json(
+pub fn search_hit_json<S: BuildHasher>(
     page: &SearchSessionsPage<'_>,
-    source_by_session: &HashMap<String, String>,
+    source_by_session: &HashMap<String, String, S>,
     include_explanations: bool,
 ) -> Vec<SearchHitJson> {
     page.hits
         .iter()
         .map(|(hit, explanation)| {
-            let explanation = include_explanations.then(|| explanation.as_ref()).flatten();
+            let explanation = include_explanations
+                .then_some(explanation.as_ref())
+                .flatten();
             SearchHitJson::from_search_hit(
                 hit,
                 explanation,

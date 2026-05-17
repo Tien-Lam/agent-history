@@ -185,12 +185,18 @@ fn search_schema_describes_json_envelope() {
 #[test]
 fn dto_schema_fragments_cover_serialized_keys() {
     let session = sample_session();
+    assert_list_dto_schema_fragments(&session);
+    assert_message_dto_schema_fragments();
+    assert_search_dto_schema_fragments();
+}
+
+fn assert_list_dto_schema_fragments(session: &Session) {
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::session_row_schema(),
-        &serde_json::to_value(SessionRow::from_session(&session, "local")).unwrap(),
+        &serde_json::to_value(SessionRow::from_session(session, "local")).unwrap(),
     );
     let mcp_session =
-        McpSessionRow::from_session(&session, "local", "aghist://local/claude-code/session-1");
+        McpSessionRow::from_session(session, "local", "aghist://local/claude-code/session-1");
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::mcp_session_row_schema(),
         &serde_json::to_value(mcp_session.clone()).unwrap(),
@@ -198,7 +204,7 @@ fn dto_schema_fragments_cover_serialized_keys() {
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::list_response_schema(),
         &serde_json::to_value(ListEnvelope {
-            sessions: vec![SessionRow::from_session(&session, "local")],
+            sessions: vec![SessionRow::from_session(session, "local")],
             meta: CursorMeta::new(1, Some("cursor-1")),
         })
         .unwrap(),
@@ -208,14 +214,13 @@ fn dto_schema_fragments_cover_serialized_keys() {
         &serde_json::to_value(McpListResponse {
             total: 1,
             sessions: vec![mcp_session],
-            source_errors: vec![SourceError {
-                source: "remote".to_string(),
-                error: "missing".to_string(),
-            }],
+            source_errors: vec![sample_source_error()],
         })
         .unwrap(),
     );
+}
 
+fn assert_message_dto_schema_fragments() {
     let message = sample_message();
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::message_row_schema(),
@@ -231,42 +236,15 @@ fn dto_schema_fragments_cover_serialized_keys() {
         )
         .unwrap(),
     );
+}
 
-    let started_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
-    let message_hit = SearchHitJson {
-        kind: "message",
-        session_id: "session-1".to_string(),
-        message_id: "message-1".to_string(),
-        score: 1.0,
-        snippet: "snippet".to_string(),
-        provider: Some(Provider::ClaudeCode),
-        project: Some("project".to_string()),
-        started_at: Some(started_at),
-        source: "local".to_string(),
-        note_id: None,
-        ref_: Some("claude-code/session-1#1".to_string()),
-        turn: Some(1),
-        explanation: Some(json!({ "value": 1.0 })),
-    };
+fn assert_search_dto_schema_fragments() {
+    let message_hit = sample_message_hit();
+    let note_hit = sample_note_hit();
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::search_hit_schema(),
         &serde_json::to_value(message_hit.clone()).unwrap(),
     );
-    let note_hit = SearchHitJson {
-        kind: "note",
-        session_id: String::new(),
-        message_id: String::new(),
-        score: 1.0,
-        snippet: "note".to_string(),
-        provider: None,
-        project: None,
-        started_at: None,
-        source: "local".to_string(),
-        note_id: Some(42),
-        ref_: Some("claude-code/session-1".to_string()),
-        turn: None,
-        explanation: None,
-    };
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::search_hit_schema(),
         &serde_json::to_value(note_hit).unwrap(),
@@ -286,13 +264,54 @@ fn dto_schema_fragments_cover_serialized_keys() {
             limit: 20,
             total: 1,
             hits: vec![message_hit],
-            source_errors: vec![SourceError {
-                source: "remote".to_string(),
-                error: "missing".to_string(),
-            }],
+            source_errors: vec![sample_source_error()],
         })
         .unwrap(),
     );
+}
+
+fn sample_message_hit() -> SearchHitJson {
+    let started_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+    SearchHitJson {
+        kind: "message",
+        session_id: "session-1".to_string(),
+        message_id: "message-1".to_string(),
+        score: 1.0,
+        snippet: "snippet".to_string(),
+        provider: Some(Provider::ClaudeCode),
+        project: Some("project".to_string()),
+        started_at: Some(started_at),
+        source: "local".to_string(),
+        note_id: None,
+        ref_: Some("claude-code/session-1#1".to_string()),
+        turn: Some(1),
+        explanation: Some(json!({ "value": 1.0 })),
+    }
+}
+
+fn sample_note_hit() -> SearchHitJson {
+    SearchHitJson {
+        kind: "note",
+        session_id: String::new(),
+        message_id: String::new(),
+        score: 1.0,
+        snippet: "note".to_string(),
+        provider: None,
+        project: None,
+        started_at: None,
+        source: "local".to_string(),
+        note_id: Some(42),
+        ref_: Some("claude-code/session-1".to_string()),
+        turn: None,
+        explanation: None,
+    }
+}
+
+fn sample_source_error() -> SourceError {
+    SourceError {
+        source: "remote".to_string(),
+        error: "missing".to_string(),
+    }
 }
 
 #[test]
