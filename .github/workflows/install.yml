@@ -3,10 +3,18 @@ name: Install Script
 on:
   push:
     branches: [main]
-    paths: [install.sh]
+    paths:
+      - install.sh
+      - scripts/package-release.sh
+      - scripts/smoke-release-install.sh
+      - .github/workflows/install.yml
   pull_request:
     branches: [main]
-    paths: [install.sh]
+    paths:
+      - install.sh
+      - scripts/package-release.sh
+      - scripts/smoke-release-install.sh
+      - .github/workflows/install.yml
 
 permissions:
   contents: read
@@ -28,15 +36,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: ShellCheck
         if: runner.os == 'Linux'
-        run: shellcheck install.sh
+        run: shellcheck install.sh scripts/package-release.sh scripts/smoke-release-install.sh
 
-      - name: Run install script
-        run: |
-          bash install.sh --to "$RUNNER_TEMP/bin" --tag v0.2.0
+      - name: Build release binary
+        run: cargo build --release --features self-update
 
-      - name: Verify binary
-        run: |
-          "$RUNNER_TEMP/bin/aghist" --version
-          test -f "$RUNNER_TEMP/bin/aghist.install"
+      - name: Smoke local archive install and uninstall
+        run: bash scripts/smoke-release-install.sh --tag v0.0.0-install-ci

@@ -5,6 +5,7 @@ REPO="Tien-Lam/agent-history"
 BINARY="aghist"
 INSTALL_DIR=""
 TAG=""
+ARCHIVE=""
 
 usage() {
     cat <<EOF
@@ -13,9 +14,10 @@ Install aghist from GitHub releases.
 Usage: install.sh [OPTIONS]
 
 Options:
-    --to DIR    Install directory (default: ~/.local/bin)
-    --tag TAG   Install a specific version (default: latest)
-    -h, --help  Show this help
+    --to DIR       Install directory (default: ~/.local/bin)
+    --tag TAG      Install a specific version (default: latest)
+    --archive FILE Install from a local release archive instead of GitHub
+    -h, --help     Show this help
 EOF
 }
 
@@ -37,6 +39,15 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             TAG="$2"
+            shift 2
+            ;;
+        --archive)
+            if [ $# -lt 2 ] || [ -z "$2" ]; then
+                echo "Error: --archive requires a non-empty FILE"
+                usage
+                exit 1
+            fi
+            ARCHIVE="$2"
             shift 2
             ;;
         -h|--help) usage; exit 0 ;;
@@ -72,12 +83,14 @@ case "$TARGET" in
 esac
 
 # Resolve version tag
-if [ -z "$TAG" ]; then
+if [ -z "$TAG" ] && [ -z "$ARCHIVE" ]; then
     TAG="$(curl -sSfI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")"
     TAG="${TAG##*/}"
     if [ -z "$TAG" ]; then
         echo "Error: could not determine latest release"; exit 1
     fi
+elif [ -z "$TAG" ]; then
+    TAG="local"
 fi
 
 # Download and extract
@@ -90,13 +103,22 @@ URL="https://github.com/$REPO/releases/download/$TAG/$BINARY-$TAG-$TARGET.$EXT"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "Downloading $BINARY $TAG for $TARGET..."
+if [ -n "$ARCHIVE" ]; then
+    if [ ! -r "$ARCHIVE" ]; then
+        echo "Error: local archive is not readable: $ARCHIVE"
+        exit 1
+    fi
+    echo "Installing $BINARY $TAG for $TARGET from $ARCHIVE..."
+    cp "$ARCHIVE" "$TMPDIR/archive"
+else
+    echo "Downloading $BINARY $TAG for $TARGET..."
 
-if ! curl -sSfL "$URL" -o "$TMPDIR/archive"; then
-    echo "Error: download failed"
-    echo "  URL: $URL"
-    echo "  Is $TAG a valid release?"
-    exit 1
+    if ! curl -sSfL "$URL" -o "$TMPDIR/archive"; then
+        echo "Error: download failed"
+        echo "  URL: $URL"
+        echo "  Is $TAG a valid release?"
+        exit 1
+    fi
 fi
 
 case "$EXT" in

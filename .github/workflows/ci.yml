@@ -138,3 +138,29 @@ jobs:
 
       - name: Lint GitHub Actions workflows
         run: actionlint
+
+  release-dry-run:
+    name: ubuntu-24.04 / release dry-run
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-dry-run-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-dry-run-
+            ${{ runner.os }}-cargo-
+
+      - name: Build self-updating release binary
+        run: cargo build --release --features self-update
+
+      - name: Smoke local archive install and uninstall
+        run: bash scripts/smoke-release-install.sh --tag v0.0.0-ci

@@ -30,11 +30,17 @@ pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
     ensure_self_managed_install(&exe, InstallOperation::Uninstall)?;
 
     let index_dir = search::SearchIndex::default_index_dir();
-    let config_path = config::Config::config_path();
+    let config_path = config::Config::resolved_path();
     let config_dir = config_path.as_deref().and_then(|p| p.parent());
+    let marker = release_install_marker_path(&exe);
 
     eprintln!("This will remove:");
     eprintln!("  binary:       {}", exe.display());
+    if let Some(marker) = &marker {
+        if marker.exists() {
+            eprintln!("  marker:       {}", marker.display());
+        }
+    }
     if index_dir.exists() {
         eprintln!("  search index: {}", index_dir.display());
     }
@@ -72,6 +78,18 @@ pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
                 )
             })?;
             eprintln!("Removed {}", dir.display());
+        }
+    }
+
+    if let Some(marker) = marker {
+        if marker.exists() {
+            std::fs::remove_file(&marker).map_err(|e| {
+                ErrorEnvelope::new(
+                    "io-error",
+                    format!("failed to remove {}: {e}", marker.display()),
+                )
+            })?;
+            eprintln!("Removed {}", marker.display());
         }
     }
 
@@ -167,6 +185,12 @@ fn current_exe() -> Result<PathBuf, ErrorEnvelope> {
         .map_err(|e| ErrorEnvelope::new("io-error", format!("current_exe failed: {e}")))
 }
 
+fn release_install_marker_path(exe: &Path) -> Option<PathBuf> {
+    let mut marker_name = exe.file_stem()?.to_os_string();
+    marker_name.push(".install");
+    Some(exe.with_file_name(marker_name))
+}
+
 fn ensure_self_managed_install(
     exe: &Path,
     operation: InstallOperation,
@@ -240,10 +264,21 @@ mod tests {
     fn release_marker_allows_self_managed_operations() {
         let root = tempfile::tempdir().unwrap();
         let exe = exe_path(root.path());
-        let marker = exe.with_file_name("aghist.install");
+        let marker = release_install_marker_path(&exe).unwrap();
         std::fs::write(marker, "method=github-release\n").unwrap();
 
         ensure_self_managed_install(&exe, InstallOperation::Update).unwrap();
         ensure_self_managed_install(&exe, InstallOperation::Uninstall).unwrap();
+    }
+
+    #[test]
+    fn release_marker_path_uses_binary_stem() {
+        let root = tempfile::tempdir().unwrap();
+        let exe = exe_path(root.path());
+
+        assert_eq!(
+            release_install_marker_path(&exe).unwrap(),
+            root.path().join("aghist.install")
+        );
     }
 }

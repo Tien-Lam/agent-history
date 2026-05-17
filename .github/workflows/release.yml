@@ -49,32 +49,14 @@ jobs:
       - name: Build
         run: cargo build --release --features self-update --target ${{ matrix.target }}
 
-      - name: Package (Unix)
-        if: runner.os != 'Windows'
+      - name: Package
+        shell: bash
         run: |
-          cd target/${{ matrix.target }}/release
-          cat > aghist.install <<'EOF'
-          method=github-release
-          repo=${{ github.repository }}
-          target=${{ matrix.target }}
-          tag=${{ github.ref_name }}
-          EOF
-          tar czf ../../../aghist-${{ github.ref_name }}-${{ matrix.target }}.tar.gz aghist aghist.install
-          cd ../../..
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          cd target/${{ matrix.target }}/release
-          @"
-          method=github-release
-          repo=${{ github.repository }}
-          target=${{ matrix.target }}
-          tag=${{ github.ref_name }}
-          "@ | Set-Content -NoNewline -Encoding utf8NoBOM aghist.install
-          7z a ../../../aghist-${{ github.ref_name }}-${{ matrix.target }}.zip aghist.exe aghist.install
-          cd ../../..
+          scripts/package-release.sh \
+            --target "${{ matrix.target }}" \
+            --tag "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --out-dir "$PWD"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
