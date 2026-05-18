@@ -2,8 +2,9 @@ mod common;
 
 use aghist::model::Provider;
 use common::provider_conformance::{
-    assert_discover_load_roundtrip, assert_missing_dir_discovers_empty, generated_provider_cases,
-    missing_dir_provider_cases, provider_contract_json,
+    assert_discover_load_roundtrip, assert_missing_dir_discovers_empty,
+    assert_registry_constructor_roundtrip, assert_stateless_loader_roundtrip,
+    generated_provider_cases, missing_dir_provider_cases, provider_contract_json,
 };
 
 #[test]
@@ -35,6 +36,22 @@ fn generated_providers_discover_and_load_messages() {
     let cases = generated_provider_cases(2, 4);
     for case in cases.cases() {
         assert_discover_load_roundtrip(case);
+    }
+}
+
+#[test]
+fn registry_constructors_preserve_generated_provider_behavior() {
+    let cases = generated_provider_cases(2, 4);
+    for case in cases.cases() {
+        assert_registry_constructor_roundtrip(case);
+    }
+}
+
+#[test]
+fn stateless_loader_can_read_generated_sessions() {
+    let cases = generated_provider_cases(1, 4);
+    for case in cases.cases() {
+        assert_stateless_loader_roundtrip(case);
     }
 }
 
