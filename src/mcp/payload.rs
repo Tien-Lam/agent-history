@@ -8,99 +8,25 @@ use crate::schema_fragments;
 use super::resources::{session_uri_for_source, turn_uri_for_source};
 
 pub(super) fn tool_definitions() -> Value {
-    let provider_slugs = schema_fragments::provider_slug_enum();
-    let citation_ref_pattern = schema_fragments::source_qualified_citation_ref_pattern();
-    let search_limit_default = schema_fragments::SEARCH_LIMIT_DEFAULT;
-    let search_limit_max = schema_fragments::MCP_SEARCH_LIMIT_MAX;
-    let list_limit_default = schema_fragments::MCP_LIST_LIMIT_DEFAULT;
-    let list_limit_max = schema_fragments::MCP_LIST_LIMIT_MAX;
-    let include_context_default = schema_fragments::MCP_INCLUDE_CONTEXT_DEFAULT;
-    let include_context_max = schema_fragments::MCP_INCLUDE_CONTEXT_MAX;
-    json!([
-        {
-            "name": "search_sessions",
-            "description": "Full-text search across indexed sessions. Returns hits with stable citation refs (`<provider>/<session-id>#<turn>` locally, `<source>:<provider>/<session-id>#<turn>` for remote sources). Refreshes the index incrementally before searching.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string", "description": "Tantivy query string. Matches the `content` and `project` fields." },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": search_limit_max, "default": search_limit_default }
-                },
-                "required": ["query"],
-                "additionalProperties": false
-            },
-            "outputSchema": output_schema("search_sessions")
-        },
-        {
-            "name": "list_sessions",
-            "description": "List sessions across MCP-visible local providers and registered remote source caches, sorted by start time descending.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "provider": { "type": "string", "enum": provider_slugs.clone() },
-                    "project": { "type": "string", "description": "Substring match on session project_name." },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": list_limit_max, "default": list_limit_default }
-                },
-                "additionalProperties": false
-            },
-            "outputSchema": output_schema("list_sessions")
-        },
-        {
-            "name": "get_session",
-            "description": "Resolve a session by ID (full or unique prefix) and return its metadata plus all turns. Use provider/source to disambiguate federated sessions.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": { "type": "string" },
-                    "provider": { "type": "string", "enum": provider_slugs.clone() },
-                    "source": { "type": "string", "description": "Source name from list_sessions. Omit for unique matches; use 'local' for local-only lookup." }
-                },
-                "required": ["session_id"],
-                "additionalProperties": false
-            },
-            "outputSchema": output_schema("get_session")
-        },
-        {
-            "name": "get_message",
-            "description": "Resolve a citation ref `<provider>/<session-id>#<turn>` or `<source>:<provider>/<session-id>#<turn>` to the target message, optionally with context turns on each side.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "ref": {
-                        "type": "string",
-                        "pattern": citation_ref_pattern,
-                        "description": "Citation ref. Example: claude-code/abc-123#7"
-                    },
-                    "include_context": { "type": "integer", "minimum": 0, "maximum": include_context_max, "default": include_context_default }
-                },
-                "required": ["ref"],
-                "additionalProperties": false
-            },
-            "outputSchema": output_schema("get_message")
-        },
-        {
-            "name": "reindex",
-            "description": "Refresh the search index (incremental by default). Returns counts of added/updated/unchanged sessions.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "provider": { "type": "string", "enum": provider_slugs },
-                    "force": { "type": "boolean", "default": false, "description": "Clear the index first for a full rebuild." }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "health",
-            "description": "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        }
-    ])
-}
-
-fn output_schema(tool_name: &str) -> Value {
-    schema_fragments::mcp_tool_output_schema(tool_name)
-        .unwrap_or_else(|| panic!("missing MCP output schema for {tool_name}"))
+    Value::Array(
+        schema_fragments::mcp_tool_contracts()
+            .into_iter()
+            .map(|contract| {
+                let mut tool = serde_json::Map::new();
+                tool.insert("name".to_string(), json!(contract.name));
+                tool.insert("description".to_string(), json!(contract.description));
+                tool.insert("inputSchema".to_string(), contract.input_schema);
+                if contract.output_schema.is_some() {
+                    let output_schema = schema_fragments::mcp_tool_output_schema(contract.name)
+                        .unwrap_or_else(|| {
+                            panic!("missing MCP output schema for {}", contract.name)
+                        });
+                    tool.insert("outputSchema".to_string(), output_schema);
+                }
+                Value::Object(tool)
+            })
+            .collect(),
+    )
 }
 
 pub(super) fn tool_success(payload: &Value) -> Value {

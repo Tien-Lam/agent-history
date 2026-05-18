@@ -54,6 +54,122 @@ pub(crate) fn provider_slug_enum_nullable() -> Value {
     Value::Array(slugs)
 }
 
+pub(crate) struct McpToolContract {
+    pub(crate) name: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) input_schema: Value,
+    pub(crate) output_schema: Option<Value>,
+}
+
+pub(crate) fn mcp_tool_contracts() -> Vec<McpToolContract> {
+    vec![
+        McpToolContract {
+            name: "search_sessions",
+            description: "Full-text search across indexed sessions. Returns hits with stable citation refs (`<provider>/<session-id>#<turn>` locally, `<source>:<provider>/<session-id>#<turn>` for remote sources). Refreshes the index incrementally before searching.",
+            input_schema: mcp_search_sessions_input_schema(),
+            output_schema: Some(mcp_search_response_schema()),
+        },
+        McpToolContract {
+            name: "list_sessions",
+            description: "List sessions across MCP-visible local providers and registered remote source caches, sorted by start time descending.",
+            input_schema: mcp_list_sessions_input_schema(),
+            output_schema: Some(mcp_list_response_schema()),
+        },
+        McpToolContract {
+            name: "get_session",
+            description: "Resolve a session by ID (full or unique prefix) and return its metadata plus all turns. Use provider/source to disambiguate federated sessions.",
+            input_schema: mcp_get_session_input_schema(),
+            output_schema: Some(mcp_get_session_response_schema()),
+        },
+        McpToolContract {
+            name: "get_message",
+            description: "Resolve a citation ref `<provider>/<session-id>#<turn>` or `<source>:<provider>/<session-id>#<turn>` to the target message, optionally with context turns on each side.",
+            input_schema: mcp_get_message_input_schema(),
+            output_schema: Some(mcp_get_message_response_schema()),
+        },
+        McpToolContract {
+            name: "reindex",
+            description: "Refresh the search index (incremental by default). Returns counts of added/updated/unchanged sessions.",
+            input_schema: mcp_reindex_input_schema(),
+            output_schema: None,
+        },
+        McpToolContract {
+            name: "health",
+            description: "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
+            input_schema: mcp_health_input_schema(),
+            output_schema: None,
+        },
+    ]
+}
+
+fn mcp_search_sessions_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "query": { "type": "string", "description": "Tantivy query string. Matches the `content` and `project` fields." },
+            "limit": { "type": "integer", "minimum": 1, "maximum": MCP_SEARCH_LIMIT_MAX, "default": SEARCH_LIMIT_DEFAULT }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+    })
+}
+
+fn mcp_list_sessions_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "provider": { "type": "string", "enum": provider_slug_enum() },
+            "project": { "type": "string", "description": "Substring match on session project_name." },
+            "limit": { "type": "integer", "minimum": 1, "maximum": MCP_LIST_LIMIT_MAX, "default": MCP_LIST_LIMIT_DEFAULT }
+        },
+        "additionalProperties": false
+    })
+}
+
+fn mcp_get_session_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "session_id": { "type": "string" },
+            "provider": { "type": "string", "enum": provider_slug_enum() },
+            "source": { "type": "string", "description": "Source name from list_sessions. Omit for unique matches; use 'local' for local-only lookup." }
+        },
+        "required": ["session_id"],
+        "additionalProperties": false
+    })
+}
+
+fn mcp_get_message_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "ref": {
+                "type": "string",
+                "pattern": source_qualified_citation_ref_pattern(),
+                "description": "Citation ref. Example: claude-code/abc-123#7"
+            },
+            "include_context": { "type": "integer", "minimum": 0, "maximum": MCP_INCLUDE_CONTEXT_MAX, "default": MCP_INCLUDE_CONTEXT_DEFAULT }
+        },
+        "required": ["ref"],
+        "additionalProperties": false
+    })
+}
+
+fn mcp_reindex_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "provider": { "type": "string", "enum": provider_slug_enum() },
+            "force": { "type": "boolean", "default": false, "description": "Clear the index first for a full rebuild." }
+        },
+        "additionalProperties": false
+    })
+}
+
+fn mcp_health_input_schema() -> Value {
+    json!({ "type": "object", "properties": {}, "additionalProperties": false })
+}
+
 pub(crate) fn cursor_meta_schema() -> Value {
     json!({
         "type": "object",
@@ -315,11 +431,8 @@ pub(crate) fn mcp_search_response_schema() -> Value {
 }
 
 pub(crate) fn mcp_tool_output_schema(tool_name: &str) -> Option<Value> {
-    match tool_name {
-        "search_sessions" => Some(mcp_search_response_schema()),
-        "list_sessions" => Some(mcp_list_response_schema()),
-        "get_session" => Some(mcp_get_session_response_schema()),
-        "get_message" => Some(mcp_get_message_response_schema()),
-        _ => None,
-    }
+    mcp_tool_contracts()
+        .into_iter()
+        .find(|contract| contract.name == tool_name)
+        .and_then(|contract| contract.output_schema)
 }
