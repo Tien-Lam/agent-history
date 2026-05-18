@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::super::common::{exit_codes, filter_params_fragment, SCHEMA_DRAFT};
+use super::super::common::{
+    closed_object_schema, exit_codes, schema_props_with_filters, SCHEMA_DRAFT,
+};
 use super::{
     decisions_array_schema, limits_schema, todos_array_schema, token_usage_summary_schema,
 };
@@ -73,76 +75,77 @@ fn report_response_schema() -> Value {
 }
 
 pub(in crate::schema) fn report_schema() -> Value {
-    let mut props = serde_json::Map::new();
-    props.insert(
-        "days".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 1,
-            "default": 7,
-            "description": "Window length in days. Mutually exclusive with `week`/`month`."
-        }),
+    let params = closed_object_schema(
+        schema_props_with_filters([
+            (
+                "days",
+                json!({
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 7,
+                    "description": "Window length in days. Mutually exclusive with `week`/`month`."
+                }),
+            ),
+            (
+                "week",
+                json!({
+                    "type": "boolean",
+                    "description": "Shorthand for `days=7`. Mutually exclusive with `days`/`month`."
+                }),
+            ),
+            (
+                "month",
+                json!({
+                    "type": "boolean",
+                    "description": "Shorthand for `days=30`. Mutually exclusive with `days`/`week`."
+                }),
+            ),
+            (
+                "top_projects",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 3,
+                    "description": "Cap the top-projects section (0 = no cap). Raw count remains in meta.projects_total."
+                }),
+            ),
+            (
+                "decisions",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 5,
+                    "description": "Cap the decisions section (0 = no cap). Raw count remains in meta.decisions_total."
+                }),
+            ),
+            (
+                "todos",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 10,
+                    "description": "Cap the todos section (0 = no cap). Raw count remains in meta.todos_total."
+                }),
+            ),
+            (
+                "threads",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 5,
+                    "description": "Cap the threads section (0 = no cap). Raw count remains in meta.threads_total."
+                }),
+            ),
+            (
+                "json",
+                json!({
+                    "type": "boolean",
+                    "description": "Emit the structured JSON envelope instead of Markdown. Default is Markdown for both TTY and pipe."
+                }),
+            ),
+        ]),
+        &[],
     );
-    props.insert(
-        "week".to_string(),
-        json!({
-            "type": "boolean",
-            "description": "Shorthand for `days=7`. Mutually exclusive with `days`/`month`."
-        }),
-    );
-    props.insert(
-        "month".to_string(),
-        json!({
-            "type": "boolean",
-            "description": "Shorthand for `days=30`. Mutually exclusive with `days`/`week`."
-        }),
-    );
-    props.insert(
-        "top_projects".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 3,
-            "description": "Cap the top-projects section (0 = no cap). Raw count remains in meta.projects_total."
-        }),
-    );
-    props.insert(
-        "decisions".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 5,
-            "description": "Cap the decisions section (0 = no cap). Raw count remains in meta.decisions_total."
-        }),
-    );
-    props.insert(
-        "todos".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 10,
-            "description": "Cap the todos section (0 = no cap). Raw count remains in meta.todos_total."
-        }),
-    );
-    props.insert(
-        "threads".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 5,
-            "description": "Cap the threads section (0 = no cap). Raw count remains in meta.threads_total."
-        }),
-    );
-    props.insert(
-        "json".to_string(),
-        json!({
-            "type": "boolean",
-            "description": "Emit the structured JSON envelope instead of Markdown. Default is Markdown for both TTY and pipe."
-        }),
-    );
-    for (name, schema) in filter_params_fragment() {
-        props.insert(name.to_string(), schema);
-    }
 
     json!({
         "$schema": SCHEMA_DRAFT,
@@ -150,12 +153,7 @@ pub(in crate::schema) fn report_schema() -> Value {
         "title": "aghist report",
         "command": "report",
         "description": "Cross-project weekly summary suitable for journals or reviews. Aggregates a window of activity (default last 7 days) across every provider into top active projects, decision count, open TODOs, and completed work threads. Heuristics reuse `aghist decisions/todos/threads/usage` — no LLM. Default output is Markdown; `json:true` emits the structured envelope. Empty result exits 3.",
-        "params": {
-            "type": "object",
-            "properties": Value::Object(props),
-            "required": [],
-            "additionalProperties": false
-        },
+        "params": params,
         "response": report_response_schema(),
         "exit_codes": exit_codes()
     })

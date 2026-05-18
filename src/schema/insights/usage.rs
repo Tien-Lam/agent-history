@@ -1,35 +1,37 @@
 use serde_json::{json, Value};
 
-use super::super::common::{exit_codes, filter_params_fragment, SCHEMA_DRAFT};
+use super::super::common::{
+    closed_object_schema, exit_codes, schema_props_with_filters, SCHEMA_DRAFT,
+};
 
-fn usage_params_properties() -> Value {
-    let mut props = serde_json::Map::new();
-    props.insert(
-        "by".to_string(),
-        json!({
-            "type": "string",
-            "enum": ["model", "provider", "project"],
-            "default": "model",
-            "description": "Group rows by this dimension."
-        }),
-    );
-    props.insert(
-        "limit".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 0,
-            "description": "Cap rows after sorting (0 = no limit). Totals always cover every matching session."
-        }),
-    );
-    props.insert(
-        "json".to_string(),
-        json!({ "type": "boolean", "description": "Force JSON output (default: JSON on pipe, table on TTY)." }),
-    );
-    for (name, schema) in filter_params_fragment() {
-        props.insert(name.to_string(), schema);
-    }
-    Value::Object(props)
+fn usage_params_schema() -> Value {
+    closed_object_schema(
+        schema_props_with_filters([
+            (
+                "by",
+                json!({
+                    "type": "string",
+                    "enum": ["model", "provider", "project"],
+                    "default": "model",
+                    "description": "Group rows by this dimension."
+                }),
+            ),
+            (
+                "limit",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "Cap rows after sorting (0 = no limit). Totals always cover every matching session."
+                }),
+            ),
+            (
+                "json",
+                json!({ "type": "boolean", "description": "Force JSON output (default: JSON on pipe, table on TTY)." }),
+            ),
+        ]),
+        &[],
+    )
 }
 
 fn usage_row_schema() -> Value {
@@ -109,11 +111,7 @@ pub(in crate::schema) fn usage_schema() -> Value {
         "title": "aghist usage",
         "command": "usage",
         "description": "Aggregate token usage and (when pricing is known) USD cost across sessions. Pricing comes from a hand-curated table — unpriced sessions report cost_usd:null and null any total they roll into.",
-        "params": {
-            "type": "object",
-            "properties": usage_params_properties(),
-            "additionalProperties": false
-        },
+        "params": usage_params_schema(),
         "response": usage_response_schema(),
         "definitions": {
             "UsageRow": usage_row_schema(),

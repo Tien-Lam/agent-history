@@ -1,76 +1,75 @@
 use serde_json::{json, Value};
 
 use super::super::common::{
-    count_array_response, exit_codes, source_qualified_session_ref_pattern, SCHEMA_DRAFT,
+    closed_object_schema, count_array_response, exit_codes, object_schema, schema_props,
+    schema_ref, source_qualified_session_ref_pattern, SCHEMA_DRAFT,
 };
 
+fn session_ref_param_schema() -> Value {
+    json!({ "type": "string", "pattern": source_qualified_session_ref_pattern() })
+}
+
 fn tag_row_schema() -> Value {
-    json!({
-        "type": "object",
-        "properties": {
-            "id": { "type": "integer", "minimum": 1 },
-            "session_ref": {
-                "type": "string",
-                "pattern": source_qualified_session_ref_pattern(),
-                "description": "<provider>/<session-id>[#<turn>] or <source>:<provider>/<session-id>[#<turn>]"
-            },
-            "tag": { "type": "string", "minLength": 1 },
-            "created_at": { "type": "string", "description": "ISO-8601 UTC, sub-second precision." }
-        },
-        "required": ["id", "session_ref", "tag", "created_at"]
-    })
+    object_schema(
+        schema_props([
+            ("id", json!({ "type": "integer", "minimum": 1 })),
+            (
+                "session_ref",
+                json!({
+                    "type": "string",
+                    "pattern": source_qualified_session_ref_pattern(),
+                    "description": "<provider>/<session-id>[#<turn>] or <source>:<provider>/<session-id>[#<turn>]"
+                }),
+            ),
+            ("tag", json!({ "type": "string", "minLength": 1 })),
+            (
+                "created_at",
+                json!({ "type": "string", "description": "ISO-8601 UTC, sub-second precision." }),
+            ),
+        ]),
+        &["id", "session_ref", "tag", "created_at"],
+    )
 }
 
 fn tag_subcommands_schema() -> Value {
     json!({
         "add": {
             "description": "Attach a tag to a session ref. Adding the same (ref, tag) pair twice raises a `tag-conflict` error.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "reference": { "type": "string", "pattern": source_qualified_session_ref_pattern() },
-                    "tag": { "type": "string", "minLength": 1 }
-                },
-                "required": ["reference", "tag"],
-                "additionalProperties": false
-            },
-            "response": {
-                "type": "object",
-                "properties": { "added": { "$ref": "#/definitions/Tag" } },
-                "required": ["added"]
-            }
+            "params": tag_mutation_params_schema(),
+            "response": tag_row_response_schema("added")
         },
         "list": {
             "description": "List tags, optionally filtered by session ref and/or tag value. Session-level filter matches the session row plus all of its turns; turn-level filter matches that turn exactly. `tag` filter narrows to a specific tag value and combines with the ref filter.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "reference": { "type": "string", "pattern": source_qualified_session_ref_pattern() },
-                    "tag": { "type": "string", "minLength": 1 },
-                    "json": { "type": "boolean" }
-                },
-                "additionalProperties": false
-            },
+            "params": closed_object_schema(schema_props([
+                ("reference", session_ref_param_schema()),
+                ("tag", json!({ "type": "string", "minLength": 1 })),
+                ("json", json!({ "type": "boolean" }))
+            ]), &[]),
             "response": count_array_response("tags", "#/definitions/Tag")
         },
         "remove": {
             "description": "Detach a tag from a session ref. Returns the deleted row, or `tag-not-found` if no matching pair exists.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "reference": { "type": "string", "pattern": source_qualified_session_ref_pattern() },
-                    "tag": { "type": "string", "minLength": 1 }
-                },
-                "required": ["reference", "tag"],
-                "additionalProperties": false
-            },
-            "response": {
-                "type": "object",
-                "properties": { "removed": { "$ref": "#/definitions/Tag" } },
-                "required": ["removed"]
-            }
+            "params": tag_mutation_params_schema(),
+            "response": tag_row_response_schema("removed")
         }
     })
+}
+
+fn tag_mutation_params_schema() -> Value {
+    closed_object_schema(
+        schema_props([
+            ("reference", session_ref_param_schema()),
+            ("tag", json!({ "type": "string", "minLength": 1 })),
+        ]),
+        &["reference", "tag"],
+    )
+}
+
+fn tag_row_response_schema(field: &'static str) -> Value {
+    object_schema(
+        schema_props([(field, schema_ref("#/definitions/Tag"))]),
+        &[field],
+    )
 }
 
 pub(in crate::schema) fn tag_schema() -> Value {
@@ -80,15 +79,7 @@ pub(in crate::schema) fn tag_schema() -> Value {
         "title": "aghist tag",
         "command": "tag",
         "description": "Manage per-user tags attached to sessions or turns. Tags live in the metadata sidecar (~/.local/share/aghist/metadata.db; AGHIST_METADATA_DB overrides). The (session_ref, tag) pair is unique. aghist never mutates provider history files.",
-        "params": {
-            "type": "object",
-            "description": "Top-level dispatch: see `subcommands` for the per-subcommand schemas.",
-            "properties": {
-                "subcommand": { "type": "string", "enum": ["add", "list", "remove"] }
-            },
-            "required": ["subcommand"],
-            "additionalProperties": false
-        },
+        "params": top_level_tag_params_schema(),
         "response": {
             "type": "object",
             "description": "Shape varies by subcommand — see `subcommands.<name>.response`."
@@ -97,4 +88,17 @@ pub(in crate::schema) fn tag_schema() -> Value {
         "definitions": { "Tag": tag_row_schema() },
         "exit_codes": exit_codes()
     })
+}
+
+fn top_level_tag_params_schema() -> Value {
+    let mut schema = closed_object_schema(
+        schema_props([(
+            "subcommand",
+            json!({ "type": "string", "enum": ["add", "list", "remove"] }),
+        )]),
+        &["subcommand"],
+    );
+    schema["description"] =
+        json!("Top-level dispatch: see `subcommands` for the per-subcommand schemas.");
+    schema
 }

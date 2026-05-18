@@ -1,70 +1,71 @@
 use serde_json::{json, Value};
 
 use super::super::common::{
-    exit_codes, filter_params_fragment, provider_slug_enum, source_qualified_session_ref_pattern,
-    SCHEMA_DRAFT,
+    closed_object_schema, exit_codes, provider_slug_enum, schema_props_with_filters,
+    source_qualified_session_ref_pattern, SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn threads_schema() -> Value {
-    let mut props = serde_json::Map::new();
-    props.insert(
-        "gap_hours".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 4,
-            "description": "Cluster gap in hours. Sessions in the same project within this gap merge; longer gaps split."
-        }),
+    let params = closed_object_schema(
+        schema_props_with_filters([
+            (
+                "gap_hours",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 4,
+                    "description": "Cluster gap in hours. Sessions in the same project within this gap merge; longer gaps split."
+                }),
+            ),
+            (
+                "min_sessions",
+                json!({
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1,
+                    "description": "Drop threads with fewer than this many sessions."
+                }),
+            ),
+            (
+                "limit",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 50,
+                    "description": "Maximum threads to emit (0 = no limit). Most recent first."
+                }),
+            ),
+            (
+                "json",
+                json!({ "type": "boolean", "description": "Force JSON output." }),
+            ),
+            (
+                "llm",
+                json!({
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Route session digests through an LLM for semantic topic clustering across project boundaries. Requires ANTHROPIC_API_KEY (or AGHIST_LLM_API_KEY)."
+                }),
+            ),
+            (
+                "llm_model",
+                json!({
+                    "type": "string",
+                    "description": "Override the LLM model id (default: claude-haiku-4-5-20251001 or AGHIST_LLM_MODEL). Only meaningful with --llm."
+                }),
+            ),
+            (
+                "llm_max_sessions",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 200,
+                    "description": "Cap on session digests sent to the LLM (0 = no cap). Only meaningful with --llm."
+                }),
+            ),
+        ]),
+        &[],
     );
-    props.insert(
-        "min_sessions".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 1,
-            "default": 1,
-            "description": "Drop threads with fewer than this many sessions."
-        }),
-    );
-    props.insert(
-        "limit".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 50,
-            "description": "Maximum threads to emit (0 = no limit). Most recent first."
-        }),
-    );
-    props.insert(
-        "json".to_string(),
-        json!({ "type": "boolean", "description": "Force JSON output." }),
-    );
-    props.insert(
-        "llm".to_string(),
-        json!({
-            "type": "boolean",
-            "default": false,
-            "description": "Route session digests through an LLM for semantic topic clustering across project boundaries. Requires ANTHROPIC_API_KEY (or AGHIST_LLM_API_KEY)."
-        }),
-    );
-    props.insert(
-        "llm_model".to_string(),
-        json!({
-            "type": "string",
-            "description": "Override the LLM model id (default: claude-haiku-4-5-20251001 or AGHIST_LLM_MODEL). Only meaningful with --llm."
-        }),
-    );
-    props.insert(
-        "llm_max_sessions".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 200,
-            "description": "Cap on session digests sent to the LLM (0 = no cap). Only meaningful with --llm."
-        }),
-    );
-    for (name, schema) in filter_params_fragment() {
-        props.insert(name.to_string(), schema);
-    }
 
     json!({
         "$schema": SCHEMA_DRAFT,
@@ -72,11 +73,7 @@ pub(in crate::schema) fn threads_schema() -> Value {
         "title": "aghist threads",
         "command": "threads",
         "description": "Cluster sessions into threads of related work. Default heuristic: bucket by project_name, walk chronologically, split when the gap exceeds --gap-hours. With --llm: route session digests through a Claude Messages API call for semantic topic clustering across projects.",
-        "params": {
-            "type": "object",
-            "properties": Value::Object(props),
-            "additionalProperties": false
-        },
+        "params": params,
         "response": {
             "oneOf": [threads_response_heuristic(), threads_response_llm()]
         },

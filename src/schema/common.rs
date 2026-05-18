@@ -15,6 +15,26 @@ pub(super) fn schema_props(
         .collect()
 }
 
+pub(super) fn schema_props_with_filters(
+    entries: impl IntoIterator<Item = (&'static str, Value)>,
+) -> SchemaProperties {
+    let mut props = schema_props(entries);
+    for (name, schema) in filter_params_fragment() {
+        props.insert(name.to_string(), schema);
+    }
+    props
+}
+
+pub(super) fn array_schema(items: Value) -> Value {
+    let mut schema = schema_props([("type", json!("array"))]);
+    schema.insert("items".to_string(), items);
+    Value::Object(schema)
+}
+
+pub(super) fn schema_ref(reference: &'static str) -> Value {
+    json!({ "$ref": reference })
+}
+
 pub(super) fn object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
     object_schema_with(properties, required, false)
 }
@@ -154,17 +174,10 @@ pub(super) fn search_response_schema() -> Value {
 
 pub(super) fn count_array_response(field: &str, item_ref: &str) -> Value {
     let mut props = serde_json::Map::new();
-    props.insert(
-        field.to_string(),
-        json!({ "type": "array", "items": { "$ref": item_ref } }),
-    );
+    props.insert(field.to_string(), array_schema(json!({ "$ref": item_ref })));
     props.insert(
         "count".to_string(),
         json!({ "type": "integer", "minimum": 0 }),
     );
-    json!({
-        "type": "object",
-        "properties": Value::Object(props),
-        "required": [field, "count"]
-    })
+    object_schema(props, &[field, "count"])
 }

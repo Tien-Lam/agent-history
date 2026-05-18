@@ -1,57 +1,58 @@
 use serde_json::{json, Value};
 
 use super::super::common::{
-    exit_codes, filter_params_fragment, provider_slug_enum, source_qualified_session_ref_pattern,
-    SCHEMA_DRAFT,
+    closed_object_schema, exit_codes, provider_slug_enum, schema_props_with_filters,
+    source_qualified_session_ref_pattern, SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn todos_schema() -> Value {
-    let mut props = serde_json::Map::new();
-    props.insert(
-        "kind".to_string(),
-        json!({
-            "type": "array",
-            "items": {
-                "type": "string",
-                "enum": ["todo", "follow-up", "come-back-to", "we-should", "bd-ref"]
-            },
-            "description": "Restrict to one or more candidate kinds. Empty = all kinds."
-        }),
+    let params = closed_object_schema(
+        schema_props_with_filters([
+            (
+                "kind",
+                json!({
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["todo", "follow-up", "come-back-to", "we-should", "bd-ref"]
+                    },
+                    "description": "Restrict to one or more candidate kinds. Empty = all kinds."
+                }),
+            ),
+            (
+                "limit",
+                json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 200,
+                    "description": "Maximum candidates to emit (0 = no limit). Newest matches kept first."
+                }),
+            ),
+            (
+                "json",
+                json!({
+                    "type": "boolean",
+                    "description": "Force JSON output (default: JSON on pipe, table on TTY)."
+                }),
+            ),
+            (
+                "llm",
+                json!({
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Route heuristic candidates through an LLM for structured extraction (description/target_session/status_inferred). Requires ANTHROPIC_API_KEY (or AGHIST_LLM_API_KEY)."
+                }),
+            ),
+            (
+                "llm_model",
+                json!({
+                    "type": "string",
+                    "description": "Override the LLM model id (default: claude-haiku-4-5-20251001 or AGHIST_LLM_MODEL). Only meaningful with --llm."
+                }),
+            ),
+        ]),
+        &[],
     );
-    props.insert(
-        "limit".to_string(),
-        json!({
-            "type": "integer",
-            "minimum": 0,
-            "default": 200,
-            "description": "Maximum candidates to emit (0 = no limit). Newest matches kept first."
-        }),
-    );
-    props.insert(
-        "json".to_string(),
-        json!({
-            "type": "boolean",
-            "description": "Force JSON output (default: JSON on pipe, table on TTY)."
-        }),
-    );
-    props.insert(
-        "llm".to_string(),
-        json!({
-            "type": "boolean",
-            "default": false,
-            "description": "Route heuristic candidates through an LLM for structured extraction (description/target_session/status_inferred). Requires ANTHROPIC_API_KEY (or AGHIST_LLM_API_KEY)."
-        }),
-    );
-    props.insert(
-        "llm_model".to_string(),
-        json!({
-            "type": "string",
-            "description": "Override the LLM model id (default: claude-haiku-4-5-20251001 or AGHIST_LLM_MODEL). Only meaningful with --llm."
-        }),
-    );
-    for (name, schema) in filter_params_fragment() {
-        props.insert(name.to_string(), schema);
-    }
 
     json!({
         "$schema": SCHEMA_DRAFT,
@@ -59,11 +60,7 @@ pub(in crate::schema) fn todos_schema() -> Value {
         "title": "aghist todos",
         "command": "todos",
         "description": "Heuristic scan for unresolved TODOs / follow-ups / open beads-style refs across indexed sessions. With --llm: route candidates through a Claude Messages API call for structured records {description, target_session, status_inferred, ref}. Configured via env (ANTHROPIC_API_KEY, AGHIST_LLM_ENDPOINT, AGHIST_LLM_MODEL).",
-        "params": {
-            "type": "object",
-            "properties": Value::Object(props),
-            "additionalProperties": false
-        },
+        "params": params,
         "response": {
             "oneOf": [todos_response_heuristic(), todos_response_llm()]
         },
