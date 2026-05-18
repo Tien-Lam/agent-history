@@ -65,10 +65,10 @@ pub fn assert_empty(output: &Output) {
 }
 
 pub fn json_array<'a>(doc: &'a Value, field: &str) -> &'a [Value] {
-    doc[field]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or_else(|| panic!("expected JSON field {field:?} to be an array, got {doc:?}"))
+    doc[field].as_array().map_or_else(
+        || panic!("expected JSON field {field:?} to be an array, got {doc:?}"),
+        Vec::as_slice,
+    )
 }
 
 pub fn json_str<'a>(doc: &'a Value, field: &str) -> &'a str {
