@@ -38,6 +38,25 @@ fn normalize_search_scores(doc: &mut Value) {
     }
 }
 
+fn compact_mcp_tools_list_contract(result: &Value) -> Value {
+    let mut compact = result.clone();
+    let tools = compact["tools"]
+        .as_array_mut()
+        .expect("tools/list result has tools array");
+    for tool in tools {
+        let name = tool["name"]
+            .as_str()
+            .expect("tool definition has string name")
+            .to_string();
+        if tool.get("outputSchema").is_some() {
+            tool["outputSchema"] = serde_json::json!({
+                "$ref": format!("aghist:schema/mcp/tool-output/{name}")
+            });
+        }
+    }
+    compact
+}
+
 fn command_schema(name: &str) -> Value {
     let output = aghist().args(["schema", name]).assert().success();
     parse_stdout_json(&output)
@@ -277,7 +296,10 @@ fn mcp_tools_list_contract_snapshot() {
     );
 
     assert_eq!(responses.len(), 1, "got: {responses:#?}");
-    assert_json_snapshot("mcp_tools_list_contract", &responses[0]["result"]);
+    assert_json_snapshot(
+        "mcp_tools_list_contract",
+        &compact_mcp_tools_list_contract(&responses[0]["result"]),
+    );
 }
 
 #[test]

@@ -193,6 +193,36 @@ fn tool_limit_schemas_use_shared_contract_constants() {
 }
 
 #[test]
+fn tool_output_schemas_use_shared_registry() {
+    let tools = tool_definitions();
+    let tools = tools.as_array().unwrap();
+
+    let mut names_with_output_schema = Vec::new();
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap();
+        if let Some(output_schema) = tool.get("outputSchema") {
+            names_with_output_schema.push(name);
+            assert_eq!(
+                output_schema,
+                &schema_fragments::mcp_tool_output_schema(name)
+                    .unwrap_or_else(|| panic!("missing registered output schema for {name}")),
+                "{name} output schema should come from the shared registry"
+            );
+        }
+    }
+
+    assert_eq!(
+        names_with_output_schema,
+        vec![
+            "search_sessions",
+            "list_sessions",
+            "get_session",
+            "get_message",
+        ]
+    );
+}
+
+#[test]
 fn unknown_method_returns_method_not_found() {
     let resp = run_one(
         &server(),

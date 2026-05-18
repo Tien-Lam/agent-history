@@ -313,3 +313,13 @@ pub(crate) fn mcp_search_response_schema() -> Value {
         "additionalProperties": false
     })
 }
+
+pub(crate) fn mcp_tool_output_schema(tool_name: &str) -> Option<Value> {
+    match tool_name {
+        "search_sessions" => Some(mcp_search_response_schema()),
+        "list_sessions" => Some(mcp_list_response_schema()),
+        "get_session" => Some(mcp_get_session_response_schema()),
+        "get_message" => Some(mcp_get_message_response_schema()),
+        _ => None,
+    }
+}

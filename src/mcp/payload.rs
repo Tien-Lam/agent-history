@@ -16,10 +16,6 @@ pub(super) fn tool_definitions() -> Value {
     let list_limit_max = schema_fragments::MCP_LIST_LIMIT_MAX;
     let include_context_default = schema_fragments::MCP_INCLUDE_CONTEXT_DEFAULT;
     let include_context_max = schema_fragments::MCP_INCLUDE_CONTEXT_MAX;
-    let mcp_get_message_response_schema = schema_fragments::mcp_get_message_response_schema();
-    let mcp_get_session_response_schema = schema_fragments::mcp_get_session_response_schema();
-    let mcp_list_response_schema = schema_fragments::mcp_list_response_schema();
-    let mcp_search_response_schema = schema_fragments::mcp_search_response_schema();
     json!([
         {
             "name": "search_sessions",
@@ -33,7 +29,7 @@ pub(super) fn tool_definitions() -> Value {
                 "required": ["query"],
                 "additionalProperties": false
             },
-            "outputSchema": mcp_search_response_schema
+            "outputSchema": output_schema("search_sessions")
         },
         {
             "name": "list_sessions",
@@ -47,7 +43,7 @@ pub(super) fn tool_definitions() -> Value {
                 },
                 "additionalProperties": false
             },
-            "outputSchema": mcp_list_response_schema
+            "outputSchema": output_schema("list_sessions")
         },
         {
             "name": "get_session",
@@ -62,7 +58,7 @@ pub(super) fn tool_definitions() -> Value {
                 "required": ["session_id"],
                 "additionalProperties": false
             },
-            "outputSchema": mcp_get_session_response_schema
+            "outputSchema": output_schema("get_session")
         },
         {
             "name": "get_message",
@@ -80,7 +76,7 @@ pub(super) fn tool_definitions() -> Value {
                 "required": ["ref"],
                 "additionalProperties": false
             },
-            "outputSchema": mcp_get_message_response_schema
+            "outputSchema": output_schema("get_message")
         },
         {
             "name": "reindex",
@@ -100,6 +96,11 @@ pub(super) fn tool_definitions() -> Value {
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
         }
     ])
+}
+
+fn output_schema(tool_name: &str) -> Value {
+    schema_fragments::mcp_tool_output_schema(tool_name)
+        .unwrap_or_else(|| panic!("missing MCP output schema for {tool_name}"))
 }
 
 pub(super) fn tool_success(payload: &Value) -> Value {
