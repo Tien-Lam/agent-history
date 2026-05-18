@@ -1,86 +1,16 @@
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use super::ProviderError;
-use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
+use super::super::ProviderError;
+use crate::model::{ContentBlock, Message, MessageId, Role};
 use crate::provider::json_text::string_or_object_field;
 use crate::provider::parse_common::{
-    parse_utc, parse_utc_or_now, pretty_json_opt, token_usage, tool_result_block, tool_use_block,
+    parse_utc_or_now, pretty_json_opt, token_usage, tool_result_block, tool_use_block,
 };
-use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
-
-#[derive(Deserialize)]
-struct WorkspaceYaml {
-    id: Option<String>,
-    cwd: Option<String>,
-    created_at: Option<String>,
-    updated_at: Option<String>,
-}
-
-pub(crate) fn build_session(session_dir: &Path, workspace_path: &Path) -> Option<Session> {
-    let yaml_content = std::fs::read_to_string(workspace_path).ok()?;
-    let workspace: WorkspaceYaml = serde_yaml_ng::from_str(&yaml_content).ok()?;
-
-    let session_id = workspace.id.or_else(|| {
-        session_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(String::from)
-    })?;
-
-    let started_at = workspace.created_at.as_deref().and_then(parse_utc)?;
-
-    let ended_at = workspace.updated_at.as_deref().and_then(parse_utc);
-
-    let project_name = workspace.cwd.as_deref().and_then(project_name_from_path);
-    let project_path = workspace.cwd.map(PathBuf::from);
-
-    // Count events to estimate message count
-    let events_path = session_dir.join("events.jsonl");
-    let message_count = if events_path.exists() {
-        count_message_events(&events_path)
-    } else {
-        0
-    };
-
-    Some(Session {
-        id: SessionId(session_id),
-        provider: Provider::CopilotCli,
-        project_path,
-        project_name,
-        git_branch: None,
-        started_at,
-        ended_at,
-        summary: None,
-        model: None,
-        token_usage: None,
-        message_count,
-        source_path: session_dir.to_path_buf(),
-    })
-}
-
-fn count_message_events(path: &Path) -> usize {
-    let Ok(file) = std::fs::File::open(path) else {
-        return 0;
-    };
-    let reader = BufReader::new(file);
-    reader
-        .lines()
-        .map_while(Result::ok)
-        .filter(|l| {
-            l.contains("\"user.message\"")
-                || l.contains("\"assistant.message\"")
-                || l.contains("\"tool.execution_start\"")
-                || l.contains("\"tool.execution_complete\"")
-                || l.contains("\"tool.invoke\"")
-                || l.contains("\"tool.result\"")
-        })
-        .count()
-}
 
 pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Copilot CLI messages");
@@ -272,26 +202,6 @@ fn push_nested_tool_requests(content: &mut Vec<ContentBlock>, data: Option<&RawE
     }
 }
 
-pub(crate) fn parse_checkpoint_md(path: &Path) -> Result<Vec<Message>, ProviderError> {
-    let content = std::fs::read_to_string(path)?;
-    if content.trim().is_empty()
-        || content
-            .lines()
-            .all(|l| l.starts_with('#') || l.starts_with('|') || l.trim().is_empty())
-    {
-        return Ok(Vec::new());
-    }
-
-    Ok(vec![Message {
-        id: MessageId("checkpoint".to_string()),
-        role: Role::System,
-        timestamp: Utc::now(),
-        content: parse_text_with_code_blocks(&content),
-        model: None,
-        token_usage: None,
-    }])
-}
-
 #[derive(Deserialize)]
 struct RawEvent {
     id: Option<String>,
@@ -307,7 +217,6 @@ struct RawEvent {
     #[serde(rename = "toolArgs")]
     tool_args: Option<serde_json::Value>,
     usage: Option<RawUsage>,
-    /// Newer Copilot format nests content inside a `data` object
     data: Option<RawEventData>,
 }
 
@@ -316,16 +225,12 @@ struct RawEventData {
     content: Option<String>,
     #[serde(rename = "toolRequests")]
     tool_requests: Option<Vec<RawToolRequest>>,
-    /// `tool.execution_start` fields
     #[serde(rename = "toolName")]
     tool_name: Option<String>,
     #[serde(rename = "toolCallId")]
     tool_call_id: Option<String>,
     arguments: Option<serde_json::Value>,
-    /// `tool.execution_complete` fields
     success: Option<bool>,
-    /// `tool.execution_complete`: object with content/detailedContent.
-    /// `tool.result` (newer): a plain string. Both shapes are accepted.
     result: Option<serde_json::Value>,
 }
 
