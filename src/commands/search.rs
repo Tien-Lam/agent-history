@@ -76,6 +76,9 @@ pub(crate) fn search_command(
         },
     )
     .map_err(|e| ErrorEnvelope::new("index-error", e.to_string()))?;
+    for warning in &page.warnings {
+        eprintln!("{}", warning.warning_line());
+    }
 
     if page.hits.is_empty() {
         return Ok(EXIT_EMPTY);

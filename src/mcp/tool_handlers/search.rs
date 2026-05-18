@@ -37,12 +37,19 @@ impl McpServer {
         .map_err(|e| e.to_string())?;
         let hits_json = search_service::search_hit_json(&page, &discovery.source_by_session, false);
 
+        let mut source_errors = federated::source_errors(&discovery.failures);
+        source_errors.extend(
+            page.warnings
+                .iter()
+                .map(crate::session_warnings::SessionLoadWarning::source_error),
+        );
+
         let response = McpSearchResponse {
             query: query.clone(),
             limit,
             total: hits_json.len(),
             hits: hits_json,
-            source_errors: federated::source_errors(&discovery.failures),
+            source_errors,
         };
         serde_json::to_value(response)
             .map_err(|e| format!("failed to serialize search response: {e}"))

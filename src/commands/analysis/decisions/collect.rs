@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use aghist::session_warnings::SessionLoadWarning;
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
@@ -52,8 +53,15 @@ pub(super) fn collect_federated_decision_rows(
                 continue;
             }
         }
-        let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
-            continue;
+        let messages = match provider::load_messages_for_session(&session, providers) {
+            Ok(messages) => messages,
+            Err(error) => {
+                eprintln!(
+                    "{}",
+                    SessionLoadWarning::new(&source, &session, error).warning_line()
+                );
+                continue;
+            }
         };
         let scored: Vec<_> = messages
             .iter()

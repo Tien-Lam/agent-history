@@ -10,6 +10,7 @@ use crate::search::{
     self, SearchFilters, SearchHitCitation, SearchService, SearchServiceError, SearchServiceHit,
     SearchServiceRequest,
 };
+use crate::session_warnings::SessionLoadWarning;
 
 #[derive(Clone, Copy)]
 pub struct SearchSessionsRequest<'a> {
@@ -30,6 +31,7 @@ pub struct SearchSessionsPage<'a> {
     pub next_cursor: Option<String>,
     pub engine: &'static str,
     pub citations: HashMap<String, SearchHitCitation>,
+    pub warnings: Vec<SessionLoadWarning>,
 }
 
 pub fn search_sessions<'a>(
@@ -68,7 +70,7 @@ pub fn search_sessions<'a>(
     let hits = output.hits[page_start..page_end].to_vec();
     let next_cursor =
         search::next_search_cursor(&hits, page_end < output.hits.len(), &output.session_meta);
-    let citations = search::resolve_search_hit_citations(
+    let citation_resolution = search::resolve_search_hit_citations(
         &hits,
         &output.session_meta,
         &discovery.source_by_session,
@@ -81,7 +83,8 @@ pub fn search_sessions<'a>(
         total,
         next_cursor,
         engine: output.engine,
-        citations,
+        citations: citation_resolution.refs,
+        warnings: citation_resolution.warnings,
     })
 }
 

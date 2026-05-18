@@ -39,6 +39,9 @@ pub(crate) fn list_sessions(
             return Ok(EXIT_USAGE);
         }
     };
+    for warning in &page.warnings {
+        eprintln!("{}", warning.warning_line());
+    }
     let provider_counts = (!mode.is_machine()).then_some(page.provider_counts.as_slice());
 
     match mode {

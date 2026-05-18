@@ -27,6 +27,7 @@ pub mod schema_fragments;
 pub mod search;
 pub mod services;
 pub mod session_resolver;
+pub mod session_warnings;
 pub mod stars;
 pub mod threads;
 pub mod todos;

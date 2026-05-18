@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use aghist::model::{Message, Session};
+use aghist::session_warnings::SessionLoadWarning;
 use aghist::{provider, query_scope};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
@@ -70,8 +71,16 @@ pub(super) fn collect_federated_message_bundles(
         if !include_session(&session) {
             continue;
         }
-        let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
-            continue;
+        let messages = match provider::load_messages_for_session(&session, providers) {
+            Ok(messages) => messages,
+            Err(error) => {
+                let source = source_for_session(&source_by_session, &session);
+                eprintln!(
+                    "{}",
+                    SessionLoadWarning::new(source, &session, error).warning_line()
+                );
+                continue;
+            }
         };
         bundles.push((session, messages));
     }

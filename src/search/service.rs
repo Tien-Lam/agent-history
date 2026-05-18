@@ -10,6 +10,7 @@ use crate::federated::LOCAL_SOURCE;
 use crate::metadata;
 use crate::model::{Provider, QualifiedCitationRef, Session};
 use crate::provider::{self, HistoryProvider};
+use crate::session_warnings::SessionLoadWarning;
 
 use super::{Explanation, HitKind, SearchFilters, SearchHit, SearchIndex};
 
@@ -53,6 +54,12 @@ pub struct SearchServiceOutput<'a> {
 pub struct SearchHitCitation {
     pub ref_: String,
     pub turn: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchHitCitationResolution {
+    pub refs: HashMap<String, SearchHitCitation>,
+    pub warnings: Vec<SessionLoadWarning>,
 }
 
 impl<'a> SearchService<'a> {
@@ -227,8 +234,9 @@ pub fn resolve_search_hit_citations<SessionHasher: BuildHasher, SourceHasher: Bu
     sessions: &HashMap<String, &Session, SessionHasher>,
     source_by_session: &HashMap<String, String, SourceHasher>,
     providers: &[Box<dyn HistoryProvider>],
-) -> HashMap<String, SearchHitCitation> {
+) -> SearchHitCitationResolution {
     let mut refs = HashMap::new();
+    let mut warnings = Vec::new();
     let mut seen_sessions = HashSet::new();
 
     for (hit, _) in hits {
@@ -241,10 +249,14 @@ pub fn resolve_search_hit_citations<SessionHasher: BuildHasher, SourceHasher: Bu
         let Some(session) = sessions.get(hit.session_key.as_str()).copied() else {
             continue;
         };
-        let Ok(messages) = provider::load_messages_for_session(session, providers) else {
-            continue;
-        };
         let source = source_for_session(source_by_session, session);
+        let messages = match provider::load_messages_for_session(session, providers) {
+            Ok(messages) => messages,
+            Err(error) => {
+                warnings.push(SessionLoadWarning::new(source, session, error));
+                continue;
+            }
+        };
         for (i, msg) in messages.iter().enumerate() {
             let message_key = session.message_key(i, &msg.id.0);
             let turn = i + 1;
@@ -258,7 +270,7 @@ pub fn resolve_search_hit_citations<SessionHasher: BuildHasher, SourceHasher: Bu
         }
     }
 
-    refs
+    SearchHitCitationResolution { refs, warnings }
 }
 
 fn raw_search_hits(

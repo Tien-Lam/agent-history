@@ -4,6 +4,7 @@ use std::io::{self, IsTerminal};
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::ContentBlock;
 use aghist::output::write_json_line;
+use aghist::session_warnings::SessionLoadWarning;
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
@@ -53,8 +54,15 @@ fn scan_topic_sessions(
         if !metadata_filter_matches_source(&session, source, metadata_keys) {
             continue;
         }
-        let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
-            continue;
+        let messages = match provider::load_messages_for_session(&session, providers) {
+            Ok(messages) => messages,
+            Err(error) => {
+                eprintln!(
+                    "{}",
+                    SessionLoadWarning::new(source, &session, error).warning_line()
+                );
+                continue;
+            }
         };
         let mut excerpts: Vec<String> = Vec::new();
         for msg in &messages {

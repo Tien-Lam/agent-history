@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use aghist::session_warnings::SessionLoadWarning;
 use aghist::todos::{self, TodoCandidate, TodoKind};
 use aghist::{provider, query_scope};
 
@@ -35,8 +36,15 @@ pub(super) fn collect_federated_todo_candidates(
         if !metadata_filter_matches_source(&session, &source, metadata_keys) {
             continue;
         }
-        let Ok(messages) = provider::load_messages_for_session(&session, providers) else {
-            continue;
+        let messages = match provider::load_messages_for_session(&session, providers) {
+            Ok(messages) => messages,
+            Err(error) => {
+                eprintln!(
+                    "{}",
+                    SessionLoadWarning::new(&source, &session, error).warning_line()
+                );
+                continue;
+            }
         };
         for candidate in
             todos::extract_from_messages(session.provider, &session.id, &messages, kinds)

@@ -7,6 +7,7 @@ use crate::federated::{FederatedDiscovery, LOCAL_SOURCE};
 use crate::model::{ContentBlock, Provider, Session};
 use crate::provider::{self, HistoryProvider};
 use crate::search::SearchFilters;
+use crate::session_warnings::SessionLoadWarning;
 
 #[derive(Clone, Copy)]
 pub struct ListSessionsRequest<'a> {
@@ -21,6 +22,7 @@ pub struct ListSessionsPage {
     pub total: usize,
     pub next_cursor: Option<String>,
     pub provider_counts: Vec<(String, usize)>,
+    pub warnings: Vec<SessionLoadWarning>,
 }
 
 #[derive(Clone)]
@@ -54,26 +56,29 @@ pub fn list_sessions_page(
         .filter(|s| !s.is_empty());
     let needs_messages = request.filters.role.is_some() || request.filters.has_tool_call;
     let source_by_session = discovery.source_by_session;
+    let mut sessions = Vec::new();
+    let mut warnings = Vec::new();
 
-    let mut sessions: Vec<ListedSession> = discovery
-        .sessions
-        .into_iter()
-        .filter(|session| session_matches(session, request.filters, project_needle.as_deref()))
-        .filter(|session| {
-            let source = source_for_session(&source_by_session, session);
-            metadata_filter_matches_source(session, source, request.metadata_keys)
-        })
-        .filter(|session| {
-            !needs_messages || session_has_matching_message(providers, session, request.filters)
-        })
-        .map(|session| {
-            let source = source_by_session
-                .get(session.identity_key().as_str())
-                .map_or(LOCAL_SOURCE, String::as_str)
-                .to_string();
-            ListedSession { source, session }
-        })
-        .collect();
+    for session in discovery.sessions {
+        if !session_matches(&session, request.filters, project_needle.as_deref()) {
+            continue;
+        }
+        let source = source_for_session(&source_by_session, &session).to_string();
+        if !metadata_filter_matches_source(&session, &source, request.metadata_keys) {
+            continue;
+        }
+        if needs_messages {
+            match session_has_matching_message(providers, &session, request.filters) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(error) => {
+                    warnings.push(SessionLoadWarning::new(&source, &session, error));
+                    continue;
+                }
+            }
+        }
+        sessions.push(ListedSession { source, session });
+    }
 
     sessions.sort_by(compare_listed_sessions);
     let total = sessions.len();
@@ -105,6 +110,7 @@ pub fn list_sessions_page(
         total,
         next_cursor,
         provider_counts,
+        warnings,
     })
 }
 
@@ -188,11 +194,10 @@ fn session_has_matching_message(
     providers: &[Box<dyn HistoryProvider>],
     session: &Session,
     filters: &SearchFilters,
-) -> bool {
-    let Ok(messages) = provider::load_messages_for_session(session, providers) else {
-        return false;
-    };
-    messages.iter().any(|message| {
+) -> Result<bool, String> {
+    let messages = provider::load_messages_for_session(session, providers)
+        .map_err(|error| error.to_string())?;
+    Ok(messages.iter().any(|message| {
         if let Some(role) = filters.role {
             if message.role != role {
                 return false;
@@ -207,7 +212,7 @@ fn session_has_matching_message(
             return false;
         }
         true
-    })
+    }))
 }
 
 fn metadata_filter_matches_source(
@@ -237,4 +242,95 @@ fn source_for_session<'a>(
     source_by_session
         .get(session.identity_key().as_str())
         .map_or(LOCAL_SOURCE, String::as_str)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use chrono::TimeZone as _;
+
+    use super::*;
+    use crate::model::{Message, Role, SessionId};
+    use crate::provider::ProviderError;
+
+    struct FailingProvider {
+        base_dirs: Vec<PathBuf>,
+    }
+
+    impl HistoryProvider for FailingProvider {
+        fn provider(&self) -> Provider {
+            Provider::ClaudeCode
+        }
+
+        fn base_dirs(&self) -> &[PathBuf] {
+            &self.base_dirs
+        }
+
+        fn discover_sessions(&self) -> Result<Vec<Session>, ProviderError> {
+            Ok(Vec::new())
+        }
+
+        fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
+            Err(ProviderError::Parse {
+                path: session.source_path.clone(),
+                reason: "bad fixture".to_string(),
+            })
+        }
+    }
+
+    fn test_session() -> Session {
+        Session {
+            id: SessionId("bad-session".to_string()),
+            provider: Provider::ClaudeCode,
+            project_path: None,
+            project_name: Some("broken".to_string()),
+            git_branch: None,
+            started_at: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            ended_at: None,
+            summary: None,
+            model: None,
+            token_usage: None,
+            message_count: 1,
+            source_path: PathBuf::from("/tmp/bad-session.jsonl"),
+        }
+    }
+
+    #[test]
+    fn message_filter_records_warning_when_session_load_fails() {
+        let session = test_session();
+        let source_by_session = HashMap::from([(session.identity_key(), LOCAL_SOURCE.to_string())]);
+        let discovery = FederatedDiscovery {
+            sessions: vec![session],
+            source_by_session,
+            failures: Vec::new(),
+        };
+        let providers: Vec<Box<dyn HistoryProvider>> = vec![Box::new(FailingProvider {
+            base_dirs: Vec::new(),
+        })];
+        let filters = SearchFilters {
+            role: Some(Role::User),
+            ..SearchFilters::default()
+        };
+
+        let page = list_sessions_page(
+            &providers,
+            discovery,
+            ListSessionsRequest {
+                limit: 10,
+                cursor: None,
+                filters: &filters,
+                metadata_keys: None,
+            },
+        )
+        .unwrap();
+
+        assert!(page.sessions.is_empty());
+        assert_eq!(page.warnings.len(), 1);
+        assert!(page.warnings[0]
+            .warning_line()
+            .contains("claude-code/bad-session"));
+        assert!(page.warnings[0].warning_line().contains("bad fixture"));
+    }
 }
