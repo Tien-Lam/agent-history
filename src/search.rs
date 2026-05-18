@@ -14,10 +14,13 @@ pub mod types;
 mod tests;
 
 pub use index::SearchIndex;
+pub use service::citation::{
+    resolve_search_hit_citations, SearchHitCitation, SearchHitCitationResolution,
+};
+pub use service::cursor::{next_search_cursor, search_hit_is_after_cursor};
 pub use service::{
-    index_notes_best_effort, next_search_cursor, resolve_search_hit_citations,
-    search_hit_is_after_cursor, SearchHitCitation, SearchService, SearchServiceError,
-    SearchServiceHit, SearchServiceOutput, SearchServiceRequest,
+    index_notes_best_effort, SearchService, SearchServiceError, SearchServiceHit,
+    SearchServiceOutput, SearchServiceRequest,
 };
 pub use types::{
     HitKind, IndexStats, NotesIndexStats, SearchError, SearchFilters, SearchHit, SemanticCandidate,
