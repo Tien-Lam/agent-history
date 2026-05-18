@@ -23,6 +23,7 @@ jobs:
   check:
     name: ${{ matrix.os }} / ${{ matrix.toolchain }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +65,7 @@ jobs:
   all-features:
     name: ubuntu-24.04 / stable / all-features
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v6
@@ -96,6 +98,7 @@ jobs:
   supply-chain:
     name: ubuntu-24.04 / supply-chain
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     env:
       ACTIONLINT_VERSION: "1.7.12"
@@ -147,6 +150,7 @@ jobs:
   release-dry-run:
     name: ubuntu-24.04 / release dry-run
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v6
