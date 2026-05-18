@@ -1,6 +1,8 @@
 use aghist::cli_error::ErrorEnvelope;
 
-use super::super::cli::{resolve_export_args, resolve_index_args, resolve_show_args, Command};
+use super::super::cli::{
+    resolve_export_args, resolve_index_args, resolve_show_args, LookupCommand,
+};
 use super::context::CommandContext;
 use super::diff::diff_command;
 use super::export::export_session;
@@ -9,11 +11,11 @@ use super::search_dispatch::{dispatch_search_command, SearchDispatchArgs, Search
 use super::show::show_command;
 
 pub(crate) fn dispatch_lookup_command(
-    command: Command,
+    command: LookupCommand,
     ctx: &CommandContext,
 ) -> Result<i32, ErrorEnvelope> {
     match command {
-        Command::Export(args) => {
+        LookupCommand::Export(args) => {
             let resolved = resolve_export_args(
                 args.format,
                 args.session,
@@ -32,7 +34,7 @@ pub(crate) fn dispatch_lookup_command(
                 resolved.include_notes,
             )
         }
-        Command::Index(args) => {
+        LookupCommand::Index(args) => {
             let (provider, force, accept_download) =
                 resolve_index_args(args.provider, args.force, args.accept_download, args.params)?;
             run_index(
@@ -43,7 +45,7 @@ pub(crate) fn dispatch_lookup_command(
                 accept_download,
             )
         }
-        Command::Search(args) => dispatch_search_command(
+        LookupCommand::Search(args) => dispatch_search_command(
             ctx,
             SearchDispatchArgs {
                 query: args.query,
@@ -66,7 +68,7 @@ pub(crate) fn dispatch_lookup_command(
                 },
             },
         ),
-        Command::Show(args) => {
+        LookupCommand::Show(args) => {
             let (reference, format, include_context) = resolve_show_args(
                 args.reference,
                 args.format,
@@ -81,7 +83,7 @@ pub(crate) fn dispatch_lookup_command(
                 include_context,
             )
         }
-        Command::Diff(args) => diff_command(
+        LookupCommand::Diff(args) => diff_command(
             ctx.providers(),
             ctx.scope(),
             &args.session1,
@@ -89,6 +91,5 @@ pub(crate) fn dispatch_lookup_command(
             args.context,
             args.json,
         ),
-        _ => unreachable!("lookup dispatch received unrelated command"),
     }
 }

@@ -1,4 +1,4 @@
-use super::super::cli::{Cli, Command};
+use super::super::cli::{Cli, CommandTarget, ContextCommand, ContextFreeCommand};
 use super::analysis_dispatch::dispatch_analysis_command;
 use super::context::CommandContext;
 use super::install::{self_update, uninstall};
@@ -28,22 +28,21 @@ pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
         command,
     } = cli;
 
-    if let Some(exit) = dispatch_context_free_command(command.as_ref())? {
-        return Ok(exit);
-    }
+    let command = match command.map(CommandTarget::from) {
+        Some(CommandTarget::ContextFree(command)) => return dispatch_context_free_command(command),
+        other => other,
+    };
 
     let ctx = CommandContext::load(filters, json, ndjson)?;
     clear_search_index_if_requested(reindex)?;
 
     match command {
-        Some(Command::Mcp) => {
+        Some(CommandTarget::Mcp) => {
             let server = ctx.into_mcp_server();
             run_mcp_server(&server)
         }
-        command => {
-            if let Some(exit) = dispatch_command(command, &ctx)? {
-                return Ok(exit);
-            }
+        Some(CommandTarget::Context(command)) => dispatch_command(command, &ctx),
+        None => {
             if list {
                 return dispatch_list(limit, cursor.as_deref(), &ctx);
             }
@@ -54,21 +53,16 @@ pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
     }
 }
 
-fn dispatch_context_free_command(command: Option<&Command>) -> Result<Option<i32>, ErrorEnvelope> {
-    let Some(command) = command else {
-        return Ok(None);
-    };
-    let exit = match command {
-        Command::Schema {
+fn dispatch_context_free_command(command: ContextFreeCommand) -> Result<i32, ErrorEnvelope> {
+    match command {
+        ContextFreeCommand::Schema {
             subcommand,
             list,
             all,
-        } => schema_command(subcommand.as_deref(), *list, *all)?,
-        Command::Update => self_update()?,
-        Command::Uninstall => uninstall()?,
-        _ => return Ok(None),
-    };
-    Ok(Some(exit))
+        } => schema_command(subcommand.as_deref(), list, all),
+        ContextFreeCommand::Update => self_update(),
+        ContextFreeCommand::Uninstall => uninstall(),
+    }
 }
 
 fn clear_search_index_if_requested(reindex: bool) -> Result<(), ErrorEnvelope> {
@@ -104,45 +98,13 @@ fn reject_conflicting_output_flags(json: bool, ndjson: bool) -> Option<i32> {
     None
 }
 
-fn dispatch_command(
-    command: Option<Command>,
-    ctx: &CommandContext,
-) -> Result<Option<i32>, ErrorEnvelope> {
-    let Some(command) = command else {
-        return Ok(None);
-    };
-    let exit = match command {
-        Command::Mcp => unreachable!("MCP is handled before borrowed dispatch"),
-        Command::Schema {
-            subcommand,
-            list,
-            all,
-        } => unreachable!(
-            "schema is handled before context load ({subcommand:?}, list={list}, all={all})"
-        ),
-        Command::Update => unreachable!("update is handled before context load"),
-        Command::Uninstall => unreachable!("uninstall is handled before context load"),
-        cmd @ (Command::Export(_)
-        | Command::Index(_)
-        | Command::Search(_)
-        | Command::Show(_)
-        | Command::Diff(_)) => dispatch_lookup_command(cmd, ctx)?,
-        cmd @ (Command::Track(_)
-        | Command::Decisions(_)
-        | Command::Todos(_)
-        | Command::Threads(_)) => dispatch_analysis_command(cmd, ctx)?,
-        cmd @ (Command::Sources { .. }
-        | Command::Health
-        | Command::Note { .. }
-        | Command::Tag { .. }
-        | Command::Star { .. }
-        | Command::Unstar { .. }
-        | Command::Stars { .. }) => dispatch_metadata_command(cmd, ctx)?,
-        cmd @ (Command::Usage(_) | Command::Project(_) | Command::Report(_)) => {
-            dispatch_report_command(cmd, ctx)?
-        }
-    };
-    Ok(Some(exit))
+fn dispatch_command(command: ContextCommand, ctx: &CommandContext) -> Result<i32, ErrorEnvelope> {
+    match command {
+        ContextCommand::Lookup(command) => dispatch_lookup_command(command, ctx),
+        ContextCommand::Analysis(command) => dispatch_analysis_command(command, ctx),
+        ContextCommand::Metadata(command) => dispatch_metadata_command(command, ctx),
+        ContextCommand::Reports(command) => dispatch_report_command(command, ctx),
+    }
 }
 
 fn dispatch_list(

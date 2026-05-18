@@ -1,6 +1,6 @@
 use aghist::cli_error::ErrorEnvelope;
 
-use super::super::cli::Command;
+use super::super::cli::AnalysisCommand;
 use super::analysis::{
     decisions_command, threads_command, todos_command, track_command, DecisionsCommandRequest,
     ThreadsCommandRequest, TodosCommandRequest, TrackCommandRequest,
@@ -8,7 +8,7 @@ use super::analysis::{
 use super::context::CommandContext;
 
 pub(crate) fn dispatch_analysis_command(
-    command: Command,
+    command: AnalysisCommand,
     ctx: &CommandContext,
 ) -> Result<i32, ErrorEnvelope> {
     let filters = ctx.filters();
@@ -16,7 +16,7 @@ pub(crate) fn dispatch_analysis_command(
     let scope = ctx.scope();
     let metadata_keys = ctx.metadata_filter_keys()?;
     match command {
-        Command::Track(args) => track_command(
+        AnalysisCommand::Track(args) => track_command(
             providers,
             scope,
             TrackCommandRequest {
@@ -28,7 +28,7 @@ pub(crate) fn dispatch_analysis_command(
                 llm_model: args.llm_model.as_deref(),
             },
         ),
-        Command::Decisions(args) => decisions_command(
+        AnalysisCommand::Decisions(args) => decisions_command(
             providers,
             scope,
             DecisionsCommandRequest {
@@ -42,7 +42,7 @@ pub(crate) fn dispatch_analysis_command(
                 llm_model: args.llm_model.as_deref(),
             },
         ),
-        Command::Todos(args) => todos_command(
+        AnalysisCommand::Todos(args) => todos_command(
             providers,
             scope,
             TodosCommandRequest {
@@ -55,7 +55,7 @@ pub(crate) fn dispatch_analysis_command(
                 llm_model: args.llm_model.as_deref(),
             },
         ),
-        Command::Threads(args) => threads_command(
+        AnalysisCommand::Threads(args) => threads_command(
             providers,
             scope,
             ThreadsCommandRequest {
@@ -70,6 +70,5 @@ pub(crate) fn dispatch_analysis_command(
                 llm_max_sessions: args.llm_max_sessions,
             },
         ),
-        _ => unreachable!("analysis dispatch received unrelated command"),
     }
 }

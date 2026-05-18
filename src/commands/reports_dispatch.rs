@@ -1,11 +1,11 @@
 use aghist::cli_error::ErrorEnvelope;
 
-use super::super::cli::Command;
+use super::super::cli::ReportsCommand;
 use super::context::CommandContext;
 use super::reports::{project_command, report_command, usage_command};
 
 pub(crate) fn dispatch_report_command(
-    command: Command,
+    command: ReportsCommand,
     ctx: &CommandContext,
 ) -> Result<i32, ErrorEnvelope> {
     let filters = ctx.filters();
@@ -13,7 +13,7 @@ pub(crate) fn dispatch_report_command(
     let scope = ctx.scope();
     let metadata_keys = ctx.metadata_filter_keys()?;
     match command {
-        Command::Usage(args) => usage_command(
+        ReportsCommand::Usage(args) => usage_command(
             providers,
             scope,
             filters,
@@ -22,7 +22,7 @@ pub(crate) fn dispatch_report_command(
             args.limit,
             args.json,
         ),
-        Command::Project(args) => {
+        ReportsCommand::Project(args) => {
             let limits = aghist::project::ProjectLimits {
                 decisions: args.decisions,
                 todos: args.todos,
@@ -39,7 +39,7 @@ pub(crate) fn dispatch_report_command(
                 args.json,
             )
         }
-        Command::Report(args) => {
+        ReportsCommand::Report(args) => {
             let window_days = if args.month {
                 30
             } else if args.week {
@@ -63,6 +63,5 @@ pub(crate) fn dispatch_report_command(
                 args.json,
             )
         }
-        _ => unreachable!("report dispatch received unrelated command"),
     }
 }
