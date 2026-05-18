@@ -99,7 +99,7 @@ fn mcp_health_returns_structured_checks() {
 
 #[test]
 fn mcp_resources_list_and_read_round_trip_against_claude_fixture() {
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
 
     // 1. List resources, pick the first session URI off the wire (no string
@@ -169,7 +169,7 @@ fn mcp_resources_list_and_read_round_trip_against_claude_fixture() {
 
 #[test]
 fn mcp_resources_read_out_of_range_turn_is_invalid_params() {
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
 
     // Find a real session id from list_sessions, then craft an out-of-range turn URI.
@@ -205,7 +205,7 @@ fn mcp_resources_read_out_of_range_turn_is_invalid_params() {
 fn mcp_list_sessions_finds_claude_fixture_via_provider_filter() {
     // Build a real provider on disk so we exercise the discover path through
     // tools/call rather than the no-providers shortcut.
-    let fixture = common::fixtures::claude_single_session(3);
+    let fixture = common::fixtures::claude::claude_single_session(3);
     let home = fixture.base_path.parent().unwrap();
     let responses = run_session(
         home,

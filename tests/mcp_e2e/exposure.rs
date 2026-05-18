@@ -3,7 +3,7 @@ use crate::common::mcp::{run_session_with_config, run_session_with_config_and_so
 
 #[test]
 fn mcp_exposed_subset_blocks_remote_source_providers() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-hidden-mcp")
         .project("remote-hidden")
         .user("REMOTE_HIDDEN_MCP_TOKEN")
@@ -70,7 +70,7 @@ fn mcp_exposed_empty_hides_all_providers_from_mcp() {
     // Provider files exist on disk and would normally be discovered, but the
     // config opts out of exposing them via MCP. The server should report zero
     // sessions even though `aghist --list` would show them.
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
     let config_path = home.join("aghist-config.toml");
     std::fs::write(&config_path, "[providers]\nmcp_exposed = []\n").unwrap();
@@ -97,7 +97,7 @@ fn mcp_exposed_subset_blocks_unlisted_providers() {
     // Claude is on disk and enabled, but mcp_exposed only lets copilot through.
     // get_message must refuse to resolve a claude ref because the provider
     // isn't in the MCP-visible set, even though it's available locally.
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
     let config_path = home.join("aghist-config.toml");
     std::fs::write(
@@ -134,7 +134,7 @@ fn mcp_exposed_subset_blocks_unlisted_providers() {
 fn mcp_exposed_unset_keeps_all_enabled_providers_visible() {
     // Sanity check that omitting mcp_exposed preserves prior behaviour: a
     // config that only sets unrelated fields shouldn't narrow MCP visibility.
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
     let config_path = home.join("aghist-config.toml");
     std::fs::write(&config_path, "cache_size = 7\n").unwrap();

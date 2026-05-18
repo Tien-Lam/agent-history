@@ -4,7 +4,7 @@ use super::super::common::cli;
 
 #[test]
 fn export_turn_range_slices_messages() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-tr-test")
         .project("tr-project")
         .user("turn-1-user")
@@ -35,7 +35,7 @@ fn export_turn_range_slices_messages() {
 }
 #[test]
 fn export_turn_range_open_end_clamps_to_total() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-tr-clamp")
         .project("tr-clamp")
         .user("a")
@@ -63,7 +63,7 @@ fn export_turn_range_open_end_clamps_to_total() {
 }
 #[test]
 fn export_turn_range_invalid_emits_usage_envelope() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-tr-bad")
         .project("tr-bad")
         .user("a")

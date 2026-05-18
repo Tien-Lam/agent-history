@@ -13,7 +13,7 @@ fn project_with_no_data_exits_three_for_empty() {
 }
 #[test]
 fn project_aggregates_sessions_messages_tokens_and_emits_envelope() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-proj-1")
         .project("alpha")
         .user("hi")
@@ -76,7 +76,7 @@ fn project_aggregates_sessions_messages_tokens_and_emits_envelope() {
 
 #[test]
 fn project_includes_remote_source_refs_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-project")
         .project("remote-proj")
         .user("TODO: revisit remote project refs")
@@ -120,7 +120,7 @@ fn project_includes_remote_source_refs_without_local_provider() {
 
 #[test]
 fn project_match_is_case_insensitive_substring() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-mixed")
         .project("Alpha-Service")
         .user("hi")
@@ -194,7 +194,7 @@ fn report_commands_respect_metadata_filters() {
 
 #[test]
 fn project_limits_truncate_files_section_but_meta_keeps_total() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-files")
         .project("alpha")
         .user("hi")
@@ -258,7 +258,7 @@ fn report_with_no_data_exits_three_for_empty() {
 }
 #[test]
 fn report_default_emits_markdown_with_section_headers() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-rep-1")
         .project("alpha")
         .user("hi")
@@ -288,7 +288,7 @@ fn report_default_emits_markdown_with_section_headers() {
 }
 #[test]
 fn report_json_emits_structured_envelope() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-json-1")
         .project("alpha")
         .user("hi")
@@ -333,7 +333,7 @@ fn report_json_emits_structured_envelope() {
 
 #[test]
 fn report_includes_remote_source_refs_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-report")
         .project("remote-report-proj")
         .user("TODO: revisit remote report refs")
@@ -384,7 +384,7 @@ fn report_includes_remote_source_refs_without_local_provider() {
 
 #[test]
 fn report_top_projects_limit_truncates_but_meta_keeps_total() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-a")
         .project("alpha")
         .user("hi")
@@ -440,7 +440,7 @@ fn report_week_and_days_are_mutually_exclusive() {
 fn report_respects_global_since_until_window() {
     // One session inside the bracket, one outside (fixture timestamps are
     // all 2025-01-01, so a 2030-window must produce empty).
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-out")
         .project("alpha")
         .user("hi")

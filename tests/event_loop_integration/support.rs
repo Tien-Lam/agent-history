@@ -18,7 +18,9 @@ pub(super) fn make_terminal() -> Terminal<TestBackend> {
     Terminal::new(backend).unwrap()
 }
 
-pub(super) fn claude_providers(fixture: &fixtures::FixtureDir) -> Vec<Box<dyn HistoryProvider>> {
+pub(super) fn claude_providers(
+    fixture: &fixtures::core::FixtureDir,
+) -> Vec<Box<dyn HistoryProvider>> {
     vec![Box::new(
         aghist::provider::claude_code::ClaudeCodeProvider::new(vec![fixture.base_path.clone()]),
     )]

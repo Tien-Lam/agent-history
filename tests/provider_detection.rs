@@ -170,7 +170,7 @@ fn detects_all_provider_markers() {
 #[test]
 fn config_filters_detected_providers_via_cli() {
     // Create fixtures with Claude data + Gemini dir
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
     fs::create_dir_all(home.join(".gemini")).unwrap();
 

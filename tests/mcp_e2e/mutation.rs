@@ -9,7 +9,7 @@ fn mcp_tool_calls_do_not_mutate_provider_history() {
     // upstream session files untouched. We snapshot every file under the
     // provider's base directory before/after a representative battery of tool
     // calls and assert byte-for-byte equality.
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
 
     let before = common::mcp::snapshot_tree(&fixture.base_path);

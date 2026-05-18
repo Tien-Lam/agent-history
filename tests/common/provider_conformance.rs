@@ -52,7 +52,8 @@ pub fn generated_provider_cases(
     n_sessions: usize,
     messages_per_session: usize,
 ) -> GeneratedProviderCases {
-    let (dirs, providers) = fixtures::all_generated_providers(n_sessions, messages_per_session);
+    let (dirs, providers) =
+        fixtures::generated::all_generated_providers(n_sessions, messages_per_session);
     let cases = providers
         .into_iter()
         .map(|provider| {

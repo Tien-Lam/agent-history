@@ -4,7 +4,7 @@ use super::super::common::cli;
 
 #[test]
 fn show_resolves_ref_md_default() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-test")
         .project("show-project")
         .user("first-message-payload")
@@ -38,7 +38,7 @@ fn show_resolves_ref_md_default() {
 }
 #[test]
 fn show_includes_context_window() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-ctx")
         .user("alpha")
         .assistant("beta")
@@ -67,7 +67,7 @@ fn show_includes_context_window() {
 }
 #[test]
 fn show_json_format_emits_machine_readable() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-json")
         .project("json-proj")
         .user("alpha")
@@ -99,13 +99,13 @@ fn show_json_format_emits_machine_readable() {
 
 #[test]
 fn show_source_qualified_remote_ref_preserves_source_in_output() {
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-shared")
         .project("local-show-project")
         .user("local body")
         .done()
         .build();
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-shared")
         .project("remote-show-project")
         .user("remote body")
@@ -135,7 +135,7 @@ fn show_source_qualified_remote_ref_preserves_source_in_output() {
 
 #[test]
 fn show_unique_unqualified_remote_ref_resolves_across_sources() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-remote-only")
         .project("remote-show-project")
         .user("remote body")
@@ -167,13 +167,13 @@ fn show_unique_unqualified_remote_ref_resolves_across_sources() {
 
 #[test]
 fn show_unqualified_duplicate_ref_requires_source_prefix() {
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-duplicate")
         .project("local-show-project")
         .user("local body")
         .done()
         .build();
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-duplicate")
         .project("remote-show-project")
         .user("remote body")
@@ -215,7 +215,7 @@ fn show_invalid_ref_emits_usage_envelope() {
 }
 #[test]
 fn show_unknown_session_emits_session_not_found() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("real-session")
         .user("a")
         .assistant("b")
@@ -233,7 +233,7 @@ fn show_unknown_session_emits_session_not_found() {
 }
 #[test]
 fn show_turn_out_of_range_emits_session_not_found() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-oor")
         .user("a")
         .assistant("b")

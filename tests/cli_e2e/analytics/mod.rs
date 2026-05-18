@@ -9,14 +9,14 @@ const FIXTURE_SINCE: &str = "2024-12-25T00:00:00Z";
 const FIXTURE_UNTIL: &str = "2025-01-02T00:00:00Z";
 
 struct MetadataFilteredFixture {
-    _fixture: common::fixtures::FixtureDir,
+    _fixture: common::fixtures::core::FixtureDir,
     home: PathBuf,
     _db_dir: tempfile::TempDir,
     db_path: PathBuf,
 }
 
 fn metadata_filtered_fixture() -> MetadataFilteredFixture {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-meta-keep")
         .project("meta-proj")
         .user("TODO: keep metadata filtered work")

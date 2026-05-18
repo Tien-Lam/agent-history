@@ -5,7 +5,7 @@ use crate::common::mcp::run_session_with_config_and_sources_cache;
 
 #[test]
 fn mcp_remote_source_cache_round_trips_list_search_message_and_resource() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-mcp-session")
         .project("remote-mcp-proj")
         .user("REMOTE_MCP_TOKEN remote message body")

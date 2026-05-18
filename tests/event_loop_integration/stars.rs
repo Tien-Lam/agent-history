@@ -21,7 +21,7 @@ fn toggle_star_persists_across_runs() {
     let stars_path = dir.path().join("metadata.db");
 
     // Run 1: load sessions, focus first one, press 's' to star, then quit.
-    let (dirs1, providers1) = fixtures::all_generated_providers(1, 2);
+    let (dirs1, providers1) = fixtures::generated::all_generated_providers(1, 2);
     let mut app1 = make_app_with_stars(providers1, &stars_path);
     let mut terminal1 = make_terminal();
     let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('s'), KeyCode::Char('q')]);
@@ -41,7 +41,7 @@ fn toggle_star_twice_unstars() {
     let dir = tempfile::tempdir().unwrap();
     let stars_path = dir.path().join("metadata.db");
 
-    let (dirs, providers) = fixtures::all_generated_providers(1, 2);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(1, 2);
     let mut app = make_app_with_stars(providers, &stars_path);
     let mut terminal = make_terminal();
     let events = ScriptedEventSource::from_keys(vec![
@@ -61,7 +61,7 @@ fn starred_only_filter_hides_unstarred_sessions() {
     let dir = tempfile::tempdir().unwrap();
     let stars_path = dir.path().join("metadata.db");
 
-    let (dirs, providers) = fixtures::all_generated_providers(1, 2);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(1, 2);
     let mut app = make_app_with_stars(providers, &stars_path);
     let mut terminal = make_terminal();
 
@@ -123,7 +123,7 @@ fn star_marker_appears_in_session_list() {
     let dir = tempfile::tempdir().unwrap();
     let stars_path = dir.path().join("metadata.db");
 
-    let fixture = fixtures::claude_single_session(2);
+    let fixture = fixtures::claude::claude_single_session(2);
     let mut app = make_app_with_stars(claude_providers(&fixture), &stars_path);
     let mut terminal = make_terminal();
 

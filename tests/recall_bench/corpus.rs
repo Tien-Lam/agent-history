@@ -1,7 +1,8 @@
 use aghist::provider::claude_code::ClaudeCodeProvider;
 use aghist::provider::HistoryProvider;
 
-use crate::common::fixtures::{self, ClaudeFixtureBuilder};
+use crate::common::fixtures;
+use crate::common::fixtures::claude::ClaudeFixtureBuilder;
 
 /// One synthetic single-topic session. The session id IS the topic slug so the
 /// labeled queries can target it directly without a separate lookup table.
@@ -214,7 +215,7 @@ pub(crate) fn build_corpus() -> BenchCorpus {
             topic_fixture.base_path,
         ]))];
 
-    let (mut noise_dirs, mut noise_providers) = fixtures::all_generated_providers(2, 4);
+    let (mut noise_dirs, mut noise_providers) = fixtures::generated::all_generated_providers(2, 4);
     dirs.append(&mut noise_dirs);
     providers.append(&mut noise_providers);
 
@@ -250,7 +251,7 @@ pub(crate) fn build_corpus() -> BenchCorpus {
     }
 }
 
-fn build_topic_corpus() -> crate::common::fixtures::FixtureDir {
+fn build_topic_corpus() -> crate::common::fixtures::core::FixtureDir {
     let mut builder = ClaudeFixtureBuilder::new();
     for topic in TOPICS {
         builder = builder

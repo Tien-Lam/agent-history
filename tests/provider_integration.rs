@@ -79,7 +79,7 @@ fn claude_load_messages() {
 
 #[test]
 fn claude_tool_result_array_content_joins_text_parts() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("claude-tool-array")
         .raw_line(
             r#"{"type":"user","uuid":"msg-tool-result","timestamp":"2025-01-01T00:00:00Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-001","content":[{"type":"text","text":"first line"},{"type":"image","text":"ignored"},{"type":"text","text":"second line"}]}]}}"#,
@@ -138,7 +138,7 @@ fn copilot_load_messages() {
 
 #[test]
 fn copilot_tool_result_prefers_detailed_content() {
-    let fixture = common::fixtures::CopilotFixtureBuilder::new()
+    let fixture = common::fixtures::copilot::CopilotFixtureBuilder::new()
         .add_session("copilot-tool-result")
         .raw_line(
             r#"{"id":"evt-result","type":"tool.execution_complete","timestamp":"2025-01-01T00:00:00Z","data":{"toolCallId":"call-1","success":true,"result":{"content":"short output","detailedContent":"long detailed output"}}}"#,
@@ -207,7 +207,7 @@ fn gemini_load_messages() {
 
 #[test]
 fn gemini_tool_response_keeps_freeform_json() {
-    let fixture = common::fixtures::GeminiFixtureBuilder::new()
+    let fixture = common::fixtures::gemini::GeminiFixtureBuilder::new()
         .add_session("gemini-tool-response")
         .raw_message(
             r#"{"id":"gm-tool","timestamp":"2025-01-01T00:00:00Z","type":"gemini","content":"running tool","toolCalls":[{"id":"tool-1","name":"inspect","args":{"path":"src/main.rs"},"response":{"nested":{"answer":42}}}],"model":"gemini-2.5-pro"}"#,
@@ -395,7 +395,7 @@ fn opencode_zero_message_session() {
 
 #[test]
 fn cursor_discover_and_load_from_generated_fixture() {
-    let fixture = common::fixtures::cursor_single_session(4);
+    let fixture = common::fixtures::cursor::cursor_single_session(4);
     let provider = CursorProvider::new(vec![fixture.base_path.clone()]);
     let sessions = provider.discover_sessions().unwrap();
 
@@ -420,7 +420,7 @@ fn cursor_discover_and_load_from_generated_fixture() {
 
 #[test]
 fn load_messages_from_deleted_file_returns_error() {
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let provider = ClaudeCodeProvider::new(vec![fixture.base_path.clone()]);
     let sessions = provider
         .discover_sessions()
@@ -464,7 +464,7 @@ fn load_messages_from_empty_file_returns_empty() {
 
 #[test]
 fn discover_survives_unreadable_session_file() {
-    let fixture = common::fixtures::claude_multi_session(3, 2);
+    let fixture = common::fixtures::claude::claude_multi_session(3, 2);
     let provider = ClaudeCodeProvider::new(vec![fixture.base_path.clone()]);
     let sessions = provider
         .discover_sessions()

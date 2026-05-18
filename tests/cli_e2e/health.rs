@@ -3,7 +3,7 @@ use super::common;
 
 #[test]
 fn health_returns_ok_envelope_with_writable_index() {
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
     let index_dir = tempfile::tempdir().unwrap();
 

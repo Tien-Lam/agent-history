@@ -181,7 +181,7 @@ fn index_embeddings_feature_awaits_consent_without_download() {
 
 #[test]
 fn list_json_session_contract_snapshot() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("json-contract-session")
         .project("contract-project")
         .git_branch("main")
@@ -202,7 +202,7 @@ fn list_json_session_contract_snapshot() {
 
 #[test]
 fn search_json_contract_snapshot() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("json-contract-search")
         .project("contract-project")
         .user("ordinary prompt")
@@ -227,7 +227,7 @@ fn search_json_contract_snapshot() {
 
 #[test]
 fn show_json_contract_snapshot() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("json-contract-show")
         .project("contract-project")
         .user("show alpha")
@@ -255,7 +255,7 @@ fn show_json_contract_snapshot() {
 
 #[test]
 fn diff_json_contract_snapshot() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("json-contract-diff-a")
         .project("contract-project")
         .user("same prompt")
@@ -304,7 +304,7 @@ fn mcp_tools_list_contract_snapshot() {
 
 #[test]
 fn mcp_reindex_contract_snapshot() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("json-contract-mcp-reindex")
         .project("contract-project")
         .user("mcp reindex prompt")

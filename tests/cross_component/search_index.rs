@@ -229,7 +229,7 @@ fn search_index_finds_tool_output() {
     // Token only appears inside a tool_result block — proves we index the
     // tool output field and that queries hit it.
     let token = "zorpglyph42";
-    let fixture = fixtures::ClaudeFixtureBuilder::new()
+    let fixture = fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-tool-out")
         .project("tooloutput-project")
         .user("Run the test")

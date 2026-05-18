@@ -9,7 +9,7 @@ use common::fixtures;
 
 #[test]
 fn session_discovery_many_sessions() {
-    let (dirs, providers) = fixtures::all_generated_providers(50, 4);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(50, 4);
     let start = Instant::now();
 
     let mut total = 0;
@@ -35,7 +35,7 @@ fn session_discovery_many_sessions() {
 
 #[test]
 fn message_loading_large_session() {
-    let fixture = fixtures::claude_single_session(200);
+    let fixture = fixtures::claude::claude_single_session(200);
     let provider =
         aghist::provider::claude_code::ClaudeCodeProvider::new(vec![fixture.base_path.clone()]);
 
@@ -80,7 +80,7 @@ fn lru_cache_under_pressure() {
 
 #[test]
 fn multi_provider_aggregation_and_sort() {
-    let (dirs, providers) = fixtures::all_generated_providers(20, 6);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(20, 6);
 
     let start = Instant::now();
     let mut all_sessions = Vec::new();
@@ -114,7 +114,7 @@ fn full_app_render_cycle() {
 
     use common::helpers::ScriptedEventSource;
 
-    let (dirs, providers) = fixtures::all_generated_providers(10, 8);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(10, 8);
     let mut app = aghist::app::App::new(providers, Config::default());
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();

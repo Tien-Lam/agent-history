@@ -3,7 +3,7 @@ use super::super::common;
 
 #[test]
 fn sources_emits_json_with_provider_rows() {
-    let fixture = common::fixtures::claude_single_session(3);
+    let fixture = common::fixtures::claude::claude_single_session(3);
     let home = fixture.base_path.parent().unwrap();
 
     let assert = aghist()
@@ -24,7 +24,7 @@ fn sources_emits_json_with_provider_rows() {
 }
 #[test]
 fn sources_ndjson_one_row_per_provider() {
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
 
     let assert = aghist()

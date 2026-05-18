@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn threads_include_remote_source_refs_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-thread")
         .project("thread-proj")
         .user("thread context")
@@ -38,7 +38,7 @@ fn threads_include_remote_source_refs_without_local_provider() {
 
 #[test]
 fn threads_llm_finds_remote_source_candidates_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-thread-llm")
         .project("thread-llm-proj")
         .user("thread context")
@@ -66,7 +66,7 @@ fn threads_llm_finds_remote_source_candidates_without_local_provider() {
 
 #[test]
 fn track_finds_remote_source_candidates_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-track")
         .project("track-proj")
         .user("BM25 ranking context")
@@ -94,7 +94,7 @@ fn track_finds_remote_source_candidates_without_local_provider() {
 
 #[test]
 fn decisions_include_remote_source_refs_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-decision")
         .project("decision-proj")
         .user("architecture")
@@ -127,7 +127,7 @@ fn decisions_include_remote_source_refs_without_local_provider() {
 
 #[test]
 fn decisions_llm_finds_remote_source_candidates_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-decision-llm")
         .project("decision-llm-proj")
         .user("architecture")
@@ -155,7 +155,7 @@ fn decisions_llm_finds_remote_source_candidates_without_local_provider() {
 
 #[test]
 fn todos_include_remote_source_refs_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-todo")
         .project("todo-proj")
         .user("TODO: revisit remote sync retries")
@@ -188,7 +188,7 @@ fn todos_include_remote_source_refs_without_local_provider() {
 
 #[test]
 fn todos_llm_finds_remote_source_candidates_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-todo-llm")
         .project("todo-llm-proj")
         .user("TODO: revisit remote LLM todo refs")
@@ -344,7 +344,7 @@ fn decisions_llm_without_api_key_returns_llm_error_envelope() {
     // We use a session with explicit decision language; the LLM path then
     // groups by session and tries to call the API — but with no key set it
     // must fail fast with kind=llm-error.
-    let mut builder = common::fixtures::ClaudeFixtureBuilder::new()
+    let mut builder = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("ses-llm-no-key")
         .project("p")
         .display("decisions session");

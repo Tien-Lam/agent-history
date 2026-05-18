@@ -2,7 +2,7 @@ use super::support::*;
 
 #[test]
 fn quit_immediately() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -16,7 +16,7 @@ fn quit_immediately() {
 
 #[test]
 fn browse_select_enters_view_mode() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -35,7 +35,7 @@ fn browse_select_enters_view_mode() {
 
 #[test]
 fn browse_select_and_back_returns_to_browse() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -52,7 +52,7 @@ fn browse_select_and_back_returns_to_browse() {
 
 #[test]
 fn navigate_moves_selection() {
-    let (dirs, providers) = fixtures::all_generated_providers(3, 2);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(3, 2);
     let mut app = make_app(providers);
     let mut terminal = make_terminal();
 
@@ -69,7 +69,7 @@ fn navigate_moves_selection() {
 
 #[test]
 fn navigate_up_moves_selection_back() {
-    let (dirs, providers) = fixtures::all_generated_providers(3, 2);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(3, 2);
     let mut app = make_app(providers);
     let mut terminal = make_terminal();
 
@@ -87,7 +87,7 @@ fn navigate_up_moves_selection_back() {
 
 #[test]
 fn scroll_in_session_view() {
-    let fixture = fixtures::claude_single_session(10);
+    let fixture = fixtures::claude::claude_single_session(10);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -107,7 +107,7 @@ fn scroll_in_session_view() {
 
 #[test]
 fn toggle_tool_calls_changes_rendered_output() {
-    let fixture = fixtures::ClaudeFixtureBuilder::new()
+    let fixture = fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-tools")
         .project("tools-project")
         .user("Read the file")
@@ -142,7 +142,7 @@ fn toggle_tool_calls_changes_rendered_output() {
 
 #[test]
 fn help_overlay_shows_keybindings() {
-    let fixture = fixtures::claude_single_session(2);
+    let fixture = fixtures::claude::claude_single_session(2);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -160,7 +160,7 @@ fn help_overlay_shows_keybindings() {
 
 #[test]
 fn help_toggle_returns_to_browse() {
-    let fixture = fixtures::claude_single_session(2);
+    let fixture = fixtures::claude::claude_single_session(2);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -176,7 +176,7 @@ fn help_toggle_returns_to_browse() {
 
 #[test]
 fn filter_mode_shows_provider_list() {
-    let (dirs, providers) = fixtures::all_generated_providers(1, 2);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(1, 2);
     let mut app = make_app(providers);
     let mut terminal = make_terminal();
 
@@ -196,7 +196,7 @@ fn filter_mode_shows_provider_list() {
 #[test]
 fn filter_toggle_changes_rendered_output() {
     // Run 1: no filter applied
-    let (dirs1, providers1) = fixtures::all_generated_providers(1, 2);
+    let (dirs1, providers1) = fixtures::generated::all_generated_providers(1, 2);
     let mut app1 = make_app(providers1);
     let mut terminal1 = make_terminal();
     let events = ScriptedEventSource::from_keys(vec![KeyCode::Char('q')]);
@@ -206,7 +206,7 @@ fn filter_toggle_changes_rendered_output() {
     drop(dirs1);
 
     // Run 2: toggle a provider off via filter
-    let (dirs2, providers2) = fixtures::all_generated_providers(1, 2);
+    let (dirs2, providers2) = fixtures::generated::all_generated_providers(1, 2);
     let mut app2 = make_app(providers2);
     let mut terminal2 = make_terminal();
     let events = ScriptedEventSource::from_keys(vec![
@@ -241,7 +241,7 @@ fn empty_state_renders_correctly() {
 
 #[test]
 fn rapid_keys_preserves_valid_state() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -270,7 +270,7 @@ fn rapid_keys_preserves_valid_state() {
 
 #[test]
 fn go_to_bottom_selects_last_item() {
-    let (dirs, providers) = fixtures::all_generated_providers(3, 2);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(3, 2);
     let mut app = make_app(providers);
     let mut terminal = make_terminal();
 
@@ -289,7 +289,7 @@ fn go_to_bottom_selects_last_item() {
 
 #[test]
 fn go_to_top_selects_first_item() {
-    let (dirs, providers) = fixtures::all_generated_providers(3, 2);
+    let (dirs, providers) = fixtures::generated::all_generated_providers(3, 2);
     let mut app = make_app(providers);
     let mut terminal = make_terminal();
 
@@ -306,7 +306,7 @@ fn go_to_top_selects_first_item() {
 
 #[test]
 fn ctrl_c_quits_from_any_mode() {
-    let fixture = fixtures::claude_single_session(2);
+    let fixture = fixtures::claude::claude_single_session(2);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -332,7 +332,7 @@ fn ctrl_c_quits_from_any_mode() {
 
 #[test]
 fn session_view_shows_message_content() {
-    let fixture = fixtures::ClaudeFixtureBuilder::new()
+    let fixture = fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-content")
         .project("content-project")
         .user("What is the meaning of life?")

@@ -11,7 +11,7 @@ fn hybrid_toggle_dispatch_is_inert_when_unavailable() {
     // ToggleHybrid in this state must NOT flip the user-facing toggle and
     // must surface a hint message instead. Independent of the developer's
     // ~/.cache/aghist contents, so this stays deterministic in CI.
-    let fixture = fixtures::claude_single_session(2);
+    let fixture = fixtures::claude::claude_single_session(2);
     let mut app = make_app(claude_providers(&fixture));
 
     assert!(!app.hybrid_available());
@@ -43,7 +43,7 @@ fn hybrid_toggle_dispatch_flips_engine_when_available() {
     // here — execute_search bails when `index_ready` is false — but the
     // user-visible toggle state and the engine label are what the status
     // bar binds to, and that's what we want to lock down.
-    let fixture = fixtures::claude_single_session(2);
+    let fixture = fixtures::claude::claude_single_session(2);
     let mut app = make_app(claude_providers(&fixture));
     app.set_hybrid_available_for_tests(true);
 

@@ -15,7 +15,7 @@ fn make_app(providers: Vec<Box<dyn HistoryProvider>>) -> App {
     App::new(providers, Config::default())
 }
 
-fn claude_providers(fixture: &fixtures::FixtureDir) -> Vec<Box<dyn HistoryProvider>> {
+fn claude_providers(fixture: &fixtures::core::FixtureDir) -> Vec<Box<dyn HistoryProvider>> {
     vec![Box::new(
         aghist::provider::claude_code::ClaudeCodeProvider::new(vec![fixture.base_path.clone()]),
     )]
@@ -25,7 +25,7 @@ fn claude_providers(fixture: &fixtures::FixtureDir) -> Vec<Box<dyn HistoryProvid
 
 #[test]
 fn render_at_minimum_size_shows_content() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let backend = TestBackend::new(40, 8);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -45,7 +45,7 @@ fn render_at_minimum_size_shows_content() {
 
 #[test]
 fn render_at_large_size_shows_content() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let backend = TestBackend::new(300, 100);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -63,7 +63,7 @@ fn render_at_large_size_shows_content() {
 
 #[test]
 fn render_at_single_row_no_panic() {
-    let fixture = fixtures::claude_single_session(2);
+    let fixture = fixtures::claude::claude_single_session(2);
     let mut app = make_app(claude_providers(&fixture));
     let backend = TestBackend::new(80, 1);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -78,7 +78,7 @@ fn render_at_single_row_no_panic() {
 
 #[test]
 fn resize_event_keeps_app_functional() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -103,7 +103,7 @@ fn resize_event_keeps_app_functional() {
 
 #[test]
 fn rapid_resize_preserves_state() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -128,7 +128,7 @@ fn rapid_resize_preserves_state() {
 
 #[test]
 fn resize_during_session_view_preserves_mode() {
-    let fixture = fixtures::claude_single_session(6);
+    let fixture = fixtures::claude::claude_single_session(6);
     let mut app = make_app(claude_providers(&fixture));
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -167,7 +167,7 @@ fn resize_during_session_view_preserves_mode() {
 
 #[test]
 fn resize_during_help_overlay_keeps_help_visible() {
-    let fixture = fixtures::claude_single_session(2);
+    let fixture = fixtures::claude::claude_single_session(2);
     let mut app = make_app(claude_providers(&fixture));
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -232,7 +232,7 @@ fn navigation_in_empty_state_preserves_none_selection() {
 
 #[test]
 fn wide_vs_narrow_terminal_differ() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
 
     // Render at wide size
     let mut app1 = make_app(claude_providers(&fixture));

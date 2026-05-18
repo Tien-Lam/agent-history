@@ -4,7 +4,7 @@ use super::support::*;
 
 #[test]
 fn export_menu_opens_from_session_view() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -30,7 +30,7 @@ fn export_menu_opens_from_session_view() {
 
 #[test]
 fn export_cancel_returns_to_session_view() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -46,7 +46,7 @@ fn export_cancel_returns_to_session_view() {
 
 #[test]
 fn export_navigate_formats() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -65,7 +65,7 @@ fn export_navigate_formats() {
 
 #[test]
 fn export_confirm_writes_file_and_returns() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -102,7 +102,7 @@ fn export_confirm_writes_file_and_returns() {
 
 #[test]
 fn help_toggle_returns_to_view_session() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -124,7 +124,7 @@ fn help_toggle_returns_to_view_session() {
 
 #[test]
 fn export_while_filtered_writes_correct_session() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 

@@ -210,7 +210,7 @@ fn filter_since_rejects_non_rfc3339() {
 }
 #[test]
 fn list_filter_provider_drops_other_providers() {
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
 
     let kept = aghist()
@@ -253,7 +253,7 @@ fn list_json_provider_round_trips_through_cli_input() {
     // (snake_case) while --provider only accepts "claude-code" (kebab),
     // breaking `aghist --list --json | jq -r .sessions[0].provider |
     // xargs aghist --provider`. Output now matches the input slug.
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
 
     let json_out = aghist()
@@ -284,7 +284,7 @@ fn list_json_provider_round_trips_through_cli_input() {
 fn list_filter_since_excludes_older_sessions() {
     // Default fixture session is at 2025-01-01T00:00:00Z. Picking a since
     // strictly after that should drop it.
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
 
     let output = aghist()
@@ -305,7 +305,7 @@ fn list_filter_since_excludes_older_sessions() {
 }
 #[test]
 fn list_filter_until_includes_older_sessions() {
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
 
     let output = aghist()
@@ -323,7 +323,7 @@ fn list_filter_until_includes_older_sessions() {
 }
 #[test]
 fn list_filter_project_substring_match_is_case_insensitive() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-proj-test")
         .project("MyCoolProject")
         .user("hi")
@@ -348,7 +348,7 @@ fn list_filter_project_substring_match_is_case_insensitive() {
 #[test]
 fn list_filter_role_drops_sessions_without_matching_messages() {
     // Session has only user/assistant messages; --role tool should drop it.
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-role-test")
         .project("role-test")
         .user("hi")
@@ -374,7 +374,7 @@ fn list_filter_role_drops_sessions_without_matching_messages() {
 #[test]
 fn list_filter_has_tool_call_keeps_only_sessions_with_tool_use() {
     // Session A: tool-use; Session B: text only.
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-with-tool")
         .project("tool-yes")
         .user("run a thing")
@@ -408,7 +408,7 @@ fn list_filter_has_tool_call_keeps_only_sessions_with_tool_use() {
 fn search_filter_provider_pushes_into_index_query() {
     // Single-provider fixture; --provider matching should keep results,
     // --provider mismatching should empty them.
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index = tempfile::tempdir().unwrap();
 
@@ -432,7 +432,7 @@ fn search_filter_provider_pushes_into_index_query() {
 }
 #[test]
 fn search_filter_role_restricts_hits_to_matching_role() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-search-role")
         .project("rolesearch")
         .user("apple banana")
@@ -461,7 +461,7 @@ fn search_filter_role_restricts_hits_to_matching_role() {
 }
 #[test]
 fn search_filter_has_tool_call_keeps_only_tool_messages() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-search-tool")
         .project("toolsearch")
         .user("search-keyword run me")
@@ -488,7 +488,7 @@ fn search_filter_has_tool_call_keeps_only_tool_messages() {
 #[test]
 fn search_filter_since_drops_old_messages() {
     // Fixture timestamps are at 2025-01-01T00:00:00–05Z. A future since cuts everything.
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index = tempfile::tempdir().unwrap();
 
@@ -508,7 +508,7 @@ fn search_filter_since_drops_old_messages() {
 }
 #[test]
 fn search_filter_project_substring_match_is_case_insensitive() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-search-proj")
         .project("AwesomeProject")
         .user("findme keyword")

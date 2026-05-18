@@ -4,8 +4,8 @@ use super::common;
 /// Build a Claude fixture with three known sessions, all under the same
 /// `AGHIST_HOME`, returning the home path and the session ids in deterministic
 /// order. Each session has a single user turn so `message_count` == 1.
-fn three_session_fixture() -> (common::fixtures::FixtureDir, std::path::PathBuf) {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+fn three_session_fixture() -> (common::fixtures::core::FixtureDir, std::path::PathBuf) {
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("sess-alpha")
         .project("alpha-proj")
         .user("alpha body")
@@ -184,13 +184,13 @@ fn list_metadata_filter_no_match_exits_three() {
 
 #[test]
 fn list_source_qualified_star_filters_remote_duplicate_session_ids() {
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("sess-shared")
         .project("local-proj")
         .user("local body")
         .done()
         .build();
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("sess-shared")
         .project("remote-proj")
         .user("remote body")

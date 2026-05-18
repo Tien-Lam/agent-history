@@ -9,7 +9,7 @@ use predicates::prelude::*;
 #[test]
 fn search_federates_across_local_and_remote_source_caches() {
     // Local fixture: a Claude session containing a unique token.
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("federated-local")
         .project("local-proj")
         .user("FEDERATED_TOKEN local message body")
@@ -17,7 +17,7 @@ fn search_federates_across_local_and_remote_source_caches() {
         .build();
     let home = local.base_path.parent().unwrap();
 
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("federated-remote")
         .project("remote-proj")
         .user("FEDERATED_TOKEN remote message body")
@@ -61,7 +61,7 @@ fn search_federates_across_local_and_remote_source_caches() {
 
 #[test]
 fn search_remote_sources_respect_enabled_provider_allowlist() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("disabled-remote")
         .project("remote-proj")
         .user("DISABLED_REMOTE_TOKEN body")
@@ -93,7 +93,7 @@ enabled = []
 /// search still surfaces local hits and exits 0.
 #[test]
 fn search_partial_failure_when_remote_cache_missing() {
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("partial-local")
         .project("local-proj")
         .user("PARTIAL_TOKEN local body")
@@ -269,7 +269,7 @@ fn search_help_documents_debug_search_flag() {
 }
 #[test]
 fn search_debug_search_json_includes_explanation() {
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index_dir = tempfile::tempdir().unwrap();
 
@@ -302,7 +302,7 @@ fn search_debug_search_json_includes_explanation() {
 }
 #[test]
 fn search_without_debug_search_omits_explanation_field() {
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index_dir = tempfile::tempdir().unwrap();
 
@@ -335,7 +335,7 @@ fn search_invalid_cursor_returns_usage_envelope() {
 }
 #[test]
 fn search_limit_emits_cursor_and_pages_without_duplicates() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("search-page")
         .project("paging")
         .user("PAGE_TOKEN first")
@@ -396,7 +396,7 @@ fn search_help_documents_hybrid_weight_flag() {
 }
 #[test]
 fn search_default_engine_is_lexical_in_meta() {
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index_dir = tempfile::tempdir().unwrap();
 
@@ -421,7 +421,7 @@ fn search_hybrid_weight_falls_open_to_lexical_without_embeddings() {
     // and no store), --hybrid-weight must NOT crash or fail — it falls open
     // to lexical-only and reports `engine: lexical` in meta. This is the
     // core "fail open" guarantee from ahist-y3o.4.2.
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index_dir = tempfile::tempdir().unwrap();
 
@@ -447,7 +447,7 @@ fn search_hybrid_weight_falls_open_to_lexical_without_embeddings() {
 }
 #[test]
 fn search_hybrid_weight_zero_behaves_like_lexical() {
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index_dir = tempfile::tempdir().unwrap();
 
@@ -467,7 +467,7 @@ fn search_hybrid_weight_zero_behaves_like_lexical() {
 }
 #[test]
 fn search_json_output_wraps_hits_in_meta_envelope() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("search-json-envelope")
         .project("search-contract")
         .user("SEARCH_JSON_ENVELOPE_TOKEN prompt")
@@ -515,7 +515,7 @@ fn search_watch_help_documents_flags() {
 }
 #[test]
 fn search_watch_emits_ndjson_one_per_line_for_existing_matches() {
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index = tempfile::tempdir().unwrap();
 
@@ -555,7 +555,7 @@ fn search_watch_emits_ndjson_one_per_line_for_existing_matches() {
 #[test]
 fn search_watch_dedups_hits_across_polls() {
     // Same fixture across 3 polls — every hit should appear exactly once.
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();
     let index = tempfile::tempdir().unwrap();
 
@@ -615,7 +615,7 @@ fn search_watch_requires_query() {
 }
 #[test]
 fn search_params_invokes_query() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-search-params")
         .project("search-params-project")
         .user("uniqueneedlephrase")

@@ -12,7 +12,7 @@ fn usage_with_no_data_exits_three_for_empty() {
 }
 #[test]
 fn usage_default_groups_by_model_with_priced_costs() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-usage-1")
         .project("alpha")
         .user("hi")
@@ -51,7 +51,7 @@ fn usage_default_groups_by_model_with_priced_costs() {
 }
 #[test]
 fn usage_by_provider_groups_across_models() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-prov-1")
         .project("alpha")
         .user("hi")
@@ -76,7 +76,7 @@ fn usage_by_provider_groups_across_models() {
 
 #[test]
 fn usage_includes_remote_source_cache_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-usage")
         .project("remote-proj")
         .user("hi")
@@ -121,7 +121,7 @@ fn usage_invalid_by_value_emits_usage_envelope() {
 }
 #[test]
 fn usage_limit_truncates_rows_but_totals_cover_all() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-limit-1")
         .project("alpha")
         .user("hi")

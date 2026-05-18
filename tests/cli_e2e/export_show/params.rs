@@ -17,7 +17,7 @@ fn invalid_export_format_emits_usage_envelope_and_exits_two() {
 }
 #[test]
 fn export_params_replaces_individual_flags() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-params-test")
         .project("params-project")
         .user("Q")
@@ -102,7 +102,7 @@ fn export_params_invalid_format_value_emits_usage() {
 }
 #[test]
 fn export_params_with_turn_range_slices_output() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-params-range")
         .project("range-project")
         .user("first")
@@ -133,7 +133,7 @@ fn export_params_with_turn_range_slices_output() {
 }
 #[test]
 fn show_params_replaces_positional_ref() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-show-params")
         .project("show-params-project")
         .user("alpha-payload")

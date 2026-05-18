@@ -3,7 +3,7 @@ use super::common;
 
 #[test]
 fn diff_json_orders_replacements_delete_then_insert() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("diff-left")
         .project("diff-project")
         .user("shared opening")
@@ -49,7 +49,7 @@ fn diff_json_orders_replacements_delete_then_insert() {
 
 #[test]
 fn diff_identical_sessions_exits_empty_with_json_summary() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("diff-same-a")
         .project("diff-project")
         .user("same question")
@@ -82,7 +82,7 @@ fn diff_identical_sessions_exits_empty_with_json_summary() {
 
 #[test]
 fn diff_accepts_source_qualified_remote_session_refs() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("diff-remote-left")
         .project("diff-remote-project")
         .user("shared opening")
@@ -123,7 +123,7 @@ fn diff_accepts_source_qualified_remote_session_refs() {
 
 #[test]
 fn diff_unqualified_duplicate_ref_requires_source_prefix() {
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("diff-shared")
         .project("local-diff-project")
         .user("local body")
@@ -133,7 +133,7 @@ fn diff_unqualified_duplicate_ref_requires_source_prefix() {
         .user("other local body")
         .done()
         .build();
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("diff-shared")
         .project("remote-diff-project")
         .user("remote body")

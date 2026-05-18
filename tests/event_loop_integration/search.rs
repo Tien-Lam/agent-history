@@ -4,7 +4,7 @@ use super::support::*;
 
 #[test]
 fn search_enter_and_cancel_preserves_sessions() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -24,7 +24,7 @@ fn search_enter_and_cancel_preserves_sessions() {
 
 #[test]
 fn search_type_and_cancel_returns_to_browse() {
-    let fixture = fixtures::claude_single_session(4);
+    let fixture = fixtures::claude::claude_single_session(4);
     let mut app = make_app(claude_providers(&fixture));
     let mut terminal = make_terminal();
 
@@ -48,7 +48,7 @@ fn search_type_and_cancel_returns_to_browse() {
 #[test]
 fn search_with_indexing_finds_content() {
     // Create a fixture with known searchable content
-    let fixture = fixtures::ClaudeFixtureBuilder::new()
+    let fixture = fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-searchable")
         .project("search-project")
         .user("Tell me about quantum computing")

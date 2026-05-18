@@ -21,7 +21,7 @@ fn export_nonexistent_session_emits_envelope_and_exits_one() {
 }
 #[test]
 fn export_json_valid_output() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-export-test")
         .project("export-project")
         .display("Test export")
@@ -49,7 +49,7 @@ fn export_json_valid_output() {
 }
 #[test]
 fn export_markdown_to_stdout() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-md-test")
         .project("md-project")
         .user("Question")
@@ -67,7 +67,7 @@ fn export_markdown_to_stdout() {
 }
 #[test]
 fn export_to_file() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-file-test")
         .project("file-project")
         .user("Question")
@@ -98,13 +98,13 @@ fn export_to_file() {
 
 #[test]
 fn export_source_qualified_remote_session_with_source_qualified_notes() {
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-export-shared")
         .project("local-export-project")
         .user("local body")
         .done()
         .build();
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-export-shared")
         .project("remote-export-project")
         .user("remote body")
@@ -176,13 +176,13 @@ fn export_source_qualified_remote_session_with_source_qualified_notes() {
 
 #[test]
 fn export_ambiguous_duplicate_session_id_requires_source_qualified_ref() {
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-export-ambiguous")
         .project("local-export-project")
         .user("local body")
         .done()
         .build();
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-export-ambiguous")
         .project("remote-export-project")
         .user("remote body")

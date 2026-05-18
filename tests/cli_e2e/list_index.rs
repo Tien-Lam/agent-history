@@ -31,7 +31,7 @@ fn list_with_no_data_exits_three_for_empty() {
 }
 #[test]
 fn list_with_generated_claude_fixtures() {
-    let fixture = common::fixtures::claude_single_session(4);
+    let fixture = common::fixtures::claude::claude_single_session(4);
     // base_path is {tmpdir}/.claude, AGHIST_HOME should be the parent.
     // Under non-TTY (piped stdout), --list emits NDJSON: one row per session.
     let home = fixture.base_path.parent().unwrap();
@@ -48,7 +48,7 @@ fn list_with_generated_claude_fixtures() {
 }
 #[test]
 fn list_with_data_exits_zero() {
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
     aghist()
         .arg("--list")
@@ -58,8 +58,8 @@ fn list_with_data_exits_zero() {
 }
 #[test]
 fn list_with_multiple_providers() {
-    let claude = common::fixtures::claude_single_session(2);
-    let codex = common::fixtures::codex_single_session(2);
+    let claude = common::fixtures::claude::claude_single_session(2);
+    let codex = common::fixtures::codex::codex_single_session(2);
 
     let home = common::helpers::FixtureHome::new();
     home.add_claude(&claude);
@@ -82,7 +82,7 @@ fn list_with_multiple_providers() {
 
 #[test]
 fn list_federates_remote_sources_and_paginates_reused_session_ids() {
-    let local = common::fixtures::ClaudeFixtureBuilder::new()
+    let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("shared-list-id")
         .project("local-proj")
         .user("local session without tool call")
@@ -90,7 +90,7 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         .build();
     let home = local.base_path.parent().unwrap();
 
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("shared-list-id")
         .project("remote-proj")
         .user("remote session")
@@ -186,7 +186,7 @@ fn index_no_data_emits_zero_counts_json() {
 }
 #[test]
 fn index_idempotent_second_run_reports_unchanged() {
-    let fixture = common::fixtures::ClaudeFixtureBuilder::new()
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-index-test")
         .project("idx-project")
         .user("Hello")
@@ -232,14 +232,14 @@ fn index_idempotent_second_run_reports_unchanged() {
 fn index_provider_filter_restricts_scope() {
     // Build a home with both Claude and Codex sessions; --provider claude-code should
     // index only the Claude one.
-    let claude = common::fixtures::ClaudeFixtureBuilder::new()
+    let claude = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("claude-only")
         .project("c-proj")
         .user("hi")
         .assistant("hello")
         .done()
         .build();
-    let codex = common::fixtures::codex_single_session(2);
+    let codex = common::fixtures::codex::codex_single_session(2);
 
     let home = common::helpers::FixtureHome::new();
     home.add_claude(&claude);
@@ -263,7 +263,7 @@ fn index_provider_filter_restricts_scope() {
 
 #[test]
 fn index_provider_filter_includes_remote_cache_without_local_provider() {
-    let remote = common::fixtures::ClaudeFixtureBuilder::new()
+    let remote = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("remote-index-only")
         .project("remote-proj")
         .user("REMOTE_INDEX_TOKEN remote message body")
@@ -308,7 +308,7 @@ fn index_unknown_provider_emits_usage_envelope_and_exits_two() {
 }
 #[test]
 fn list_json_emits_single_object_with_sessions_array() {
-    let fixture = common::fixtures::claude_single_session(3);
+    let fixture = common::fixtures::claude::claude_single_session(3);
     let home = fixture.base_path.parent().unwrap();
     let output = aghist()
         .args(["--list", "--json"])
@@ -326,7 +326,7 @@ fn list_json_emits_single_object_with_sessions_array() {
 }
 #[test]
 fn list_ndjson_emits_one_session_per_line() {
-    let fixture = common::fixtures::claude_single_session(2);
+    let fixture = common::fixtures::claude::claude_single_session(2);
     let home = fixture.base_path.parent().unwrap();
     let output = aghist()
         .args(["--list", "--ndjson"])
@@ -374,7 +374,7 @@ fn list_rejects_json_and_ndjson_together() {
 }
 #[test]
 fn list_limit_caps_returned_sessions_and_emits_next_cursor() {
-    let fixture = common::fixtures::claude_multi_session(5, 2);
+    let fixture = common::fixtures::claude::claude_multi_session(5, 2);
     let home = fixture.base_path.parent().unwrap();
     let output = aghist()
         .args(["--list", "--json", "--limit", "2"])
@@ -393,7 +393,7 @@ fn list_limit_caps_returned_sessions_and_emits_next_cursor() {
 }
 #[test]
 fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
-    let fixture = common::fixtures::claude_multi_session(5, 2);
+    let fixture = common::fixtures::claude::claude_multi_session(5, 2);
     let home = fixture.base_path.parent().unwrap();
 
     // First page.

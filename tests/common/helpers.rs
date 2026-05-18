@@ -109,11 +109,11 @@ impl FixtureHome {
         self.dir.path()
     }
 
-    pub fn add_claude(&self, fixture: &super::fixtures::FixtureDir) {
+    pub fn add_claude(&self, fixture: &super::fixtures::core::FixtureDir) {
         copy_dir_recursive(&fixture.base_path, &self.path().join(".claude"));
     }
 
-    pub fn add_codex(&self, fixture: &super::fixtures::FixtureDir) {
+    pub fn add_codex(&self, fixture: &super::fixtures::core::FixtureDir) {
         copy_dir_recursive(
             &fixture.base_path,
             &self.path().join(".codex").join("sessions"),
