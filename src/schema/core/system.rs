@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::super::common::{exit_codes, SCHEMA_DRAFT};
+use super::super::common::{
+    closed_empty_object_schema, closed_object_schema, exit_codes, schema_props, SCHEMA_DRAFT,
+};
 use super::super::subcommands;
 
 pub(in crate::schema) fn sources_schema() -> Value {
@@ -10,14 +12,13 @@ pub(in crate::schema) fn sources_schema() -> Value {
         "title": "aghist sources",
         "command": "sources",
         "description": "List detected provider sources: paths, session counts, sizes, last-indexed-at.",
-        "params": {
-            "type": "object",
-            "properties": {
-                "json": { "type": "boolean" },
-                "ndjson": { "type": "boolean" }
-            },
-            "additionalProperties": false
-        },
+        "params": closed_object_schema(
+            schema_props([
+                ("json", json!({ "type": "boolean" })),
+                ("ndjson", json!({ "type": "boolean" })),
+            ]),
+            &[],
+        ),
         "response": {
             "oneOf": [
                 {
@@ -74,14 +75,13 @@ pub(in crate::schema) fn health_schema() -> Value {
         "title": "aghist health",
         "command": "health",
         "description": "Machine-readable doctor: validates index, manifest, and provider state.",
-        "params": {
-            "type": "object",
-            "properties": {
-                "json": { "type": "boolean" },
-                "ndjson": { "type": "boolean" }
-            },
-            "additionalProperties": false
-        },
+        "params": closed_object_schema(
+            schema_props([
+                ("json", json!({ "type": "boolean" })),
+                ("ndjson", json!({ "type": "boolean" })),
+            ]),
+            &[],
+        ),
         "response": {
             "type": "object",
             "properties": {
@@ -122,11 +122,7 @@ pub(in crate::schema) fn mcp_schema() -> Value {
         "title": "aghist mcp",
         "command": "mcp",
         "description": "Run a stdio MCP server (JSON-RPC 2.0, newline-delimited) exposing aghist's read paths.",
-        "params": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": false
-        },
+        "params": closed_empty_object_schema(),
         "response": {
             "description": "Newline-delimited JSON-RPC 2.0 messages on stdin/stdout. Tools: search_sessions, list_sessions, get_session, get_message, reindex, health."
         },
@@ -145,19 +141,27 @@ pub(in crate::schema) fn schema_schema() -> Value {
         "title": "aghist schema",
         "command": "schema",
         "description": "Emit JSON-Schema (draft-2020-12) describing aghist subcommands.",
-        "params": {
-            "type": "object",
-            "properties": {
-                "subcommand": {
-                    "type": "string",
-                    "enum": subcommands(),
-                    "description": "Subcommand whose schema to emit. Use 'all' or '--list' on the CLI for index/dump."
-                },
-                "list": { "type": "boolean", "description": "List available schema subcommand names." },
-                "all": { "type": "boolean", "description": "Emit every schema as a single object keyed by subcommand." }
-            },
-            "additionalProperties": false
-        },
+        "params": closed_object_schema(
+            schema_props([
+                (
+                    "subcommand",
+                    json!({
+                        "type": "string",
+                        "enum": subcommands(),
+                        "description": "Subcommand whose schema to emit. Use 'all' or '--list' on the CLI for index/dump."
+                    }),
+                ),
+                (
+                    "list",
+                    json!({ "type": "boolean", "description": "List available schema subcommand names." }),
+                ),
+                (
+                    "all",
+                    json!({ "type": "boolean", "description": "Emit every schema as a single object keyed by subcommand." }),
+                ),
+            ]),
+            &[],
+        ),
         "response": {
             "description": "JSON-Schema document for a single subcommand, OR `{ subcommands: [...] }` with --list, OR a map of name → schema with --all."
         },

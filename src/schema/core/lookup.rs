@@ -7,87 +7,90 @@ use crate::schema_fragments::{
 };
 
 use super::super::common::{
-    exit_codes, filter_params_fragment, list_response_schema, provider_slug_enum,
-    search_response_schema, session_row_schema, source_qualified_citation_ref_pattern,
-    source_qualified_session_only_ref_pattern, SCHEMA_DRAFT,
+    closed_object_schema, exit_codes, filter_params_fragment, list_response_schema,
+    provider_slug_enum, schema_props, search_response_schema, session_row_schema,
+    source_qualified_citation_ref_pattern, source_qualified_session_only_ref_pattern,
+    SchemaProperties, SCHEMA_DRAFT,
 };
 
-fn list_params_properties() -> Value {
-    let mut props = serde_json::Map::new();
-    props.insert(
-        "json".to_string(),
-        json!({ "type": "boolean", "description": "Force JSON output (single object with `sessions` array)." }),
-    );
-    props.insert(
-        "ndjson".to_string(),
-        json!({ "type": "boolean", "description": "Force NDJSON output (one session per line)." }),
-    );
-    props.insert(
-        "limit".to_string(),
-        json!({ "type": "integer", "minimum": 1, "default": LIST_LIMIT_DEFAULT }),
-    );
-    props.insert(
-        "cursor".to_string(),
-        json!({ "type": "string", "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
-    );
+fn list_params_properties() -> SchemaProperties {
+    let mut props = schema_props([
+        (
+            "json",
+            json!({ "type": "boolean", "description": "Force JSON output (single object with `sessions` array)." }),
+        ),
+        (
+            "ndjson",
+            json!({ "type": "boolean", "description": "Force NDJSON output (one session per line)." }),
+        ),
+        (
+            "limit",
+            json!({ "type": "integer", "minimum": 1, "default": LIST_LIMIT_DEFAULT }),
+        ),
+        (
+            "cursor",
+            json!({ "type": "string", "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
+        ),
+    ]);
     for (name, schema) in filter_params_fragment() {
         props.insert(name.to_string(), schema);
     }
-    Value::Object(props)
+    props
 }
 
-fn search_params_properties() -> Value {
-    let mut props = serde_json::Map::new();
-    props.insert(
-        "query".to_string(),
-        json!({ "type": "string", "description": "Tantivy query string. Mutually exclusive with query_file/stdin." }),
-    );
-    props.insert(
-        "query_file".to_string(),
-        json!({ "type": "string", "description": "Read query from file path (use '-' for stdin)." }),
-    );
-    props.insert(
-        "stdin".to_string(),
-        json!({ "type": "boolean", "description": "Read query from standard input." }),
-    );
-    props.insert(
-        "limit".to_string(),
-        json!({ "type": "integer", "minimum": 1, "default": SEARCH_LIMIT_DEFAULT }),
-    );
-    props.insert(
-        "cursor".to_string(),
-        json!({ "type": "string", "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
-    );
-    props.insert(
-        "json".to_string(),
-        json!({ "type": "boolean", "description": "Force JSON output (default: JSON on pipe, table on TTY)." }),
-    );
-    props.insert(
-        "watch".to_string(),
-        json!({ "type": "boolean", "description": "Long-running NDJSON stream of new hits." }),
-    );
-    props.insert(
-        "watch_interval_ms".to_string(),
-        json!({ "type": "integer", "minimum": 1, "default": SEARCH_WATCH_INTERVAL_MS_DEFAULT }),
-    );
-    props.insert(
-        "watch_iterations".to_string(),
-        json!({ "type": "integer", "minimum": 0, "default": SEARCH_WATCH_ITERATIONS_DEFAULT, "description": "Stop after N polls (0 = run until interrupted)." }),
-    );
-    props.insert(
-        "hybrid_weight".to_string(),
-        json!({
-            "type": "number",
-            "minimum": 0.0,
-            "maximum": 1.0,
-            "default": SEARCH_HYBRID_WEIGHT_DEFAULT,
-            "description": "RRF weight on the semantic side. 0.0 = lexical only (default), 1.0 = semantic only. Fails open to lexical when embeddings unavailable."
-        }),
-    );
+fn search_params_properties() -> SchemaProperties {
+    let mut props = schema_props([
+        (
+            "query",
+            json!({ "type": "string", "description": "Tantivy query string. Mutually exclusive with query_file/stdin." }),
+        ),
+        (
+            "query_file",
+            json!({ "type": "string", "description": "Read query from file path (use '-' for stdin)." }),
+        ),
+        (
+            "stdin",
+            json!({ "type": "boolean", "description": "Read query from standard input." }),
+        ),
+        (
+            "limit",
+            json!({ "type": "integer", "minimum": 1, "default": SEARCH_LIMIT_DEFAULT }),
+        ),
+        (
+            "cursor",
+            json!({ "type": "string", "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
+        ),
+        (
+            "json",
+            json!({ "type": "boolean", "description": "Force JSON output (default: JSON on pipe, table on TTY)." }),
+        ),
+        (
+            "watch",
+            json!({ "type": "boolean", "description": "Long-running NDJSON stream of new hits." }),
+        ),
+        (
+            "watch_interval_ms",
+            json!({ "type": "integer", "minimum": 1, "default": SEARCH_WATCH_INTERVAL_MS_DEFAULT }),
+        ),
+        (
+            "watch_iterations",
+            json!({ "type": "integer", "minimum": 0, "default": SEARCH_WATCH_ITERATIONS_DEFAULT, "description": "Stop after N polls (0 = run until interrupted)." }),
+        ),
+        (
+            "hybrid_weight",
+            json!({
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": SEARCH_HYBRID_WEIGHT_DEFAULT,
+                "description": "RRF weight on the semantic side. 0.0 = lexical only (default), 1.0 = semantic only. Fails open to lexical when embeddings unavailable."
+            }),
+        ),
+    ]);
     for (name, schema) in filter_params_fragment() {
         props.insert(name.to_string(), schema);
     }
-    Value::Object(props)
+    props
 }
 
 pub(in crate::schema) fn list_schema() -> Value {
@@ -97,11 +100,7 @@ pub(in crate::schema) fn list_schema() -> Value {
         "title": "aghist --list",
         "command": "--list",
         "description": "List sessions across enabled providers, sorted by start time descending.",
-        "params": {
-            "type": "object",
-            "properties": list_params_properties(),
-            "additionalProperties": false
-        },
+        "params": closed_object_schema(list_params_properties(), &[]),
         "response": {
             "oneOf": [
                 list_response_schema(),
@@ -124,11 +123,7 @@ pub(in crate::schema) fn search_schema() -> Value {
         "title": "aghist search",
         "command": "search",
         "description": "Full-text search across indexed sessions. Returns hits with citation refs.",
-        "params": {
-            "type": "object",
-            "properties": search_params_properties(),
-            "additionalProperties": false
-        },
+        "params": closed_object_schema(search_params_properties(), &[]),
         "response": search_response_schema(),
         "exit_codes": exit_codes()
     })
@@ -141,29 +136,36 @@ pub(in crate::schema) fn show_schema() -> Value {
         "title": "aghist show",
         "command": "show",
         "description": "Resolve a citation ref `<provider>/<session-id>#<turn>` or `<source>:<provider>/<session-id>#<turn>` to a single message.",
-        "params": {
-            "type": "object",
-            "properties": {
-                "reference": {
-                    "type": "string",
-                    "pattern": source_qualified_citation_ref_pattern(),
-                    "description": "Citation ref. Examples: claude-code/abc-123#7, laptop:claude-code/abc-123#7"
-                },
-                "format": {
-                    "type": "string",
-                    "enum": ["md", "json", "text"],
-                    "default": "md"
-                },
-                "include_context": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "default": SHOW_INCLUDE_CONTEXT_DEFAULT,
-                    "description": "Number of turns before and after the target to include."
-                }
-            },
-            "required": ["reference"],
-            "additionalProperties": false
-        },
+        "params": closed_object_schema(
+            schema_props([
+                (
+                    "reference",
+                    json!({
+                        "type": "string",
+                        "pattern": source_qualified_citation_ref_pattern(),
+                        "description": "Citation ref. Examples: claude-code/abc-123#7, laptop:claude-code/abc-123#7"
+                    }),
+                ),
+                (
+                    "format",
+                    json!({
+                        "type": "string",
+                        "enum": ["md", "json", "text"],
+                        "default": "md"
+                    }),
+                ),
+                (
+                    "include_context",
+                    json!({
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": SHOW_INCLUDE_CONTEXT_DEFAULT,
+                        "description": "Number of turns before and after the target to include."
+                    }),
+                ),
+            ]),
+            &["reference"],
+        ),
         "response": {
             "type": "object",
             "description": "JSON output (when --format=json). Other formats emit text/markdown.",
@@ -201,25 +203,35 @@ pub(in crate::schema) fn export_schema() -> Value {
         "title": "aghist export",
         "command": "export",
         "description": "Export a session to Markdown, JSON, or HTML.",
-        "params": {
-            "type": "object",
-            "properties": {
-                "format": { "type": "string", "enum": ["md", "json", "html"] },
-                "session": { "type": "string", "description": "Session ID/prefix, `<provider>/<session-id>`, or `<source>:<provider>/<session-id>`." },
-                "output": { "type": "string", "description": "Output file path (defaults to stdout)." },
-                "turn_range": {
-                    "type": "string",
-                    "pattern": "^[0-9]*(:[0-9]*)?$",
-                    "description": "1-based inclusive turn range: A:B, :B, A:, or a single A."
-                },
-                "include_notes": {
-                    "type": "boolean",
-                    "description": "Inline private annotations (from the metadata sidecar) at their citation refs. Notes stay marked 'private annotation' in the output."
-                }
-            },
-            "required": ["format", "session"],
-            "additionalProperties": false
-        },
+        "params": closed_object_schema(
+            schema_props([
+                ("format", json!({ "type": "string", "enum": ["md", "json", "html"] })),
+                (
+                    "session",
+                    json!({ "type": "string", "description": "Session ID/prefix, `<provider>/<session-id>`, or `<source>:<provider>/<session-id>`." }),
+                ),
+                (
+                    "output",
+                    json!({ "type": "string", "description": "Output file path (defaults to stdout)." }),
+                ),
+                (
+                    "turn_range",
+                    json!({
+                        "type": "string",
+                        "pattern": "^[0-9]*(:[0-9]*)?$",
+                        "description": "1-based inclusive turn range: A:B, :B, A:, or a single A."
+                    }),
+                ),
+                (
+                    "include_notes",
+                    json!({
+                        "type": "boolean",
+                        "description": "Inline private annotations (from the metadata sidecar) at their citation refs. Notes stay marked 'private annotation' in the output."
+                    }),
+                ),
+            ]),
+            &["format", "session"],
+        ),
         "response": {
             "description": "Raw exported content written to stdout or `output` path. Format depends on `format` param."
         },
@@ -234,33 +246,43 @@ pub(in crate::schema) fn diff_schema() -> Value {
         "title": "aghist diff",
         "command": "diff",
         "description": "Compare two sessions turn-by-turn using longest-common-subsequence over role + content snippets.",
-        "params": {
-            "type": "object",
-            "properties": {
-                "session1": {
-                    "type": "string",
-                    "pattern": source_qualified_session_only_ref_pattern(),
-                    "description": "First session ref. Examples: claude-code/abc-123, laptop:claude-code/abc-123"
-                },
-                "session2": {
-                    "type": "string",
-                    "pattern": source_qualified_session_only_ref_pattern(),
-                    "description": "Second session ref. Examples: claude-code/def-456, laptop:claude-code/def-456"
-                },
-                "context": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "default": 2,
-                    "description": "Context lines around each changed hunk in text output."
-                },
-                "json": {
-                    "type": "boolean",
-                    "description": "Force JSON output."
-                }
-            },
-            "required": ["session1", "session2"],
-            "additionalProperties": false
-        },
+        "params": closed_object_schema(
+            schema_props([
+                (
+                    "session1",
+                    json!({
+                        "type": "string",
+                        "pattern": source_qualified_session_only_ref_pattern(),
+                        "description": "First session ref. Examples: claude-code/abc-123, laptop:claude-code/abc-123"
+                    }),
+                ),
+                (
+                    "session2",
+                    json!({
+                        "type": "string",
+                        "pattern": source_qualified_session_only_ref_pattern(),
+                        "description": "Second session ref. Examples: claude-code/def-456, laptop:claude-code/def-456"
+                    }),
+                ),
+                (
+                    "context",
+                    json!({
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 2,
+                        "description": "Context lines around each changed hunk in text output."
+                    }),
+                ),
+                (
+                    "json",
+                    json!({
+                        "type": "boolean",
+                        "description": "Force JSON output."
+                    }),
+                ),
+            ]),
+            &["session1", "session2"],
+        ),
         "response": {
             "type": "object",
             "description": "JSON output when --json or stdout is not a TTY. Text output is unified-diff style.",
