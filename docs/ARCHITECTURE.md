@@ -5,7 +5,10 @@ If you want to familiarize yourself with the codebase, this is the place to star
 
 ## Bird's-eye view
 
-aghist is a read-only TUI that aggregates conversation history from multiple AI coding assistants into a single interface. It discovers session files on disk, normalises them into a unified model, indexes them for full-text search, and renders them in a terminal UI.
+aghist is a read-only history browser for AI coding assistants. The same core
+model powers the TUI, one-shot CLI commands, and the stdio MCP server: provider
+files are discovered on disk, normalized into sessions/messages, optionally
+indexed for search, and rendered or returned as structured JSON.
 
 ```mermaid
 graph TD
@@ -13,13 +16,12 @@ graph TD
 
     HP["<b>HistoryProvider trait</b><br>discover_sessions() / load_messages()"]
 
-    HP --> SL[Session list]
-    HP --> MC[Message cache]
-    HP --> SI[Search index]
-
-    SL --> APP
-    MC --> APP
-    SI --> APP
+    HP --> FD[Federated discovery]
+    FD --> SV[Service layer<br>lookup / list / search / index]
+    SV --> SI[Search index]
+    SV --> CMD[CLI commands]
+    SV --> MCP[MCP server]
+    SV --> APP
 
     APP["<b>App — TEA</b><br>Action → dispatch() → state → render()"]
 
@@ -38,7 +40,7 @@ to `src/commands/dispatch.rs`. Command implementations live under
 The dispatcher handles two broad execution paths:
 
 1. **TUI mode** (no subcommand, no `--list`) — sets up the terminal with crossterm, creates `App`, runs the event loop, then restores terminal state on exit.
-2. **One-shot CLI subcommands** — see the full surface in [`CLAUDE.md`](../CLAUDE.md#agent-friendly-cli-surface). Each subcommand emits stable JSON on a pipe, uses semantic exit codes, and has a discoverable JSON-Schema (`aghist schema <subcmd>`).
+2. **One-shot CLI subcommands** — see the full surface in [`CLAUDE.md`](../CLAUDE.md#agent-friendly-cli-surface). Each subcommand emits stable JSON on a pipe, uses semantic exit codes, and has a discoverable JSON Schema (`aghist schema <subcmd>`).
 
 CLI parsing uses clap with derive macros. Configuration is loaded from `~/.config/aghist/config.toml` (or `%APPDATA%\aghist\config.toml` on Windows) via `Config::load()`. Providers are auto-detected, then filtered against the config's enabled list.
 
@@ -48,7 +50,7 @@ Successful command output goes to stdout as either a JSON document (machine mode
 
 ### Citation refs
 
-`<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`) is the canonical handle for a single message. Remote/federated refs add an optional source prefix: `<source>:<provider-slug>/<session-id>#<turn>`. Refs are *opaque-stable across reindex* — the same `(source, provider, session-id, turn)` points at the same message as long as the source files are unchanged. `src/model/citation.rs` defines `CitationRef`/`QualifiedCitationRef`; `src/session_resolver.rs` and its submodules centralize local, remote, and ambiguous lookup behavior for CLI and MCP callers.
+`<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`) is the canonical handle for a single message. Remote/federated refs add an optional source prefix: `<source>:<provider-slug>/<session-id>#<turn>`. Refs are *opaque-stable across reindex* — the same `(source, provider, session-id, turn)` points at the same message as long as the source files are unchanged. `src/model/citation.rs` defines `CitationRef`/`QualifiedCitationRef`; `src/session_resolver.rs` centralizes local, remote, prefix, and ambiguous lookup behavior. `src/services/lookup.rs` owns the common "resolve then load messages" path used by show/export/diff and MCP handlers.
 
 ## Provider system
 
@@ -83,7 +85,7 @@ All providers respect `AGHIST_HOME` as an override for the home directory, prima
 3. Add the provider variant and `ProviderSpec` entry in `src/model/provider.rs`.
 4. Register detection/stateless/remote-dir construction in `src/provider/registry.rs`.
 5. Add focused parser tests plus generated fixture support under `tests/common/fixtures/`.
-6. Run `cargo test --test provider_conformance`; update the generated provider contract snapshot only when the normalized model change is intentional.
+6. Run `cargo test --test provider_conformance`; update the generated provider contract snapshot only when the normalized model change is intentional. The conformance suite also guards generated role ordering, duplicate session IDs, registry reconstruction, missing directories, and stateless fallback loading.
 
 ## Unified model
 
@@ -96,6 +98,22 @@ All provider-specific formats are normalised into three core types:
 - **`ContentBlock`** — the content within a message: `Text`, `CodeBlock`, `ToolUse`, `ToolResult`, `Thinking`, or `Error`.
 
 IDs are newtypes (`SessionId`, `MessageId`) wrapping `String` to prevent mixing them up.
+
+## Service layer
+
+**`src/services/`**
+
+Command and MCP handlers should stay thin: parse arguments, call services, then
+render. Shared behavior belongs under `src/services/` so CLI, MCP, and tests do
+not grow divergent copies of provider lookup or pagination logic.
+
+- **`lookup.rs`** — resolves session/citation selectors, applies MCP provider visibility checks, loads messages, and returns owned session/message windows.
+- **`list.rs`** — applies list filters, metadata filters, cursor pagination, provider/source counts, and skipped-session warnings for message-level filters.
+- **`search.rs`** — wraps `SearchService`, applies cursor pagination, resolves message hit citations, and carries skipped-session warnings.
+- **`index/`** — indexing orchestration shared by CLI and CI feature checks.
+
+When adding a new command path, prefer extending one of these services over
+calling providers directly from `src/commands/` or `src/mcp/`.
 
 ## TEA architecture
 
@@ -158,14 +176,14 @@ Messages for a selected session are loaded synchronously on the main thread but 
 
 ## Search
 
-**`src/search.rs`**, **`src/embed.rs`**
+**`src/search/`**, **`src/services/search.rs`**, **`src/embed.rs`**
 
 Full-text search uses Tantivy. The index is persisted to disk (platform cache directory, overridable via `AGHIST_INDEX_DIR`) and rebuilt incrementally:
 
 - A **manifest** (`manifest.json`) tracks which session files have been indexed and their content hashes.
 - `build_index()` skips sessions whose hash matches the manifest.
 - `aghist index --force` clears the index and manifest, forcing a full rebuild.
-- The index schema stores: session ID, message ID, provider, project, role, content text, tool-call output text (separate field, indexed for `--has-tool-call`), source-cache name (for federation), and timestamp.
+- The index schema stores: session key, session ID, message key, message ID, provider, project, role, content text, tool-call output text (separate field, indexed for `--has-tool-call`), timestamp, and metadata-note fields. Source labels are kept outside Tantivy in the federated discovery map so local and remote sessions with the same raw ID can coexist.
 - `tests/recall_bench.rs` builds a mixed-provider synthetic corpus and enforces conservative recall/MRR and latency gates. Set `AGHIST_BENCH_WRITE_REPORT=1` when you need a local markdown report; measured reports are ignored so stale timing snapshots do not become source documentation.
 
 ### Filters and pagination
@@ -193,9 +211,13 @@ Tool definitions live in `src/mcp/payload.rs` and handlers under
 the server exposes search/list/get-message/get-session, reindex, and health
 paths with the same read-only constraints as the CLI.
 
+Output schemas for tools are registered in `src/schema_fragments.rs` via
+`mcp_tool_output_schema`; the large row schemas are tested through that shared
+registry while the tool-list snapshot records compact schema refs.
+
 Resources are exposed as `aghist://session/<provider>/<session-id>` and `aghist://session/<provider>/<session-id>/turn/<n>` for local sessions, plus `aghist://source/<source>/session/<provider>/<session-id>` forms for remote-source sessions — agents can attach an entire session or a single turn as context.
 
-The server is implicitly read-only (no tools mutate session content; `reindex` only refreshes the search index). The `provider.mcp_exposed` config narrows which providers are visible to MCP clients independently of the CLI's `enabled` list — useful for hiding personal accounts from work agents on the same machine.
+The server is implicitly read-only (no tools mutate session content; `reindex` only refreshes the search index). The `provider.mcp_exposed` config narrows which providers are visible to MCP clients independently of the CLI's `enabled` list — useful for hiding personal accounts from work agents on the same machine. MCP search returns skipped-session load warnings through `source_errors` so clients can distinguish "no hits" from partially unreadable history.
 
 ## UI components
 
@@ -224,7 +246,7 @@ Three output formats, all producing a complete standalone document:
 - `thiserror` for library error types (`ProviderError`, `SearchError`).
 - `anyhow` only at the binary boundary (`main.rs`).
 - `color_eyre` installed for panic reports.
-- Corrupt or missing session files are skipped with warnings, never crash the app.
+- Corrupt or missing session files are skipped with warnings in read paths, never crash the app. CLI warnings go to stderr; MCP search surfaces them in `source_errors`.
 - `unsafe` code is forbidden via `#![forbid(unsafe_code)]` lint.
 
 ## Release and install safety
