@@ -12,6 +12,11 @@ use aghist::cli_error::{ErrorEnvelope, EXIT_USAGE};
 use aghist::output::CommandKind;
 use aghist::search;
 
+enum ContextLoadedCommand {
+    Mcp,
+    Context(ContextCommand),
+}
+
 pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
     if let Some(exit) = reject_conflicting_output_flags(cli.json, cli.ndjson) {
         return Ok(exit);
@@ -30,18 +35,20 @@ pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
 
     let command = match command.map(CommandTarget::from) {
         Some(CommandTarget::ContextFree(command)) => return dispatch_context_free_command(command),
-        other => other,
+        Some(CommandTarget::Mcp) => Some(ContextLoadedCommand::Mcp),
+        Some(CommandTarget::Context(command)) => Some(ContextLoadedCommand::Context(command)),
+        None => None,
     };
 
     let ctx = CommandContext::load(filters, json, ndjson)?;
     clear_search_index_if_requested(reindex)?;
 
     match command {
-        Some(CommandTarget::Mcp) => {
+        Some(ContextLoadedCommand::Mcp) => {
             let server = ctx.into_mcp_server();
             run_mcp_server(&server)
         }
-        Some(CommandTarget::Context(command)) => dispatch_command(command, &ctx),
+        Some(ContextLoadedCommand::Context(command)) => dispatch_command(command, &ctx),
         None => {
             if list {
                 return dispatch_list(limit, cursor.as_deref(), &ctx);

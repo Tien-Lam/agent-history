@@ -6,7 +6,10 @@ use clap::Parser;
 
 use aghist::schema_fragments::LIST_LIMIT_DEFAULT;
 
-pub(crate) use commands::{Command, NoteCommand, SourcesCommand, TagCommand};
+pub(crate) use commands::{
+    AnalysisCommand, Command, CommandTarget, ContextCommand, ContextFreeCommand, LookupCommand,
+    MetadataCommand, NoteCommand, ReportsCommand, SourcesCommand, TagCommand,
+};
 pub(crate) use filters::FilterArgs;
 pub(crate) use resolvers::{
     resolve_export_args, resolve_index_args, resolve_search_args, resolve_show_args, SearchArgs,
