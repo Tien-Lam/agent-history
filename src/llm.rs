@@ -42,12 +42,6 @@ mod decisions;
 mod threads;
 mod todos;
 mod track;
-#[cfg(test)]
-use crate::model::{Provider, Role, SessionId};
-#[cfg(test)]
-use chrono::{DateTime, Utc};
-#[cfg(test)]
-use std::time::Duration;
 
 #[cfg(test)]
 use common::extract_json_object;
