@@ -12,7 +12,7 @@ fn aghist() -> Command {
 }
 
 fn parse_stdout_json(output: &assert_cmd::assert::Assert) -> Value {
-    common::helpers::parse_assert_stdout_json(output)
+    common::cli::assert_stdout_json(output)
 }
 
 fn assert_json_snapshot(name: &'static str, value: &Value) {

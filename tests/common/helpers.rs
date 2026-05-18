@@ -39,12 +39,6 @@ pub fn isolated_aghist(label: &str) -> Command {
     cmd
 }
 
-pub fn parse_assert_stdout_json(assert: &assert_cmd::assert::Assert) -> serde_json::Value {
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|err| panic!("expected JSON stdout, got {stdout:?}: {err}"))
-}
-
 pub fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }

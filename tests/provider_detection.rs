@@ -34,24 +34,20 @@ macro_rules! assert_empty_list {
             Some(3),
             "--list with no sessions must exit 3"
         );
-        let stderr = String::from_utf8(output.stderr).unwrap();
+        let stderr = common::cli::output_stderr(&output);
         assert!(
             !stderr.contains("\"error\""),
             "no error envelope expected on stderr, got: {stderr}"
         );
-        let stdout = String::from_utf8(output.stdout).unwrap();
         // NDJSON terminates with a `{"meta": ...}` envelope row; the only
         // structural guarantee for an empty home is that no session rows
         // (rows with an `id` field) appear.
-        let session_rows = stdout
-            .lines()
-            .filter(|l| !l.is_empty())
-            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-            .filter(|v| v.get("id").is_some())
-            .count();
+        let session_rows = common::cli::output_ndjson_session_rows(&output).len();
         assert_eq!(
-            session_rows, 0,
-            "NDJSON should have no session rows, got: {stdout:?}"
+            session_rows,
+            0,
+            "NDJSON should have no session rows, got: {:?}",
+            common::cli::output_stdout(&output)
         );
     }};
 }
@@ -67,8 +63,7 @@ fn detected_providers(home: &Path) -> Vec<String> {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let parsed = common::cli::output_stdout_json(&output);
     assert_eq!(parsed["ok"], true);
 
     parsed["provider_fidelity"]

@@ -13,8 +13,7 @@ fn health_returns_ok_envelope_with_writable_index() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .assert()
         .success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let parsed = common::cli::assert_stdout_json(&assert);
     assert_eq!(parsed["ok"], true);
     let checks = parsed["checks"].as_array().expect("checks array");
     assert!(!checks.is_empty(), "expected at least one health check");
@@ -54,8 +53,7 @@ fn health_warns_when_no_providers() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .assert()
         .success(); // warns don't fail
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let parsed = common::cli::assert_stdout_json(&assert);
     assert_eq!(parsed["ok"], true); // ok=true while no fails
     let providers_check = parsed["checks"]
         .as_array()
