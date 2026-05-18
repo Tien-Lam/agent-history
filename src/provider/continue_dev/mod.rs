@@ -24,9 +24,11 @@
 use std::cmp::Reverse;
 use std::path::PathBuf;
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::continue_dev_parse::{build_session_from_file, load_index, parse_jsonl};
+use parse::{build_session_from_file, load_index, parse_jsonl};
 
 const SESSIONS_SUBDIR: &str = "sessions";
 
@@ -132,7 +134,7 @@ impl HistoryProvider for ContinueDevProvider {
 mod tests {
     use super::*;
     use crate::model::{ContentBlock, Role};
-    use crate::provider::continue_dev_parse::INDEX_FILE;
+    use parse::INDEX_FILE;
     use std::fs;
     use std::path::{Path, PathBuf};
     use tempfile::TempDir;

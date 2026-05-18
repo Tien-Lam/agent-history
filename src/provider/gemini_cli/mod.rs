@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::gemini_cli_parse::{
-    build_session_from_file, load_messages_from_path, load_project_map,
-};
+use parse::{build_session_from_file, load_messages_from_path, load_project_map};
 
 pub struct GeminiCliProvider {
     dirs: Vec<PathBuf>,

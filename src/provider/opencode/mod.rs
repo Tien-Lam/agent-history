@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::opencode_parse::{build_session_from_file, parse_message_file};
+use parse::{build_session_from_file, parse_message_file};
 
 pub struct OpenCodeProvider {
     dirs: Vec<PathBuf>,

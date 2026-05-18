@@ -2,10 +2,11 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
-use super::cursor_format::{millis_to_datetime, ComposerData, HeaderEntry};
-use super::cursor_message::build_message;
+use super::format::{millis_to_datetime, ComposerData, HeaderEntry};
+use super::message::build_message;
 use super::ProviderError;
 use crate::model::{Message, Provider, Session, SessionId};
+use crate::provider::project_name_from_path;
 
 pub(crate) fn state_db_path(base: &Path) -> PathBuf {
     base.join("User").join("globalStorage").join("state.vscdb")
@@ -82,7 +83,7 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
     let project_name = raw
         .workspace_folder
         .as_deref()
-        .and_then(super::project_name_from_path);
+        .and_then(project_name_from_path);
 
     let message_count = raw
         .headers

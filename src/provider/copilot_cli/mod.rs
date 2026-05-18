@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::copilot_cli_parse::{build_session, parse_checkpoint_md, parse_events_jsonl};
+use parse::{build_session, parse_checkpoint_md, parse_events_jsonl};
 
 pub struct CopilotCliProvider {
     dirs: Vec<PathBuf>,

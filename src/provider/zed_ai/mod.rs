@@ -41,9 +41,11 @@
 
 use std::path::PathBuf;
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::zed_ai_parse::{load_messages_from_path, read_session};
+use parse::{load_messages_from_path, read_session};
 
 const CONVERSATIONS_SUBDIR: &str = "conversations";
 

@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use super::{project_name_from_path, ProviderError};
+use super::ProviderError;
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::parse_common::{epoch_timestamp_for_index, file_modified_utc, millis_to_utc};
+use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Debug, Deserialize)]

@@ -15,11 +15,15 @@
 //! fields skip rather than fail, and unparseable values are logged but never
 //! crash discovery.
 
+mod format;
+mod message;
+mod store;
+
 use std::path::PathBuf;
 
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::cursor_store::{load_messages_from_db, read_sessions, state_db_path};
+use store::{load_messages_from_db, read_sessions, state_db_path};
 
 pub struct CursorProvider {
     dirs: Vec<PathBuf>,

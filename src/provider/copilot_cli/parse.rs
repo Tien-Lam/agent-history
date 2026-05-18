@@ -4,12 +4,13 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use super::{project_name_from_path, ProviderError};
+use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::string_or_object_field;
 use crate::provider::parse_common::{
     parse_utc, parse_utc_or_now, pretty_json_opt, token_usage, tool_result_block, tool_use_block,
 };
+use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize)]

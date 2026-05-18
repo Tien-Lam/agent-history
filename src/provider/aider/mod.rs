@@ -36,9 +36,11 @@
 
 use std::path::{Path, PathBuf};
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::aider_parse::{load_messages_from_file, parse_sessions_in_file};
+use parse::{load_messages_from_file, parse_sessions_in_file};
 
 const HISTORY_FILE: &str = ".aider.chat.history.md";
 const MAX_WALK_DEPTH: usize = 4;

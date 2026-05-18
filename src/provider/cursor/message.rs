@@ -1,4 +1,4 @@
-use super::cursor_format::{millis_to_datetime, BubbleData, ToolCallData, ToolFormerData};
+use super::format::{millis_to_datetime, BubbleData, ToolCallData, ToolFormerData};
 use crate::model::{ContentBlock, Message, MessageId, Role};
 use crate::provider::parse_common::{epoch_timestamp_for_index, tool_result_block, tool_use_block};
 use crate::provider::text_blocks::parse_text_with_code_blocks;

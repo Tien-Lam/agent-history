@@ -3,13 +3,13 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use serde::Deserialize;
 
-use super::project_name_from_path;
 use crate::model::{
     ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage,
 };
 use crate::provider::parse_common::{
     millis_to_utc, parse_utc, pretty_json_opt, tool_result_block, tool_use_block,
 };
+use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> {

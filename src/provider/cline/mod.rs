@@ -35,9 +35,11 @@
 use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::cline_parse::{parse_api_history, parse_task_dir, API_HISTORY_FILE};
+use parse::{parse_api_history, parse_task_dir, API_HISTORY_FILE};
 
 const EXTENSION_ID: &str = "saoudrizwan.claude-dev";
 const TASKS_SUBDIR: &str = "tasks";
@@ -163,7 +165,7 @@ impl HistoryProvider for ClineProvider {
 mod tests {
     use super::*;
     use crate::model::{ContentBlock, Role};
-    use crate::provider::cline_parse::{METADATA_FILE, UI_MESSAGES_FILE};
+    use parse::{METADATA_FILE, UI_MESSAGES_FILE};
     use std::fs;
     use tempfile::TempDir;
 

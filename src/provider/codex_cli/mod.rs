@@ -1,8 +1,10 @@
 use std::path::{Path, PathBuf};
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::codex_cli_parse::{build_session_from_rollout, parse_rollout_messages};
+use parse::{build_session_from_rollout, parse_rollout_messages};
 
 pub struct CodexCliProvider {
     dirs: Vec<PathBuf>,

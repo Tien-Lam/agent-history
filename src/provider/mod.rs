@@ -1,31 +1,19 @@
 pub mod aider;
-mod aider_parse;
 mod anthropic_content;
 pub mod claude_code;
-mod claude_code_parse;
 pub mod cline;
-mod cline_parse;
 pub mod codex_cli;
-mod codex_cli_parse;
 pub mod continue_dev;
-mod continue_dev_parse;
 pub mod copilot_cli;
-mod copilot_cli_parse;
 pub mod cursor;
-mod cursor_format;
-mod cursor_message;
-mod cursor_store;
 pub mod error;
 pub mod gemini_cli;
-mod gemini_cli_parse;
 mod json_text;
 pub mod opencode;
-mod opencode_parse;
 mod parse_common;
 pub mod registry;
 mod text_blocks;
 pub mod zed_ai;
-mod zed_ai_parse;
 
 use std::path::PathBuf;
 

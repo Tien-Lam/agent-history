@@ -1,11 +1,13 @@
 use std::path::{Path, PathBuf};
 
+mod parse;
+
 use super::{HistoryProvider, ProviderError};
 use crate::model::{Message, Provider, Session};
-use crate::provider::claude_code_parse::{
+pub use crate::provider::text_blocks::parse_text_with_code_blocks;
+use parse::{
     build_session_metadata, decode_project_name, parse_history_index, parse_session_messages,
 };
-pub use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub struct ClaudeCodeProvider {
     dirs: Vec<PathBuf>,
