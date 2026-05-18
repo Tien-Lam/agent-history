@@ -12,7 +12,7 @@ fn list_with_no_data_exits_three_for_empty() {
         .env("AGHIST_HOME", dir.path())
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(3));
+    cli::assert_empty(&output);
     let stdout = cli::output_stdout(&output);
     // Empty list emits zero session rows; the trailing `{"meta": ...}` row
     // is always present so streaming consumers can detect end-of-stream.
@@ -40,7 +40,7 @@ fn list_with_generated_claude_fixtures() {
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(0));
+    cli::assert_success(&output);
     let rows = cli::output_ndjson_session_rows(&output);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["provider"], "claude-code");
@@ -71,7 +71,7 @@ fn list_with_multiple_providers() {
         .env("AGHIST_HOME", home.path())
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(0));
+    cli::assert_success(&output);
     let providers: std::collections::HashSet<String> = cli::output_ndjson_session_rows(&output)
         .iter()
         .filter_map(|row| row["provider"].as_str().map(str::to_string))
@@ -106,16 +106,11 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
-    assert_eq!(
-        page1.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&page1.stderr)
-    );
+    cli::assert_success(&page1);
     let doc1 = cli::output_stdout_json(&page1);
     assert_eq!(doc1["meta"]["total"], 2);
-    assert_eq!(doc1["sessions"].as_array().unwrap().len(), 1);
-    let cursor = doc1["meta"]["next_cursor"].as_str().unwrap();
+    assert_eq!(cli::json_array(&doc1, "sessions").len(), 1);
+    let cursor = cli::json_str(&doc1["meta"], "next_cursor");
 
     let page2 = aghist()
         .args(["--list", "--json", "--limit", "1", "--cursor", cursor])
@@ -124,22 +119,15 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
-    assert_eq!(
-        page2.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&page2.stderr)
-    );
+    cli::assert_success(&page2);
     let doc2 = cli::output_stdout_json(&page2);
-    assert_eq!(doc2["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(cli::json_array(&doc2, "sessions").len(), 1);
     assert!(doc2["meta"]["next_cursor"].is_null());
 
-    let sources: std::collections::HashSet<String> = doc1["sessions"]
-        .as_array()
-        .unwrap()
+    let sources: std::collections::HashSet<String> = cli::json_array(&doc1, "sessions")
         .iter()
-        .chain(doc2["sessions"].as_array().unwrap().iter())
-        .map(|row| row["source"].as_str().unwrap().to_string())
+        .chain(cli::json_array(&doc2, "sessions").iter())
+        .map(|row| cli::json_str(row, "source").to_string())
         .collect();
     assert_eq!(
         sources,
@@ -153,14 +141,9 @@ fn list_federates_remote_sources_and_paginates_reused_session_ids() {
         .env("AGHIST_SOURCES_CACHE_DIR", &source.cache_dir)
         .output()
         .unwrap();
-    assert_eq!(
-        tool_filtered.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&tool_filtered.stderr)
-    );
+    cli::assert_success(&tool_filtered);
     let filtered = cli::output_stdout_json(&tool_filtered);
-    let rows = filtered["sessions"].as_array().unwrap();
+    let rows = cli::json_array(&filtered, "sessions");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["source"], "laptop");
     assert_eq!(rows[0]["id"], "shared-list-id");
@@ -332,9 +315,9 @@ fn list_json_emits_single_object_with_sessions_array() {
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(0));
+    cli::assert_success(&output);
     let doc = cli::output_stdout_json(&output);
-    let sessions = doc["sessions"].as_array().expect("sessions array");
+    let sessions = cli::json_array(&doc, "sessions");
     assert_eq!(sessions.len(), 1);
     assert!(sessions[0]["id"].is_string());
     assert!(sessions[0]["provider"].is_string());
@@ -350,7 +333,7 @@ fn list_ndjson_emits_one_session_per_line() {
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(0));
+    cli::assert_success(&output);
     let parsed = cli::output_ndjson_values(&output);
     // One session row + one trailing `{"meta": ...}` envelope row.
     assert_eq!(parsed.len(), 2);
@@ -374,9 +357,9 @@ fn list_json_empty_returns_three_with_empty_array() {
         .env("AGHIST_HOME", dir.path())
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(3));
+    cli::assert_empty(&output);
     let doc = cli::output_stdout_json(&output);
-    assert_eq!(doc["sessions"].as_array().unwrap().len(), 0);
+    assert_eq!(cli::json_array(&doc, "sessions").len(), 0);
 }
 #[test]
 fn list_rejects_json_and_ndjson_together() {
@@ -398,9 +381,9 @@ fn list_limit_caps_returned_sessions_and_emits_next_cursor() {
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(0));
+    cli::assert_success(&output);
     let doc = cli::output_stdout_json(&output);
-    let sessions = doc["sessions"].as_array().expect("sessions array");
+    let sessions = cli::json_array(&doc, "sessions");
     assert_eq!(sessions.len(), 2, "limit must cap returned rows");
     assert_eq!(doc["meta"]["total"], 5, "total reflects all matching rows");
     assert!(
@@ -419,14 +402,12 @@ fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
-    assert_eq!(page1.status.code(), Some(0));
+    cli::assert_success(&page1);
     let doc1 = cli::output_stdout_json(&page1);
-    let cursor1 = doc1["meta"]["next_cursor"].as_str().unwrap().to_string();
-    let ids1: Vec<String> = doc1["sessions"]
-        .as_array()
-        .unwrap()
+    let cursor1 = cli::json_str(&doc1["meta"], "next_cursor").to_string();
+    let ids1: Vec<String> = cli::json_array(&doc1, "sessions")
         .iter()
-        .map(|s| s["id"].as_str().unwrap().to_string())
+        .map(|s| cli::json_str(s, "id").to_string())
         .collect();
 
     // Second page (resume).
@@ -435,16 +416,14 @@ fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
-    assert_eq!(page2.status.code(), Some(0));
+    cli::assert_success(&page2);
     let doc2 = cli::output_stdout_json(&page2);
-    let ids2: Vec<String> = doc2["sessions"]
-        .as_array()
-        .unwrap()
+    let ids2: Vec<String> = cli::json_array(&doc2, "sessions")
         .iter()
-        .map(|s| s["id"].as_str().unwrap().to_string())
+        .map(|s| cli::json_str(s, "id").to_string())
         .collect();
     assert_eq!(ids2.len(), 2);
-    let cursor2 = doc2["meta"]["next_cursor"].as_str().unwrap().to_string();
+    let cursor2 = cli::json_str(&doc2["meta"], "next_cursor").to_string();
 
     // Third (final) page — has the last session and no further cursor.
     let page3 = aghist()
@@ -452,13 +431,11 @@ fn list_cursor_resumes_after_prior_page_and_paginates_to_completion() {
         .env("AGHIST_HOME", home)
         .output()
         .unwrap();
-    assert_eq!(page3.status.code(), Some(0));
+    cli::assert_success(&page3);
     let doc3 = cli::output_stdout_json(&page3);
-    let ids3: Vec<String> = doc3["sessions"]
-        .as_array()
-        .unwrap()
+    let ids3: Vec<String> = cli::json_array(&doc3, "sessions")
         .iter()
-        .map(|s| s["id"].as_str().unwrap().to_string())
+        .map(|s| cli::json_str(s, "id").to_string())
         .collect();
     assert_eq!(ids3.len(), 1);
     assert!(

@@ -46,6 +46,37 @@ pub fn output_ndjson_session_rows(output: &Output) -> Vec<Value> {
         .collect()
 }
 
+pub fn assert_exit_code(output: &Output, expected: i32) {
+    assert_eq!(
+        output.status.code(),
+        Some(expected),
+        "stdout: {}\nstderr: {}",
+        output_stdout(output),
+        output_stderr(output)
+    );
+}
+
+pub fn assert_success(output: &Output) {
+    assert_exit_code(output, 0);
+}
+
+pub fn assert_empty(output: &Output) {
+    assert_exit_code(output, 3);
+}
+
+pub fn json_array<'a>(doc: &'a Value, field: &str) -> &'a [Value] {
+    doc[field]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_else(|| panic!("expected JSON field {field:?} to be an array, got {doc:?}"))
+}
+
+pub fn json_str<'a>(doc: &'a Value, field: &str) -> &'a str {
+    doc[field]
+        .as_str()
+        .unwrap_or_else(|| panic!("expected JSON field {field:?} to be a string, got {doc:?}"))
+}
+
 fn parse_json(text: &str, stream_name: &str) -> Value {
     serde_json::from_str(text.trim())
         .unwrap_or_else(|err| panic!("expected JSON {stream_name}, got {text:?}: {err}"))

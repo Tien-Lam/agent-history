@@ -34,15 +34,10 @@ fn search_federates_across_local_and_remote_source_caches() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .output()
         .unwrap();
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    cli::assert_success(&output);
 
     let doc = cli::output_stdout_json(&output);
-    let hits = doc["hits"].as_array().expect("hits array");
+    let hits = cli::json_array(&doc, "hits");
     assert!(
         hits.len() >= 2,
         "expected hits from both local and remote sources, got: {hits:?}"
@@ -50,12 +45,7 @@ fn search_federates_across_local_and_remote_source_caches() {
 
     let by_session: std::collections::HashMap<&str, &str> = hits
         .iter()
-        .map(|h| {
-            (
-                h["session_id"].as_str().unwrap(),
-                h["source"].as_str().unwrap(),
-            )
-        })
+        .map(|h| (cli::json_str(h, "session_id"), cli::json_str(h, "source")))
         .collect();
     assert_eq!(
         by_session.get("federated-local"),
@@ -95,13 +85,7 @@ enabled = []
         .output()
         .unwrap();
 
-    assert_eq!(
-        output.status.code(),
-        Some(3),
-        "disabled remote provider should not leak into search; stdout: {}; stderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    cli::assert_empty(&output);
 }
 
 /// Federated search must remain usable when a registered source has never
@@ -138,7 +122,7 @@ fn search_partial_failure_when_remote_cache_missing() {
         .output()
         .unwrap();
     // Local hit must still surface — partial failure must not be fatal.
-    assert_eq!(output.status.code(), Some(0));
+    cli::assert_success(&output);
 
     let stderr = cli::output_stderr(&output);
     assert!(
@@ -147,7 +131,7 @@ fn search_partial_failure_when_remote_cache_missing() {
     );
 
     let doc = cli::output_stdout_json(&output);
-    let hits = doc["hits"].as_array().unwrap();
+    let hits = cli::json_array(&doc, "hits");
     assert!(!hits.is_empty(), "local hit should still appear");
     assert_eq!(hits[0]["source"], "local");
 }
@@ -200,7 +184,7 @@ fn search_stdin_reads_query_from_standard_input() {
         output.status.code(),
         Some(2),
         "stdin query should be accepted; stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        cli::output_stderr(&output)
     );
 }
 #[test]
@@ -219,7 +203,7 @@ fn search_query_file_reads_query_from_file() {
         output.status.code(),
         Some(2),
         "query-file should be accepted; stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        cli::output_stderr(&output)
     );
 }
 #[test]
@@ -235,8 +219,8 @@ fn search_query_file_missing_path_emits_io_error() {
         .env("AGHIST_HOME", dir.path())
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    cli::assert_exit_code(&output, 2);
+    let stderr = cli::output_stderr(&output);
     assert!(
         stderr.contains("failed to read query file"),
         "expected io-error envelope, got: {stderr}"
@@ -255,7 +239,7 @@ fn search_query_file_dash_reads_from_stdin() {
         output.status.code(),
         Some(2),
         "--query-file - should read from stdin; stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        cli::output_stderr(&output)
     );
 }
 #[test]
@@ -267,8 +251,8 @@ fn search_empty_stdin_reports_empty_query() {
         .write_stdin("   \n\n")
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    cli::assert_exit_code(&output, 2);
+    let stderr = cli::output_stderr(&output);
     assert!(
         stderr.contains("search query is empty"),
         "expected empty-query envelope, got: {stderr}"
@@ -296,14 +280,9 @@ fn search_debug_search_json_includes_explanation() {
         .output()
         .unwrap();
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    cli::assert_success(&output);
     let doc = cli::output_stdout_json(&output);
-    let arr = doc["hits"].as_array().expect("expected JSON array of hits");
+    let arr = cli::json_array(&doc, "hits");
     assert!(!arr.is_empty(), "expected at least one hit for 'User'");
 
     let first = &arr[0];
@@ -334,14 +313,9 @@ fn search_without_debug_search_omits_explanation_field() {
         .output()
         .unwrap();
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    cli::assert_success(&output);
     let doc = cli::output_stdout_json(&output);
-    let arr = doc["hits"].as_array().expect("expected array");
+    let arr = cli::json_array(&doc, "hits");
     assert!(!arr.is_empty());
     assert!(
         arr[0].get("explanation").is_none(),
@@ -378,14 +352,9 @@ fn search_limit_emits_cursor_and_pages_without_duplicates() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .output()
         .unwrap();
-    assert_eq!(
-        page1.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&page1.stderr)
-    );
+    cli::assert_success(&page1);
     let doc1 = cli::output_stdout_json(&page1);
-    assert_eq!(doc1["hits"].as_array().unwrap().len(), 1);
+    assert_eq!(cli::json_array(&doc1, "hits").len(), 1);
     let cursor = doc1["meta"]["next_cursor"]
         .as_str()
         .expect("first page should advertise a cursor");
@@ -404,17 +373,16 @@ fn search_limit_emits_cursor_and_pages_without_duplicates() {
         .env("AGHIST_INDEX_DIR", index_dir.path())
         .output()
         .unwrap();
-    assert_eq!(
-        page2.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&page2.stderr)
-    );
+    cli::assert_success(&page2);
     let doc2 = cli::output_stdout_json(&page2);
-    assert_eq!(doc2["hits"].as_array().unwrap().len(), 1);
+    assert_eq!(cli::json_array(&doc2, "hits").len(), 1);
 
-    let first = doc1["hits"][0]["message_id"].as_str().unwrap();
-    let second = doc2["hits"][0]["message_id"].as_str().unwrap();
+    let first = cli::json_array(&doc1, "hits")[0]["message_id"]
+        .as_str()
+        .unwrap();
+    let second = cli::json_array(&doc2, "hits")[0]["message_id"]
+        .as_str()
+        .unwrap();
     assert_ne!(first, second, "cursor page repeated the same hit");
 }
 #[test]
@@ -439,12 +407,7 @@ fn search_default_engine_is_lexical_in_meta() {
         .output()
         .unwrap();
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    cli::assert_success(&output);
     let doc = cli::output_stdout_json(&output);
     assert_eq!(
         doc["meta"]["engine"], "lexical",
@@ -469,14 +432,9 @@ fn search_hybrid_weight_falls_open_to_lexical_without_embeddings() {
         .output()
         .unwrap();
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "hybrid search must succeed even without embeddings; stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    cli::assert_success(&output);
     let doc = cli::output_stdout_json(&output);
-    let arr = doc["hits"].as_array().expect("expected hits array");
+    let arr = cli::json_array(&doc, "hits");
     assert!(
         !arr.is_empty(),
         "fail-open hybrid must still return lexical hits"
@@ -500,12 +458,7 @@ fn search_hybrid_weight_zero_behaves_like_lexical() {
         .output()
         .unwrap();
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    cli::assert_success(&output);
     let doc = cli::output_stdout_json(&output);
     assert_eq!(
         doc["meta"]["engine"], "lexical",
@@ -536,14 +489,9 @@ fn search_json_output_wraps_hits_in_meta_envelope() {
         .output()
         .unwrap();
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    cli::assert_success(&output);
     let doc = cli::output_stdout_json(&output);
-    let hits = doc["hits"].as_array().expect("search JSON hits array");
+    let hits = cli::json_array(&doc, "hits");
     assert_eq!(hits.len(), 1, "unique fixture token should produce one hit");
     assert!(doc["meta"].is_object(), "search JSON must include 'meta'");
     assert!(doc["meta"]["total"].is_number());
@@ -553,7 +501,7 @@ fn search_json_output_wraps_hits_in_meta_envelope() {
     assert_eq!(hit["kind"], "message");
     assert_eq!(hit["source"], "local");
     assert_eq!(hit["session_id"], "search-json-envelope");
-    assert!(hit["ref"].as_str().unwrap().ends_with("#1"));
+    assert!(cli::json_str(hit, "ref").ends_with("#1"));
 }
 #[test]
 fn search_watch_help_documents_flags() {
@@ -586,7 +534,7 @@ fn search_watch_emits_ndjson_one_per_line_for_existing_matches() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
+    cli::assert_success(&output);
     let stdout = cli::output_stdout(&output);
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
     assert!(
@@ -626,7 +574,7 @@ fn search_watch_dedups_hits_across_polls() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
+    cli::assert_success(&output);
     let stdout = cli::output_stdout(&output);
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
 
@@ -635,8 +583,8 @@ fn search_watch_dedups_hits_across_polls() {
         .map(|l| {
             let row: serde_json::Value = serde_json::from_str(l).unwrap();
             (
-                row["session_id"].as_str().unwrap().to_string(),
-                row["message_id"].as_str().unwrap().to_string(),
+                cli::json_str(&row, "session_id").to_string(),
+                cli::json_str(&row, "message_id").to_string(),
             )
         })
         .collect();
@@ -658,7 +606,7 @@ fn search_watch_requires_query() {
         .env("AGHIST_INDEX_DIR", dir.path().join("idx"))
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
+    cli::assert_exit_code(&output, 2);
     let stderr = cli::output_stderr(&output);
     assert!(
         stderr.contains("search requires a query"),
@@ -699,9 +647,7 @@ fn search_params_invokes_query() {
         .assert()
         .success();
     let parsed = cli::assert_stdout_json(&assert);
-    let hits = parsed["hits"]
-        .as_array()
-        .expect("search JSON must wrap rows in 'hits'");
+    let hits = cli::json_array(&parsed, "hits");
     assert!(
         !hits.is_empty(),
         "expected at least one hit for the unique phrase"
