@@ -80,6 +80,7 @@ pub(crate) fn sources_pull_remote(
     };
 
     let cache_root = resolve_sources_cache_root()?;
+    ensure_cache_root_safe(&cache_root)?;
     let mut results = Vec::with_capacity(targets.len());
     for src in targets {
         let result = pull_one_source(&src, &cache_root, dry_run)?;
@@ -110,6 +111,7 @@ fn pull_one_source(
             format!("failed to create cache dir {}: {e}", source_dir.display()),
         )
     })?;
+    ensure_existing_cache_dir_safe(&source_dir, "source cache dir")?;
 
     let data_dir = src.data_dir(cache_root);
     ensure_existing_cache_dir_safe(&data_dir, "source data dir")?;
@@ -119,6 +121,7 @@ fn pull_one_source(
             format!("failed to create cache dir {}: {e}", data_dir.display()),
         )
     })?;
+    ensure_existing_cache_dir_safe(&data_dir, "source data dir")?;
 
     let rsync_bin = std::env::var("AGHIST_RSYNC_BIN").unwrap_or_else(|_| "rsync".to_string());
     let remote = build_rsync_remote_url(src);
@@ -196,6 +199,20 @@ fn pull_one_source(
         file_count,
         pulled_at,
     })
+}
+
+fn ensure_cache_root_safe(cache_root: &Path) -> Result<(), ErrorEnvelope> {
+    ensure_existing_cache_dir_safe(cache_root, "sources cache root")?;
+    std::fs::create_dir_all(cache_root).map_err(|e| {
+        ErrorEnvelope::new(
+            "io-error",
+            format!(
+                "failed to create sources cache root {}: {e}",
+                cache_root.display()
+            ),
+        )
+    })?;
+    ensure_existing_cache_dir_safe(cache_root, "sources cache root")
 }
 
 fn ensure_existing_cache_dir_safe(path: &Path, label: &str) -> Result<(), ErrorEnvelope> {
