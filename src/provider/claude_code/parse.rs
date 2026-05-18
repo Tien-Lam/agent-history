@@ -311,14 +311,4 @@ fn extract_tool_result_text(item: &serde_json::Value) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decode_project_name_basic() {
-        assert_eq!(
-            decode_project_name("V--Projects-agent-history"),
-            "V:/Projects-agent-history"
-        );
-    }
-}
+mod tests;
