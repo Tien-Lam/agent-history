@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use super::super::aghist;
 
 /// Writes an executable shell script that imitates rsync: it parses the last
