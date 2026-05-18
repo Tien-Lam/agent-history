@@ -49,7 +49,6 @@ fn ignores_non_jsonl_files() {
 }
 
 #[test]
-#[allow(clippy::cast_possible_truncation)]
 fn uses_index_title_as_summary() {
     let tmp = TempDir::new().unwrap();
     let sd = sessions_dir(tmp.path());

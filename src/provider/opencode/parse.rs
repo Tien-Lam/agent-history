@@ -239,8 +239,6 @@ struct RawSession {
 struct RawTime {
     created: Option<i64>,
     updated: Option<i64>,
-    #[allow(dead_code)]
-    completed: Option<i64>,
 }
 
 #[derive(Deserialize)]

@@ -16,8 +16,6 @@ use crate::provider::text_blocks::parse_text_with_code_blocks;
 pub(crate) struct HistoryEntry {
     display: Option<String>,
     timestamp: Option<u64>,
-    #[allow(dead_code)]
-    project: Option<String>,
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
 }
@@ -151,8 +149,6 @@ struct RawSessionEntry {
 
 #[derive(Deserialize)]
 struct RawMessage {
-    #[allow(dead_code)]
-    role: Option<String>,
     content: Option<serde_json::Value>,
     model: Option<String>,
     usage: Option<RawUsage>,
