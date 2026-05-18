@@ -2,10 +2,11 @@ use std::io::{self, IsTerminal};
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::{ContentBlock, Message, Role, Session};
+use aghist::services::lookup as lookup_service;
+use aghist::session_resolver::SelectorShape;
 use aghist::{provider, query_scope};
 
 use super::discovery::federated_discovery_for_commands;
-use super::session_select::{resolve_session_selector, SelectedSession, SelectorShape};
 use super::text::truncate;
 
 mod render;
@@ -85,19 +86,6 @@ fn lcs_diff(left: &[DiffLine], right: &[DiffLine]) -> Vec<DiffOp> {
     ops
 }
 
-fn load_session_messages(
-    providers: &[Box<dyn provider::HistoryProvider>],
-    target: &SelectedSession<'_>,
-) -> Result<(Session, Vec<Message>), ErrorEnvelope> {
-    let messages = provider::load_messages_for_session(target.session, providers).map_err(|e| {
-        ErrorEnvelope::new(
-            "provider-error",
-            format!("load {}: {e}", target.session_ref),
-        )
-    })?;
-    Ok((target.session.clone(), messages))
-}
-
 pub(crate) fn diff_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,
@@ -107,31 +95,37 @@ pub(crate) fn diff_command(
     force_json: bool,
 ) -> Result<i32, ErrorEnvelope> {
     let discovery = federated_discovery_for_commands(providers, scope);
-    let target1 = resolve_session_selector(
-        &discovery.sessions,
-        &discovery.source_by_session,
+    let target1 = lookup_service::load_session_by_selector(
+        providers,
+        &discovery,
         raw1,
         SelectorShape::SessionRefOnly,
     )?;
-    let target2 = resolve_session_selector(
-        &discovery.sessions,
-        &discovery.source_by_session,
+    let target2 = lookup_service::load_session_by_selector(
+        providers,
+        &discovery,
         raw2,
         SelectorShape::SessionRefOnly,
     )?;
-    let (sess1, msgs1) = load_session_messages(providers, &target1)?;
-    let (sess2, msgs2) = load_session_messages(providers, &target2)?;
 
-    let lines1: Vec<DiffLine> = msgs1.iter().map(DiffLine::from_message).collect();
-    let lines2: Vec<DiffLine> = msgs2.iter().map(DiffLine::from_message).collect();
+    let lines1: Vec<DiffLine> = target1
+        .messages
+        .iter()
+        .map(DiffLine::from_message)
+        .collect();
+    let lines2: Vec<DiffLine> = target2
+        .messages
+        .iter()
+        .map(DiffLine::from_message)
+        .collect();
 
     let ops = lcs_diff(&lines1, &lines2);
     let want_json = force_json || !io::stdout().is_terminal();
     let render = DiffRenderInput {
         raw1: &target1.session_ref,
         raw2: &target2.session_ref,
-        sess1: &sess1,
-        sess2: &sess2,
+        sess1: &target1.session,
+        sess2: &target2.session,
         lines1: &lines1,
         lines2: &lines2,
         ops: &ops,

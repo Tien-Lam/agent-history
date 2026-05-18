@@ -7,17 +7,18 @@ use super::resources::session_uri_for_source;
 use super::server::McpServer;
 
 use crate::dto::{McpListResponse, McpSessionRow};
-use crate::federated::{self, LOCAL_SOURCE};
+use crate::federated;
 use crate::health::{run_health_checks, HealthStatus};
 use crate::indexing::{self, IndexingOptions, UnfilteredIndexScope};
 use crate::model::QualifiedCitationRef;
-use crate::provider;
 use crate::schema_fragments::{
     MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX, MCP_LIST_LIMIT_DEFAULT,
     MCP_LIST_LIMIT_MAX,
 };
 use crate::search::SearchFilters;
 use crate::services::list as list_service;
+use crate::services::lookup as lookup_service;
+use crate::session_resolver::LookupSource;
 
 mod search;
 
@@ -103,17 +104,25 @@ impl McpServer {
         let session_id = required_str(args, "session_id")?;
         let provider_filter = optional_provider(args, "provider")?;
         let source_filter = optional_str(args, "source")?;
-        let located =
-            self.find_session_by_prefix(&session_id, provider_filter, source_filter.as_deref())?;
-        let messages = provider::load_messages_for_session(&located.session, &self.providers)
-            .map_err(|e| format!("failed to load messages for {}: {e}", located.session.id.0))?;
-        let turns: Vec<Value> = messages
+        let discovery = self.collect_discovery();
+        let provider_scope = self.provider_scope();
+        let loaded = lookup_service::load_session_by_prefix(
+            &self.providers,
+            &discovery,
+            &session_id,
+            provider_filter,
+            source_filter.as_deref(),
+            Some(&provider_scope),
+        )
+        .map_err(|e| e.message)?;
+        let turns: Vec<Value> = loaded
+            .messages
             .iter()
             .enumerate()
-            .map(|(i, m)| message_row_with_source(&located.session, m, i + 1, &located.source))
+            .map(|(i, m)| message_row_with_source(&loaded.session, m, i + 1, &loaded.source))
             .collect();
         Ok(json!({
-            "session": session_row_with_source(&located.session, &located.source),
+            "session": session_row_with_source(&loaded.session, &loaded.source),
             "turns": turns,
         }))
     }
@@ -131,55 +140,45 @@ impl McpServer {
             MCP_INCLUDE_CONTEXT_MAX,
         )?;
         let citation = qualified.citation;
-        let source = qualified.source.as_deref();
-
-        let located = self.find_session_exact_with_optional_source(
-            citation.provider,
-            &citation.session_id.0,
+        let source =
+            LookupSource::from_optional(qualified.source.as_deref()).map_err(|e| e.to_string())?;
+        let discovery = self.collect_discovery();
+        let provider_scope = self.provider_scope();
+        let loaded = lookup_service::load_exact_citation_window(
+            &self.providers,
+            &discovery,
+            citation,
             source,
-        )?;
-        let messages = provider::load_messages_for_session(&located.session, &self.providers)
-            .map_err(|e| format!("failed to load messages: {e}"))?;
+            include_context,
+            Some(&provider_scope),
+        )
+        .map_err(|e| e.message)?;
 
-        let total = messages.len();
-        let turn = citation.turn as usize;
-        if turn == 0 || turn > total {
-            return Err(format!(
-                "turn {turn} out of range: session has {total} message(s)"
-            ));
-        }
-        let target_idx = turn - 1;
-        let start_idx = target_idx.saturating_sub(include_context);
-        let end_idx = (target_idx + include_context + 1).min(total);
-        let slice = &messages[start_idx..end_idx];
-
-        let turns: Vec<Value> = slice
+        let turns: Vec<Value> = loaded
+            .messages
             .iter()
             .enumerate()
             .map(|(i, m)| {
                 let mut row = message_row_with_source(
-                    &located.session,
+                    &loaded.session,
                     m,
-                    start_idx + i + 1,
-                    &located.source,
+                    loaded.start_idx + i + 1,
+                    &loaded.source,
                 );
                 if let Some(obj) = row.as_object_mut() {
-                    obj.insert("is_target".to_string(), json!(start_idx + i == target_idx));
+                    obj.insert(
+                        "is_target".to_string(),
+                        json!(loaded.start_idx + i == loaded.target_idx),
+                    );
                 }
                 row
             })
             .collect();
 
-        let response_ref = QualifiedCitationRef::new(
-            (located.source != LOCAL_SOURCE).then(|| located.source.clone()),
-            citation.clone(),
-        )
-        .to_string();
-
         Ok(json!({
-            "ref": response_ref,
-            "session": session_row_with_source(&located.session, &located.source),
-            "target_turn": citation.turn,
+            "ref": loaded.citation_ref,
+            "session": session_row_with_source(&loaded.session, &loaded.source),
+            "target_turn": loaded.citation.turn,
             "turns": turns,
         }))
     }

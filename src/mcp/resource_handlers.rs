@@ -9,8 +9,9 @@ use super::resources::{
 use super::server::McpServer;
 
 use crate::federated::LOCAL_SOURCE;
-use crate::model::Provider;
-use crate::provider;
+use crate::model::{CitationRef, Provider, SessionId};
+use crate::services::lookup as lookup_service;
+use crate::session_resolver::LookupSource;
 
 impl McpServer {
     /// Lists every discoverable session as a top-level
@@ -73,17 +74,27 @@ impl McpServer {
         session_id: &str,
     ) -> Result<Value, String> {
         let source = source.unwrap_or(LOCAL_SOURCE);
-        let located = self.find_session_exact(provider_want, session_id, source)?;
-        let messages = provider::load_messages_for_session(&located.session, &self.providers)
-            .map_err(|e| format!("failed to load messages: {e}"))?;
-        let turns: Vec<Value> = messages
+        let source = LookupSource::explicit(source).map_err(|e| e.to_string())?;
+        let discovery = self.collect_discovery();
+        let provider_scope = self.provider_scope();
+        let loaded = lookup_service::load_exact_session(
+            &self.providers,
+            &discovery,
+            provider_want,
+            session_id,
+            source,
+            Some(&provider_scope),
+        )
+        .map_err(|e| e.message)?;
+        let turns: Vec<Value> = loaded
+            .messages
             .iter()
             .enumerate()
-            .map(|(i, m)| message_row_with_source(&located.session, m, i + 1, &located.source))
+            .map(|(i, m)| message_row_with_source(&loaded.session, m, i + 1, &loaded.source))
             .collect();
         Ok(json!({
-            "uri": session_uri_for_source(&located.source, located.session.provider, &located.session.id.0),
-            "session": session_row_with_source(&located.session, &located.source),
+            "uri": session_uri_for_source(&loaded.source, loaded.session.provider, &loaded.session.id.0),
+            "session": session_row_with_source(&loaded.session, &loaded.source),
             "turns": turns,
         }))
     }
@@ -96,21 +107,28 @@ impl McpServer {
         turn: u32,
     ) -> Result<Value, String> {
         let source = source.unwrap_or(LOCAL_SOURCE);
-        let located = self.find_session_exact(provider_want, session_id, source)?;
-        let messages = provider::load_messages_for_session(&located.session, &self.providers)
-            .map_err(|e| format!("failed to load messages: {e}"))?;
-        let total = messages.len();
-        let turn_usize = turn as usize;
-        if turn_usize == 0 || turn_usize > total {
-            return Err(format!(
-                "turn {turn} out of range: session has {total} message(s)"
-            ));
-        }
-        let msg = &messages[turn_usize - 1];
+        let source = LookupSource::explicit(source).map_err(|e| e.to_string())?;
+        let citation = CitationRef::new(provider_want, SessionId(session_id.to_string()), turn)
+            .ok_or_else(|| "turn must be >= 1".to_string())?;
+        let discovery = self.collect_discovery();
+        let provider_scope = self.provider_scope();
+        let loaded = lookup_service::load_exact_citation_window(
+            &self.providers,
+            &discovery,
+            citation,
+            source,
+            0,
+            Some(&provider_scope),
+        )
+        .map_err(|e| e.message)?;
+        let msg = loaded
+            .messages
+            .first()
+            .ok_or_else(|| "turn window unexpectedly empty".to_string())?;
         Ok(json!({
-            "uri": turn_uri_for_source(&located.source, located.session.provider, &located.session.id.0, turn),
-            "session": session_row_with_source(&located.session, &located.source),
-            "turn": message_row_with_source(&located.session, msg, turn_usize, &located.source),
+            "uri": turn_uri_for_source(&loaded.source, loaded.session.provider, &loaded.session.id.0, turn),
+            "session": session_row_with_source(&loaded.session, &loaded.source),
+            "turn": message_row_with_source(&loaded.session, msg, turn as usize, &loaded.source),
         }))
     }
 }

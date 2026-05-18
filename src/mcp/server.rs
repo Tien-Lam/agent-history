@@ -13,20 +13,14 @@ use super::resources::resource_templates;
 
 use crate::config::RemoteSource;
 use crate::federated::{self, FederatedDiscovery, SourceFailure, LOCAL_SOURCE};
-use crate::model::{Provider, Session};
+use crate::model::Provider;
 use crate::provider::HistoryProvider;
 use crate::query_scope::QueryScope;
-use crate::session_resolver::{LookupSource, SessionResolver};
 
 /// Owns the providers + search index for the lifetime of a server run.
 pub struct McpServer {
     pub(super) providers: Vec<Box<dyn HistoryProvider>>,
     scope: QueryScope,
-}
-
-pub(super) struct LocatedSession {
-    pub session: Session,
-    pub source: String,
 }
 
 impl McpServer {
@@ -204,76 +198,5 @@ impl McpServer {
 
     pub(super) fn scope(&self) -> &QueryScope {
         &self.scope
-    }
-
-    pub(super) fn find_session_by_prefix(
-        &self,
-        session_id: &str,
-        provider_filter: Option<Provider>,
-        source_filter: Option<&str>,
-    ) -> Result<LocatedSession, String> {
-        if let Some(provider) = provider_filter {
-            self.ensure_provider_visible(provider)?;
-        }
-        let discovery = self.collect_discovery();
-        let resolver = SessionResolver::new(&discovery.sessions, &discovery.source_by_session);
-        let source_filter =
-            LookupSource::from_optional(source_filter).map_err(|e| e.to_string())?;
-        let selected = resolver
-            .find_by_id_prefix(session_id, provider_filter, source_filter)
-            .map_err(|e| e.to_string())?;
-        Ok(LocatedSession {
-            session: selected.session.clone(),
-            source: selected.source.to_string(),
-        })
-    }
-
-    pub(super) fn find_session_exact(
-        &self,
-        provider: Provider,
-        session_id: &str,
-        source: &str,
-    ) -> Result<LocatedSession, String> {
-        let source = LookupSource::explicit(source).map_err(|e| e.to_string())?;
-        self.find_session_exact_with_source(provider, session_id, source)
-    }
-
-    pub(super) fn find_session_exact_with_optional_source(
-        &self,
-        provider: Provider,
-        session_id: &str,
-        source: Option<&str>,
-    ) -> Result<LocatedSession, String> {
-        let source = LookupSource::from_optional(source).map_err(|e| e.to_string())?;
-        self.find_session_exact_with_source(provider, session_id, source)
-    }
-
-    fn find_session_exact_with_source(
-        &self,
-        provider: Provider,
-        session_id: &str,
-        source: LookupSource<'_>,
-    ) -> Result<LocatedSession, String> {
-        self.ensure_provider_visible(provider)?;
-        let discovery = self.collect_discovery();
-        let resolver = SessionResolver::new(&discovery.sessions, &discovery.source_by_session);
-        let selected = resolver
-            .find_exact(provider, session_id, source)
-            .map_err(|e| e.to_string())?;
-        Ok(LocatedSession {
-            session: selected.session.clone(),
-            source: selected.source.to_string(),
-        })
-    }
-
-    fn ensure_provider_visible(&self, provider: Provider) -> Result<(), String> {
-        if self.scope.contains_provider(provider) {
-            Ok(())
-        } else {
-            Err(format!(
-                "provider '{}' is not enabled or not visible to MCP",
-                provider.slug()
-            ))
-        }
     }
 }

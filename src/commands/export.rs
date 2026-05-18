@@ -2,10 +2,11 @@ use std::io::Write as _;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::metadata::{self, Note};
+use aghist::services::lookup as lookup_service;
+use aghist::session_resolver::SelectorShape;
 use aghist::{export, provider, query_scope};
 
 use super::discovery::federated_discovery_for_commands;
-use super::session_select::{resolve_session_selector, SelectorShape};
 
 /// Parse a 1-based inclusive turn range against a session of `total` messages.
 ///
@@ -112,24 +113,16 @@ pub(crate) fn export_session(
     include_notes: bool,
 ) -> Result<i32, ErrorEnvelope> {
     let discovery = federated_discovery_for_commands(providers, scope);
-    let target = resolve_session_selector(
-        &discovery.sessions,
-        &discovery.source_by_session,
+    let target = lookup_service::load_session_by_selector(
+        providers,
+        &discovery,
         session_id,
         SelectorShape::SessionRefOrIdPrefix,
     )?;
-    let session = target.session;
-
-    let messages = provider::load_messages_for_session(session, providers).map_err(|e| {
-        ErrorEnvelope::new(
-            "provider-error",
-            format!("failed to load messages for {}: {e}", session.id.0),
-        )
-    })?;
 
     let (sliced, turn_offset) = match turn_range {
         Some(spec) => {
-            let total = messages.len();
+            let total = target.messages.len();
             let (start, end) = parse_turn_range(spec, total).map_err(|msg| {
                 ErrorEnvelope::new("usage", msg).with_hint(
                     "Use a 1-based range like `12:25`, `:10`, `5:`, or a single turn `7`.",
@@ -138,9 +131,9 @@ pub(crate) fn export_session(
             // start..end are 1-based inclusive bounds; convert to 0-based half-open.
             // The slice's first message is turn `start` in the original session, so
             // we offset turn-keyed notes by `start - 1` to align them.
-            (&messages[(start - 1)..end], start - 1)
+            (&target.messages[(start - 1)..end], start - 1)
         }
-        None => (&messages[..], 0usize),
+        None => (&target.messages[..], 0usize),
     };
 
     let notes: Vec<Note> = if include_notes {
@@ -151,7 +144,7 @@ pub(crate) fn export_session(
 
     let content = export::export_with_notes_for_session_ref(
         format,
-        session,
+        &target.session,
         sliced,
         &notes,
         &target.session_ref,

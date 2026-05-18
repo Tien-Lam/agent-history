@@ -3,11 +3,11 @@ use std::io;
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::model::{CitationRef, Message, Provider, Role, Session};
 use aghist::output::write_json_line;
+use aghist::services::lookup as lookup_service;
 use aghist::{provider, query_scope};
 
 use super::super::cli::ShowFormat;
 use super::discovery::federated_discovery_for_commands;
-use super::session_select::resolve_citation_selector;
 
 pub(crate) fn show_command(
     providers: &[Box<dyn provider::HistoryProvider>],
@@ -17,33 +17,12 @@ pub(crate) fn show_command(
     include_context: u32,
 ) -> Result<i32, ErrorEnvelope> {
     let discovery = federated_discovery_for_commands(providers, scope);
-    let target =
-        resolve_citation_selector(&discovery.sessions, &discovery.source_by_session, raw_ref)?;
-    let citation = target.citation;
-    let session = target.session;
-
-    let messages = provider::load_messages_for_session(session, providers).map_err(|e| {
-        ErrorEnvelope::new(
-            "provider-error",
-            format!("failed to load messages for {}: {e}", target.citation_ref),
-        )
-    })?;
-
-    let total = messages.len();
-    let turn = citation.turn as usize;
-    if turn > total {
-        return Err(ErrorEnvelope::new(
-            "session-not-found",
-            format!("turn {turn} out of range: session has {total} message(s)"),
-        )
-        .with_hint("Use `aghist export` to inspect the full session, or pick a smaller turn."));
-    }
-
-    let target_idx = turn - 1;
-    let ctx = include_context as usize;
-    let start_idx = target_idx.saturating_sub(ctx);
-    let end_idx = (target_idx + ctx + 1).min(total);
-    let slice = &messages[start_idx..end_idx];
+    let target = lookup_service::load_citation_by_selector(
+        providers,
+        &discovery,
+        raw_ref,
+        include_context as usize,
+    )?;
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -51,23 +30,27 @@ pub(crate) fn show_command(
         ShowFormat::Md => render_show_md(
             &mut out,
             &target.citation_ref,
-            session,
-            slice,
-            start_idx,
-            target_idx,
+            &target.session,
+            &target.messages,
+            target.start_idx,
+            target.target_idx,
         ),
         ShowFormat::Json => render_show_json(
             &mut out,
             &target.citation_ref,
-            &citation,
-            session,
-            slice,
-            start_idx,
-            target_idx,
+            &target.citation,
+            &target.session,
+            &target.messages,
+            target.start_idx,
+            target.target_idx,
         ),
-        ShowFormat::Text => {
-            render_show_text(&mut out, &target.citation_ref, slice, start_idx, target_idx)
-        }
+        ShowFormat::Text => render_show_text(
+            &mut out,
+            &target.citation_ref,
+            &target.messages,
+            target.start_idx,
+            target.target_idx,
+        ),
     }
     .map_err(|e| ErrorEnvelope::io("failed to write show output", e))?;
 
