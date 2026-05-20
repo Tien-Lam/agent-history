@@ -15,7 +15,7 @@ clap = { version = "4", features = ["derive"] }
 color-eyre = "0.6"
 crossbeam-channel = "0.5"
 crossterm = "0.29"
-directories = "5"
+directories = "6"
 lru = "0.16.3"
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
@@ -35,13 +35,13 @@ rusqlite_migration = "2.5.0"
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 
 [target.'cfg(not(windows))'.dependencies]
-self_update = { version = "0.42", optional = true, default-features = false, features = [
-    "archive-tar", "compression-flate2", "rustls",
+self_update = { version = "0.44", optional = true, default-features = false, features = [
+    "archive-tar", "compression-flate2", "rustls", "ureq",
 ] }
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.42", optional = true, default-features = false, features = [
-    "archive-zip", "compression-zip-deflate", "rustls",
+self_update = { version = "0.44", optional = true, default-features = false, features = [
+    "archive-zip", "compression-zip-deflate", "rustls", "ureq",
 ] }
 
 [features]
