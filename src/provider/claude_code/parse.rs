@@ -155,7 +155,7 @@ struct RawMessage {
     usage: Option<RawUsage>,
 }
 
-#[allow(clippy::struct_field_names)]
+#[allow(clippy::struct_field_names)] // Provider JSON uses token-suffixed usage fields.
 #[derive(Deserialize)]
 struct RawUsage {
     input_tokens: Option<u64>,
