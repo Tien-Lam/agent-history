@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::BuildHasher;
 
-use crate::federated::LOCAL_SOURCE;
 use crate::metadata;
 use crate::model::Session;
+use crate::session_resolver::{qualified_session_metadata_key, source_for_session};
 
 use super::SearchServiceHit;
 use crate::search::HitKind;
@@ -80,22 +79,4 @@ pub(super) fn sort_search_hits(
             .then_with(|| a.0.kind.slug().cmp(b.0.kind.slug()))
             .then_with(|| a.0.note_id.cmp(&b.0.note_id))
     });
-}
-
-pub(super) fn source_for_session<'a, S: BuildHasher>(
-    source_by_session: &'a HashMap<String, String, S>,
-    session: &Session,
-) -> &'a str {
-    source_by_session
-        .get(session.identity_key().as_str())
-        .map_or(LOCAL_SOURCE, String::as_str)
-}
-
-pub(super) fn qualified_session_metadata_key(session: &Session, source: &str) -> String {
-    let raw = session.session_ref().to_string();
-    if source == LOCAL_SOURCE {
-        raw
-    } else {
-        format!("{source}:{raw}")
-    }
 }

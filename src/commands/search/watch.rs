@@ -7,10 +7,10 @@ use aghist::cli_error::{ErrorEnvelope, EXIT_OK, EXIT_USAGE};
 use aghist::metadata;
 use aghist::model::Session;
 use aghist::search::{self, SearchFilters};
+use aghist::session_resolver::qualified_session_metadata_key;
 use aghist::{provider, query_scope};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
-use super::super::filtering::qualified_session_metadata_key;
 use super::input::resolve_search_query;
 use super::output::write_watch_hit;
 

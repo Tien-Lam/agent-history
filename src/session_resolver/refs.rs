@@ -26,6 +26,23 @@ pub fn qualified_session_ref<S: BuildHasher>(
     }
 }
 
+/// Build the canonical metadata key for a local session.
+pub fn session_metadata_key(session: &Session) -> String {
+    session.session_ref().to_string()
+}
+
+/// Build the metadata key for a federated session. Local sessions keep the
+/// legacy unqualified shape; remote sessions use
+/// `<source>:<provider-slug>/<id>`.
+pub fn qualified_session_metadata_key(session: &Session, source: &str) -> String {
+    let raw = session_metadata_key(session);
+    if source == LOCAL_SOURCE {
+        raw
+    } else {
+        format!("{source}:{raw}")
+    }
+}
+
 pub fn qualified_citation_ref<S: BuildHasher>(
     source_by_session: &HashMap<String, String, S>,
     session: &Session,

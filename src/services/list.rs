@@ -7,6 +7,7 @@ use crate::federated::{FederatedDiscovery, LOCAL_SOURCE};
 use crate::model::{ContentBlock, Provider, Session};
 use crate::provider::{self, HistoryProvider};
 use crate::search::SearchFilters;
+use crate::session_resolver::{qualified_session_metadata_key, source_for_session};
 use crate::session_warnings::SessionLoadWarning;
 
 #[derive(Clone, Copy)]
@@ -224,24 +225,6 @@ fn metadata_filter_matches_source(
         return true;
     };
     keys.contains(&qualified_session_metadata_key(session, source))
-}
-
-fn qualified_session_metadata_key(session: &Session, source: &str) -> String {
-    let raw = session.session_ref().to_string();
-    if source == LOCAL_SOURCE {
-        raw
-    } else {
-        format!("{source}:{raw}")
-    }
-}
-
-fn source_for_session<'a>(
-    source_by_session: &'a std::collections::HashMap<String, String>,
-    session: &Session,
-) -> &'a str {
-    source_by_session
-        .get(session.identity_key().as_str())
-        .map_or(LOCAL_SOURCE, String::as_str)
 }
 
 #[cfg(test)]

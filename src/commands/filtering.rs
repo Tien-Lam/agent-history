@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use aghist::cli_error::ErrorEnvelope;
-use aghist::federated;
 use aghist::metadata;
 use aghist::model::{ContentBlock, Message, Session};
+use aghist::session_resolver::qualified_session_metadata_key;
 
 use super::super::cli::FilterArgs;
 use super::metadata::{metadata_error, open_metadata_db};
@@ -63,23 +63,6 @@ pub(crate) fn resolve_metadata_filter(
         filters.starred,
     )
     .map_err(|e| metadata_error(&e))
-}
-
-/// Build the canonical metadata key for a session: `<provider-slug>/<id>`.
-pub(crate) fn session_metadata_key(session: &Session) -> String {
-    session.session_ref().to_string()
-}
-
-/// Build the metadata key for a federated session. Local sessions keep the
-/// legacy unqualified shape; remote sessions use
-/// `<source>:<provider-slug>/<id>`.
-pub(crate) fn qualified_session_metadata_key(session: &Session, source: &str) -> String {
-    let raw = session_metadata_key(session);
-    if source == federated::LOCAL_SOURCE {
-        raw
-    } else {
-        format!("{source}:{raw}")
-    }
 }
 
 /// Drop a `#<turn>` suffix, preserving any source prefix and leaving the same

@@ -8,7 +8,10 @@ mod refs;
 mod source;
 
 pub use error::ResolutionError;
-pub use refs::{qualified_citation_ref, qualified_session_ref, source_for_session};
+pub use refs::{
+    qualified_citation_ref, qualified_session_metadata_key, qualified_session_ref,
+    session_metadata_key, source_for_session,
+};
 use source::split_valid_source_prefix;
 pub use source::LookupSource;
 

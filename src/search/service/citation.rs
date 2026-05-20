@@ -1,12 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasher;
 
-use crate::federated::LOCAL_SOURCE;
-use crate::model::{QualifiedCitationRef, Session};
+use crate::model::Session;
 use crate::provider::{self, HistoryProvider};
+use crate::session_resolver::{qualified_citation_ref, source_for_session};
 use crate::session_warnings::SessionLoadWarning;
 
-use super::filter::source_for_session;
 use super::SearchServiceHit;
 use crate::search::HitKind;
 
@@ -56,7 +55,11 @@ pub fn resolve_search_hit_citations<SessionHasher: BuildHasher, SourceHasher: Bu
             refs.insert(
                 message_key,
                 SearchHitCitation {
-                    ref_: format_search_ref(source, session, turn),
+                    ref_: qualified_citation_ref(
+                        source_by_session,
+                        session,
+                        u32::try_from(turn).unwrap_or(u32::MAX),
+                    ),
                     turn,
                 },
             );
@@ -64,16 +67,4 @@ pub fn resolve_search_hit_citations<SessionHasher: BuildHasher, SourceHasher: Bu
     }
 
     SearchHitCitationResolution { refs, warnings }
-}
-
-fn format_search_ref(source: &str, session: &Session, turn: usize) -> String {
-    let turn = u32::try_from(turn).unwrap_or(u32::MAX);
-    let Some(citation) = session.citation_ref(turn) else {
-        return format!("{}/{}#{turn}", session.provider.slug(), session.id.0);
-    };
-    QualifiedCitationRef::new(
-        (source != LOCAL_SOURCE).then(|| source.to_string()),
-        citation,
-    )
-    .to_string()
 }
