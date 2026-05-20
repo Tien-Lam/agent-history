@@ -1,0 +1,52 @@
+use super::*;
+
+#[test]
+fn sources_pull_unknown_name_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+    let cache_dir = dir.path().join("cache");
+
+    let output = aghist()
+        .args(["sources", "pull", "ghost"])
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stderr_error_kind(&output), "source-not-found");
+}
+
+#[test]
+fn sources_pull_requires_name_or_all() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+
+    aghist()
+        .args(["sources", "add", "box", "--host", "h", "--path", "/p"])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["sources", "pull"])
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stderr_error_kind(&output), "usage");
+}
+
+#[test]
+fn sources_pull_all_with_no_sources_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+    let output = aghist()
+        .args(["sources", "pull", "--all"])
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stderr_error_kind(&output), "source-not-found");
+}
