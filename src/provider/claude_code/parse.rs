@@ -8,7 +8,8 @@ use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, Se
 use crate::provider::json_text::string_or_typed_text_array;
 use crate::provider::parse_common::{
     millis_to_utc, nonzero_token_usage, parse_jsonl_records, parse_utc, parse_utc_or_now,
-    pretty_json_opt, token_usage, tool_result_block, tool_use_block, visit_jsonl_records,
+    pretty_json_opt, token_usage_from_options, tool_result_block, tool_use_block,
+    visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -205,9 +206,9 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
             }
 
             let token_usage = msg.usage.as_ref().map(|u| {
-                token_usage(
-                    u.input_tokens.unwrap_or(0),
-                    u.output_tokens.unwrap_or(0),
+                token_usage_from_options(
+                    u.input_tokens,
+                    u.output_tokens,
                     u.cache_read_input_tokens,
                     u.cache_creation_input_tokens,
                 )

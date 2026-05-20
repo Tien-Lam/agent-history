@@ -47,3 +47,24 @@ fn timestamp_with_index_millis_preserves_order_without_panicking_on_huge_idx() {
     );
     assert_eq!(timestamp_with_index_millis(base, usize::MAX), base);
 }
+
+#[test]
+fn parse_millis_or_utc_prefers_epoch_millis_then_iso() {
+    let millis = parse_millis_or_utc(Some(1_767_225_600_000), Some("2020-01-01T00:00:00Z"))
+        .expect("millis timestamp parses");
+    assert_eq!(millis, parse_utc("2026-01-01T00:00:00Z").unwrap());
+
+    let iso =
+        parse_millis_or_utc(None, Some("2026-02-03T04:05:06Z")).expect("ISO timestamp parses");
+    assert_eq!(iso, parse_utc("2026-02-03T04:05:06Z").unwrap());
+}
+
+#[test]
+fn token_usage_from_options_defaults_missing_counts() {
+    let usage = token_usage_from_options(None, Some(7), Some(3), None);
+
+    assert_eq!(usage.input_tokens, 0);
+    assert_eq!(usage.output_tokens, 7);
+    assert_eq!(usage.cache_read_tokens, Some(3));
+    assert_eq!(usage.cache_write_tokens, None);
+}

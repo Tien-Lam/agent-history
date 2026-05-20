@@ -8,7 +8,7 @@ use super::super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Role};
 use crate::provider::json_text::string_or_object_field;
 use crate::provider::parse_common::{
-    parse_utc_or_now, pretty_json_opt, token_usage, tool_result_block, tool_use_block,
+    parse_utc_or_now, pretty_json_opt, token_usage_from_options, tool_result_block, tool_use_block,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -105,14 +105,10 @@ fn event_message(
         timestamp,
         content,
         model: event.model.clone(),
-        token_usage: event.usage.as_ref().map(|u| {
-            token_usage(
-                u.input_tokens.unwrap_or(0),
-                u.output_tokens.unwrap_or(0),
-                None,
-                None,
-            )
-        }),
+        token_usage: event
+            .usage
+            .as_ref()
+            .map(|u| token_usage_from_options(u.input_tokens, u.output_tokens, None, None)),
     }
 }
 

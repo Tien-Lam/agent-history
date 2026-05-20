@@ -1,13 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use serde::Deserialize;
 
-use crate::model::{
-    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage,
-};
+use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::parse_common::{
-    millis_to_utc, parse_utc, pretty_json_opt, tool_result_block, tool_use_block,
+    parse_millis_or_utc, parse_millis_or_utc_or_now, pretty_json_opt, token_usage_from_options,
+    tool_result_block, tool_use_block,
 };
 use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
@@ -17,19 +15,15 @@ pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Optio
     let raw: RawSession = serde_json::from_str(&data).ok()?;
 
     // Try new format (time.created as millis) first, then legacy (createdAt as ISO string)
-    let started_at = raw
-        .time
-        .as_ref()
-        .and_then(|t| t.created)
-        .and_then(millis_to_utc)
-        .or_else(|| raw.created_at.as_deref().and_then(parse_utc))?;
+    let started_at = parse_millis_or_utc(
+        raw.time.as_ref().and_then(|t| t.created),
+        raw.created_at.as_deref(),
+    )?;
 
-    let ended_at = raw
-        .time
-        .as_ref()
-        .and_then(|t| t.updated)
-        .and_then(millis_to_utc)
-        .or_else(|| raw.updated_at.as_deref().and_then(parse_utc));
+    let ended_at = parse_millis_or_utc(
+        raw.time.as_ref().and_then(|t| t.updated),
+        raw.updated_at.as_deref(),
+    );
 
     // New format uses "directory", legacy uses "cwd"
     let project_string = raw.directory.or(raw.cwd);
@@ -79,13 +73,10 @@ pub(crate) fn parse_message_file(path: &Path, part_dir: &Path) -> Option<Message
     };
 
     // Try new format (time.created as millis) first, then legacy (timestamp as ISO string)
-    let timestamp = raw
-        .time
-        .as_ref()
-        .and_then(|t| t.created)
-        .and_then(millis_to_utc)
-        .or_else(|| raw.timestamp.as_deref().and_then(parse_utc))
-        .unwrap_or_else(Utc::now);
+    let timestamp = parse_millis_or_utc_or_now(
+        raw.time.as_ref().and_then(|t| t.created),
+        raw.timestamp.as_deref(),
+    );
 
     let msg_id = raw.id.clone().unwrap_or_default();
     let mut content = Vec::new();
@@ -133,11 +124,13 @@ pub(crate) fn parse_message_file(path: &Path, part_dir: &Path) -> Option<Message
         return None;
     }
 
-    let token_usage = raw.tokens.as_ref().map(|t| TokenUsage {
-        input_tokens: t.input.unwrap_or(0),
-        output_tokens: t.output.unwrap_or(0),
-        cache_read_tokens: t.cache.as_ref().and_then(|c| c.read),
-        cache_write_tokens: t.cache.as_ref().and_then(|c| c.write),
+    let token_usage = raw.tokens.as_ref().map(|t| {
+        token_usage_from_options(
+            t.input,
+            t.output,
+            t.cache.as_ref().and_then(|c| c.read),
+            t.cache.as_ref().and_then(|c| c.write),
+        )
     });
 
     let model = raw.model.and_then(|m| m.model_id);
@@ -273,7 +266,6 @@ struct RawSummary {
     title: Option<String>,
 }
 
-#[allow(clippy::struct_field_names)]
 #[derive(Deserialize)]
 struct RawTokens {
     input: Option<u64>,

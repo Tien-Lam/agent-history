@@ -5,13 +5,11 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::ProviderError;
-use crate::model::{
-    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, TokenUsage,
-};
+use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::string_or_object_field_or_pretty;
 use crate::provider::parse_common::{
-    nonzero_token_usage, parse_utc, parse_utc_or_now, pretty_json_opt, tool_result_block,
-    tool_use_block,
+    nonzero_token_usage, parse_utc, parse_utc_or_now, pretty_json_opt, token_usage_from_options,
+    tool_result_block, tool_use_block,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -150,7 +148,9 @@ fn convert_message(msg: &RawMessage) -> Option<Message> {
         timestamp: message_timestamp(msg.timestamp.as_deref()),
         content: std::mem::take(&mut content),
         model: msg.model.clone(),
-        token_usage: msg.tokens.as_ref().map(token_usage),
+        token_usage: msg.tokens.as_ref().map(|tokens| {
+            token_usage_from_options(tokens.input, tokens.output, tokens.cached, None)
+        }),
     })
 }
 
@@ -237,15 +237,6 @@ fn append_tool_response(content: &mut Vec<ContentBlock>, tc: &RawToolCall, id: S
 
     if !output.is_empty() {
         content.push(tool_result_block(id, tc.error.is_none(), output));
-    }
-}
-
-fn token_usage(tokens: &RawTokens) -> TokenUsage {
-    TokenUsage {
-        input_tokens: tokens.input.unwrap_or(0),
-        output_tokens: tokens.output.unwrap_or(0),
-        cache_read_tokens: tokens.cached,
-        cache_write_tokens: None,
     }
 }
 
