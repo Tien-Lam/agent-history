@@ -171,9 +171,7 @@ aghist schema search                                        # full draft-2020-12
 
 # MCP stdio server (one process per client)
 aghist mcp                                                  # JSON-RPC 2.0 over stdio
-                                                            # tools: search_sessions, list_sessions,
-                                                            # get_session, get_message, reindex, health
-                                                            # resources: aghist://session/<provider>/<id>
+                                                            # inspect tools/resources via your MCP client
 ```
 
 For the full schema of every subcommand, run `aghist schema <subcmd>`.
@@ -203,7 +201,8 @@ show_tool_calls = false
 max_messages_per_session = 5000
 
 [providers]
-enabled = ["claude-code", "copilot-cli", "gemini-cli", "codex-cli", "opencode"]
+# Optional: restrict detected providers by slug.
+# enabled = ["claude-code", "codex-cli"]
 # Optional MCP scoping: only expose this subset to `aghist mcp` clients.
 # Defaults to `enabled` when omitted.
 # mcp_exposed = ["claude-code"]
