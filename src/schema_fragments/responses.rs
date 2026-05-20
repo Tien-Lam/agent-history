@@ -48,18 +48,20 @@ pub(crate) fn session_row_schema() -> Value {
 
 pub(crate) fn mcp_session_row_schema() -> Value {
     let mut schema = session_row_schema();
-    let properties = schema["properties"]
-        .as_object_mut()
-        .expect("session row schema properties");
-    properties.insert(
-        "uri".to_string(),
-        json!({ "type": "string", "description": "MCP resource URI for this session." }),
-    );
-    properties.insert("model".to_string(), json!({ "type": ["string", "null"] }));
-    properties.insert(
-        "ended_at".to_string(),
-        json!({ "type": ["string", "null"], "format": "date-time" }),
-    );
+    if let Some(properties) = schema
+        .get_mut("properties")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        properties.insert(
+            "uri".to_string(),
+            json!({ "type": "string", "description": "MCP resource URI for this session." }),
+        );
+        properties.insert("model".to_string(), json!({ "type": ["string", "null"] }));
+        properties.insert(
+            "ended_at".to_string(),
+            json!({ "type": ["string", "null"], "format": "date-time" }),
+        );
+    }
     schema
 }
 

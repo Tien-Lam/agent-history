@@ -94,7 +94,10 @@ mod enabled {
                 })?);
             }
             let Some(embedder) = embedder.as_mut() else {
-                unreachable!("embedder was initialised above");
+                return Err(ErrorEnvelope::new(
+                    "embed-error",
+                    "embedder was not available after initialisation",
+                ));
             };
             match embedder.embed_batch(&texts) {
                 Ok(vectors) => {

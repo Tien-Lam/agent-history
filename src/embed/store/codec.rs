@@ -83,11 +83,13 @@ pub(super) fn decode(path: &Path, bytes: &[u8]) -> Result<DecodedStore, EmbedErr
         let hash_bytes = cur.take(HASH_LEN)?;
         let hash: [u8; HASH_LEN] = hash_bytes
             .try_into()
-            .expect("take(HASH_LEN) yields HASH_LEN bytes");
+            .map_err(|_| cur.corrupt("content hash length mismatch"))?;
         let vec_bytes = cur.take((dim as usize) * 4)?;
         let mut vector = Vec::with_capacity(dim as usize);
         for chunk in vec_bytes.chunks_exact(4) {
-            let arr: [u8; 4] = chunk.try_into().expect("chunks_exact(4) yields [u8;4]");
+            let arr: [u8; 4] = chunk
+                .try_into()
+                .map_err(|_| cur.corrupt("vector chunk length mismatch"))?;
             vector.push(f32::from_le_bytes(arr));
         }
         entries.insert(id, Entry { hash, vector });
@@ -146,7 +148,9 @@ impl<'a> Cursor<'a> {
 
     fn read_u32(&mut self) -> Result<u32, EmbedError> {
         let bytes = self.take(4)?;
-        let arr: [u8; 4] = bytes.try_into().expect("take(4) yields 4 bytes");
+        let arr: [u8; 4] = bytes
+            .try_into()
+            .map_err(|_| self.corrupt("u32 field length mismatch"))?;
         Ok(u32::from_le_bytes(arr))
     }
 
