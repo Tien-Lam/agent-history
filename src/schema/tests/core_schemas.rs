@@ -1,0 +1,159 @@
+use super::*;
+
+#[test]
+fn search_schema_describes_query_param() {
+    let schema = schema_for("search").unwrap();
+    let params = &schema["params"]["properties"];
+    assert!(params["query"].is_object());
+    assert!(params["limit"].is_object());
+    assert_eq!(
+        params["limit"]["default"],
+        serde_json::json!(crate::schema_fragments::SEARCH_LIMIT_DEFAULT)
+    );
+    assert!(params["cursor"].is_object());
+    assert_eq!(
+        params["watch_interval_ms"]["default"],
+        serde_json::json!(crate::schema_fragments::SEARCH_WATCH_INTERVAL_MS_DEFAULT)
+    );
+    assert_eq!(
+        params["watch_iterations"]["default"],
+        serde_json::json!(crate::schema_fragments::SEARCH_WATCH_ITERATIONS_DEFAULT)
+    );
+    assert_eq!(
+        params["hybrid_weight"]["default"],
+        serde_json::json!(crate::schema_fragments::SEARCH_HYBRID_WEIGHT_DEFAULT)
+    );
+}
+
+#[test]
+fn list_schema_describes_pagination_params() {
+    let schema = schema_for("list").unwrap();
+    let params = &schema["params"]["properties"];
+    assert!(params["limit"].is_object());
+    assert_eq!(
+        params["limit"]["default"],
+        serde_json::json!(crate::schema_fragments::LIST_LIMIT_DEFAULT)
+    );
+    assert!(params["cursor"].is_object());
+
+    let json_response = &schema["response"]["oneOf"][0];
+    assert_eq!(
+        string_array(&json_response["required"]),
+        vec!["sessions", "meta"]
+    );
+    assert_eq!(
+        string_array(&json_response["properties"]["meta"]["required"]),
+        vec!["next_cursor", "total"]
+    );
+}
+
+#[test]
+fn search_schema_describes_json_envelope() {
+    let schema = schema_for("search").unwrap();
+    let response = &schema["response"];
+    assert_eq!(response["type"], "object");
+    assert_eq!(string_array(&response["required"]), vec!["hits", "meta"]);
+
+    let hit = &response["properties"]["hits"]["items"];
+    assert_eq!(hit["type"], "object");
+    assert_eq!(
+        hit["properties"]["kind"]["enum"],
+        serde_json::json!(["message", "note"])
+    );
+    for field in [
+        "kind",
+        "session_id",
+        "message_id",
+        "score",
+        "snippet",
+        "provider",
+        "project",
+        "started_at",
+        "source",
+    ] {
+        assert!(
+            string_array(&hit["required"]).contains(&field),
+            "search hit schema missing required field {field}"
+        );
+    }
+    assert!(hit["properties"]["ref"]["pattern"].is_string());
+    assert!(hit["properties"]["turn"].is_object());
+    assert!(hit["properties"]["explanation"].is_object());
+
+    let meta = &response["properties"]["meta"];
+    assert_eq!(meta["type"], "object");
+    assert_eq!(
+        string_array(&meta["required"]),
+        vec!["next_cursor", "total", "engine"]
+    );
+    assert_eq!(
+        meta["properties"]["engine"]["enum"],
+        serde_json::json!(["lexical", "hybrid"])
+    );
+}
+
+#[test]
+fn index_schema_describes_summary_contract() {
+    let schema = schema_for("index").unwrap();
+    let response = &schema["response"];
+    for field in [
+        "providers",
+        "sessions_total",
+        "added",
+        "updated",
+        "unchanged",
+        "removed",
+        "messages_indexed",
+        "force",
+        "index_dir",
+        "duration_ms",
+        "errors",
+        "embeddings",
+    ] {
+        assert!(
+            string_array(&response["required"]).contains(&field),
+            "index schema missing required summary field {field}"
+        );
+        assert!(
+            response["properties"][field].is_object(),
+            "index schema missing property for {field}"
+        );
+    }
+    assert_eq!(
+        response["properties"]["embeddings"]["properties"]["status"]["enum"],
+        serde_json::json!(["disabled", "awaiting-consent", "enabled"])
+    );
+}
+
+#[test]
+fn show_schema_includes_reference_pattern() {
+    let schema = schema_for("show").unwrap();
+    let pattern = &schema["params"]["properties"]["reference"]["pattern"];
+    assert!(pattern.is_string());
+    let re = regex_lite_check(pattern.as_str().unwrap(), "claude-code/abc-123#7");
+    assert!(re, "show ref pattern should match canonical example");
+    let re = regex_lite_check(pattern.as_str().unwrap(), "laptop:claude-code/abc-123#7");
+    assert!(re, "show ref pattern should match source-qualified refs");
+    assert!(
+        pattern.as_str().unwrap().contains(":)?"),
+        "show ref pattern should document the optional source prefix"
+    );
+    assert!(
+        !pattern.as_str().unwrap().ends_with(")?$"),
+        "show ref pattern should require a turn suffix"
+    );
+}
+
+#[test]
+fn diff_schema_includes_source_qualified_session_pattern() {
+    let schema = schema_for("diff").unwrap();
+    let pattern = schema["params"]["properties"]["session1"]["pattern"]
+        .as_str()
+        .unwrap();
+    assert!(regex_lite_check(pattern, "claude-code/abc-123"));
+    assert!(regex_lite_check(pattern, "laptop:claude-code/abc-123"));
+    assert!(
+        pattern.ends_with("/[^#]+$"),
+        "diff session ref pattern should reject turn suffixes"
+    );
+}
