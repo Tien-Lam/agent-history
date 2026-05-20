@@ -154,6 +154,7 @@ fn mcp_health_input_schema() -> Value {
     closed_empty_object_schema()
 }
 
+#[cfg(test)]
 pub(crate) fn mcp_tool_output_schema(tool_name: &str) -> Option<Value> {
     mcp_tool_contracts()
         .into_iter()

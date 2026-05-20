@@ -16,11 +16,7 @@ pub(super) fn tool_definitions() -> Value {
                 tool.insert("name".to_string(), json!(contract.name));
                 tool.insert("description".to_string(), json!(contract.description));
                 tool.insert("inputSchema".to_string(), contract.input_schema);
-                if contract.output_schema.is_some() {
-                    let output_schema = schema_fragments::mcp_tool_output_schema(contract.name)
-                        .unwrap_or_else(|| {
-                            panic!("missing MCP output schema for {}", contract.name)
-                        });
+                if let Some(output_schema) = contract.output_schema {
                     tool.insert("outputSchema".to_string(), output_schema);
                 }
                 Value::Object(tool)

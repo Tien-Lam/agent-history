@@ -99,6 +99,14 @@ fn parse_params_field<T, E: std::fmt::Display>(
     })
 }
 
+fn missing_required_arg(arg: &str, cmd: &str) -> ErrorEnvelope {
+    ErrorEnvelope::new(
+        "usage",
+        format!("missing required argument `{arg}` for `{cmd}`"),
+    )
+    .with_hint("Pass the CLI argument or provide an equivalent --params JSON body.")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ShowFormat {
     Md,
@@ -143,6 +151,7 @@ pub(super) fn parse_usage_group_by(raw: &str) -> Result<aghist::usage::GroupBy, 
         .map_err(|bad| format!("unknown --by value '{bad}'. Valid: model, provider, project"))
 }
 
+#[derive(Debug)]
 pub(crate) struct ResolvedExport {
     pub(crate) format: export::ExportFormat,
     pub(crate) session: String,
@@ -170,10 +179,9 @@ pub(crate) fn resolve_export_args(
             include_notes: p.include_notes,
         })
     } else {
-        // clap enforces these via `required_unless_present = "params"`.
         Ok(ResolvedExport {
-            format: format.expect("clap requires --format unless --params is set"),
-            session: session.expect("clap requires --session unless --params is set"),
+            format: format.ok_or_else(|| missing_required_arg("--format", "export"))?,
+            session: session.ok_or_else(|| missing_required_arg("--session", "export"))?,
             output,
             turn_range,
             include_notes,
@@ -241,9 +249,33 @@ pub(crate) fn resolve_show_args(
         Ok((p.reference, format, p.include_context))
     } else {
         Ok((
-            reference.expect("clap requires REF unless --params is set"),
+            reference.ok_or_else(|| missing_required_arg("REF", "show"))?,
             format,
             include_context,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_export_args_reports_missing_required_cli_arg() {
+        let err = resolve_export_args(None, Some("abc".to_string()), None, None, false, None)
+            .expect_err("missing --format should be a usage error");
+
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains("--format"));
+        assert!(err.hint.is_some());
+    }
+
+    #[test]
+    fn resolve_show_args_reports_missing_ref() {
+        let err = resolve_show_args(None, ShowFormat::Md, 0, None)
+            .expect_err("missing REF should be a usage error");
+
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains("REF"));
     }
 }

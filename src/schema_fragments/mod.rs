@@ -19,9 +19,11 @@ pub(crate) use common::{
     provider_slug_enum, source_qualified_citation_ref_pattern,
     source_qualified_session_only_ref_pattern, source_qualified_session_ref_pattern,
 };
-pub(crate) use mcp::{mcp_tool_contracts, mcp_tool_output_schema};
+pub(crate) use mcp::mcp_tool_contracts;
 pub(crate) use responses::{list_response_schema, search_response_schema, session_row_schema};
 
+#[cfg(test)]
+pub(crate) use mcp::mcp_tool_output_schema;
 #[cfg(test)]
 pub(crate) use responses::{
     mcp_list_response_schema, mcp_search_response_schema, mcp_session_row_schema,

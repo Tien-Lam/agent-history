@@ -74,7 +74,9 @@ pub fn filter_session_keys(
     }
 
     let mut iter = sets.into_iter();
-    let mut acc = iter.next().expect("non-empty");
+    let Some(mut acc) = iter.next() else {
+        return Ok(None);
+    };
     for next in iter {
         acc.retain(|k| next.contains(k));
     }
