@@ -1,11 +1,12 @@
 mod common;
 
 use aghist::model::Provider;
-use common::provider_conformance::{
+use common::provider_conformance::assertions::{
     assert_discover_load_roundtrip, assert_missing_dir_discovers_empty,
     assert_registry_constructor_roundtrip, assert_stateless_loader_roundtrip,
-    generated_provider_cases, missing_dir_provider_cases, provider_contract_json,
 };
+use common::provider_conformance::cases::{generated_provider_cases, missing_dir_provider_cases};
+use common::provider_conformance::contract::provider_contract_json;
 
 #[test]
 fn missing_dir_cases_cover_every_provider() {
