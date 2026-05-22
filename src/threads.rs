@@ -14,9 +14,9 @@
 //!    `gap` of the previous session's `ended_at` (or `started_at` when
 //!    no end is recorded). Otherwise it starts a new thread.
 //!
-//! This is the dumbest thing that could work and is exactly what the
-//! spike asked for. Clustering on shared file paths or branch
-//! similarity can layer on top later — the output shape supports it.
+//! This intentionally favors a simple, deterministic heuristic. Clustering on
+//! shared file paths or branch similarity can layer on top later — the output
+//! shape supports it.
 //!
 //! Thread IDs are derived from `(project, first_session_ref)` via FNV-1a
 //! so they're deterministic across runs and stable as long as the first

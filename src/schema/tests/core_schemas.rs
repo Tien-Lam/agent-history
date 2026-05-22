@@ -218,6 +218,33 @@ fn citation_ref_outputs_require_turn_suffixes() {
     );
 }
 
+#[test]
+fn session_ref_outputs_reject_turn_suffixes() {
+    let session_only_pattern = common::source_qualified_session_only_ref_pattern();
+
+    for (schema_name, path) in [
+        (
+            "threads",
+            "response.oneOf.0.properties.threads.items.properties.session_refs.items.pattern",
+        ),
+        (
+            "threads",
+            "response.oneOf.1.properties.threads.items.properties.member_refs.items.pattern",
+        ),
+        (
+            "track",
+            "response.properties.timeline.items.properties.session_ref.pattern",
+        ),
+    ] {
+        let schema = schema_for(schema_name).unwrap();
+        let pattern = schema_path(&schema, path).as_str().unwrap();
+        assert_eq!(
+            pattern, session_only_pattern,
+            "{schema_name} {path} should require a session ref without #turn"
+        );
+    }
+}
+
 fn schema_path<'a>(schema: &'a serde_json::Value, path: &str) -> &'a serde_json::Value {
     let mut current = schema;
     for segment in path.split('.') {

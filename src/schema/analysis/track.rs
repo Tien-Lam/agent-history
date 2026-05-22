@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     closed_object_schema, exit_codes, object_schema, schema_props, schema_props_with_filters,
-    source_qualified_session_ref_pattern, SCHEMA_DRAFT,
+    source_qualified_session_only_ref_pattern, SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn track_schema() -> Value {
@@ -70,7 +70,7 @@ fn track_response_schema() -> Value {
                                 "session_ref",
                                 json!({
                                     "type": "string",
-                                    "pattern": source_qualified_session_ref_pattern(),
+                                    "pattern": source_qualified_session_only_ref_pattern(),
                                     "description": "`<provider-slug>/<session-id>` for local sessions, or `<source>:<provider-slug>/<session-id>` for remote source sessions."
                                 }),
                             ),

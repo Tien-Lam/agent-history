@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     closed_object_schema, exit_codes, provider_slug_enum, schema_props_with_filters,
-    source_qualified_session_ref_pattern, SCHEMA_DRAFT,
+    source_qualified_session_only_ref_pattern, SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn threads_schema() -> Value {
@@ -114,7 +114,7 @@ fn threads_response_heuristic() -> Value {
                             },
                             "session_refs": {
                                 "type": "array",
-                                "items": { "type": "string", "pattern": source_qualified_session_ref_pattern() },
+                                "items": { "type": "string", "pattern": source_qualified_session_only_ref_pattern() },
                                 "description": "`<provider-slug>/<session-id>` for local sessions, or `<source>:<provider-slug>/<session-id>` for remote source sessions, in cluster order."
                             },
                             "summary_seed": {
@@ -149,7 +149,7 @@ fn threads_response_llm() -> Value {
                         "topic_summary": { "type": "string" },
                         "member_refs": {
                             "type": "array",
-                            "items": { "type": "string", "pattern": source_qualified_session_ref_pattern() },
+                            "items": { "type": "string", "pattern": source_qualified_session_only_ref_pattern() },
                             "description": "`<provider-slug>/<session-id>` for local sessions, or `<source>:<provider-slug>/<session-id>` for remote source sessions."
                         },
                         "time_span": {
