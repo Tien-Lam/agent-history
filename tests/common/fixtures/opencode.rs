@@ -30,6 +30,10 @@ enum OpenCodeMessageSpec {
         timestamp: String,
         content: String,
     },
+    Raw {
+        id: String,
+        json: String,
+    },
 }
 
 impl OpenCodeFixtureBuilder {
@@ -149,6 +153,14 @@ impl OpenCodeSessionBuilder {
         self
     }
 
+    pub fn raw_message(mut self, id: &str, json: &str) -> Self {
+        self.session_mut().messages.push(OpenCodeMessageSpec::Raw {
+            id: id.to_string(),
+            json: json.to_string(),
+        });
+        self
+    }
+
     pub fn done(self) -> OpenCodeFixtureBuilder {
         self.parent
     }
@@ -178,6 +190,7 @@ fn render_opencode_message(msg: &OpenCodeMessageSpec) -> (String, String) {
             );
             (id.clone(), json)
         }
+        OpenCodeMessageSpec::Raw { id, json } => (id.clone(), json.clone()),
     }
 }
 

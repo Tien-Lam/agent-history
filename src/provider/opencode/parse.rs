@@ -1,8 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
+use crate::provider::json_text::{string_or_object_field, string_or_object_field_or_pretty};
 use crate::provider::parse_common::{
     parse_millis_or_utc, parse_millis_or_utc_or_now, pretty_json_opt, token_usage_from_options,
     tool_result_block, tool_use_block,
@@ -89,20 +91,24 @@ pub(crate) fn parse_message_file(path: &Path, part_dir: &Path) -> Option<Message
 
     // Fall back to legacy fields if no parts found
     if content.is_empty() {
-        if let Some(text) = &raw.content {
+        if let Some(text) = raw.content.as_ref().map(message_text) {
             if !text.is_empty() {
-                content.extend(parse_text_with_code_blocks(text));
+                content.extend(parse_text_with_code_blocks(&text));
             }
         }
 
         if let Some(changes) = &raw.code_changes {
             for change in changes {
-                let label = change.path.as_deref().unwrap_or("diff");
-                let diff = change.diff.as_deref().unwrap_or("");
+                let label = change
+                    .path
+                    .as_ref()
+                    .and_then(|value| stringish(value, &["path", "file"]))
+                    .unwrap_or_else(|| "diff".to_string());
+                let diff = change.diff.as_ref().map(message_text).unwrap_or_default();
                 if !diff.is_empty() {
                     content.push(ContentBlock::CodeBlock {
                         language: Some(format!("diff ({label})")),
-                        code: diff.to_string(),
+                        code: diff,
                     });
                 }
             }
@@ -112,9 +118,9 @@ pub(crate) fn parse_message_file(path: &Path, part_dir: &Path) -> Option<Message
     // If still no content, try summary.title (new format user messages)
     if content.is_empty() {
         if let Some(ref summary) = raw.summary {
-            if let Some(ref title) = summary.title {
+            if let Some(title) = summary.title.as_ref().map(message_text) {
                 if !title.is_empty() {
-                    content.push(ContentBlock::Text(title.clone()));
+                    content.push(ContentBlock::Text(title));
                 }
             }
         }
@@ -178,27 +184,31 @@ fn load_parts_into_content(part_dir: &Path, content: &mut Vec<ContentBlock>) {
     parts.sort_by(|a, b| a.0.cmp(&b.0));
 
     for (_, part) in &parts {
-        match part.part_type.as_str() {
+        match part.part_type.as_deref().unwrap_or("") {
             "text" => {
-                if let Some(ref text) = part.text {
+                if let Some(text) = part.text.as_ref().map(message_text) {
                     if !text.is_empty() {
-                        content.extend(parse_text_with_code_blocks(text));
+                        content.extend(parse_text_with_code_blocks(&text));
                     }
                 }
             }
             "tool" => {
-                let tool_name = part.tool.clone().unwrap_or_else(|| "unknown".to_string());
+                let tool_name = part
+                    .tool
+                    .as_ref()
+                    .and_then(|value| stringish(value, &["name", "tool"]))
+                    .unwrap_or_else(|| "unknown".to_string());
                 let call_id = part.call_id.clone().unwrap_or_default();
                 let arguments = pretty_json_opt(part.state.as_ref().and_then(|s| s.input.as_ref()));
                 content.push(tool_use_block(call_id, tool_name, arguments));
 
                 // Include tool output as a result
                 if let Some(ref state) = part.state {
-                    if let Some(ref output) = state.output {
+                    if let Some(output) = state.output.as_ref().map(tool_output_text) {
                         if !output.is_empty() {
                             let tool_call_id = part.call_id.clone().unwrap_or_default();
                             let success = state.status.as_deref() == Some("completed");
-                            content.push(tool_result_block(tool_call_id, success, output.clone()));
+                            content.push(tool_result_block(tool_call_id, success, output));
                         }
                     }
                 }
@@ -206,6 +216,26 @@ fn load_parts_into_content(part_dir: &Path, content: &mut Vec<ContentBlock>) {
             // Skip step-start, step-finish, and other structural types
             _ => {}
         }
+    }
+}
+
+fn message_text(value: &Value) -> String {
+    string_or_object_field_or_pretty(value, &["text", "content", "message", "title", "diff"])
+}
+
+fn tool_output_text(value: &Value) -> String {
+    string_or_object_field_or_pretty(value, &["output", "result", "content", "text"])
+}
+
+fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(_) => {
+            let text = string_or_object_field(value, object_fields);
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
     }
 }
 
@@ -249,7 +279,7 @@ struct RawMessage {
     /// New format: nested time object with millis
     time: Option<RawTime>,
     /// Legacy format: text content
-    content: Option<String>,
+    content: Option<Value>,
     /// Legacy format: code changes
     #[serde(rename = "codeChanges")]
     code_changes: Option<Vec<RawCodeChange>>,
@@ -263,7 +293,7 @@ struct RawMessage {
 
 #[derive(Deserialize)]
 struct RawSummary {
-    title: Option<String>,
+    title: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -281,18 +311,18 @@ struct RawCache {
 
 #[derive(Deserialize)]
 struct RawCodeChange {
-    path: Option<String>,
-    diff: Option<String>,
+    path: Option<Value>,
+    diff: Option<Value>,
 }
 
 #[derive(Deserialize)]
 struct RawPart {
     #[serde(rename = "type")]
-    part_type: String,
+    part_type: Option<String>,
     /// Text content (for type="text")
-    text: Option<String>,
+    text: Option<Value>,
     /// Tool name (for type="tool")
-    tool: Option<String>,
+    tool: Option<Value>,
     /// Tool call ID (for type="tool")
     #[serde(rename = "callID")]
     call_id: Option<String>,
@@ -304,5 +334,5 @@ struct RawPart {
 struct RawToolState {
     status: Option<String>,
     input: Option<serde_json::Value>,
-    output: Option<String>,
+    output: Option<Value>,
 }
