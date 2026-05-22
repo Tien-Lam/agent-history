@@ -126,10 +126,7 @@ impl HistoryProvider for AiderProvider {
         let messages =
             load_messages_from_file(&session.source_path, session.started_at, &session.id.0)?;
         Ok(ProviderMessageLoad {
-            parse_stats: ProviderParseStats {
-                records_seen: messages.len(),
-                ..ProviderParseStats::default()
-            },
+            parse_stats: ProviderParseStats::clean_records(messages.len()),
             messages,
         })
     }

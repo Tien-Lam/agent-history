@@ -175,12 +175,12 @@ pub(crate) fn parse_rollout_messages_with_stats(
 
     Ok(ProviderMessageLoad {
         messages,
-        parse_stats: ProviderParseStats {
-            records_seen: stats.line_count,
-            parse_errors: stats.parse_errors,
+        parse_stats: ProviderParseStats::from_counts(
+            stats.line_count,
+            stats.parse_errors,
             skipped_records,
             empty_content,
-        },
+        ),
     })
 }
 

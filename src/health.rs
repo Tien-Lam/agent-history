@@ -10,7 +10,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::model::Provider;
-use crate::provider::{HistoryProvider, ProviderParseStats};
+use crate::provider::HistoryProvider;
 use crate::provider_diagnostic::{analyze_provider, ProviderDiagnostic};
 use crate::search::SearchIndex;
 
@@ -178,7 +178,7 @@ pub fn provider_parse_health_check(fidelity: &[ProviderDiagnostic]) -> Option<He
 
     let warnings: Vec<String> = fidelity
         .iter()
-        .filter(|d| has_parse_warnings(&d.parse))
+        .filter(|d| d.parse.has_warnings())
         .map(provider_parse_summary)
         .collect();
 
@@ -205,10 +205,6 @@ pub fn provider_parse_health_check(fidelity: &[ProviderDiagnostic]) -> Option<He
     })
 }
 
-fn has_parse_warnings(parse: &ProviderParseStats) -> bool {
-    parse.parse_errors > 0 || parse.skipped_records > 0 || parse.empty_content > 0
-}
-
 fn provider_parse_summary(diag: &ProviderDiagnostic) -> String {
     let parse = &diag.parse;
     format!(
@@ -232,6 +228,7 @@ fn check_dir_writable(dir: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::ProviderParseStats;
 
     #[test]
     fn no_provider_hint_tracks_provider_registry() {

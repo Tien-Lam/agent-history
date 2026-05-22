@@ -69,11 +69,33 @@ pub struct ProviderParseStats {
 }
 
 impl ProviderParseStats {
+    pub(crate) fn from_counts(
+        records_seen: usize,
+        parse_errors: usize,
+        skipped_records: usize,
+        empty_content: usize,
+    ) -> Self {
+        Self {
+            records_seen,
+            parse_errors,
+            skipped_records,
+            empty_content,
+        }
+    }
+
+    pub(crate) fn clean_records(records_seen: usize) -> Self {
+        Self::from_counts(records_seen, 0, 0, 0)
+    }
+
     pub(crate) fn merge(&mut self, other: &Self) {
         self.records_seen += other.records_seen;
         self.parse_errors += other.parse_errors;
         self.skipped_records += other.skipped_records;
         self.empty_content += other.empty_content;
+    }
+
+    pub(crate) fn has_warnings(&self) -> bool {
+        self.parse_errors > 0 || self.skipped_records > 0 || self.empty_content > 0
     }
 
     pub(crate) fn record_seen(&mut self) {
