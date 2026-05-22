@@ -18,6 +18,7 @@ pub const MCP_INCLUDE_CONTEXT_MAX: usize = 100;
 pub(crate) use common::{
     provider_slug_enum, source_qualified_citation_ref_pattern,
     source_qualified_session_only_ref_pattern, source_qualified_session_ref_pattern,
+    todo_target_ref_pattern,
 };
 pub(crate) use mcp::mcp_tool_contracts;
 pub(crate) use responses::{list_response_schema, search_response_schema, session_row_schema};

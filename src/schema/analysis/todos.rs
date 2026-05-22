@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     closed_object_schema, exit_codes, provider_slug_enum, schema_props_with_filters,
-    source_qualified_citation_ref_pattern, source_qualified_session_ref_pattern, SCHEMA_DRAFT,
+    source_qualified_citation_ref_pattern, todo_target_ref_pattern, SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn todos_schema() -> Value {
@@ -136,8 +136,8 @@ fn todos_response_llm() -> Value {
                         "description": { "type": "string" },
                         "target_session": {
                             "type": ["string", "null"],
-                            "pattern": source_qualified_session_ref_pattern(),
-                            "description": "Session ref targeted by the TODO when the model can infer one."
+                            "pattern": todo_target_ref_pattern(),
+                            "description": "Session ref or beads-style id targeted by the TODO when the model can infer one. Turn suffixes are stripped from provider refs."
                         },
                         "status_inferred": { "type": "string", "enum": ["open", "done", "unclear"] },
                         "source_snippet": { "type": ["string", "null"] },

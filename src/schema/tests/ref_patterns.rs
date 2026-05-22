@@ -22,6 +22,12 @@ fn ref_patterns_track_provider_registry() {
         common::source_qualified_citation_ref_pattern(),
         format!("^([A-Za-z0-9][A-Za-z0-9_-]*:)?({providers})/[^#]+#[1-9][0-9]*$")
     );
+    assert_eq!(
+        common::todo_target_ref_pattern(),
+        format!(
+            "^(([A-Za-z0-9][A-Za-z0-9_-]*:)?({providers})/[^#]+|[a-z]{{2,}}-[a-z0-9.]*[0-9][a-z0-9.]*)$"
+        )
+    );
 }
 
 #[test]

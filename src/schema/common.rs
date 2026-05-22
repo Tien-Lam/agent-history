@@ -73,6 +73,10 @@ pub(super) fn source_qualified_citation_ref_pattern() -> String {
     schema_fragments::source_qualified_citation_ref_pattern()
 }
 
+pub(super) fn todo_target_ref_pattern() -> String {
+    schema_fragments::todo_target_ref_pattern()
+}
+
 pub(super) fn provider_slug_enum() -> Value {
     schema_fragments::provider_slug_enum()
 }

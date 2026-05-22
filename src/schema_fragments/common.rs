@@ -26,6 +26,13 @@ pub(crate) fn source_qualified_session_only_ref_pattern() -> String {
     )
 }
 
+pub(crate) fn todo_target_ref_pattern() -> String {
+    format!(
+        "^(([A-Za-z0-9][A-Za-z0-9_-]*:)?({})/[^#]+|[a-z]{{2,}}-[a-z0-9.]*[0-9][a-z0-9.]*)$",
+        provider_slug_pattern()
+    )
+}
+
 pub(crate) fn source_qualified_citation_ref_pattern() -> String {
     format!(
         "^([A-Za-z0-9][A-Za-z0-9_-]*:)?({})/[^#]+#[1-9][0-9]*$",

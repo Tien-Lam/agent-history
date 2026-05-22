@@ -139,7 +139,7 @@ pub fn parse_todos_response(body: &str) -> Result<Vec<StructuredTodo>, LlmError>
     Ok(parsed.todos)
 }
 
-/// Validate a `target_session` string. Accepts a citation-style
+/// Validate a `target_session` string. Accepts a session-style
 /// `<provider-slug>/<session-id>` ref, a source-qualified
 /// `<source>:<provider-slug>/<session-id>` ref, or a beads-style
 /// `<prefix>-<suffix>` id (prefix = 2+ lowercase letters, suffix has at least

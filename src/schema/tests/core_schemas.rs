@@ -213,8 +213,8 @@ fn citation_ref_outputs_require_turn_suffixes() {
     .unwrap();
     assert_eq!(
         target_session_pattern,
-        common::source_qualified_session_ref_pattern(),
-        "target_session may be session-level and should keep the broader pattern"
+        common::todo_target_ref_pattern(),
+        "target_session may be a session-level provider ref or beads-style id"
     );
 }
 
