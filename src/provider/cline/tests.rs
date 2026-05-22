@@ -143,3 +143,36 @@ fn string_content_parsed_as_text() {
     assert_eq!(msgs.len(), 1);
     assert!(matches!(&msgs[0].content[0], ContentBlock::Text(_)));
 }
+
+#[test]
+fn tolerates_object_roles_summary_and_metadata() {
+    let tmp = TempDir::new().unwrap();
+    let api = r#"[
+            "skip malformed entry",
+            {"role":{"role":"user"},"content":{"text":"hello from object"}},
+            {"role":{"type":"assistant"},"content":[{"type":"text","text":"assistant reply"}]}
+        ]"#;
+    let task = make_task(tmp.path(), "1698765432000", api);
+    write_file(
+        &task,
+        UI_MESSAGES_FILE,
+        r#"[{"text":{"content":"Summary from object"}}]"#,
+    );
+    write_file(&task, METADATA_FILE, r#"{"createdAt":"1700000000000"}"#);
+
+    let p = provider_for(&tmp);
+    let sessions = p.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].started_at.timestamp(), 1_700_000_000);
+    assert_eq!(sessions[0].summary.as_deref(), Some("Summary from object"));
+    assert_eq!(sessions[0].message_count, 2);
+
+    let msgs = p.load_messages(&sessions[0]).unwrap();
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(msgs[0].role, Role::User);
+    assert!(matches!(
+        &msgs[0].content[0],
+        ContentBlock::Text(text) if text == "hello from object"
+    ));
+    assert_eq!(msgs[1].role, Role::Assistant);
+}

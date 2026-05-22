@@ -2,9 +2,11 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
+use crate::provider::json_text::string_or_object_field;
 use crate::provider::parse_common::{
     file_modified_utc, millis_to_utc, timestamp_with_index_millis,
 };
@@ -15,7 +17,7 @@ pub(crate) const METADATA_FILE: &str = "task_metadata.json";
 
 #[derive(Deserialize)]
 struct ApiMessage {
-    role: String,
+    role: Option<Value>,
     #[serde(default)]
     content: AnthropicContent,
 }
@@ -23,13 +25,13 @@ struct ApiMessage {
 #[derive(Deserialize)]
 struct UiMessage {
     #[serde(default)]
-    text: Option<String>,
+    text: Option<Value>,
 }
 
 #[derive(Deserialize)]
 struct TaskMetadata {
     #[serde(rename = "createdAt", default)]
-    created_at: Option<i64>,
+    created_at: Option<Value>,
 }
 
 pub(crate) fn parse_task_dir(path: &Path) -> Option<Session> {
@@ -68,10 +70,8 @@ fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
     let meta_path = path.join(METADATA_FILE);
     if let Ok(bytes) = std::fs::read(&meta_path) {
         if let Ok(meta) = serde_json::from_slice::<TaskMetadata>(&bytes) {
-            if let Some(ms) = meta.created_at {
-                if let Some(dt) = millis_to_utc(ms) {
-                    return dt;
-                }
+            if let Some(dt) = meta.created_at.as_ref().and_then(millis_value_to_utc) {
+                return dt;
             }
         }
     }
@@ -88,8 +88,13 @@ fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
 /// Extract a human-readable summary from `ui_messages.json` first entry's text.
 fn task_summary(path: &Path) -> Option<String> {
     let bytes = std::fs::read(path.join(UI_MESSAGES_FILE)).ok()?;
-    let msgs: Vec<UiMessage> = serde_json::from_slice(&bytes).ok()?;
-    let text = msgs.into_iter().find_map(|m| m.text)?.trim().to_string();
+    let entries: Vec<Value> = serde_json::from_slice(&bytes).ok()?;
+    let text = entries
+        .into_iter()
+        .filter_map(|entry| serde_json::from_value::<UiMessage>(entry).ok())
+        .find_map(|m| stringish(m.text.as_ref(), &["text", "content", "message"]))?
+        .trim()
+        .to_string();
     if text.is_empty() {
         return None;
     }
@@ -105,13 +110,17 @@ pub(crate) fn parse_api_history(
     base_ts: &DateTime<Utc>,
 ) -> Result<Vec<Message>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read: {e}"))?;
-    let raw: Vec<ApiMessage> = serde_json::from_slice(&bytes).map_err(|e| format!("parse: {e}"))?;
+    let raw: Vec<Value> = serde_json::from_slice(&bytes).map_err(|e| format!("parse: {e}"))?;
 
     let mut messages = Vec::with_capacity(raw.len());
-    for (idx, msg) in raw.into_iter().enumerate() {
-        let role = match msg.role.as_str() {
-            "user" => Role::User,
-            "assistant" => Role::Assistant,
+    for (idx, entry) in raw.into_iter().enumerate() {
+        let Ok(msg) = serde_json::from_value::<ApiMessage>(entry) else {
+            continue;
+        };
+
+        let role = match stringish(msg.role.as_ref(), &["role", "type"]).as_deref() {
+            Some("user") => Role::User,
+            Some("assistant") => Role::Assistant,
             _ => continue,
         };
 
@@ -134,4 +143,37 @@ pub(crate) fn parse_api_history(
     }
 
     Ok(messages)
+}
+
+fn millis_value_to_utc(value: &Value) -> Option<DateTime<Utc>> {
+    match value {
+        Value::Number(_) | Value::String(_) => value_i64(value).and_then(millis_to_utc),
+        Value::Object(map) => ["createdAt", "timestamp", "value"]
+            .iter()
+            .find_map(|field| map.get(*field).and_then(millis_value_to_utc)),
+        _ => None,
+    }
+}
+
+fn value_i64(value: &Value) -> Option<i64> {
+    match value {
+        Value::Number(number) => number
+            .as_i64()
+            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok())),
+        Value::String(text) => text.parse::<i64>().ok(),
+        _ => None,
+    }
+}
+
+fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
+    let value = value?;
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(_) => {
+            let text = string_or_object_field(value, object_fields);
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
 }
