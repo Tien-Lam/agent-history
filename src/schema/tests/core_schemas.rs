@@ -126,6 +126,43 @@ fn index_schema_describes_summary_contract() {
 }
 
 #[test]
+fn health_schema_documents_provider_fidelity_contract() {
+    let schema = schema_for("health").unwrap();
+    let response = &schema["response"];
+    assert!(
+        string_array(&response["required"]).contains(&"provider_fidelity"),
+        "health response must require provider_fidelity"
+    );
+
+    let row = &response["properties"]["provider_fidelity"]["items"];
+    for field in [
+        "label",
+        "provider",
+        "session_count",
+        "message_count",
+        "parse",
+        "blocks",
+        "tool_call_fidelity",
+    ] {
+        assert!(
+            string_array(&row["required"]).contains(&field),
+            "provider fidelity row missing required field {field}"
+        );
+    }
+
+    assert_eq!(
+        string_array(&row["properties"]["parse"]["required"]),
+        vec![
+            "records_seen",
+            "parse_errors",
+            "skipped_records",
+            "empty_content"
+        ]
+    );
+    assert!(row["properties"]["tool_call_fidelity"]["properties"]["invalid_json_args"].is_object());
+}
+
+#[test]
 fn show_schema_includes_reference_pattern() {
     let schema = schema_for("show").unwrap();
     let pattern = &schema["params"]["properties"]["reference"]["pattern"];
