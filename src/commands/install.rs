@@ -18,7 +18,7 @@ enum InstallOperation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RemovalTarget {
-    Directory(PathBuf),
+    DefaultConfig { file: PathBuf, dir: PathBuf },
     File(PathBuf),
 }
 
@@ -201,8 +201,11 @@ fn config_removal_target_for(
     let path = config_path?;
     if Some(path) == default_config_path {
         let dir = path.parent()?;
-        if dir.exists() {
-            return Some(RemovalTarget::Directory(dir.to_path_buf()));
+        if path.exists() || dir.exists() {
+            return Some(RemovalTarget::DefaultConfig {
+                file: path.to_path_buf(),
+                dir: dir.to_path_buf(),
+            });
         }
         return None;
     }
@@ -216,15 +219,41 @@ fn config_removal_target_for(
 impl RemovalTarget {
     fn display_path(&self) -> &Path {
         match self {
-            Self::Directory(path) | Self::File(path) => path,
+            Self::DefaultConfig { file, .. } | Self::File(file) => file,
         }
     }
 
     fn remove(&self) -> std::io::Result<()> {
         match self {
-            Self::Directory(path) => std::fs::remove_dir_all(path),
+            Self::DefaultConfig { file, dir } => {
+                remove_file_if_exists(file)?;
+                remove_dir_if_empty(dir)
+            }
             Self::File(path) => std::fs::remove_file(path),
         }
+    }
+}
+
+fn remove_file_if_exists(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+fn remove_dir_if_empty(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir(path) {
+        Ok(()) => Ok(()),
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -320,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn default_config_target_removes_aghist_config_directory() {
+    fn default_config_target_removes_config_file_and_empty_dir() {
         let root = tempfile::tempdir().unwrap();
         let config_dir = root.path().join("aghist");
         let config_path = config_dir.join("config.toml");
@@ -330,7 +359,35 @@ mod tests {
         let target = config_removal_target_for(Some(&config_path), Some(&config_path))
             .expect("default config dir should be targeted");
 
-        assert_eq!(target, RemovalTarget::Directory(config_dir));
+        assert_eq!(
+            target,
+            RemovalTarget::DefaultConfig {
+                file: config_path.clone(),
+                dir: config_dir.clone()
+            }
+        );
+        target.remove().unwrap();
+        assert!(!config_path.exists());
+        assert!(!config_dir.exists());
+    }
+
+    #[test]
+    fn default_config_target_preserves_unknown_files() {
+        let root = tempfile::tempdir().unwrap();
+        let config_dir = root.path().join("aghist");
+        let config_path = config_dir.join("config.toml");
+        let keep_path = config_dir.join("keep.txt");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(&config_path, "cache_size = 20\n").unwrap();
+        std::fs::write(&keep_path, "keep\n").unwrap();
+
+        let target = config_removal_target_for(Some(&config_path), Some(&config_path))
+            .expect("default config dir should be targeted");
+
+        target.remove().unwrap();
+        assert!(!config_path.exists());
+        assert!(config_dir.exists());
+        assert!(keep_path.exists());
     }
 
     #[test]
