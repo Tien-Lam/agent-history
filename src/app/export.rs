@@ -1,5 +1,6 @@
 use crate::app::App;
 use crate::export::ExportFormat;
+use std::path::Path;
 
 impl App {
     pub(crate) fn perform_export(&mut self, format: ExportFormat) {
@@ -33,7 +34,7 @@ impl App {
             .collect();
         let filename = format!("aghist-{sanitized}.{}", format.extension());
 
-        match std::fs::write(&filename, &content) {
+        match crate::export::write_file(Path::new(&filename), &content) {
             Ok(()) => {
                 self.status_message = Some(format!("Exported to {filename}"));
             }

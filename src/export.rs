@@ -1,5 +1,7 @@
 use crate::metadata::Note;
 use crate::model::{Message, Session};
+use std::io;
+use std::path::Path;
 
 mod html;
 mod json;
@@ -60,6 +62,10 @@ impl std::str::FromStr for ExportFormat {
 
 pub fn export(format: ExportFormat, session: &Session, messages: &[Message]) -> String {
     export_with_notes(format, session, messages, &[])
+}
+
+pub fn write_file(path: &Path, content: &str) -> io::Result<()> {
+    crate::fs_atomic::write(path, content.as_bytes())
 }
 
 /// Same as [`export`], but with `notes` injected inline at their citation refs.

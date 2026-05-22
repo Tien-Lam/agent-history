@@ -156,7 +156,7 @@ pub(crate) fn export_session(
     );
 
     if let Some(path) = output {
-        std::fs::write(path, &content).map_err(|e| {
+        export::write_file(path, &content).map_err(|e| {
             ErrorEnvelope::new(
                 "io-error",
                 format!("failed to write {}: {e}", path.display()),
