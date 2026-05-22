@@ -83,3 +83,81 @@ fn opencode_tolerates_object_content_and_tool_output() {
             .any(|block| matches!(block, ContentBlock::ToolResult(result) if result.tool_call_id == "call-1" && result.output.contains("line one")))
     );
 }
+
+#[test]
+fn opencode_tolerates_object_metadata_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path();
+    let session_dir = base.join("session").join("proj-object");
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(
+        session_dir.join("oc-object.json"),
+        r#"{
+            "id":{"id":"oc-object"},
+            "title":{"text":"Object OpenCode session"},
+            "directory":{"path":"/home/me/projects/ocapp"},
+            "time":{"created":{"value":1735689600000},"updated":{"value":1735689660000}},
+            "model":{"modelID":{"id":"opencode-model"}}
+        }"#,
+    )
+    .unwrap();
+
+    let message_dir = base.join("message").join("oc-object");
+    fs::create_dir_all(&message_dir).unwrap();
+    fs::write(
+        message_dir.join("msg-object.json"),
+        r#"{
+            "id":{"id":"msg-object"},
+            "role":{"role":"assistant"},
+            "time":{"created":{"value":1735689601000}},
+            "summary":{"title":{"text":"fallback title"}},
+            "tokens":{"input":"4","output":{"value":5},"cache":{"read":{"tokens":1},"write":"2"}},
+            "model":{"modelID":{"id":"message-model"}}
+        }"#,
+    )
+    .unwrap();
+
+    let part_dir = base.join("part").join("msg-object");
+    fs::create_dir_all(&part_dir).unwrap();
+    fs::write(
+        part_dir.join("part-001.json"),
+        r#"{"type":{"type":"text"},"text":{"content":"object metadata part"}}"#,
+    )
+    .unwrap();
+    fs::write(
+        part_dir.join("part-002.json"),
+        r#"{"type":{"type":"tool"},"tool":{"name":"Read"},"callID":{"id":"call-object"},"state":{"status":{"state":"completed"},"input":{"path":"src/lib.rs"},"output":{"content":"tool ok"}}}"#,
+    )
+    .unwrap();
+
+    let provider = OpenCodeProvider::new(vec![base.to_path_buf()]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    let session = &sessions[0];
+    assert_eq!(session.id.0, "oc-object");
+    assert_eq!(session.summary.as_deref(), Some("Object OpenCode session"));
+    assert_eq!(session.project_name.as_deref(), Some("ocapp"));
+    assert_eq!(session.model.as_deref(), Some("opencode-model"));
+
+    let messages = provider.load_messages(session).unwrap();
+    assert_eq!(messages.len(), 1);
+    let message = &messages[0];
+    assert_eq!(message.id.0, "msg-object");
+    assert_eq!(message.role, Role::Assistant);
+    assert_eq!(message.model.as_deref(), Some("message-model"));
+    let usage = message.token_usage.as_ref().unwrap();
+    assert_eq!(usage.input_tokens, 4);
+    assert_eq!(usage.output_tokens, 5);
+    assert_eq!(usage.cache_read_tokens, Some(1));
+    assert_eq!(usage.cache_write_tokens, Some(2));
+    assert!(message
+        .content
+        .iter()
+        .any(|block| matches!(block, ContentBlock::Text(text) if text == "object metadata part")));
+    assert!(
+        message
+            .content
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolResult(result) if result.tool_call_id == "call-object" && result.success && result.output == "tool ok"))
+    );
+}

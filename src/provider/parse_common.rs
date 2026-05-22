@@ -91,16 +91,6 @@ pub(crate) fn millis_to_utc(millis: i64) -> Option<DateTime<Utc>> {
     Utc.timestamp_millis_opt(millis).single()
 }
 
-pub(crate) fn parse_millis_or_utc(millis: Option<i64>, raw: Option<&str>) -> Option<DateTime<Utc>> {
-    millis
-        .and_then(millis_to_utc)
-        .or_else(|| parse_utc_opt(raw))
-}
-
-pub(crate) fn parse_millis_or_utc_or_now(millis: Option<i64>, raw: Option<&str>) -> DateTime<Utc> {
-    parse_millis_or_utc(millis, raw).unwrap_or_else(Utc::now)
-}
-
 pub(crate) fn file_modified_utc(path: &Path) -> Option<DateTime<Utc>> {
     path.metadata()
         .and_then(|m| m.modified())
