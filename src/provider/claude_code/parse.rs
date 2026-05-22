@@ -2,23 +2,25 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 
 use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
-use crate::provider::json_text::string_or_typed_text_array;
+use crate::provider::json_text::{
+    string_or_object_field, string_or_object_field_or_pretty, string_or_typed_text_array_or_pretty,
+};
 use crate::provider::parse_common::{
-    millis_to_utc, nonzero_token_usage, parse_jsonl_records, parse_utc, parse_utc_or_now,
-    pretty_json_opt, token_usage_from_options, tool_result_block, tool_use_block,
-    visit_jsonl_records,
+    millis_to_utc, nonzero_token_usage, parse_jsonl_records, parse_utc, pretty_json_opt,
+    token_usage_from_options, tool_result_block, tool_use_block, visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Deserialize)]
 pub(crate) struct HistoryEntry {
-    display: Option<String>,
-    timestamp: Option<u64>,
+    display: Option<Value>,
+    timestamp: Option<Value>,
     #[serde(rename = "sessionId")]
-    session_id: Option<String>,
+    session_id: Option<Value>,
 }
 
 pub(crate) fn parse_history_index(path: &Path) -> Result<Vec<HistoryEntry>, ProviderError> {
@@ -57,39 +59,43 @@ pub(crate) fn build_session_metadata(
         source_path,
         |record| {
             let entry = record.value;
-            if let Some(ts) = &entry.timestamp {
-                if let Some(dt) = parse_utc(ts) {
-                    if first_timestamp.is_none() {
-                        first_timestamp = Some(dt);
-                    }
-                    last_timestamp = Some(dt);
+            if let Some(dt) = timestamp_value_to_utc(entry.timestamp.as_ref()) {
+                if first_timestamp.is_none() {
+                    first_timestamp = Some(dt);
                 }
+                last_timestamp = Some(dt);
             }
 
-            if let Some("user" | "assistant") = entry.entry_type.as_deref() {
+            let entry_role = stringish(entry.entry_type.as_ref(), &["type"]);
+            if let Some("user" | "assistant") = entry_role.as_deref() {
                 message_count += 1;
 
                 if git_branch.is_none() {
-                    if let Some(ref branch) = entry.git_branch {
-                        git_branch = Some(branch.clone());
+                    if let Some(branch) =
+                        stringish(entry.git_branch.as_ref(), &["gitBranch", "branch"])
+                    {
+                        git_branch = Some(branch);
                     }
                 }
                 if cwd.is_none() {
-                    if let Some(ref c) = entry.cwd {
-                        cwd = Some(c.clone());
+                    if let Some(c) = stringish(entry.cwd.as_ref(), &["cwd", "path"]) {
+                        cwd = Some(c);
                     }
                 }
 
-                if entry.entry_type.as_deref() == Some("assistant") {
+                if entry_role.as_deref() == Some("assistant") {
                     if let Some(ref msg) = entry.message {
                         if model.is_none() {
-                            if let Some(ref m) = msg.model {
-                                model = Some(m.clone());
+                            if let Some(m) = stringish(msg.model.as_ref(), &["model", "id", "name"])
+                            {
+                                model = Some(m);
                             }
                         }
                         if let Some(ref usage) = msg.usage {
-                            total_input_tokens += usage.input_tokens.unwrap_or(0);
-                            total_output_tokens += usage.output_tokens.unwrap_or(0);
+                            total_input_tokens +=
+                                value_u64(usage.input_tokens.as_ref()).unwrap_or(0);
+                            total_output_tokens +=
+                                value_u64(usage.output_tokens.as_ref()).unwrap_or(0);
                         }
                     }
                 }
@@ -106,16 +112,20 @@ pub(crate) fn build_session_metadata(
     // Get first user message as summary from history entries
     let summary = history_entries
         .iter()
-        .find(|e| e.session_id.as_deref() == Some(session_id))
-        .and_then(|e| e.display.clone());
+        .find(|e| {
+            stringish(e.session_id.as_ref(), &["sessionId", "id"]).as_deref() == Some(session_id)
+        })
+        .and_then(|e| stringish(e.display.as_ref(), &["display", "text", "content"]));
 
     // Use history entry timestamp if we didn't find one in the session file
     let started_at = first_timestamp.or_else(|| {
         history_entries
             .iter()
-            .find(|e| e.session_id.as_deref() == Some(session_id))
-            .and_then(|e| e.timestamp)
-            .and_then(|ts| millis_to_utc(ts.cast_signed()))
+            .find(|e| {
+                stringish(e.session_id.as_ref(), &["sessionId", "id"]).as_deref()
+                    == Some(session_id)
+            })
+            .and_then(|e| timestamp_value_to_utc(e.timestamp.as_ref()))
     })?;
 
     let token_usage = nonzero_token_usage(total_input_tokens, total_output_tokens, None, None);
@@ -139,29 +149,29 @@ pub(crate) fn build_session_metadata(
 #[derive(Deserialize)]
 struct RawSessionEntry {
     #[serde(rename = "type")]
-    entry_type: Option<String>,
-    uuid: Option<String>,
-    timestamp: Option<String>,
+    entry_type: Option<Value>,
+    uuid: Option<Value>,
+    timestamp: Option<Value>,
     message: Option<RawMessage>,
     #[serde(rename = "gitBranch")]
-    git_branch: Option<String>,
-    cwd: Option<String>,
+    git_branch: Option<Value>,
+    cwd: Option<Value>,
 }
 
 #[derive(Deserialize)]
 struct RawMessage {
     content: Option<serde_json::Value>,
-    model: Option<String>,
+    model: Option<Value>,
     usage: Option<RawUsage>,
 }
 
 #[allow(clippy::struct_field_names)] // Provider JSON uses token-suffixed usage fields.
 #[derive(Deserialize)]
 struct RawUsage {
-    input_tokens: Option<u64>,
-    output_tokens: Option<u64>,
-    cache_read_input_tokens: Option<u64>,
-    cache_creation_input_tokens: Option<u64>,
+    input_tokens: Option<Value>,
+    output_tokens: Option<Value>,
+    cache_read_input_tokens: Option<Value>,
+    cache_creation_input_tokens: Option<Value>,
 }
 
 pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
@@ -175,7 +185,8 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
         |record| {
             let line_number = record.line_number;
             let entry = record.value;
-            let role = match entry.entry_type.as_deref() {
+            let role_text = stringish(entry.entry_type.as_ref(), &["type"]);
+            let role = match role_text.as_deref() {
                 Some("user") => Role::User,
                 Some("assistant") => Role::Assistant,
                 Some(other) => {
@@ -194,9 +205,10 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
                 return;
             };
 
-            let timestamp = parse_utc_or_now(entry.timestamp.as_deref());
+            let timestamp =
+                timestamp_value_to_utc(entry.timestamp.as_ref()).unwrap_or_else(Utc::now);
 
-            let id = entry.uuid.unwrap_or_default();
+            let id = stringish(entry.uuid.as_ref(), &["uuid", "id"]).unwrap_or_default();
 
             let content = parse_message_content(msg, role);
             if content.is_empty() {
@@ -207,10 +219,10 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
 
             let token_usage = msg.usage.as_ref().map(|u| {
                 token_usage_from_options(
-                    u.input_tokens,
-                    u.output_tokens,
-                    u.cache_read_input_tokens,
-                    u.cache_creation_input_tokens,
+                    value_u64(u.input_tokens.as_ref()),
+                    value_u64(u.output_tokens.as_ref()),
+                    value_u64(u.cache_read_input_tokens.as_ref()),
+                    value_u64(u.cache_creation_input_tokens.as_ref()),
                 )
             });
 
@@ -219,7 +231,7 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
                 role,
                 timestamp,
                 content,
-                model: msg.model.clone(),
+                model: stringish(msg.model.as_ref(), &["model", "id", "name"]),
                 token_usage,
             });
         },
@@ -251,44 +263,39 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
         serde_json::Value::Array(arr) => {
             let mut blocks = Vec::new();
             for item in arr {
-                let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                match item_type {
+                let item_type = stringish(item.get("type"), &["type"]).unwrap_or_default();
+                match item_type.as_str() {
                     "text" => {
-                        if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
-                            blocks.extend(parse_text_with_code_blocks(text));
+                        if let Some(text) = item
+                            .get("text")
+                            .map(|v| string_or_object_field_or_pretty(v, &["text", "content"]))
+                            .filter(|text| !text.is_empty())
+                        {
+                            blocks.extend(parse_text_with_code_blocks(&text));
                         }
                     }
                     "thinking" => {
-                        if let Some(text) = item.get("thinking").and_then(|v| v.as_str()) {
-                            if !text.is_empty() {
-                                blocks.push(ContentBlock::Thinking(text.to_string()));
-                            }
+                        if let Some(text) = item
+                            .get("thinking")
+                            .map(|v| string_or_object_field_or_pretty(v, &["thinking", "text"]))
+                            .filter(|text| !text.is_empty())
+                        {
+                            blocks.push(ContentBlock::Thinking(text));
                         }
                     }
                     "tool_use" => {
-                        let name = item
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                            .to_string();
-                        let id = item
-                            .get("id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        let name = stringish(item.get("name"), &["name", "tool", "toolName"])
+                            .filter(|name| !name.is_empty())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        let id = stringish(item.get("id"), &["id"]).unwrap_or_default();
                         let arguments = pretty_json_opt(item.get("input"));
                         blocks.push(tool_use_block(id, name, arguments));
                     }
                     "tool_result" if role == Role::User => {
-                        let tool_call_id = item
-                            .get("tool_use_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let is_error = item
-                            .get("is_error")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false);
+                        let tool_call_id =
+                            stringish(item.get("tool_use_id"), &["tool_use_id", "toolUseId", "id"])
+                                .unwrap_or_default();
+                        let is_error = value_bool(item.get("is_error")).unwrap_or(false);
                         let output = extract_tool_result_text(item);
                         blocks.push(tool_result_block(tool_call_id, !is_error, output));
                     }
@@ -297,14 +304,91 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
             }
             blocks
         }
+        serde_json::Value::Object(_) => {
+            let text = string_or_object_field_or_pretty(content, &["text", "content", "message"]);
+            if text.is_empty() {
+                Vec::new()
+            } else {
+                parse_text_with_code_blocks(&text)
+            }
+        }
         _ => Vec::new(),
     }
 }
 
 fn extract_tool_result_text(item: &serde_json::Value) -> String {
     item.get("content")
-        .map(|content| string_or_typed_text_array(content, "text", "text"))
+        .map(|content| match content {
+            Value::Object(_) => {
+                string_or_object_field_or_pretty(content, &["text", "content", "message", "output"])
+            }
+            _ => string_or_typed_text_array_or_pretty(content, "text", "text"),
+        })
         .unwrap_or_default()
+}
+
+fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
+    let value = value?;
+    match value {
+        Value::String(text) => {
+            parse_utc(text).or_else(|| text.parse::<i64>().ok().and_then(millis_to_utc))
+        }
+        Value::Number(_) => value_i64(value).and_then(millis_to_utc),
+        Value::Object(map) => ["timestamp", "createdAt", "value"]
+            .iter()
+            .find_map(|field| timestamp_value_to_utc(map.get(*field))),
+        _ => None,
+    }
+}
+
+fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
+    let value = value?;
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(map) => object_fields
+            .iter()
+            .find_map(|field| stringish(map.get(*field), object_fields))
+            .or_else(|| {
+                let text = string_or_object_field(value, object_fields);
+                (!text.is_empty()).then_some(text)
+            }),
+        _ => None,
+    }
+}
+
+fn value_i64(value: &Value) -> Option<i64> {
+    match value {
+        Value::Number(number) => number
+            .as_i64()
+            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok())),
+        Value::String(text) => text.parse::<i64>().ok(),
+        _ => None,
+    }
+}
+
+fn value_u64(value: Option<&Value>) -> Option<u64> {
+    match value? {
+        Value::Number(number) => number
+            .as_u64()
+            .or_else(|| number.as_i64().and_then(|n| u64::try_from(n).ok())),
+        Value::String(text) => text.parse::<u64>().ok(),
+        Value::Object(map) => ["value", "tokens", "count"]
+            .iter()
+            .find_map(|field| value_u64(map.get(*field))),
+        _ => None,
+    }
+}
+
+fn value_bool(value: Option<&Value>) -> Option<bool> {
+    match value? {
+        Value::Bool(flag) => Some(*flag),
+        Value::String(text) => text.parse::<bool>().ok(),
+        Value::Object(map) => ["is_error", "isError", "value"]
+            .iter()
+            .find_map(|field| value_bool(map.get(*field))),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
