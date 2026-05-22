@@ -26,9 +26,9 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
-use parse::{build_session_from_file, load_index, parse_jsonl};
+use parse::{build_session_from_file, load_index, parse_jsonl, parse_jsonl_with_stats};
 
 const SESSIONS_SUBDIR: &str = "sessions";
 
@@ -120,6 +120,18 @@ impl HistoryProvider for ContinueDevProvider {
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
         parse_jsonl(&session.source_path, &session.started_at).map_err(|reason| {
+            ProviderError::Parse {
+                path: session.source_path.clone(),
+                reason,
+            }
+        })
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        parse_jsonl_with_stats(&session.source_path, &session.started_at).map_err(|reason| {
             ProviderError::Parse {
                 path: session.source_path.clone(),
                 reason,

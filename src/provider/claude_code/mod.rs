@@ -2,11 +2,12 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 pub use crate::provider::text_blocks::parse_text_with_code_blocks;
 use parse::{
     build_session_metadata, decode_project_name, parse_history_index, parse_session_messages,
+    parse_session_messages_with_stats,
 };
 
 pub struct ClaudeCodeProvider {
@@ -115,5 +116,12 @@ impl HistoryProvider for ClaudeCodeProvider {
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
         parse_session_messages(&session.source_path)
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        parse_session_messages_with_stats(&session.source_path)
     }
 }

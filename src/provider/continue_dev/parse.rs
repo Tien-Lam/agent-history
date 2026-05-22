@@ -10,6 +10,7 @@ use crate::provider::json_text::stringish;
 use crate::provider::parse_common::{
     file_modified_utc, parse_utc_opt, timestamp_with_index_millis, visit_jsonl_records,
 };
+use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 pub(crate) const INDEX_FILE: &str = "index.json";
 
@@ -85,8 +86,15 @@ pub(crate) fn build_session_from_file(
 }
 
 pub(crate) fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Message>, String> {
+    Ok(parse_jsonl_with_stats(path, base_ts)?.messages)
+}
+
+pub(crate) fn parse_jsonl_with_stats(
+    path: &Path,
+    base_ts: &DateTime<Utc>,
+) -> Result<ProviderMessageLoad, String> {
     let mut messages = Vec::new();
-    let mut skipped_roles: usize = 0;
+    let mut skipped_records: usize = 0;
     let mut empty_content: usize = 0;
 
     let stats = visit_jsonl_records::<SessionLine, _, _>(
@@ -99,7 +107,7 @@ pub(crate) fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Me
                 Some("assistant") => Role::Assistant,
                 Some("system") => Role::System,
                 _ => {
-                    skipped_roles += 1;
+                    skipped_records += 1;
                     return;
                 }
             };
@@ -131,11 +139,19 @@ pub(crate) fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Me
         path = %path.display(),
         lines = stats.line_count,
         parse_errors = stats.parse_errors,
-        skipped_roles,
+        skipped_records,
         empty_content,
         messages = messages.len(),
         "Continue.dev message loading complete"
     );
 
-    Ok(messages)
+    Ok(ProviderMessageLoad {
+        messages,
+        parse_stats: ProviderParseStats {
+            records_seen: stats.line_count,
+            parse_errors: stats.parse_errors,
+            skipped_records,
+            empty_content,
+        },
+    })
 }

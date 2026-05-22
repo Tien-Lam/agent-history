@@ -1,7 +1,9 @@
 use chrono::Utc;
 
 use super::*;
-use crate::model::{MessageId, Role, ToolCall, ToolResult};
+use crate::model::{MessageId, Provider, Role, Session, SessionId, ToolCall, ToolResult};
+use crate::provider::{HistoryProvider, ProviderMessageLoad, ProviderParseStats};
+use std::path::PathBuf;
 
 fn msg(content: Vec<ContentBlock>) -> Message {
     Message {
@@ -81,4 +83,79 @@ fn analyze_handles_empty_input() {
     let (blocks, fidelity) = analyze_messages(&[]);
     assert_eq!(blocks, BlockCounts::default());
     assert_eq!(fidelity, ToolCallFidelity::default());
+}
+
+struct DiagnosticProvider {
+    session: Session,
+}
+
+impl DiagnosticProvider {
+    fn new() -> Self {
+        Self {
+            session: Session {
+                id: SessionId("diag-session".into()),
+                provider: Provider::ClaudeCode,
+                project_path: None,
+                project_name: None,
+                git_branch: None,
+                started_at: Utc::now(),
+                ended_at: None,
+                summary: None,
+                model: None,
+                token_usage: None,
+                message_count: 1,
+                source_path: PathBuf::from("diag.jsonl"),
+            },
+        }
+    }
+}
+
+impl HistoryProvider for DiagnosticProvider {
+    fn provider(&self) -> Provider {
+        Provider::ClaudeCode
+    }
+
+    fn base_dirs(&self) -> &[PathBuf] {
+        &[]
+    }
+
+    fn discover_sessions(&self) -> Result<Vec<Session>, ProviderError> {
+        Ok(vec![self.session.clone()])
+    }
+
+    fn load_messages(&self, _session: &Session) -> Result<Vec<Message>, ProviderError> {
+        Ok(vec![msg(vec![ContentBlock::Text("ok".into())])])
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        _session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        Ok(ProviderMessageLoad {
+            messages: vec![msg(vec![ContentBlock::Text("ok".into())])],
+            parse_stats: ProviderParseStats {
+                records_seen: 4,
+                parse_errors: 1,
+                skipped_records: 2,
+                empty_content: 1,
+            },
+        })
+    }
+}
+
+#[test]
+fn analyze_provider_aggregates_parse_stats() {
+    let provider = DiagnosticProvider::new();
+    let diag = analyze_provider("diag", &provider, None).unwrap();
+
+    assert_eq!(diag.message_count, 1);
+    assert_eq!(
+        diag.parse,
+        ProviderParseStats {
+            records_seen: 4,
+            parse_errors: 1,
+            skipped_records: 2,
+            empty_content: 1,
+        }
+    );
 }

@@ -162,6 +162,7 @@ pub fn run_provider_fidelity(providers: &[Box<dyn HistoryProvider>]) -> Vec<Prov
                     provider: slug.to_string(),
                     session_count: 0,
                     message_count: 0,
+                    parse: crate::provider::ProviderParseStats::default(),
                     blocks: crate::provider_diagnostic::BlockCounts::default(),
                     tool_call_fidelity: crate::provider_diagnostic::ToolCallFidelity::default(),
                 })

@@ -9,7 +9,7 @@
 use serde::Serialize;
 
 use crate::model::{ContentBlock, Message};
-use crate::provider::{HistoryProvider, ProviderError};
+use crate::provider::{HistoryProvider, ProviderError, ProviderParseStats};
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 pub struct BlockCounts {
@@ -58,6 +58,7 @@ pub struct ProviderDiagnostic {
     pub provider: String,
     pub session_count: usize,
     pub message_count: usize,
+    pub parse: ProviderParseStats,
     pub blocks: BlockCounts,
     pub tool_call_fidelity: ToolCallFidelity,
 }
@@ -164,14 +165,16 @@ pub fn analyze_provider(
         provider: provider_slug,
         session_count: sessions.len(),
         message_count: 0,
+        parse: ProviderParseStats::default(),
         blocks: BlockCounts::default(),
         tool_call_fidelity: ToolCallFidelity::default(),
     };
 
     for session in sessions.iter().take(take) {
-        let messages = provider.load_messages(session)?;
-        diag.message_count += messages.len();
-        let (blocks, fidelity) = analyze_messages(&messages);
+        let load = provider.load_messages_with_stats(session)?;
+        diag.message_count += load.messages.len();
+        diag.parse.merge(&load.parse_stats);
+        let (blocks, fidelity) = analyze_messages(&load.messages);
         merge_block_counts(&mut diag.blocks, &blocks);
         merge_tool_fidelity(&mut diag.tool_call_fidelity, &fidelity);
     }

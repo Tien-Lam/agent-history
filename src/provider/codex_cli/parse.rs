@@ -11,6 +11,7 @@ use crate::provider::parse_common::{
     pretty_json_opt, timestamp_value_to_utc, tool_result_block, tool_use_block, visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
+use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
     let mut first_timestamp: Option<DateTime<Utc>> = None;
@@ -95,9 +96,15 @@ pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
 }
 
 pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
+    Ok(parse_rollout_messages_with_stats(path)?.messages)
+}
+
+pub(crate) fn parse_rollout_messages_with_stats(
+    path: &Path,
+) -> Result<ProviderMessageLoad, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Codex CLI messages");
     let mut messages = Vec::new();
-    let mut skipped_types: usize = 0;
+    let mut skipped_records: usize = 0;
     let mut empty_content: usize = 0;
 
     let stats = visit_jsonl_records::<RawEntry, _, _>(
@@ -125,7 +132,7 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
                     return;
                 }
                 _ => {
-                    skipped_types += 1;
+                    skipped_records += 1;
                     tracing::trace!(
                         entry_type = entry_type.as_str(),
                         "skipping non-message entry"
@@ -158,7 +165,7 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
         path = %path.display(),
         lines = stats.line_count,
         parse_errors = stats.parse_errors,
-        skipped_types,
+        skipped_records,
         empty_content,
         messages = messages.len(),
         "Codex CLI message loading complete"
@@ -166,7 +173,15 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
 
     assign_fallback_message_ids(&mut messages);
 
-    Ok(messages)
+    Ok(ProviderMessageLoad {
+        messages,
+        parse_stats: ProviderParseStats {
+            records_seen: stats.line_count,
+            parse_errors: stats.parse_errors,
+            skipped_records,
+            empty_content,
+        },
+    })
 }
 
 fn entry_timestamp(entry: &RawEntry) -> DateTime<Utc> {

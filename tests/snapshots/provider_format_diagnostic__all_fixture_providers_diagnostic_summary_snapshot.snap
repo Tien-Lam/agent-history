@@ -1,6 +1,6 @@
 ---
-source: tests/provider_format_diagnostic.rs
-assertion_line: 508
+source: tests/provider_format_diagnostic/diagnostics.rs
+assertion_line: 39
 expression: pretty
 ---
 [
@@ -9,6 +9,12 @@ expression: pretty
     "provider": "claude-code",
     "session_count": 1,
     "message_count": 4,
+    "parse": {
+      "records_seen": 4,
+      "parse_errors": 0,
+      "skipped_records": 0,
+      "empty_content": 0
+    },
     "blocks": {
       "text": 4,
       "code_block": 1,
@@ -37,6 +43,12 @@ expression: pretty
     "provider": "copilot-cli",
     "session_count": 1,
     "message_count": 3,
+    "parse": {
+      "records_seen": 3,
+      "parse_errors": 0,
+      "skipped_records": 0,
+      "empty_content": 0
+    },
     "blocks": {
       "text": 2,
       "code_block": 1,
@@ -65,6 +77,12 @@ expression: pretty
     "provider": "copilot-cli",
     "session_count": 1,
     "message_count": 4,
+    "parse": {
+      "records_seen": 5,
+      "parse_errors": 0,
+      "skipped_records": 1,
+      "empty_content": 0
+    },
     "blocks": {
       "text": 3,
       "code_block": 0,
@@ -93,6 +111,12 @@ expression: pretty
     "provider": "codex-cli",
     "session_count": 1,
     "message_count": 5,
+    "parse": {
+      "records_seen": 5,
+      "parse_errors": 0,
+      "skipped_records": 0,
+      "empty_content": 0
+    },
     "blocks": {
       "text": 3,
       "code_block": 0,
@@ -121,6 +145,12 @@ expression: pretty
     "provider": "codex-cli",
     "session_count": 1,
     "message_count": 7,
+    "parse": {
+      "records_seen": 10,
+      "parse_errors": 0,
+      "skipped_records": 2,
+      "empty_content": 0
+    },
     "blocks": {
       "text": 5,
       "code_block": 1,
@@ -149,6 +179,12 @@ expression: pretty
     "provider": "opencode",
     "session_count": 1,
     "message_count": 2,
+    "parse": {
+      "records_seen": 0,
+      "parse_errors": 0,
+      "skipped_records": 0,
+      "empty_content": 0
+    },
     "blocks": {
       "text": 2,
       "code_block": 1,
@@ -177,6 +213,12 @@ expression: pretty
     "provider": "opencode",
     "session_count": 1,
     "message_count": 2,
+    "parse": {
+      "records_seen": 0,
+      "parse_errors": 0,
+      "skipped_records": 0,
+      "empty_content": 0
+    },
     "blocks": {
       "text": 2,
       "code_block": 0,
@@ -205,6 +247,12 @@ expression: pretty
     "provider": "gemini-cli",
     "session_count": 1,
     "message_count": 2,
+    "parse": {
+      "records_seen": 0,
+      "parse_errors": 0,
+      "skipped_records": 0,
+      "empty_content": 0
+    },
     "blocks": {
       "text": 2,
       "code_block": 1,

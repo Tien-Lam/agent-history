@@ -2,9 +2,11 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
-use parse::{build_session_from_rollout, parse_rollout_messages};
+use parse::{
+    build_session_from_rollout, parse_rollout_messages, parse_rollout_messages_with_stats,
+};
 
 pub struct CodexCliProvider {
     dirs: Vec<PathBuf>,
@@ -63,6 +65,13 @@ impl HistoryProvider for CodexCliProvider {
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
         parse_rollout_messages(&session.source_path)
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        parse_rollout_messages_with_stats(&session.source_path)
     }
 }
 

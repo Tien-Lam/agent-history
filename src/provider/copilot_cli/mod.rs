@@ -2,9 +2,11 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
-use parse::{build_session, parse_checkpoint_md, parse_events_jsonl};
+use parse::{
+    build_session, parse_checkpoint_md, parse_events_jsonl, parse_events_jsonl_with_stats,
+};
 
 pub struct CopilotCliProvider {
     dirs: Vec<PathBuf>,
@@ -90,6 +92,19 @@ impl HistoryProvider for CopilotCliProvider {
             } else {
                 Ok(Vec::new())
             }
+        }
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        let events_path = session.source_path.join("events.jsonl");
+        if events_path.exists() {
+            parse_events_jsonl_with_stats(&events_path)
+        } else {
+            self.load_messages(session)
+                .map(ProviderMessageLoad::from_messages)
         }
     }
 }

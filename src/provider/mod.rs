@@ -17,6 +17,8 @@ pub mod zed_ai;
 
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use crate::model::{Message, Provider, Session};
 
 pub use error::ProviderError;
@@ -48,6 +50,46 @@ pub trait HistoryProvider: Send + Sync {
     fn base_dirs(&self) -> &[PathBuf];
     fn discover_sessions(&self) -> Result<Vec<Session>, ProviderError>;
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError>;
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        self.load_messages(session)
+            .map(ProviderMessageLoad::from_messages)
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub struct ProviderParseStats {
+    pub records_seen: usize,
+    pub parse_errors: usize,
+    pub skipped_records: usize,
+    pub empty_content: usize,
+}
+
+impl ProviderParseStats {
+    pub(crate) fn merge(&mut self, other: &Self) {
+        self.records_seen += other.records_seen;
+        self.parse_errors += other.parse_errors;
+        self.skipped_records += other.skipped_records;
+        self.empty_content += other.empty_content;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderMessageLoad {
+    pub messages: Vec<Message>,
+    pub parse_stats: ProviderParseStats,
+}
+
+impl ProviderMessageLoad {
+    pub fn from_messages(messages: Vec<Message>) -> Self {
+        Self {
+            messages,
+            parse_stats: ProviderParseStats::default(),
+        }
+    }
 }
 
 pub fn detect_all_providers() -> Vec<Box<dyn HistoryProvider>> {

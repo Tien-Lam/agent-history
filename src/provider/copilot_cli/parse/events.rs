@@ -14,11 +14,18 @@ use crate::provider::parse_common::{
     tool_use_block, visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
+use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
+    Ok(parse_events_jsonl_with_stats(path)?.messages)
+}
+
+pub(crate) fn parse_events_jsonl_with_stats(
+    path: &Path,
+) -> Result<ProviderMessageLoad, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Copilot CLI messages");
     let mut messages = Vec::new();
-    let mut skipped_types: usize = 0;
+    let mut skipped_records: usize = 0;
     let mut empty_content: usize = 0;
 
     let stats = visit_jsonl_records::<RawEvent, _, _>(
@@ -42,7 +49,7 @@ pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderEr
                 }
                 t if t.contains("tool") => Role::Tool,
                 _ => {
-                    skipped_types += 1;
+                    skipped_records += 1;
                     tracing::trace!(event_type = event_type_str, "skipping non-message event");
                     return;
                 }
@@ -73,13 +80,21 @@ pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderEr
         path = %path.display(),
         lines = stats.line_count,
         parse_errors = stats.parse_errors,
-        skipped_types,
+        skipped_records,
         empty_content,
         messages = messages.len(),
         "Copilot CLI message loading complete"
     );
 
-    Ok(messages)
+    Ok(ProviderMessageLoad {
+        messages,
+        parse_stats: ProviderParseStats {
+            records_seen: stats.line_count,
+            parse_errors: stats.parse_errors,
+            skipped_records,
+            empty_content,
+        },
+    })
 }
 
 fn event_timestamp(event: &RawEvent) -> DateTime<Utc> {

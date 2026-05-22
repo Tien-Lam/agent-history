@@ -15,6 +15,7 @@ use crate::provider::parse_common::{
     token_usage_from_options, tool_result_block, tool_use_block, visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
+use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 #[derive(Deserialize)]
 pub(crate) struct HistoryEntry {
@@ -176,9 +177,15 @@ struct RawUsage {
 }
 
 pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, ProviderError> {
+    Ok(parse_session_messages_with_stats(path)?.messages)
+}
+
+pub(crate) fn parse_session_messages_with_stats(
+    path: &Path,
+) -> Result<ProviderMessageLoad, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Claude Code messages");
     let mut messages = Vec::new();
-    let mut skipped_types: usize = 0;
+    let mut skipped_records: usize = 0;
     let mut empty_content: usize = 0;
 
     let stats = visit_jsonl_records::<RawSessionEntry, _, _>(
@@ -191,17 +198,18 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
                 Some("user") => Role::User,
                 Some("assistant") => Role::Assistant,
                 Some(other) => {
-                    skipped_types += 1;
+                    skipped_records += 1;
                     tracing::trace!(entry_type = other, "skipping non-message entry");
                     return;
                 }
                 None => {
-                    skipped_types += 1;
+                    skipped_records += 1;
                     return;
                 }
             };
 
             let Some(ref msg) = entry.message else {
+                skipped_records += 1;
                 tracing::warn!(line_num = line_number, role = ?role, uuid = ?entry.uuid, "entry has no message field");
                 return;
             };
@@ -244,13 +252,21 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
         path = %path.display(),
         lines = stats.line_count,
         parse_errors = stats.parse_errors,
-        skipped_types,
+        skipped_records,
         empty_content,
         messages = messages.len(),
         "Claude Code message loading complete"
     );
 
-    Ok(messages)
+    Ok(ProviderMessageLoad {
+        messages,
+        parse_stats: ProviderParseStats {
+            records_seen: stats.line_count,
+            parse_errors: stats.parse_errors,
+            skipped_records,
+            empty_content,
+        },
+    })
 }
 
 fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
