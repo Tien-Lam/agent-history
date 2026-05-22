@@ -2,12 +2,11 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
-use super::format::{
-    millis_value_to_datetime, optional_string, value_u8, ComposerData, HeaderEntry,
-};
+use super::format::{millis_value_to_datetime, ComposerData, HeaderEntry};
 use super::message::build_message;
 use super::ProviderError;
 use crate::model::{Message, Provider, Session, SessionId};
+use crate::provider::json_text::{stringish, value_u8};
 use crate::provider::project_name_from_path;
 
 pub(crate) fn state_db_path(base: &Path) -> PathBuf {
@@ -73,8 +72,7 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
         }
     };
 
-    let id =
-        optional_string(raw.composer_id.as_ref(), &["composerId", "id"]).unwrap_or(composer_id);
+    let id = stringish(raw.composer_id.as_ref(), &["composerId", "id"]).unwrap_or(composer_id);
 
     let started_at = raw
         .created_at
@@ -90,7 +88,7 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
         .as_ref()
         .and_then(millis_value_to_datetime);
 
-    let workspace_folder = optional_string(
+    let workspace_folder = stringish(
         raw.workspace_folder.as_ref(),
         &["currentWorkspaceFolder", "workspace", "path"],
     );
@@ -100,7 +98,7 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
     let message_count = raw
         .headers
         .iter()
-        .filter(|e| optional_string(e.bubble_id.as_ref(), &["bubbleId", "id"]).is_some())
+        .filter(|e| stringish(e.bubble_id.as_ref(), &["bubbleId", "id"]).is_some())
         .count();
 
     Some(Session {
@@ -111,8 +109,8 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
         git_branch: None,
         started_at,
         ended_at,
-        summary: optional_string(raw.name.as_ref(), &["name", "title", "summary"]),
-        model: optional_string(raw.model.as_ref(), &["model", "id", "name"]),
+        summary: stringish(raw.name.as_ref(), &["name", "title", "summary"]),
+        model: stringish(raw.model.as_ref(), &["model", "id", "name"]),
         token_usage: None,
         message_count,
         source_path: db_path.to_path_buf(),
@@ -146,7 +144,7 @@ pub(crate) fn load_messages_from_db(
         .map(|c| c.headers)
         .unwrap_or_default()
         .into_iter()
-        .filter(|h| optional_string(h.bubble_id.as_ref(), &["bubbleId", "id"]).is_some())
+        .filter(|h| stringish(h.bubble_id.as_ref(), &["bubbleId", "id"]).is_some())
         .collect();
 
     // 2. Read each bubble keyed under this composer. We collect both ways:
@@ -157,12 +155,12 @@ pub(crate) fn load_messages_from_db(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (idx, h) in headers.iter().enumerate() {
-        let Some(bid) = optional_string(h.bubble_id.as_ref(), &["bubbleId", "id"]) else {
+        let Some(bid) = stringish(h.bubble_id.as_ref(), &["bubbleId", "id"]) else {
             continue;
         };
         let key = format!("bubbleId:{composer_id}:{bid}");
         if let Some(bytes) = read_value(&conn, &key)? {
-            let header_type = h.bubble_type.as_ref().and_then(value_u8);
+            let header_type = value_u8(h.bubble_type.as_ref(), &["type", "value"]);
             if let Some(msg) = build_message(&bid, header_type, &bytes, idx) {
                 seen.insert(bid.clone());
                 messages.push(msg);

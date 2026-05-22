@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::provider::json_text::{string_or_object_field_or_pretty, stringish};
 use crate::provider::parse_common::{
     deserialize_optional_struct_skip_invalid, deserialize_vec_skip_invalid, timestamp_value_to_utc,
 };
@@ -116,27 +115,4 @@ pub(crate) fn millis_value_to_datetime(value: &Value) -> Option<DateTime<Utc>> {
         Some(value),
         &["createdAt", "lastUpdatedAt", "timestamp", "value"],
     )
-}
-
-pub(crate) fn value_u8(value: &Value) -> Option<u8> {
-    match value {
-        Value::Number(number) => number
-            .as_u64()
-            .and_then(|n| u8::try_from(n).ok())
-            .or_else(|| number.as_i64().and_then(|n| u8::try_from(n).ok())),
-        Value::String(text) => text.parse::<u8>().ok(),
-        Value::Object(map) => ["type", "value"]
-            .iter()
-            .find_map(|field| map.get(*field).and_then(value_u8)),
-        _ => None,
-    }
-}
-
-pub(crate) fn optional_string(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    stringish(value, object_fields)
-}
-
-pub(crate) fn optional_text(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let text = string_or_object_field_or_pretty(value?, object_fields);
-    (!text.is_empty()).then_some(text)
 }

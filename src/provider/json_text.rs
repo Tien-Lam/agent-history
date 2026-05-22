@@ -8,6 +8,14 @@ pub(crate) fn string_or_object_field_or_pretty(value: &Value, fields: &[&str]) -
     direct_string_or_object_field(value, fields).unwrap_or_else(|| pretty_json(value))
 }
 
+pub(crate) fn non_empty_string_or_object_field_or_pretty(
+    value: Option<&Value>,
+    fields: &[&str],
+) -> Option<String> {
+    let text = string_or_object_field_or_pretty(value?, fields);
+    (!text.is_empty()).then_some(text)
+}
+
 pub(crate) fn string_or_pretty(value: &Value) -> String {
     value
         .as_str()
@@ -52,6 +60,20 @@ pub(crate) fn value_u64(value: Option<&Value>) -> Option<u64> {
         Value::Object(map) => ["value", "tokens", "count"]
             .iter()
             .find_map(|field| value_u64(map.get(*field))),
+        _ => None,
+    }
+}
+
+pub(crate) fn value_u8(value: Option<&Value>, object_fields: &[&str]) -> Option<u8> {
+    match value? {
+        Value::Number(number) => number
+            .as_u64()
+            .and_then(|n| u8::try_from(n).ok())
+            .or_else(|| number.as_i64().and_then(|n| u8::try_from(n).ok())),
+        Value::String(text) => text.parse::<u8>().ok(),
+        Value::Object(map) => object_fields
+            .iter()
+            .find_map(|field| value_u8(map.get(*field), object_fields)),
         _ => None,
     }
 }

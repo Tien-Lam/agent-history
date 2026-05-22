@@ -31,6 +31,18 @@ fn string_or_object_field_or_pretty_preserves_freeform_json() {
 }
 
 #[test]
+fn non_empty_string_or_object_field_or_pretty_filters_missing_values() {
+    assert_eq!(
+        non_empty_string_or_object_field_or_pretty(Some(&json!("direct")), &["content"]),
+        Some("direct".to_string())
+    );
+    assert_eq!(
+        non_empty_string_or_object_field_or_pretty(None, &["content"]),
+        None
+    );
+}
+
+#[test]
 fn string_or_pretty_prefers_direct_string() {
     assert_eq!(string_or_pretty(&json!("direct output")), "direct output");
 }
@@ -62,6 +74,10 @@ fn value_helpers_accept_strings_and_nested_objects() {
     assert_eq!(
         value_bool(Some(&json!({"success": "true"})), &["success", "value"]),
         Some(true)
+    );
+    assert_eq!(
+        value_u8(Some(&json!({"type": "2"})), &["type", "value"]),
+        Some(2)
     );
 }
 
