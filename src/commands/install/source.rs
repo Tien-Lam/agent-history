@@ -51,7 +51,7 @@ fn has_github_release_marker(exe: &Path) -> bool {
         })
 }
 
-fn install_marker_path(exe: &Path) -> Option<PathBuf> {
+pub(super) fn install_marker_path(exe: &Path) -> Option<PathBuf> {
     let mut marker_name = exe.file_stem()?.to_os_string();
     marker_name.push(".install");
     Some(exe.with_file_name(marker_name))

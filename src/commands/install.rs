@@ -8,7 +8,7 @@ use aghist::{config, search};
 
 mod source;
 
-use source::{detect_install_source, InstallSource};
+use source::{detect_install_source, install_marker_path, InstallSource};
 
 #[derive(Debug, Clone, Copy)]
 enum InstallOperation {
@@ -38,7 +38,7 @@ pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
     let index_dir = search::SearchIndex::default_index_dir();
     let config_path = config::Config::resolved_path();
     let config_target = config_removal_target(config_path.as_deref());
-    let marker = release_install_marker_path(&exe);
+    let marker = install_marker_path(&exe);
 
     eprintln!("This will remove:");
     eprintln!("  binary:       {}", exe.display());
@@ -183,12 +183,6 @@ fn current_exe() -> Result<PathBuf, ErrorEnvelope> {
     std::env::current_exe().map_err(|e| ErrorEnvelope::io("current_exe failed", e))
 }
 
-fn release_install_marker_path(exe: &Path) -> Option<PathBuf> {
-    let mut marker_name = exe.file_stem()?.to_os_string();
-    marker_name.push(".install");
-    Some(exe.with_file_name(marker_name))
-}
-
 fn config_removal_target(config_path: Option<&Path>) -> Option<RemovalTarget> {
     let default_config_path = config::Config::config_path();
     config_removal_target_for(config_path, default_config_path.as_deref())
@@ -330,7 +324,7 @@ mod tests {
     fn release_marker_allows_self_managed_operations() {
         let root = tempfile::tempdir().unwrap();
         let exe = exe_path(root.path());
-        let marker = release_install_marker_path(&exe).unwrap();
+        let marker = install_marker_path(&exe).unwrap();
         std::fs::write(marker, "method=github-release\n").unwrap();
 
         ensure_self_managed_install(&exe, InstallOperation::Update).unwrap();
@@ -343,7 +337,7 @@ mod tests {
         let exe = exe_path(root.path());
 
         assert_eq!(
-            release_install_marker_path(&exe).unwrap(),
+            install_marker_path(&exe).unwrap(),
             root.path().join("aghist.install")
         );
     }
