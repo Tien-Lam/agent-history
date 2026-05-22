@@ -10,8 +10,8 @@ use crate::provider::json_text::{
     string_or_object_field_or_pretty, stringish, value_bool, value_u64,
 };
 use crate::provider::parse_common::{
-    parse_utc_or_now, pretty_json_opt, token_usage_from_options, tool_result_block, tool_use_block,
-    visit_jsonl_records,
+    pretty_json_opt, timestamp_value_to_utc, token_usage_from_options, tool_result_block,
+    tool_use_block, visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -83,8 +83,11 @@ pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderEr
 }
 
 fn event_timestamp(event: &RawEvent) -> DateTime<Utc> {
-    let timestamp = stringish(event.timestamp.as_ref(), &["timestamp", "time"]);
-    parse_utc_or_now(timestamp.as_deref())
+    copilot_timestamp(event.timestamp.as_ref()).unwrap_or_else(Utc::now)
+}
+
+fn copilot_timestamp(value: Option<&Value>) -> Option<DateTime<Utc>> {
+    timestamp_value_to_utc(value, &["timestamp", "time", "createdAt", "value"])
 }
 
 fn event_message(

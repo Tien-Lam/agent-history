@@ -6,34 +6,35 @@ use serde_json::Value;
 
 use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
-use crate::provider::parse_common::parse_utc;
+use crate::provider::parse_common::timestamp_value_to_utc;
 use crate::provider::project_name_from_path;
 
 #[derive(Deserialize)]
 struct WorkspaceYaml {
-    id: Option<String>,
-    cwd: Option<String>,
-    created_at: Option<String>,
-    updated_at: Option<String>,
+    id: Option<Value>,
+    cwd: Option<Value>,
+    created_at: Option<Value>,
+    updated_at: Option<Value>,
 }
 
 pub(crate) fn build_session(session_dir: &Path, workspace_path: &Path) -> Option<Session> {
     let yaml_content = std::fs::read_to_string(workspace_path).ok()?;
     let workspace: WorkspaceYaml = serde_yaml_ng::from_str(&yaml_content).ok()?;
 
-    let session_id = workspace.id.or_else(|| {
+    let session_id = stringish(workspace.id.as_ref(), &["id"]).or_else(|| {
         session_dir
             .file_name()
             .and_then(|n| n.to_str())
             .map(String::from)
     })?;
 
-    let started_at = workspace.created_at.as_deref().and_then(parse_utc)?;
+    let started_at = copilot_workspace_timestamp(workspace.created_at.as_ref())?;
 
-    let ended_at = workspace.updated_at.as_deref().and_then(parse_utc);
+    let ended_at = copilot_workspace_timestamp(workspace.updated_at.as_ref());
 
-    let project_name = workspace.cwd.as_deref().and_then(project_name_from_path);
-    let project_path = workspace.cwd.map(PathBuf::from);
+    let cwd = stringish(workspace.cwd.as_ref(), &["cwd", "path", "workspace"]);
+    let project_name = cwd.as_deref().and_then(project_name_from_path);
+    let project_path = cwd.map(PathBuf::from);
 
     let events_path = session_dir.join("events.jsonl");
     let message_count = if events_path.exists() {
@@ -56,6 +57,21 @@ pub(crate) fn build_session(session_dir: &Path, workspace_path: &Path) -> Option
         message_count,
         source_path: session_dir.to_path_buf(),
     })
+}
+
+fn copilot_workspace_timestamp(value: Option<&Value>) -> Option<chrono::DateTime<chrono::Utc>> {
+    timestamp_value_to_utc(
+        value,
+        &[
+            "created_at",
+            "createdAt",
+            "updated_at",
+            "updatedAt",
+            "timestamp",
+            "time",
+            "value",
+        ],
+    )
 }
 
 fn count_message_events(path: &Path) -> usize {

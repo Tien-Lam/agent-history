@@ -1,6 +1,7 @@
 use aghist::model::{ContentBlock, Provider, Role};
 use aghist::provider::copilot_cli::CopilotCliProvider;
 use aghist::provider::HistoryProvider;
+use std::fs;
 
 use super::common;
 use super::common::helpers::fixtures_dir;
@@ -93,7 +94,7 @@ fn copilot_tolerates_object_event_metadata_fields() {
     let fixture = common::fixtures::copilot::CopilotFixtureBuilder::new()
         .add_session("copilot-object-metadata")
         .raw_line(
-            r#"{"id":{"id":"evt-user"},"type":{"type":"user.message"},"timestamp":{"timestamp":"2025-01-01T00:00:00Z"},"content":{"text":"object metadata content"}}"#,
+            r#"{"id":{"id":"evt-user"},"type":{"type":"user.message"},"timestamp":{"value":1735689600000},"content":{"text":"object metadata content"}}"#,
         )
         .raw_line(
             r#"{"id":{"id":"evt-assistant"},"type":{"type":"assistant.message"},"timestamp":{"timestamp":"2025-01-01T00:00:01Z"},"content":"assistant reply","model":{"id":"gpt-object"},"usage":{"inputTokens":"4","outputTokens":{"tokens":5}}}"#,
@@ -114,6 +115,10 @@ fn copilot_tolerates_object_event_metadata_fields() {
     let messages = provider.load_messages(&sessions[0]).unwrap();
     assert_eq!(messages.len(), 4);
     assert_eq!(messages[0].id.0, "evt-user");
+    assert_eq!(
+        messages[0].timestamp.to_rfc3339(),
+        "2025-01-01T00:00:00+00:00"
+    );
     assert!(matches!(
         &messages[0].content[0],
         ContentBlock::Text(text) if text == "object metadata content"
@@ -127,5 +132,43 @@ fn copilot_tolerates_object_event_metadata_fields() {
     );
     assert!(
         matches!(&messages[3].content[0], ContentBlock::ToolResult(result) if result.tool_call_id == "call-object" && result.success && result.output == "ok")
+    );
+}
+
+#[test]
+fn copilot_tolerates_object_workspace_metadata_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let session_dir = dir.path().join("copilot-yaml-object");
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(
+        session_dir.join("workspace.yaml"),
+        r#"
+id:
+  id: copilot-yaml-object
+cwd:
+  path: /tmp/objectapp
+created_at:
+  value: 1735689600000
+updated_at:
+  timestamp: "2025-01-01T00:00:01Z"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        session_dir.join("events.jsonl"),
+        r#"{"id":"evt-user","type":"user.message","timestamp":"2025-01-01T00:00:00Z","content":"hello"}"#,
+    )
+    .unwrap();
+
+    let provider = CopilotCliProvider::new(vec![dir.path().to_path_buf()]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    let session = &sessions[0];
+    assert_eq!(session.id.0, "copilot-yaml-object");
+    assert_eq!(session.project_name.as_deref(), Some("objectapp"));
+    assert_eq!(session.started_at.to_rfc3339(), "2025-01-01T00:00:00+00:00");
+    assert_eq!(
+        session.ended_at.map(|ts| ts.to_rfc3339()).as_deref(),
+        Some("2025-01-01T00:00:01+00:00")
     );
 }

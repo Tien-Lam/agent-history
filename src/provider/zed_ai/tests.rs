@@ -116,13 +116,13 @@ fn tolerates_object_shaped_string_fields() {
         "summary": {"title": "Object summary"},
         "model": {"id": "zed-model"},
         "workspace": {"path": "/home/me/projects/objectapp"},
-        "created_at": "2026-01-01T00:00:00Z",
+        "created_at": {"value": 1_767_225_600_000_i64},
         "messages": [
             {
                 "id": {"id": "m1"},
                 "role": {"role": "user"},
                 "text": {"content": "object text"},
-                "timestamp": "2026-01-01T00:00:00Z",
+                "timestamp": {"timestamp": "2026-01-01T00:00:00Z"},
                 "model": {"id": "message-model"}
             }
         ]
@@ -137,12 +137,17 @@ fn tolerates_object_shaped_string_fields() {
     assert_eq!(s.summary.as_deref(), Some("Object summary"));
     assert_eq!(s.project_name.as_deref(), Some("objectapp"));
     assert_eq!(s.model.as_deref(), Some("zed-model"));
+    assert_eq!(s.started_at.to_rfc3339(), "2026-01-01T00:00:00+00:00");
 
     let messages = provider.load_messages(s).unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id.0, "m1");
     assert_eq!(messages[0].role, Role::User);
     assert_eq!(messages[0].model.as_deref(), Some("message-model"));
+    assert_eq!(
+        messages[0].timestamp.to_rfc3339(),
+        "2026-01-01T00:00:00+00:00"
+    );
     assert!(matches!(
         &messages[0].content[0],
         ContentBlock::Text(text) if text == "object text"

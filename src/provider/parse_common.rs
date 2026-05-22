@@ -140,10 +140,6 @@ pub(crate) fn parse_utc_opt(raw: Option<&str>) -> Option<DateTime<Utc>> {
     raw.and_then(parse_utc)
 }
 
-pub(crate) fn parse_utc_or_now(raw: Option<&str>) -> DateTime<Utc> {
-    parse_utc_opt(raw).unwrap_or_else(Utc::now)
-}
-
 pub(crate) fn millis_to_utc(millis: i64) -> Option<DateTime<Utc>> {
     Utc.timestamp_millis_opt(millis).single()
 }

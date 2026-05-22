@@ -7,7 +7,9 @@ use serde_json::Value;
 use super::ProviderError;
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::{string_or_object_field_or_pretty, stringish};
-use crate::provider::parse_common::{epoch_timestamp_for_index, file_modified_utc, millis_to_utc};
+use crate::provider::parse_common::{
+    epoch_timestamp_for_index, file_modified_utc, timestamp_value_to_utc,
+};
 use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -18,9 +20,9 @@ struct ZedConversation {
     model: Option<Value>,
     workspace: Option<Value>,
     #[serde(default, alias = "createdAt")]
-    created_at: Option<Timestamp>,
+    created_at: Option<Value>,
     #[serde(default, alias = "updatedAt")]
-    updated_at: Option<Timestamp>,
+    updated_at: Option<Value>,
     #[serde(default)]
     messages: Vec<ZedMessage>,
 }
@@ -32,28 +34,8 @@ struct ZedMessage {
     #[serde(default, alias = "content")]
     text: Option<Value>,
     #[serde(default, alias = "createdAt")]
-    timestamp: Option<Timestamp>,
+    timestamp: Option<Value>,
     model: Option<Value>,
-}
-
-/// Accepts either an RFC3339 string or epoch milliseconds. Older Zed builds
-/// recorded millis; newer ones emit ISO strings.
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Timestamp {
-    Iso(String),
-    Millis(i64),
-}
-
-impl Timestamp {
-    fn to_utc(&self) -> Option<DateTime<Utc>> {
-        match self {
-            Self::Iso(s) => DateTime::parse_from_rfc3339(s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc)),
-            Self::Millis(m) => millis_to_utc(*m),
-        }
-    }
 }
 
 pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError> {
@@ -86,7 +68,7 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
     let started_at = raw
         .created_at
         .as_ref()
-        .and_then(Timestamp::to_utc)
+        .and_then(|value| zed_timestamp(Some(value)))
         .or_else(|| earliest_message_ts(&raw))
         .or_else(|| file_modified_utc(path));
     let Some(started_at) = started_at else {
@@ -96,7 +78,7 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
     let ended_at = raw
         .updated_at
         .as_ref()
-        .and_then(Timestamp::to_utc)
+        .and_then(|value| zed_timestamp(Some(value)))
         .or_else(|| latest_message_ts(&raw));
 
     let workspace = raw
@@ -153,14 +135,14 @@ pub(crate) fn load_messages_from_path(path: &Path) -> Result<Vec<Message>, Provi
 fn earliest_message_ts(conv: &ZedConversation) -> Option<DateTime<Utc>> {
     conv.messages
         .iter()
-        .filter_map(|m| m.timestamp.as_ref().and_then(Timestamp::to_utc))
+        .filter_map(|m| zed_timestamp(m.timestamp.as_ref()))
         .min()
 }
 
 fn latest_message_ts(conv: &ZedConversation) -> Option<DateTime<Utc>> {
     conv.messages
         .iter()
-        .filter_map(|m| m.timestamp.as_ref().and_then(Timestamp::to_utc))
+        .filter_map(|m| zed_timestamp(m.timestamp.as_ref()))
         .max()
 }
 
@@ -175,7 +157,7 @@ fn build_message(raw: &ZedMessage, idx: usize) -> Option<Message> {
     let timestamp = raw
         .timestamp
         .as_ref()
-        .and_then(Timestamp::to_utc)
+        .and_then(|value| zed_timestamp(Some(value)))
         .unwrap_or_else(|| epoch_timestamp_for_index(idx));
 
     let id = raw
@@ -204,6 +186,21 @@ fn build_message(raw: &ZedMessage, idx: usize) -> Option<Message> {
 
 fn message_text(value: &Value) -> String {
     string_or_object_field_or_pretty(value, &["text", "content", "message"])
+}
+
+fn zed_timestamp(value: Option<&Value>) -> Option<DateTime<Utc>> {
+    timestamp_value_to_utc(
+        value,
+        &[
+            "timestamp",
+            "time",
+            "createdAt",
+            "created_at",
+            "updatedAt",
+            "updated_at",
+            "value",
+        ],
+    )
 }
 
 fn parse_role(role: Option<&str>) -> Option<Role> {
