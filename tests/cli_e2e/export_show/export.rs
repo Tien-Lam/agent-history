@@ -175,6 +175,37 @@ fn export_source_qualified_remote_session_with_source_qualified_notes() {
 }
 
 #[test]
+fn export_include_notes_reports_corrupt_metadata_db() {
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
+        .add_session("session-export-corrupt-notes")
+        .project("export-project")
+        .user("body")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+    std::fs::write(&db, "not a sqlite database").unwrap();
+
+    let assert = aghist()
+        .args([
+            "export",
+            "--format",
+            "json",
+            "--session",
+            "session-export-corrupt-notes",
+            "--include-notes",
+        ])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_METADATA_DB", &db)
+        .assert()
+        .code(1);
+
+    let parsed = cli::assert_stderr_error(&assert);
+    assert_eq!(parsed["error"]["kind"], "metadata-error");
+}
+
+#[test]
 fn export_ambiguous_duplicate_session_id_requires_source_qualified_ref() {
     let local = common::fixtures::claude::ClaudeFixtureBuilder::new()
         .add_session("session-export-ambiguous")

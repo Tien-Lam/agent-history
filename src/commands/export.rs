@@ -1,12 +1,13 @@
 use std::io::Write as _;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
-use aghist::metadata::{self, Note};
+use aghist::metadata::{self as metadata_store, Note};
 use aghist::services::lookup as lookup_service;
 use aghist::session_resolver::SelectorShape;
 use aghist::{export, provider, query_scope};
 
 use super::discovery::federated_discovery_for_commands;
+use super::metadata::metadata_error;
 
 /// Parse a 1-based inclusive turn range against a session of `total` messages.
 ///
@@ -62,22 +63,26 @@ fn parse_turn_range(spec: &str, total: usize) -> Result<(usize, usize), String> 
     Ok((start, end))
 }
 
-/// Best-effort: pull the session's notes from the metadata sidecar, restricted
-/// to the exported turn range. Returns `None` if the sidecar can't be opened
-/// (the common case: the user hasn't created one yet). Notes that fall outside
-/// the slice are dropped; turn-level notes have their `session_ref` rebased so
-/// turn N in the full session becomes turn `N - turn_offset` in the slice.
+/// Pull the session's notes from the metadata sidecar, restricted to the
+/// exported turn range. Missing sidecar is a no-op; an existing but unreadable
+/// or corrupt sidecar is an error because `--include-notes` was explicit.
+/// Notes that fall outside the slice are dropped; turn-level notes have their
+/// `session_ref` rebased so turn N in the full session becomes turn
+/// `N - turn_offset` in the slice.
 fn load_session_notes(
     session_ref: &str,
     turn_offset: usize,
     slice_len: usize,
-) -> Option<Vec<Note>> {
-    let path = metadata::default_path()?;
+) -> Result<Vec<Note>, ErrorEnvelope> {
+    let Some(path) = metadata_store::default_path() else {
+        return Ok(Vec::new());
+    };
     if !path.exists() {
-        return None;
+        return Ok(Vec::new());
     }
-    let conn = metadata::open(&path).ok()?;
-    let all = metadata::note_list(&conn, Some(session_ref)).ok()?;
+    let conn = metadata_store::open(&path).map_err(|e| metadata_error(&e))?;
+    let all =
+        metadata_store::note_list(&conn, Some(session_ref)).map_err(|e| metadata_error(&e))?;
     let offset = u32::try_from(turn_offset).unwrap_or(u32::MAX);
     let max_turn_inclusive = offset.saturating_add(u32::try_from(slice_len).unwrap_or(u32::MAX));
     let turn_prefix = format!("{session_ref}#");
@@ -100,7 +105,7 @@ fn load_session_notes(
         n.session_ref = format!("{turn_prefix}{rebased}");
         out.push(n);
     }
-    Some(out)
+    Ok(out)
 }
 
 pub(crate) fn export_session(
@@ -137,7 +142,7 @@ pub(crate) fn export_session(
     };
 
     let notes: Vec<Note> = if include_notes {
-        load_session_notes(&target.session_ref, turn_offset, sliced.len()).unwrap_or_default()
+        load_session_notes(&target.session_ref, turn_offset, sliced.len())?
     } else {
         Vec::new()
     };
