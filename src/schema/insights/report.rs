@@ -4,7 +4,8 @@ use super::super::common::{
     closed_object_schema, exit_codes, schema_props_with_filters, SCHEMA_DRAFT,
 };
 use super::{
-    decisions_array_schema, limits_schema, todos_array_schema, token_usage_summary_schema,
+    decisions_array_schema, limits_schema, threads_array_schema, todos_array_schema,
+    token_usage_summary_schema,
 };
 
 fn top_projects_array_schema() -> Value {
@@ -64,10 +65,7 @@ fn report_response_schema() -> Value {
             "top_projects": top_projects_array_schema(),
             "decisions": decisions_array_schema(),
             "todos": todos_array_schema(),
-            "threads": {
-                "type": "array",
-                "description": "Cross-session work threads in the window (`aghist threads` output, scoped to the window)."
-            },
+            "threads": threads_array_schema("report window"),
             "meta": report_meta_schema()
         },
         "required": ["window", "session_count", "message_count", "project_count", "token_usage", "top_projects", "decisions", "todos", "threads", "meta"]

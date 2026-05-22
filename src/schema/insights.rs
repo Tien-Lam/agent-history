@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::common::{
     array_schema, object_schema, provider_slug_enum, schema_props,
-    source_qualified_citation_ref_pattern,
+    source_qualified_citation_ref_pattern, source_qualified_session_only_ref_pattern,
 };
 
 mod project;
@@ -150,6 +150,47 @@ fn todos_array_schema() -> Value {
         "type": "array",
         "description": "Open TODOs / follow-ups / bd refs, newest first.",
         "items": todo_candidate_item_schema()
+    })
+}
+
+fn threads_array_schema(scope: &str) -> Value {
+    json!({
+        "type": "array",
+        "description": format!("Cross-session work threads in the {scope}."),
+        "items": object_schema(
+            schema_props([
+                ("id", json!({
+                    "type": "string",
+                    "description": "Stable short id derived from (project, first_session_ref). Format: `th-<hex16>`."
+                })),
+                ("project", json!({ "type": ["string", "null"] })),
+                ("providers", array_schema(json!({ "type": "string", "enum": provider_slug_enum() }))),
+                ("session_count", json!({ "type": "integer", "minimum": 1 })),
+                ("message_count", json!({ "type": "integer", "minimum": 0 })),
+                ("started_at", json!({ "type": "string", "format": "date-time" })),
+                ("ended_at", json!({ "type": "string", "format": "date-time" })),
+                ("branches", array_schema(json!({ "type": "string" }))),
+                ("session_refs", json!({
+                    "type": "array",
+                    "items": { "type": "string", "pattern": source_qualified_session_only_ref_pattern() },
+                    "description": "`<provider-slug>/<session-id>` for local sessions, or `<source>:<provider-slug>/<session-id>` for remote source sessions, in cluster order."
+                })),
+                ("summary_seed", json!({
+                    "type": ["string", "null"],
+                    "description": "First non-empty session summary in the thread."
+                })),
+            ]),
+            &[
+                "id",
+                "providers",
+                "session_count",
+                "message_count",
+                "started_at",
+                "ended_at",
+                "branches",
+                "session_refs",
+            ],
+        )
     })
 }
 

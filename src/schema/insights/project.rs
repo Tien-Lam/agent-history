@@ -4,8 +4,8 @@ use super::super::common::{
     closed_object_schema, exit_codes, schema_props_with_filters, SCHEMA_DRAFT,
 };
 use super::{
-    decisions_array_schema, limits_schema, time_of_day_schema, todos_array_schema,
-    token_usage_summary_schema, top_files_array_schema,
+    decisions_array_schema, limits_schema, threads_array_schema, time_of_day_schema,
+    todos_array_schema, token_usage_summary_schema, top_files_array_schema,
 };
 
 fn project_meta_schema() -> Value {
@@ -45,10 +45,7 @@ fn project_response_schema() -> Value {
             "token_usage": token_usage_summary_schema("project"),
             "decisions": decisions_array_schema(),
             "todos": todos_array_schema(),
-            "threads": {
-                "type": "array",
-                "description": "Cross-session work threads (`aghist threads` output, scoped to this project)."
-            },
+            "threads": threads_array_schema("project"),
             "top_files": top_files_array_schema(),
             "time_of_day": time_of_day_schema(),
             "meta": project_meta_schema()

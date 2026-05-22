@@ -235,6 +235,14 @@ fn session_ref_outputs_reject_turn_suffixes() {
             "track",
             "response.properties.timeline.items.properties.session_ref.pattern",
         ),
+        (
+            "project",
+            "response.properties.threads.items.properties.session_refs.items.pattern",
+        ),
+        (
+            "report",
+            "response.properties.threads.items.properties.session_refs.items.pattern",
+        ),
     ] {
         let schema = schema_for(schema_name).unwrap();
         let pattern = schema_path(&schema, path).as_str().unwrap();
