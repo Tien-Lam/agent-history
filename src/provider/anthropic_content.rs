@@ -3,8 +3,8 @@ use serde_json::Value;
 
 use crate::model::ContentBlock;
 use crate::provider::json_text::{
-    string_or_object_field, string_or_object_field_or_pretty, string_or_pretty,
-    string_or_typed_text_array_or_pretty,
+    string_or_object_field_or_pretty, string_or_pretty, string_or_typed_text_array_or_pretty,
+    stringish,
 };
 use crate::provider::parse_common::{tool_result_block, tool_use_block};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
@@ -47,15 +47,14 @@ fn block_to_content(block: Value) -> Vec<ContentBlock> {
             text_blocks_from_string(&text)
         }
         "tool_use" => vec![tool_use_block(
-            stringish_field(map.get("id"), &["id"]).unwrap_or_default(),
-            stringish_field(map.get("name"), &["name", "tool", "toolName"])
+            stringish(map.get("id"), &["id"]).unwrap_or_default(),
+            stringish(map.get("name"), &["name", "tool", "toolName"])
                 .filter(|name| !name.is_empty())
                 .unwrap_or_else(|| "unknown".to_string()),
             map.get("input").map(string_or_pretty).unwrap_or_default(),
         )],
         "tool_result" => vec![tool_result_block(
-            stringish_field(map.get("tool_use_id"), &["tool_use_id", "toolUseId"])
-                .unwrap_or_default(),
+            stringish(map.get("tool_use_id"), &["tool_use_id", "toolUseId"]).unwrap_or_default(),
             true,
             map.get("content")
                 .map(|value| string_or_typed_text_array_or_pretty(value, "text", "text"))
@@ -70,19 +69,6 @@ fn text_blocks_from_string(text: &str) -> Vec<ContentBlock> {
         vec![]
     } else {
         parse_text_with_code_blocks(text)
-    }
-}
-
-fn stringish_field(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(s) => Some(s.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(_) => {
-            let text = string_or_object_field(value, object_fields);
-            (!text.is_empty()).then_some(text)
-        }
-        _ => None,
     }
 }
 

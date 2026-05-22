@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::model::{Provider, Session, SessionId};
-use crate::provider::json_text::string_or_object_field;
+use crate::provider::json_text::stringish;
 use crate::provider::parse_common::parse_utc;
 use crate::provider::project_name_from_path;
 
@@ -84,17 +84,4 @@ fn count_message_events(path: &Path) -> usize {
                 || event_type == "tool.result"
         })
         .count()
-}
-
-fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(s) => Some(s.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(_) => {
-            let text = string_or_object_field(value, object_fields);
-            (!text.is_empty()).then_some(text)
-        }
-        _ => None,
-    }
 }

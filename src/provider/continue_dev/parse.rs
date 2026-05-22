@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
-use crate::provider::json_text::string_or_object_field;
+use crate::provider::json_text::stringish;
 use crate::provider::parse_common::{
     file_modified_utc, parse_utc_opt, timestamp_with_index_millis, visit_jsonl_records,
 };
@@ -138,17 +138,4 @@ pub(crate) fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Me
     );
 
     Ok(messages)
-}
-
-fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(_) => {
-            let text = string_or_object_field(value, object_fields);
-            (!text.is_empty()).then_some(text)
-        }
-        _ => None,
-    }
 }

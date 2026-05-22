@@ -7,7 +7,9 @@ use serde_json::Value;
 
 use super::super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Role};
-use crate::provider::json_text::{string_or_object_field, string_or_object_field_or_pretty};
+use crate::provider::json_text::{
+    string_or_object_field_or_pretty, stringish, value_bool, value_u64,
+};
 use crate::provider::parse_common::{
     parse_utc_or_now, pretty_json_opt, token_usage_from_options, tool_result_block, tool_use_block,
 };
@@ -167,7 +169,7 @@ fn push_tool_result(messages: &mut Vec<Message>, event: &RawEvent) {
         event,
         vec![tool_result_block(
             stringish(data.tool_call_id.as_ref(), &["toolCallId", "id"]).unwrap_or_default(),
-            value_bool(data.success.as_ref()).unwrap_or(true),
+            value_bool(data.success.as_ref(), &["success", "ok", "value"]).unwrap_or(true),
             output,
         )],
     ));
@@ -191,46 +193,6 @@ fn event_content(event: &RawEvent) -> Vec<ContentBlock> {
 
 fn event_text(value: &Value) -> String {
     string_or_object_field_or_pretty(value, &["content", "text", "message"])
-}
-
-fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(s) => Some(s.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(map) => object_fields
-            .iter()
-            .find_map(|field| stringish(map.get(*field), object_fields))
-            .or_else(|| {
-                let text = string_or_object_field(value, object_fields);
-                (!text.is_empty()).then_some(text)
-            }),
-        _ => None,
-    }
-}
-
-fn value_u64(value: Option<&Value>) -> Option<u64> {
-    match value? {
-        Value::Number(number) => number
-            .as_u64()
-            .or_else(|| number.as_i64().and_then(|n| u64::try_from(n).ok())),
-        Value::String(text) => text.parse::<u64>().ok(),
-        Value::Object(map) => ["value", "tokens", "count"]
-            .iter()
-            .find_map(|field| value_u64(map.get(*field))),
-        _ => None,
-    }
-}
-
-fn value_bool(value: Option<&Value>) -> Option<bool> {
-    match value? {
-        Value::Bool(flag) => Some(*flag),
-        Value::String(text) => text.parse::<bool>().ok(),
-        Value::Object(map) => ["success", "ok", "value"]
-            .iter()
-            .find_map(|field| value_bool(map.get(*field))),
-        _ => None,
-    }
 }
 
 fn push_top_level_tool_use(content: &mut Vec<ContentBlock>, event: &RawEvent) {

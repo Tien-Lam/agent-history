@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
-use crate::provider::json_text::string_or_object_field;
+use crate::provider::json_text::{stringish, value_i64};
 use crate::provider::parse_common::{
     file_modified_utc, millis_to_utc, timestamp_with_index_millis,
 };
@@ -147,33 +147,10 @@ pub(crate) fn parse_api_history(
 
 fn millis_value_to_utc(value: &Value) -> Option<DateTime<Utc>> {
     match value {
-        Value::Number(_) | Value::String(_) => value_i64(value).and_then(millis_to_utc),
+        Value::Number(_) | Value::String(_) => value_i64(Some(value)).and_then(millis_to_utc),
         Value::Object(map) => ["createdAt", "timestamp", "value"]
             .iter()
             .find_map(|field| map.get(*field).and_then(millis_value_to_utc)),
-        _ => None,
-    }
-}
-
-fn value_i64(value: &Value) -> Option<i64> {
-    match value {
-        Value::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok())),
-        Value::String(text) => text.parse::<i64>().ok(),
-        _ => None,
-    }
-}
-
-fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(_) => {
-            let text = string_or_object_field(value, object_fields);
-            (!text.is_empty()).then_some(text)
-        }
         _ => None,
     }
 }

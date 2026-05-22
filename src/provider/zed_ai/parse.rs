@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::ProviderError;
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
-use crate::provider::json_text::{string_or_object_field, string_or_object_field_or_pretty};
+use crate::provider::json_text::{string_or_object_field_or_pretty, stringish};
 use crate::provider::parse_common::{epoch_timestamp_for_index, file_modified_utc, millis_to_utc};
 use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
@@ -74,7 +74,7 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
     let id = raw
         .id
         .as_ref()
-        .and_then(|value| stringish(value, &["id"]))
+        .and_then(|value| stringish(Some(value), &["id"]))
         .or_else(|| {
             path.file_stem()
                 .and_then(|s| s.to_str())
@@ -102,7 +102,7 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
     let workspace = raw
         .workspace
         .as_ref()
-        .and_then(|value| stringish(value, &["path", "workspace"]));
+        .and_then(|value| stringish(Some(value), &["path", "workspace"]));
     let project_path = workspace.clone().map(PathBuf::from);
     let project_name = workspace.as_deref().and_then(project_name_from_path);
 
@@ -119,11 +119,11 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
         summary: raw
             .summary
             .as_ref()
-            .and_then(|value| stringish(value, &["summary", "title", "text"])),
+            .and_then(|value| stringish(Some(value), &["summary", "title", "text"])),
         model: raw
             .model
             .as_ref()
-            .and_then(|value| stringish(value, &["model", "id", "name"])),
+            .and_then(|value| stringish(Some(value), &["model", "id", "name"])),
         token_usage: None,
         message_count,
         source_path: path.to_path_buf(),
@@ -168,7 +168,7 @@ fn build_message(raw: &ZedMessage, idx: usize) -> Option<Message> {
     let role_text = raw
         .role
         .as_ref()
-        .and_then(|value| stringish(value, &["role"]));
+        .and_then(|value| stringish(Some(value), &["role"]));
     let role = parse_role(role_text.as_deref())?;
     let body = raw.text.as_ref().map(message_text).unwrap_or_default();
 
@@ -181,7 +181,7 @@ fn build_message(raw: &ZedMessage, idx: usize) -> Option<Message> {
     let id = raw
         .id
         .as_ref()
-        .and_then(|value| stringish(value, &["id"]))
+        .and_then(|value| stringish(Some(value), &["id"]))
         .unwrap_or_else(|| format!("zed-msg-{idx}"));
     let content = if body.is_empty() {
         Vec::new()
@@ -197,25 +197,13 @@ fn build_message(raw: &ZedMessage, idx: usize) -> Option<Message> {
         model: raw
             .model
             .as_ref()
-            .and_then(|value| stringish(value, &["model", "id", "name"])),
+            .and_then(|value| stringish(Some(value), &["model", "id", "name"])),
         token_usage: None,
     })
 }
 
 fn message_text(value: &Value) -> String {
     string_or_object_field_or_pretty(value, &["text", "content", "message"])
-}
-
-fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
-    match value {
-        Value::String(s) => Some(s.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(_) => {
-            let text = string_or_object_field(value, object_fields);
-            (!text.is_empty()).then_some(text)
-        }
-        _ => None,
-    }
 }
 
 fn parse_role(role: Option<&str>) -> Option<Role> {

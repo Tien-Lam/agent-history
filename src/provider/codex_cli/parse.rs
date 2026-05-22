@@ -6,9 +6,7 @@ use serde_json::Value;
 
 use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
-use crate::provider::json_text::{
-    string_or_object_field, string_or_object_field_or_pretty, string_or_pretty,
-};
+use crate::provider::json_text::{string_or_object_field_or_pretty, string_or_pretty, stringish};
 use crate::provider::parse_common::{
     parse_utc, parse_utc_or_now, pretty_json_opt, tool_result_block, tool_use_block,
     visit_jsonl_records,
@@ -311,22 +309,6 @@ fn legacy_content(entry: &RawEntry, role: Role) -> Vec<ContentBlock> {
 
 fn entry_text(value: &Value) -> String {
     string_or_object_field_or_pretty(value, &["text", "content", "message", "output", "error"])
-}
-
-fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(s) => Some(s.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(map) => object_fields
-            .iter()
-            .find_map(|field| stringish(map.get(*field), object_fields))
-            .or_else(|| {
-                let text = string_or_object_field(value, object_fields);
-                (!text.is_empty()).then_some(text)
-            }),
-        _ => None,
-    }
 }
 
 fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {

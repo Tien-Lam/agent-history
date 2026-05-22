@@ -14,6 +14,60 @@ pub(crate) fn string_or_pretty(value: &Value) -> String {
         .map_or_else(|| pretty_json(value), str::to_owned)
 }
 
+pub(crate) fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
+    let value = value?;
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(map) => object_fields
+            .iter()
+            .find_map(|field| stringish(map.get(*field), object_fields))
+            .or_else(|| {
+                let text = string_or_object_field(value, object_fields);
+                (!text.is_empty()).then_some(text)
+            }),
+        _ => None,
+    }
+}
+
+pub(crate) fn value_i64(value: Option<&Value>) -> Option<i64> {
+    match value? {
+        Value::Number(number) => number
+            .as_i64()
+            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok())),
+        Value::String(text) => text.parse::<i64>().ok(),
+        Value::Object(map) => ["value", "timestamp", "createdAt", "created", "updated"]
+            .iter()
+            .find_map(|field| value_i64(map.get(*field))),
+        _ => None,
+    }
+}
+
+pub(crate) fn value_u64(value: Option<&Value>) -> Option<u64> {
+    match value? {
+        Value::Number(number) => number
+            .as_u64()
+            .or_else(|| number.as_i64().and_then(|n| u64::try_from(n).ok())),
+        Value::String(text) => text.parse::<u64>().ok(),
+        Value::Object(map) => ["value", "tokens", "count"]
+            .iter()
+            .find_map(|field| value_u64(map.get(*field))),
+        _ => None,
+    }
+}
+
+pub(crate) fn value_bool(value: Option<&Value>, object_fields: &[&str]) -> Option<bool> {
+    let value = value?;
+    match value {
+        Value::Bool(flag) => Some(*flag),
+        Value::String(text) => text.parse::<bool>().ok(),
+        Value::Object(map) => object_fields
+            .iter()
+            .find_map(|field| value_bool(map.get(*field), object_fields)),
+        _ => None,
+    }
+}
+
 pub(crate) fn string_or_typed_text_array(
     value: &Value,
     type_name: &str,

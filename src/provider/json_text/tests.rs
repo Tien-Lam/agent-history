@@ -44,6 +44,28 @@ fn string_or_pretty_preserves_freeform_json() {
 }
 
 #[test]
+fn stringish_extracts_nested_object_fields_and_scalars() {
+    assert_eq!(
+        stringish(
+            Some(&json!({"model": {"id": "gpt-object"}})),
+            &["model", "id"]
+        ),
+        Some("gpt-object".to_string())
+    );
+    assert_eq!(stringish(Some(&json!(42)), &["id"]), Some("42".to_string()));
+}
+
+#[test]
+fn value_helpers_accept_strings_and_nested_objects() {
+    assert_eq!(value_i64(Some(&json!({"value": "42"}))), Some(42));
+    assert_eq!(value_u64(Some(&json!({"tokens": "7"}))), Some(7));
+    assert_eq!(
+        value_bool(Some(&json!({"success": "true"})), &["success", "value"]),
+        Some(true)
+    );
+}
+
+#[test]
 fn string_or_typed_text_array_joins_matching_parts() {
     let value = json!([
         { "type": "text", "text": "first" },

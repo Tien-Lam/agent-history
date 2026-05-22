@@ -3,7 +3,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::provider::json_text::string_or_object_field_or_pretty;
+use crate::provider::json_text::{string_or_object_field_or_pretty, stringish};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ComposerData {
@@ -142,15 +142,7 @@ pub(crate) fn value_u8(value: &Value) -> Option<u8> {
 }
 
 pub(crate) fn optional_string(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(map) => object_fields
-            .iter()
-            .find_map(|field| optional_string(map.get(*field), object_fields)),
-        _ => None,
-    }
+    stringish(value, object_fields)
 }
 
 pub(crate) fn optional_text(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {

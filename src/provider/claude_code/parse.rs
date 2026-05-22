@@ -7,7 +7,8 @@ use serde_json::Value;
 use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::{
-    string_or_object_field, string_or_object_field_or_pretty, string_or_typed_text_array_or_pretty,
+    string_or_object_field_or_pretty, string_or_typed_text_array_or_pretty, stringish, value_bool,
+    value_i64, value_u64,
 };
 use crate::provider::parse_common::{
     millis_to_utc, nonzero_token_usage, parse_jsonl_records, parse_utc, pretty_json_opt,
@@ -295,7 +296,9 @@ fn parse_message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
                         let tool_call_id =
                             stringish(item.get("tool_use_id"), &["tool_use_id", "toolUseId", "id"])
                                 .unwrap_or_default();
-                        let is_error = value_bool(item.get("is_error")).unwrap_or(false);
+                        let is_error =
+                            value_bool(item.get("is_error"), &["is_error", "isError", "value"])
+                                .unwrap_or(false);
                         let output = extract_tool_result_text(item);
                         blocks.push(tool_result_block(tool_call_id, !is_error, output));
                     }
@@ -333,60 +336,10 @@ fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
         Value::String(text) => {
             parse_utc(text).or_else(|| text.parse::<i64>().ok().and_then(millis_to_utc))
         }
-        Value::Number(_) => value_i64(value).and_then(millis_to_utc),
+        Value::Number(_) => value_i64(Some(value)).and_then(millis_to_utc),
         Value::Object(map) => ["timestamp", "createdAt", "value"]
             .iter()
             .find_map(|field| timestamp_value_to_utc(map.get(*field))),
-        _ => None,
-    }
-}
-
-fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(map) => object_fields
-            .iter()
-            .find_map(|field| stringish(map.get(*field), object_fields))
-            .or_else(|| {
-                let text = string_or_object_field(value, object_fields);
-                (!text.is_empty()).then_some(text)
-            }),
-        _ => None,
-    }
-}
-
-fn value_i64(value: &Value) -> Option<i64> {
-    match value {
-        Value::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok())),
-        Value::String(text) => text.parse::<i64>().ok(),
-        _ => None,
-    }
-}
-
-fn value_u64(value: Option<&Value>) -> Option<u64> {
-    match value? {
-        Value::Number(number) => number
-            .as_u64()
-            .or_else(|| number.as_i64().and_then(|n| u64::try_from(n).ok())),
-        Value::String(text) => text.parse::<u64>().ok(),
-        Value::Object(map) => ["value", "tokens", "count"]
-            .iter()
-            .find_map(|field| value_u64(map.get(*field))),
-        _ => None,
-    }
-}
-
-fn value_bool(value: Option<&Value>) -> Option<bool> {
-    match value? {
-        Value::Bool(flag) => Some(*flag),
-        Value::String(text) => text.parse::<bool>().ok(),
-        Value::Object(map) => ["is_error", "isError", "value"]
-            .iter()
-            .find_map(|field| value_bool(map.get(*field))),
         _ => None,
     }
 }

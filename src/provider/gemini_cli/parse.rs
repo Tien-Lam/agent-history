@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
-use crate::provider::json_text::{string_or_object_field, string_or_object_field_or_pretty};
+use crate::provider::json_text::{string_or_object_field_or_pretty, stringish, value_u64};
 use crate::provider::parse_common::{
     millis_to_utc, nonzero_token_usage, parse_utc_opt, pretty_json_opt, token_usage_from_options,
     tool_result_block, tool_use_block,
@@ -374,35 +374,6 @@ fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
         Value::Object(map) => ["timestamp", "startTime", "lastUpdated", "value"]
             .iter()
             .find_map(|field| timestamp_value_to_utc(map.get(*field))),
-        _ => None,
-    }
-}
-
-fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
-    let value = value?;
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(map) => object_fields
-            .iter()
-            .find_map(|field| stringish(map.get(*field), object_fields))
-            .or_else(|| {
-                let text = string_or_object_field(value, object_fields);
-                (!text.is_empty()).then_some(text)
-            }),
-        _ => None,
-    }
-}
-
-fn value_u64(value: Option<&Value>) -> Option<u64> {
-    match value? {
-        Value::Number(number) => number
-            .as_u64()
-            .or_else(|| number.as_i64().and_then(|n| u64::try_from(n).ok())),
-        Value::String(text) => text.parse::<u64>().ok(),
-        Value::Object(map) => ["value", "tokens", "count"]
-            .iter()
-            .find_map(|field| value_u64(map.get(*field))),
         _ => None,
     }
 }
