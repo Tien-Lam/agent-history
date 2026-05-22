@@ -2,9 +2,13 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 
 use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
+use crate::provider::json_text::{
+    string_or_object_field, string_or_object_field_or_pretty, string_or_pretty,
+};
 use crate::provider::parse_common::{
     parse_utc, parse_utc_or_now, pretty_json_opt, tool_result_block, tool_use_block,
     visit_jsonl_records,
@@ -34,7 +38,11 @@ pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
                 Some("user" | "assistant") => {
                     message_count += 1;
                     if entry.entry_type.as_deref() == Some("user") && first_user_message.is_none() {
-                        first_user_message = entry.content.map(|c| c.chars().take(80).collect());
+                        first_user_message = entry
+                            .content
+                            .as_ref()
+                            .map(entry_text)
+                            .map(|c| c.chars().take(80).collect());
                     }
                 }
                 Some("event_msg") => {
@@ -50,6 +58,7 @@ pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
                                 first_user_message = payload
                                     .message
                                     .as_ref()
+                                    .map(entry_text)
                                     .map(|m| m.chars().take(80).collect());
                             }
                         }
@@ -105,11 +114,8 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
                 "assistant" => Role::Assistant,
                 "tool_use" => Role::Tool,
                 "error" => {
-                    if let Some(error_msg) = entry.error.as_deref() {
-                        messages.push(error_message(
-                            entry_timestamp(&entry),
-                            error_msg.to_string(),
-                        ));
+                    if let Some(error_msg) = entry.error.as_ref().map(entry_text) {
+                        messages.push(error_message(entry_timestamp(&entry), error_msg));
                     }
                     return;
                 }
@@ -213,13 +219,13 @@ fn push_event_msg(messages: &mut Vec<Message>, entry: &RawEntry) {
     let timestamp = entry_timestamp(entry);
     match payload_type {
         "user_message" => {
-            if let Some(msg_text) = payload.message.as_deref() {
-                push_text_message(messages, Role::User, timestamp, msg_text);
+            if let Some(msg_text) = payload.message.as_ref().map(entry_text) {
+                push_text_message(messages, Role::User, timestamp, &msg_text);
             }
         }
         "agent_message" => {
-            if let Some(msg_text) = payload.message.as_deref() {
-                push_text_message(messages, Role::Assistant, timestamp, msg_text);
+            if let Some(msg_text) = payload.message.as_ref().map(entry_text) {
+                push_text_message(messages, Role::Assistant, timestamp, &msg_text);
             }
         }
         _ => tracing::trace!(payload_type, "skipping event_msg"),
@@ -237,22 +243,35 @@ fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
             Role::Tool,
             timestamp,
             vec![tool_use_block(
-                payload.call_id.clone().unwrap_or_default(),
+                payload
+                    .call_id
+                    .as_ref()
+                    .and_then(|value| stringish(value, &["call_id", "id"]))
+                    .unwrap_or_default(),
                 payload
                     .name
-                    .clone()
+                    .as_ref()
+                    .and_then(|value| stringish(value, &["name", "tool"]))
                     .unwrap_or_else(|| "unknown".to_string()),
-                payload.arguments.clone().unwrap_or_default(),
+                payload
+                    .arguments
+                    .as_ref()
+                    .map(string_or_pretty)
+                    .unwrap_or_default(),
             )],
         )),
         "function_call_output" => {
-            let output = payload.output.clone().unwrap_or_default();
+            let output = payload.output.as_ref().map(entry_text).unwrap_or_default();
             if !output.is_empty() {
                 messages.push(message(
                     Role::Tool,
                     timestamp,
                     vec![tool_result_block(
-                        payload.call_id.clone().unwrap_or_default(),
+                        payload
+                            .call_id
+                            .as_ref()
+                            .and_then(|value| stringish(value, &["call_id", "id"]))
+                            .unwrap_or_default(),
                         true,
                         output,
                     )],
@@ -265,7 +284,12 @@ fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
 
 fn legacy_content(entry: &RawEntry, role: Role) -> Vec<ContentBlock> {
     let mut content = Vec::new();
-    let Some(text) = entry.content.as_ref().filter(|text| !text.is_empty()) else {
+    let Some(text) = entry
+        .content
+        .as_ref()
+        .map(entry_text)
+        .filter(|text| !text.is_empty())
+    else {
         return content;
     };
     if role == Role::Tool {
@@ -275,19 +299,35 @@ fn legacy_content(entry: &RawEntry, role: Role) -> Vec<ContentBlock> {
             pretty_json_opt(entry.tool_calls.as_ref()),
         ));
     } else {
-        content.extend(parse_text_with_code_blocks(text));
+        content.extend(parse_text_with_code_blocks(&text));
     }
     content
+}
+
+fn entry_text(value: &Value) -> String {
+    string_or_object_field_or_pretty(value, &["text", "content", "message", "output", "error"])
+}
+
+fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(_) => {
+            let text = string_or_object_field(value, object_fields);
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
 }
 
 #[derive(Deserialize)]
 struct RawEntry {
     #[serde(rename = "type")]
     entry_type: Option<String>,
-    content: Option<String>,
+    content: Option<Value>,
     timestamp: Option<String>,
     tool_calls: Option<serde_json::Value>,
-    error: Option<String>,
+    error: Option<Value>,
     /// Newer Codex format wraps messages in a payload object
     payload: Option<RawPayload>,
 }
@@ -297,13 +337,13 @@ struct RawPayload {
     #[serde(rename = "type")]
     entry_type: Option<String>,
     /// `event_msg`: user/agent message text
-    message: Option<String>,
+    message: Option<Value>,
     /// `response_item` `function_call`: tool name
-    name: Option<String>,
+    name: Option<Value>,
     /// `response_item` `function_call`: call ID
-    call_id: Option<String>,
+    call_id: Option<Value>,
     /// `response_item` `function_call`: arguments as JSON string
-    arguments: Option<String>,
+    arguments: Option<Value>,
     /// `response_item` `function_call_output`: output text
-    output: Option<String>,
+    output: Option<Value>,
 }
