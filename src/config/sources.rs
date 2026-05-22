@@ -185,3 +185,42 @@ impl SourceCacheManifest {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::{validate_rsync_endpoint, validate_source_name};
+
+    fn valid_source_name_strategy() -> impl Strategy<Value = String> {
+        "[A-Za-z0-9][A-Za-z0-9_-]{0,40}"
+            .prop_filter("source name must not be reserved", |name| name != "local")
+    }
+
+    proptest! {
+        #[test]
+        fn valid_source_names_are_accepted(name in valid_source_name_strategy()) {
+            prop_assert!(validate_source_name(&name).is_ok());
+        }
+
+        #[test]
+        fn source_names_with_forbidden_characters_are_rejected(
+            prefix in "[A-Za-z0-9][A-Za-z0-9_-]{0,12}",
+            suffix in "[A-Za-z0-9_-]{0,12}",
+            bad in prop::sample::select(vec!['/', '.', ':', ' ', '\t', '\n', '\\']),
+        ) {
+            let name = format!("{prefix}{bad}{suffix}");
+            prop_assert!(validate_source_name(&name).is_err());
+        }
+
+        #[test]
+        fn rsync_endpoints_reject_control_characters(
+            prefix in "[A-Za-z0-9_./:@-]{1,20}",
+            suffix in "[A-Za-z0-9_./:@-]{0,20}",
+            control in prop::sample::select(vec!['\0', '\n', '\r', '\t']),
+        ) {
+            let endpoint = format!("{prefix}{control}{suffix}");
+            prop_assert!(validate_rsync_endpoint(&endpoint, "--host").is_err());
+        }
+    }
+}

@@ -1,7 +1,17 @@
 use super::*;
+use proptest::prelude::*;
 
 fn sid(s: &str) -> SessionId {
     SessionId(s.to_string())
+}
+
+fn provider_strategy() -> impl Strategy<Value = Provider> {
+    prop::sample::select(Provider::all().to_vec())
+}
+
+fn source_name_strategy() -> impl Strategy<Value = String> {
+    "[A-Za-z0-9][A-Za-z0-9_-]{0,24}"
+        .prop_filter("source name must not be reserved", |name| name != "local")
 }
 
 #[test]
@@ -73,6 +83,48 @@ fn round_trip_all_providers() {
         let rendered = original.to_string();
         let parsed: CitationRef = rendered.parse().unwrap();
         assert_eq!(parsed, original, "round-trip for {p:?} ({rendered})");
+    }
+}
+
+proptest! {
+    #[test]
+    fn session_refs_roundtrip_for_session_ids_without_turn_delimiters(
+        provider in provider_strategy(),
+        session_id in "[A-Za-z0-9][A-Za-z0-9._:/-]{0,80}",
+    ) {
+        let original = SessionRef::new(provider, sid(&session_id)).unwrap();
+
+        let parsed: SessionRef = original.to_string().parse().unwrap();
+
+        prop_assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn citation_refs_roundtrip_for_positive_turns(
+        provider in provider_strategy(),
+        session_id in "[A-Za-z0-9][A-Za-z0-9._:/#-]{0,80}",
+        turn in 1u32..=u32::MAX,
+    ) {
+        let original = CitationRef::new(provider, sid(&session_id), turn).unwrap();
+
+        let parsed: CitationRef = original.to_string().parse().unwrap();
+
+        prop_assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn qualified_citation_refs_roundtrip_source_prefixes(
+        provider in provider_strategy(),
+        source in prop::option::of(source_name_strategy()),
+        session_id in "[A-Za-z0-9][A-Za-z0-9._:/#-]{0,80}",
+        turn in 1u32..=u32::MAX,
+    ) {
+        let citation = CitationRef::new(provider, sid(&session_id), turn).unwrap();
+        let original = QualifiedCitationRef::new(source, citation);
+
+        let parsed: QualifiedCitationRef = original.to_string().parse().unwrap();
+
+        prop_assert_eq!(parsed, original);
     }
 }
 

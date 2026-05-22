@@ -89,6 +89,16 @@ fn decode<T: for<'de> Deserialize<'de>>(token: &str) -> Result<T, CursorError> {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use proptest::prelude::*;
+
+    fn utc_datetime_strategy() -> impl Strategy<Value = DateTime<Utc>> {
+        (0i64..4_102_444_800, 0u32..1_000_000_000)
+            .prop_map(|(secs, nanos)| Utc.timestamp_opt(secs, nanos).single().unwrap())
+    }
+
+    fn cursor_string_strategy() -> impl Strategy<Value = String> {
+        "[A-Za-z0-9_./:\\-]{0,80}"
+    }
 
     #[test]
     fn search_cursor_roundtrip() {
@@ -147,5 +157,52 @@ mod tests {
             SearchCursor::decode("aGVsbG8"), // valid b64 of "hello", invalid JSON
             Err(CursorError::Payload)
         ));
+    }
+
+    proptest! {
+        #[test]
+        fn list_cursor_roundtrips_generated_values(
+            started_at in utc_datetime_strategy(),
+            session_id in cursor_string_strategy(),
+            session_key in cursor_string_strategy(),
+        ) {
+            prop_assume!(!session_id.is_empty());
+            let cursor = ListCursor {
+                started_at,
+                session_id,
+                session_key,
+            };
+
+            let decoded = ListCursor::decode(&cursor.encode()).unwrap();
+
+            prop_assert_eq!(decoded, cursor);
+        }
+
+        #[test]
+        fn search_cursor_roundtrips_generated_values(
+            score in -1_000_000.0f32..1_000_000.0,
+            started_at in prop::option::of(utc_datetime_strategy()),
+            session_key in cursor_string_strategy(),
+            session_id in cursor_string_strategy(),
+            message_key in cursor_string_strategy(),
+            message_id in cursor_string_strategy(),
+            kind in prop::sample::select(vec!["message".to_string(), "note".to_string()]),
+            note_id in prop::option::of(0i64..1_000_000),
+        ) {
+            let cursor = SearchCursor {
+                score,
+                started_at,
+                session_key,
+                session_id,
+                message_key,
+                message_id,
+                kind,
+                note_id,
+            };
+
+            let decoded = SearchCursor::decode(&cursor.encode()).unwrap();
+
+            prop_assert_eq!(decoded, cursor);
+        }
     }
 }
