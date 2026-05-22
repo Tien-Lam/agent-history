@@ -1,53 +1,29 @@
-use std::io::{self, Read};
 use std::path::Path;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_USAGE};
+
+use crate::commands::input::{read_text_input, TextInput, TextInputMessages};
 
 pub(super) fn resolve_search_query(
     query: Option<&str>,
     query_file: Option<&Path>,
     stdin: bool,
 ) -> Result<String, ErrorEnvelope> {
-    let mut sources = 0;
-    if query.is_some() {
-        sources += 1;
-    }
-    if query_file.is_some() {
-        sources += 1;
-    }
-    if stdin {
-        sources += 1;
-    }
-    if sources == 0 {
-        return Err(ErrorEnvelope::new(
-            "usage",
-            "search requires a query (positional, --query-file, or --stdin)",
-        )
-        .with_hint("Run `aghist search --help` for usage."));
-    }
-
-    if let Some(q) = query {
-        return Ok(q.to_string());
-    }
-
-    let mut buf = String::new();
-    if stdin {
-        io::stdin()
-            .read_to_string(&mut buf)
-            .map_err(|e| ErrorEnvelope::io("failed to read query from stdin", e))?;
-    } else if let Some(path) = query_file {
-        if path == Path::new("-") {
-            io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| ErrorEnvelope::io("failed to read query from stdin", e))?;
-        } else {
-            buf = std::fs::read_to_string(path).map_err(|e| {
-                ErrorEnvelope::io(format!("failed to read query file {}", path.display()), e)
-            })?;
-        }
-    }
-
-    Ok(buf.trim_end().to_string())
+    read_text_input(
+        TextInput {
+            inline: query,
+            file: query_file,
+            stdin,
+        },
+        TextInputMessages {
+            missing: "search requires a query (positional, --query-file, or --stdin)",
+            multiple: "search accepts only one query source",
+            stdin_read: "failed to read query from stdin",
+            file_read_prefix: "failed to read query file",
+            usage_hint: Some("Run `aghist search --help` for usage."),
+        },
+        true,
+    )
 }
 
 pub(super) fn resolve_nonempty_search_query(

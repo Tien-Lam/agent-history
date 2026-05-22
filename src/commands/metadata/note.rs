@@ -5,6 +5,7 @@ use aghist::metadata::{self, Note};
 use aghist::output::{write_json_line, OutputMode};
 
 use super::super::super::cli::NoteCommand;
+use super::super::input::{read_text_input, TextInput, TextInputMessages};
 use super::{metadata_error, open_metadata_db};
 
 pub(crate) fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
@@ -57,36 +58,21 @@ fn read_note_body(
     body_file: Option<&std::path::Path>,
     stdin: bool,
 ) -> Result<String, ErrorEnvelope> {
-    use std::io::Read;
-    if let Some(b) = body {
-        return Ok(b.to_string());
-    }
-    let mut buf = String::new();
-    if stdin {
-        io::stdin()
-            .read_to_string(&mut buf)
-            .map_err(|e| ErrorEnvelope::io("failed to read note body from stdin", e))?;
-        return Ok(buf);
-    }
-    if let Some(path) = body_file {
-        if path == std::path::Path::new("-") {
-            io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| ErrorEnvelope::io("failed to read note body from stdin", e))?;
-        } else {
-            buf = std::fs::read_to_string(path).map_err(|e| {
-                ErrorEnvelope::io(
-                    format!("failed to read note body from {}", path.display()),
-                    e,
-                )
-            })?;
-        }
-        return Ok(buf);
-    }
-    Err(ErrorEnvelope::new(
-        "usage",
-        "note body required: pass --body, --body-file, or --stdin",
-    ))
+    read_text_input(
+        TextInput {
+            inline: body,
+            file: body_file,
+            stdin,
+        },
+        TextInputMessages {
+            missing: "note body required: pass --body, --body-file, or --stdin",
+            multiple: "note body accepts only one input source",
+            stdin_read: "failed to read note body from stdin",
+            file_read_prefix: "failed to read note body from",
+            usage_hint: None,
+        },
+        false,
+    )
 }
 
 fn emit_note_payload(note: &Note, action: &str, mode: OutputMode) -> Result<(), ErrorEnvelope> {

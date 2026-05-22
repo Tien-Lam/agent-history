@@ -8,6 +8,7 @@ pub mod export;
 pub mod filtering;
 pub mod health;
 pub mod index;
+pub mod input;
 pub mod install;
 pub mod list;
 pub mod lookup_dispatch;
