@@ -67,6 +67,22 @@ pub fn assert_discover_load_roundtrip(case: &ProviderCase) {
             .provider
             .load_messages(session)
             .unwrap_or_else(|e| panic!("{} failed to load {}: {e}", case.label, session.id.0));
+        let load = case
+            .provider
+            .load_messages_with_stats(session)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "{} failed to load {} with parse stats: {e}",
+                    case.label, session.id.0
+                )
+            });
+        assert_eq!(
+            serde_json::to_value(&load.messages).unwrap(),
+            serde_json::to_value(&messages).unwrap(),
+            "{} stats-aware loader drifted from load_messages for {}",
+            case.label,
+            session.id.0
+        );
         if let Some(expected) = case.expected_messages_per_session {
             assert_eq!(
                 messages.len(),
@@ -92,6 +108,12 @@ pub fn assert_discover_load_roundtrip(case: &ProviderCase) {
             session.message_count,
             messages.len(),
             "{} session {} message_count does not match loaded messages",
+            case.label,
+            session.id.0
+        );
+        assert!(
+            load.parse_stats.records_seen >= messages.len(),
+            "{} session {} parse stats did not account for loaded messages",
             case.label,
             session.id.0
         );

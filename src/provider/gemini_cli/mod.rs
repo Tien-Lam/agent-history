@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
-use parse::{build_session_from_file, load_messages_from_path, load_project_map};
+use parse::{build_session_from_file, load_messages_from_path_with_stats, load_project_map};
 
 pub struct GeminiCliProvider {
     dirs: Vec<PathBuf>,
@@ -105,6 +105,13 @@ impl HistoryProvider for GeminiCliProvider {
     }
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
-        load_messages_from_path(&session.source_path)
+        Ok(self.load_messages_with_stats(session)?.messages)
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        load_messages_from_path_with_stats(&session.source_path)
     }
 }

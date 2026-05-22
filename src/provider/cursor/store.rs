@@ -3,11 +3,12 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 
 use super::format::{millis_value_to_datetime, ComposerData, HeaderEntry};
-use super::message::build_message;
+use super::message::{build_message_result, BuildMessageResult};
 use super::ProviderError;
 use crate::model::{Message, Provider, Session, SessionId};
 use crate::provider::json_text::{stringish, value_u8};
 use crate::provider::project_name_from_path;
+use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 pub(crate) fn state_db_path(base: &Path) -> PathBuf {
     base.join("User").join("globalStorage").join("state.vscdb")
@@ -117,16 +118,16 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
     })
 }
 
-pub(crate) fn load_messages_from_db(
+pub(crate) fn load_messages_from_db_with_stats(
     db_path: &Path,
     composer_id: &str,
-) -> Result<Vec<Message>, ProviderError> {
+) -> Result<ProviderMessageLoad, ProviderError> {
     if !db_path.exists() {
-        return Ok(Vec::new());
+        return Ok(ProviderMessageLoad::from_messages(Vec::new()));
     }
     let conn = open_readonly(db_path)?;
     if !table_exists(&conn, "cursorDiskKV")? {
-        return Ok(Vec::new());
+        return Ok(ProviderMessageLoad::from_messages(Vec::new()));
     }
 
     // 1. Read composer header to recover bubble order.
@@ -153,6 +154,7 @@ pub(crate) fn load_messages_from_db(
     //    the "tolerate corrupt" stance).
     let mut messages = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut parse_stats = ProviderParseStats::default();
 
     for (idx, h) in headers.iter().enumerate() {
         let Some(bid) = stringish(h.bubble_id.as_ref(), &["bubbleId", "id"]) else {
@@ -160,11 +162,14 @@ pub(crate) fn load_messages_from_db(
         };
         let key = format!("bubbleId:{composer_id}:{bid}");
         if let Some(bytes) = read_value(&conn, &key)? {
+            parse_stats.record_seen();
+            seen.insert(bid.clone());
             let header_type = value_u8(h.bubble_type.as_ref(), &["type", "value"]);
-            if let Some(msg) = build_message(&bid, header_type, &bytes, idx) {
-                seen.insert(bid.clone());
-                messages.push(msg);
-            }
+            push_cursor_message_result(
+                build_message_result(&bid, header_type, &bytes, idx),
+                &mut messages,
+                &mut parse_stats,
+            );
         }
     }
 
@@ -191,14 +196,37 @@ pub(crate) fn load_messages_from_db(
         if seen.contains(bid) {
             continue;
         }
-        if let Some(msg) = build_message(bid, None, &value, messages.len() + orphans.len()) {
-            orphans.push(msg);
-        }
+        parse_stats.record_seen();
+        push_cursor_message_result(
+            build_message_result(bid, None, &value, messages.len() + orphans.len()),
+            &mut orphans,
+            &mut parse_stats,
+        );
     }
     orphans.sort_by_key(|m| m.timestamp);
     messages.extend(orphans);
 
-    Ok(messages)
+    Ok(ProviderMessageLoad {
+        messages,
+        parse_stats,
+    })
+}
+
+fn push_cursor_message_result(
+    result: BuildMessageResult,
+    messages: &mut Vec<Message>,
+    parse_stats: &mut ProviderParseStats,
+) {
+    match result {
+        BuildMessageResult::Message(message) => {
+            if message.content.is_empty() {
+                parse_stats.record_empty_content();
+            }
+            messages.push(message);
+        }
+        BuildMessageResult::ParseError => parse_stats.record_parse_error(),
+        BuildMessageResult::SkippedRecord => parse_stats.record_skipped_record(),
+    }
 }
 
 fn read_value(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>, ProviderError> {

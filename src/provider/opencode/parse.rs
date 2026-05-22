@@ -11,6 +11,7 @@ use crate::provider::parse_common::{
 };
 use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
+use crate::provider::ProviderParseStats;
 
 pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> {
     let data = std::fs::read_to_string(path).ok()?;
@@ -72,14 +73,48 @@ pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Optio
     })
 }
 
-pub(crate) fn parse_message_file(path: &Path, part_dir: &Path) -> Option<Message> {
-    let data = std::fs::read_to_string(path).ok()?;
-    let raw: RawMessage = serde_json::from_str(&data).ok()?;
+pub(crate) fn parse_message_file_with_stats(
+    path: &Path,
+    part_dir: &Path,
+    parse_stats: &mut ProviderParseStats,
+) -> Option<Message> {
+    parse_stats.record_seen();
+    match parse_message_file_outcome(path, part_dir) {
+        MessageFileOutcome::Message(message) => Some(message),
+        MessageFileOutcome::ParseError => {
+            parse_stats.record_parse_error();
+            None
+        }
+        MessageFileOutcome::SkippedRecord => {
+            parse_stats.record_skipped_record();
+            None
+        }
+        MessageFileOutcome::EmptyContent => {
+            parse_stats.record_empty_content();
+            None
+        }
+    }
+}
+
+enum MessageFileOutcome {
+    Message(Message),
+    ParseError,
+    SkippedRecord,
+    EmptyContent,
+}
+
+fn parse_message_file_outcome(path: &Path, part_dir: &Path) -> MessageFileOutcome {
+    let Ok(data) = std::fs::read_to_string(path) else {
+        return MessageFileOutcome::ParseError;
+    };
+    let Ok(raw) = serde_json::from_str::<RawMessage>(&data) else {
+        return MessageFileOutcome::ParseError;
+    };
 
     let role = match stringish(raw.role.as_ref(), &["role", "type"]).as_deref() {
         Some("user") => Role::User,
         Some("assistant") => Role::Assistant,
-        _ => return None,
+        _ => return MessageFileOutcome::SkippedRecord,
     };
 
     // Try new format (time.created as millis) first, then legacy (timestamp as ISO string)
@@ -136,7 +171,7 @@ pub(crate) fn parse_message_file(path: &Path, part_dir: &Path) -> Option<Message
     }
 
     if content.is_empty() {
-        return None;
+        return MessageFileOutcome::EmptyContent;
     }
 
     let token_usage = raw.tokens.as_ref().map(|t| {
@@ -152,7 +187,7 @@ pub(crate) fn parse_message_file(path: &Path, part_dir: &Path) -> Option<Message
         .model
         .and_then(|m| stringish(m.model_id.as_ref(), &["modelID", "model", "id"]));
 
-    Some(Message {
+    MessageFileOutcome::Message(Message {
         id: MessageId(msg_id),
         role,
         timestamp,

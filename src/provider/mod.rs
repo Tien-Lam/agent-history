@@ -75,6 +75,22 @@ impl ProviderParseStats {
         self.skipped_records += other.skipped_records;
         self.empty_content += other.empty_content;
     }
+
+    pub(crate) fn record_seen(&mut self) {
+        self.records_seen += 1;
+    }
+
+    pub(crate) fn record_parse_error(&mut self) {
+        self.parse_errors += 1;
+    }
+
+    pub(crate) fn record_skipped_record(&mut self) {
+        self.skipped_records += 1;
+    }
+
+    pub(crate) fn record_empty_content(&mut self) {
+        self.empty_content += 1;
+    }
 }
 
 #[derive(Debug, Clone)]

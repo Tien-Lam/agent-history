@@ -12,6 +12,7 @@ use crate::provider::parse_common::{
 };
 use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
+use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 #[derive(Debug, Deserialize)]
 struct ZedConversation {
@@ -112,7 +113,9 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
     }))
 }
 
-pub(crate) fn load_messages_from_path(path: &Path) -> Result<Vec<Message>, ProviderError> {
+pub(crate) fn load_messages_from_path_with_stats(
+    path: &Path,
+) -> Result<ProviderMessageLoad, ProviderError> {
     let bytes = std::fs::read(path).map_err(|e| ProviderError::Parse {
         path: path.to_path_buf(),
         reason: e.to_string(),
@@ -123,13 +126,33 @@ pub(crate) fn load_messages_from_path(path: &Path) -> Result<Vec<Message>, Provi
             reason: e.to_string(),
         })?;
 
+    let mut parse_stats = ProviderParseStats::default();
     let messages = raw
         .messages
         .iter()
         .enumerate()
-        .filter_map(|(idx, m)| build_message(m, idx))
+        .filter_map(|(idx, m)| {
+            parse_stats.record_seen();
+            let role_text = m
+                .role
+                .as_ref()
+                .and_then(|value| stringish(Some(value), &["role"]));
+            if parse_role(role_text.as_deref()).is_none() {
+                parse_stats.record_skipped_record();
+                return None;
+            }
+
+            let message = build_message(m, idx)?;
+            if message.content.is_empty() {
+                parse_stats.record_empty_content();
+            }
+            Some(message)
+        })
         .collect();
-    Ok(messages)
+    Ok(ProviderMessageLoad {
+        messages,
+        parse_stats,
+    })
 }
 
 fn earliest_message_ts(conv: &ZedConversation) -> Option<DateTime<Utc>> {

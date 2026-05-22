@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats};
 use crate::model::{Message, Provider, Session};
-use parse::{build_session_from_file, parse_message_file};
+use parse::{build_session_from_file, parse_message_file_with_stats};
 
 pub struct OpenCodeProvider {
     dirs: Vec<PathBuf>,
@@ -122,6 +122,13 @@ impl HistoryProvider for OpenCodeProvider {
     }
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
+        Ok(self.load_messages_with_stats(session)?.messages)
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
         // source_path points to the storage base dir, session id is in session.id
         // Messages are in message/{sessionID}/msg_*.json
         let message_dir = session.source_path.join("message").join(&session.id.0);
@@ -129,12 +136,11 @@ impl HistoryProvider for OpenCodeProvider {
         tracing::debug!(message_dir = %message_dir.display(), "loading OpenCode messages");
         if !message_dir.exists() {
             tracing::warn!(message_dir = %message_dir.display(), "message directory does not exist");
-            return Ok(Vec::new());
+            return Ok(ProviderMessageLoad::from_messages(Vec::new()));
         }
 
         let mut messages = Vec::new();
-        let mut file_count: usize = 0;
-        let mut parse_failures: usize = 0;
+        let mut parse_stats = ProviderParseStats::default();
         let files = std::fs::read_dir(&message_dir)?;
 
         for file_entry in files.flatten() {
@@ -142,24 +148,25 @@ impl HistoryProvider for OpenCodeProvider {
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
-            file_count += 1;
 
-            if let Some(msg) = parse_message_file(&path, &part_dir) {
+            if let Some(msg) = parse_message_file_with_stats(&path, &part_dir, &mut parse_stats) {
                 messages.push(msg);
-            } else {
-                parse_failures += 1;
-                tracing::warn!(path = %path.display(), "failed to parse message file");
             }
         }
 
         messages.sort_by_key(|m| m.timestamp);
         tracing::info!(
             message_dir = %message_dir.display(),
-            files = file_count,
-            parse_failures,
+            files = parse_stats.records_seen,
+            parse_errors = parse_stats.parse_errors,
+            skipped_records = parse_stats.skipped_records,
+            empty_content = parse_stats.empty_content,
             messages = messages.len(),
             "OpenCode message loading complete"
         );
-        Ok(messages)
+        Ok(ProviderMessageLoad {
+            messages,
+            parse_stats,
+        })
     }
 }

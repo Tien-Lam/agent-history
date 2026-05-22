@@ -21,9 +21,9 @@ mod store;
 
 use std::path::PathBuf;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
-use store::{load_messages_from_db, read_sessions, state_db_path};
+use store::{load_messages_from_db_with_stats, read_sessions, state_db_path};
 
 pub struct CursorProvider {
     dirs: Vec<PathBuf>,
@@ -111,7 +111,14 @@ impl HistoryProvider for CursorProvider {
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
         // source_path points to the state.vscdb file itself — set by discover_sessions.
-        load_messages_from_db(&session.source_path, &session.id.0)
+        Ok(self.load_messages_with_stats(session)?.messages)
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        load_messages_from_db_with_stats(&session.source_path, &session.id.0)
     }
 }
 

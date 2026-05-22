@@ -14,6 +14,7 @@ use crate::provider::parse_common::{
     tool_use_block,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
+use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 #[derive(Deserialize)]
 struct ProjectsFile {
@@ -149,37 +150,67 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
     }
 }
 
-pub(crate) fn load_messages_from_path(path: &Path) -> Result<Vec<Message>, ProviderError> {
+pub(crate) fn load_messages_from_path_with_stats(
+    path: &Path,
+) -> Result<ProviderMessageLoad, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Gemini CLI messages");
     let data = std::fs::read_to_string(path)?;
-    let raw: RawSession = serde_json::from_str(&data)?;
-    let messages = convert_messages(&raw.messages);
+    let raw: Value = serde_json::from_str(&data)?;
+    let raw_messages = raw
+        .get("messages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let (messages, parse_stats) = convert_message_values(raw_messages);
     tracing::info!(
         path = %path.display(),
-        raw_messages = raw.messages.len(),
+        raw_messages = parse_stats.records_seen,
         parsed_messages = messages.len(),
+        parse_errors = parse_stats.parse_errors,
+        skipped_records = parse_stats.skipped_records,
+        empty_content = parse_stats.empty_content,
         "Gemini CLI message loading complete"
     );
-    Ok(messages)
+    Ok(ProviderMessageLoad {
+        messages,
+        parse_stats,
+    })
 }
 
-fn convert_messages(raw_messages: &[RawMessage]) -> Vec<Message> {
-    raw_messages.iter().filter_map(convert_message).collect()
-}
+fn convert_message_values(raw_messages: Vec<Value>) -> (Vec<Message>, ProviderParseStats) {
+    let mut messages = Vec::with_capacity(raw_messages.len());
+    let mut parse_stats = ProviderParseStats::default();
 
-fn convert_message(msg: &RawMessage) -> Option<Message> {
-    let role = raw_role(msg.msg_type.as_ref())?;
-    let mut content = message_content(msg, role);
+    for raw in raw_messages {
+        parse_stats.record_seen();
+        let Ok(msg) = serde_json::from_value::<RawMessage>(raw) else {
+            parse_stats.record_parse_error();
+            continue;
+        };
 
-    if content.is_empty() {
-        return None;
+        let Some(role) = raw_role(msg.msg_type.as_ref()) else {
+            parse_stats.record_skipped_record();
+            continue;
+        };
+
+        let content = message_content(&msg, role);
+        if content.is_empty() {
+            parse_stats.record_empty_content();
+            continue;
+        }
+
+        messages.push(message_from_content(&msg, role, content));
     }
 
-    Some(Message {
+    (messages, parse_stats)
+}
+
+fn message_from_content(msg: &RawMessage, role: Role, content: Vec<ContentBlock>) -> Message {
+    Message {
         id: MessageId(stringish(msg.id.as_ref(), &["id"]).unwrap_or_default()),
         role,
         timestamp: message_timestamp(msg.timestamp.as_ref()),
-        content: std::mem::take(&mut content),
+        content,
         model: stringish(msg.model.as_ref(), &["model", "id", "name"]),
         token_usage: msg.tokens.as_ref().map(|tokens| {
             token_usage_from_options(
@@ -189,7 +220,7 @@ fn convert_message(msg: &RawMessage) -> Option<Message> {
                 None,
             )
         }),
-    })
+    }
 }
 
 fn raw_role(msg_type: Option<&Value>) -> Option<Role> {

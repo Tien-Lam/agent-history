@@ -10,6 +10,7 @@ use crate::provider::json_text::stringish;
 use crate::provider::parse_common::{
     file_modified_utc, millis_to_utc, timestamp_value_to_utc, timestamp_with_index_millis,
 };
+use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 pub(crate) const API_HISTORY_FILE: &str = "api_conversation_history.json";
 pub(crate) const UI_MESSAGES_FILE: &str = "ui_messages.json";
@@ -111,23 +112,37 @@ pub(crate) fn parse_api_history(
     path: &Path,
     base_ts: &DateTime<Utc>,
 ) -> Result<Vec<Message>, String> {
+    Ok(parse_api_history_with_stats(path, base_ts)?.messages)
+}
+
+pub(crate) fn parse_api_history_with_stats(
+    path: &Path,
+    base_ts: &DateTime<Utc>,
+) -> Result<ProviderMessageLoad, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read: {e}"))?;
     let raw: Vec<Value> = serde_json::from_slice(&bytes).map_err(|e| format!("parse: {e}"))?;
 
     let mut messages = Vec::with_capacity(raw.len());
+    let mut parse_stats = ProviderParseStats::default();
     for (idx, entry) in raw.into_iter().enumerate() {
+        parse_stats.record_seen();
         let Ok(msg) = serde_json::from_value::<ApiMessage>(entry) else {
+            parse_stats.record_parse_error();
             continue;
         };
 
         let role = match stringish(msg.role.as_ref(), &["role", "type"]).as_deref() {
             Some("user") => Role::User,
             Some("assistant") => Role::Assistant,
-            _ => continue,
+            _ => {
+                parse_stats.record_skipped_record();
+                continue;
+            }
         };
 
         let blocks = content_to_blocks(msg.content);
         if blocks.is_empty() {
+            parse_stats.record_empty_content();
             continue;
         }
 
@@ -144,5 +159,8 @@ pub(crate) fn parse_api_history(
         });
     }
 
-    Ok(messages)
+    Ok(ProviderMessageLoad {
+        messages,
+        parse_stats,
+    })
 }

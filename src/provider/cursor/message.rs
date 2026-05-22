@@ -4,19 +4,30 @@ use crate::provider::json_text::{non_empty_string_or_object_field_or_pretty, str
 use crate::provider::parse_common::{epoch_timestamp_for_index, tool_result_block, tool_use_block};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
-pub(crate) fn build_message(
+pub(crate) enum BuildMessageResult {
+    Message(Message),
+    ParseError,
+    SkippedRecord,
+}
+
+pub(crate) fn build_message_result(
     bubble_id: &str,
     header_type: Option<u8>,
     value: &[u8],
     idx: usize,
-) -> Option<Message> {
-    let raw: BubbleData = serde_json::from_slice(value).ok()?;
+) -> BuildMessageResult {
+    let Ok(raw) = serde_json::from_slice::<BubbleData>(value) else {
+        return BuildMessageResult::ParseError;
+    };
 
-    let bubble_type = value_u8(raw.bubble_type.as_ref(), &["type", "value"]).or(header_type)?;
+    let Some(bubble_type) = value_u8(raw.bubble_type.as_ref(), &["type", "value"]).or(header_type)
+    else {
+        return BuildMessageResult::SkippedRecord;
+    };
     let role = match bubble_type {
         1 => Role::User,
         2 => Role::Assistant,
-        _ => return None,
+        _ => return BuildMessageResult::SkippedRecord,
     };
 
     // Stable fallback when the bubble has no `createdAt`: anchor on the
@@ -69,7 +80,7 @@ pub(crate) fn build_message(
         push_tool_v2(tc, &mut content);
     }
 
-    Some(Message {
+    BuildMessageResult::Message(Message {
         id: MessageId(bubble_id.to_string()),
         role,
         timestamp,

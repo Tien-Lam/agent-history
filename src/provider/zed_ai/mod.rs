@@ -43,9 +43,9 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
-use parse::{load_messages_from_path, read_session};
+use parse::{load_messages_from_path_with_stats, read_session};
 
 const CONVERSATIONS_SUBDIR: &str = "conversations";
 
@@ -154,7 +154,14 @@ impl HistoryProvider for ZedAiProvider {
     }
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
-        load_messages_from_path(&session.source_path)
+        Ok(self.load_messages_with_stats(session)?.messages)
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        load_messages_from_path_with_stats(&session.source_path)
     }
 }
 

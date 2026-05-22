@@ -36,6 +36,10 @@ fn generated_provider_diagnostics_cover_every_registered_provider() {
             diagnostic.blocks.total >= 2,
             "{label}: generated diagnostics should produce message blocks",
         );
+        assert!(
+            diagnostic.parse.records_seen >= diagnostic.message_count,
+            "{label}: generated diagnostics should account for every parsed message record",
+        );
     }
 }
 

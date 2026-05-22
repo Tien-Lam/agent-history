@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats};
 use crate::model::{Message, Provider, Session};
 use parse::{load_messages_from_file, parse_sessions_in_file};
 
@@ -116,7 +116,22 @@ impl HistoryProvider for AiderProvider {
     }
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
-        load_messages_from_file(&session.source_path, session.started_at, &session.id.0)
+        Ok(self.load_messages_with_stats(session)?.messages)
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
+        let messages =
+            load_messages_from_file(&session.source_path, session.started_at, &session.id.0)?;
+        Ok(ProviderMessageLoad {
+            parse_stats: ProviderParseStats {
+                records_seen: messages.len(),
+                ..ProviderParseStats::default()
+            },
+            messages,
+        })
     }
 }
 

@@ -37,9 +37,9 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
-use parse::{parse_api_history, parse_task_dir, API_HISTORY_FILE};
+use parse::{parse_api_history_with_stats, parse_task_dir, API_HISTORY_FILE};
 
 const EXTENSION_ID: &str = "saoudrizwan.claude-dev";
 const TASKS_SUBDIR: &str = "tasks";
@@ -149,8 +149,15 @@ impl HistoryProvider for ClineProvider {
     }
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
+        Ok(self.load_messages_with_stats(session)?.messages)
+    }
+
+    fn load_messages_with_stats(
+        &self,
+        session: &Session,
+    ) -> Result<ProviderMessageLoad, ProviderError> {
         let history_path = session.source_path.join(API_HISTORY_FILE);
-        parse_api_history(&history_path, &session.started_at).map_err(|reason| {
+        parse_api_history_with_stats(&history_path, &session.started_at).map_err(|reason| {
             ProviderError::Parse {
                 path: history_path.clone(),
                 reason,
