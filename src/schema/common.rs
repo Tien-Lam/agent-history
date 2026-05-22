@@ -1,19 +1,13 @@
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use crate::schema_fragments;
 
 pub(super) const SCHEMA_DRAFT: &str = "https://json-schema.org/draft/2020-12/schema";
 
-pub(super) type SchemaProperties = Map<String, Value>;
-
-pub(super) fn schema_props(
-    entries: impl IntoIterator<Item = (&'static str, Value)>,
-) -> SchemaProperties {
-    entries
-        .into_iter()
-        .map(|(name, schema)| (name.to_string(), schema))
-        .collect()
-}
+pub(super) use schema_fragments::{
+    array_schema, closed_empty_object_schema, closed_object_schema, object_schema, schema_props,
+    SchemaProperties,
+};
 
 pub(super) fn schema_props_with_filters(
     entries: impl IntoIterator<Item = (&'static str, Value)>,
@@ -25,40 +19,8 @@ pub(super) fn schema_props_with_filters(
     props
 }
 
-pub(super) fn array_schema(items: Value) -> Value {
-    let mut schema = schema_props([("type", json!("array"))]);
-    schema.insert("items".to_string(), items);
-    Value::Object(schema)
-}
-
 pub(super) fn schema_ref(reference: &'static str) -> Value {
     json!({ "$ref": reference })
-}
-
-pub(super) fn object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
-    object_schema_with(properties, required, false)
-}
-
-pub(super) fn closed_object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
-    object_schema_with(properties, required, true)
-}
-
-pub(super) fn closed_empty_object_schema() -> Value {
-    closed_object_schema(SchemaProperties::new(), &[])
-}
-
-fn object_schema_with(properties: SchemaProperties, required: &[&str], closed: bool) -> Value {
-    let mut schema = schema_props([
-        ("type", json!("object")),
-        ("properties", Value::Object(properties)),
-    ]);
-    if !required.is_empty() {
-        schema.insert("required".to_string(), json!(required));
-    }
-    if closed {
-        schema.insert("additionalProperties".to_string(), json!(false));
-    }
-    Value::Object(schema)
 }
 
 pub(super) fn source_qualified_session_ref_pattern() -> String {

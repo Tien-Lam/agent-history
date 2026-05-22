@@ -2,7 +2,7 @@ use serde_json::{json, Map, Value};
 
 use crate::model::Provider;
 
-pub(super) type SchemaProperties = Map<String, Value>;
+pub(crate) type SchemaProperties = Map<String, Value>;
 
 fn provider_slug_pattern() -> String {
     Provider::all()
@@ -50,7 +50,7 @@ pub(crate) fn provider_slug_enum_nullable() -> Value {
     Value::Array(slugs)
 }
 
-pub(super) fn schema_props(
+pub(crate) fn schema_props(
     entries: impl IntoIterator<Item = (&'static str, Value)>,
 ) -> SchemaProperties {
     entries
@@ -59,11 +59,11 @@ pub(super) fn schema_props(
         .collect()
 }
 
-pub(super) fn object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
+pub(crate) fn object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
     object_schema_with(properties, required, false)
 }
 
-pub(super) fn closed_object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
+pub(crate) fn closed_object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
     object_schema_with(properties, required, true)
 }
 
@@ -81,11 +81,11 @@ fn object_schema_with(properties: SchemaProperties, required: &[&str], closed: b
     Value::Object(schema)
 }
 
-pub(super) fn closed_empty_object_schema() -> Value {
+pub(crate) fn closed_empty_object_schema() -> Value {
     closed_object_schema(SchemaProperties::new(), &[])
 }
 
-pub(super) fn array_schema(items: Value) -> Value {
+pub(crate) fn array_schema(items: Value) -> Value {
     let mut schema = schema_props([("type", json!("array"))]);
     schema.insert("items".to_string(), items);
     Value::Object(schema)

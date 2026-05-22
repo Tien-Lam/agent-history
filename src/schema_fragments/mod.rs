@@ -16,9 +16,10 @@ pub const MCP_INCLUDE_CONTEXT_DEFAULT: usize = 0;
 pub const MCP_INCLUDE_CONTEXT_MAX: usize = 100;
 
 pub(crate) use common::{
-    provider_slug_enum, source_qualified_citation_ref_pattern,
+    array_schema, closed_empty_object_schema, closed_object_schema, object_schema,
+    provider_slug_enum, schema_props, source_qualified_citation_ref_pattern,
     source_qualified_session_only_ref_pattern, source_qualified_session_ref_pattern,
-    todo_target_ref_pattern,
+    todo_target_ref_pattern, SchemaProperties,
 };
 pub(crate) use mcp::mcp_tool_contracts;
 pub(crate) use responses::{
