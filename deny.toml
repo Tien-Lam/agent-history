@@ -9,7 +9,6 @@ targets = [
 [advisories]
 yanked = "deny"
 ignore = [
-    { id = "RUSTSEC-2024-0320", reason = "Transitive via syntect; no direct YAML parsing through yaml-rust." },
     { id = "RUSTSEC-2024-0436", reason = "Transitive via optional fastembed/tokenizers; no patched upstream path yet." },
     { id = "RUSTSEC-2025-0141", reason = "Transitive via syntect; bincode advisory is unmaintained, not a vulnerability." },
 ]
@@ -32,8 +31,18 @@ allow = [
 confidence-threshold = 0.8
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "deny"
+skip = [
+    { crate = "base64@0.13.1", reason = "Transitive through fastembed/tokenizers spm_precompiled; direct deps use base64 0.22." },
+    { crate = "darling@0.20.11", reason = "Transitive through fastembed/tokenizers derive_builder while Tantivy uses darling 0.23." },
+    { crate = "darling_core@0.20.11", reason = "Transitive through fastembed/tokenizers derive_builder while Tantivy uses darling 0.23." },
+    { crate = "darling_macro@0.20.11", reason = "Transitive through fastembed/tokenizers derive_builder while Tantivy uses darling 0.23." },
+    { crate = "getrandom@0.2.17", reason = "Transitive through rustls/ring; newer getrandom versions also arrive through tokenizers and tempfile." },
+    { crate = "getrandom@0.4.2", reason = "Transitive through tempfile/uuid; older getrandom versions remain in rustls and tokenizers trees." },
+    { crate = "windows-sys@0.52.0", reason = "Transitive through self_update/self-replace on Windows release paths." },
+    { crate = "windows-sys@0.59.0", reason = "Transitive through arboard and Tantivy/fs4 until those dependency trees converge." },
+]
 
 [sources]
 unknown-registry = "deny"

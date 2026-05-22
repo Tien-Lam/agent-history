@@ -32,7 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ureq = { version = "3.3", default-features = false, features = ["json", "rustls"] }
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 rusqlite_migration = "2.5.0"
-syntect = { version = "5", default-features = false, features = ["default-fancy"] }
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"] }
 
 [target.'cfg(not(windows))'.dependencies]
 self_update = { version = "0.44", optional = true, default-features = false, features = [
