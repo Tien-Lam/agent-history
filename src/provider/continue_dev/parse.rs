@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
 use crate::provider::parse_common::{
-    file_modified_utc, parse_utc_opt, timestamp_with_index_millis,
+    file_modified_utc, parse_utc_opt, timestamp_with_index_millis, visit_jsonl_records,
 };
 
 pub(crate) const INDEX_FILE: &str = "index.json";
@@ -66,40 +66,57 @@ pub(crate) fn build_session_from_file(
 }
 
 pub(crate) fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Message>, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("read: {e}"))?;
     let mut messages = Vec::new();
+    let mut skipped_roles: usize = 0;
+    let mut empty_content: usize = 0;
 
-    for (idx, line) in content.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let parsed: SessionLine =
-            serde_json::from_str(line).map_err(|e| format!("line {idx}: {e}"))?;
+    let stats = visit_jsonl_records::<SessionLine, _, _>(
+        path,
+        |record| {
+            let idx = record.line_number.saturating_sub(1);
+            let parsed = record.value;
+            let role = match parsed.role.as_str() {
+                "user" => Role::User,
+                "assistant" => Role::Assistant,
+                "system" => Role::System,
+                _ => {
+                    skipped_roles += 1;
+                    return;
+                }
+            };
 
-        let role = match parsed.role.as_str() {
-            "user" => Role::User,
-            "assistant" => Role::Assistant,
-            "system" => Role::System,
-            _ => continue,
-        };
+            let blocks = content_to_blocks(parsed.content);
+            if blocks.is_empty() {
+                empty_content += 1;
+                return;
+            }
 
-        let blocks = content_to_blocks(parsed.content);
-        if blocks.is_empty() {
-            continue;
-        }
+            let timestamp = timestamp_with_index_millis(*base_ts, idx);
 
-        let timestamp = timestamp_with_index_millis(*base_ts, idx);
+            messages.push(Message {
+                id: MessageId(format!("msg-{idx}")),
+                role,
+                timestamp,
+                content: blocks,
+                model: None,
+                token_usage: None,
+            });
+        },
+        |error| {
+            tracing::warn!(line_num = error.line_number, error = %error.error, "failed to parse Continue JSONL line");
+        },
+    )
+    .map_err(|e| e.to_string())?;
 
-        messages.push(Message {
-            id: MessageId(format!("msg-{idx}")),
-            role,
-            timestamp,
-            content: blocks,
-            model: None,
-            token_usage: None,
-        });
-    }
+    tracing::info!(
+        path = %path.display(),
+        lines = stats.line_count,
+        parse_errors = stats.parse_errors,
+        skipped_roles,
+        empty_content,
+        messages = messages.len(),
+        "Continue.dev message loading complete"
+    );
 
     Ok(messages)
 }

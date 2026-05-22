@@ -133,10 +133,17 @@ fn skips_unknown_roles() {
 }
 
 #[test]
-fn load_errors_on_corrupt_jsonl() {
+fn load_skips_corrupt_jsonl_lines() {
     let tmp = TempDir::new().unwrap();
-    write_session(tmp.path(), "uuid1", "not json");
+    write_session(
+        tmp.path(),
+        "uuid1",
+        "not json\n{\"role\":\"user\",\"content\":\"kept\"}",
+    );
     let p = provider_for(&tmp);
     let sessions = p.discover_sessions().unwrap();
-    assert!(p.load_messages(&sessions[0]).is_err());
+    assert_eq!(sessions[0].message_count, 1);
+    let msgs = p.load_messages(&sessions[0]).unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert!(matches!(&msgs[0].content[0], ContentBlock::Text(text) if text == "kept"));
 }
