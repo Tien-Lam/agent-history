@@ -8,7 +8,7 @@ use super::types::SearchError;
 const INDEX_SENTINEL: &str = ".aghist-search-index";
 
 pub(super) fn write_index_sentinel(index_dir: &Path) -> Result<(), SearchError> {
-    fs::write(index_dir.join(INDEX_SENTINEL), b"aghist search index\n")?;
+    fs_atomic::write(&index_dir.join(INDEX_SENTINEL), b"aghist search index\n")?;
     Ok(())
 }
 
@@ -64,6 +64,7 @@ fn is_known_index_file(path: &Path) -> bool {
 
 fn is_managed_index_file_name(name: &str) -> bool {
     name == INDEX_SENTINEL
+        || fs_atomic::is_temp_file_for(name, INDEX_SENTINEL)
         || name == "meta.json"
         || name == "manifest.json"
         || fs_atomic::is_temp_file_for(name, "manifest.json")
@@ -95,6 +96,7 @@ mod tests {
     #[test]
     fn atomic_temp_files_are_managed_index_files() {
         for name in [
+            "..aghist-search-index.123-0.tmp",
             ".manifest.json.123-0.tmp",
             ".embeddings.bin.123-0.tmp",
             ".embeddings-consent.json.123-0.tmp",
@@ -111,6 +113,7 @@ mod tests {
     #[test]
     fn unrelated_temp_files_are_not_managed_index_files() {
         for name in [
+            ".aghist-search-index.123-0.tmp",
             ".notes.json.123-0.tmp",
             "manifest.json.tmp",
             ".manifest.json.tmp",
