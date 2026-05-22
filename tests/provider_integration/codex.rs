@@ -69,3 +69,45 @@ fn codex_tolerates_object_payload_fields() {
         matches!(&messages[2].content[0], ContentBlock::ToolResult(result) if result.tool_call_id == "call-1" && result.output.contains("line one"))
     );
 }
+
+#[test]
+fn codex_tolerates_object_entry_metadata_fields() {
+    let fixture = super::common::fixtures::codex::CodexFixtureBuilder::new()
+        .add_session("metadata-drift")
+        .raw_line(
+            r#"{"type":{"type":"user"},"content":{"text":"object metadata user"},"timestamp":{"timestamp":"2025-01-01T00:00:00Z"}}"#,
+        )
+        .raw_line(
+            r#"{"type":{"type":"event_msg"},"timestamp":{"timestamp":"2025-01-01T00:00:01Z"},"payload":{"type":{"type":"agent_message"},"message":{"content":"object metadata assistant"}}}"#,
+        )
+        .raw_line(
+            r#"{"type":{"type":"response_item"},"timestamp":{"timestamp":"2025-01-01T00:00:02Z"},"payload":{"type":{"type":"function_call"},"call_id":{"id":"call-object"},"name":{"name":"Read"},"arguments":{"path":"src/lib.rs"}}}"#,
+        )
+        .raw_line(
+            r#"{"type":{"type":"response_item"},"timestamp":{"timestamp":"2025-01-01T00:00:03Z"},"payload":{"type":{"type":"function_call_output"},"call_id":{"id":"call-object"},"output":{"content":"tool ok"}}}"#,
+        )
+        .done()
+        .build();
+    let provider = CodexCliProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].message_count, 2);
+    assert_eq!(sessions[0].summary.as_deref(), Some("object metadata user"));
+
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+    assert_eq!(messages.len(), 4);
+    assert!(matches!(
+        &messages[0].content[0],
+        ContentBlock::Text(text) if text == "object metadata user"
+    ));
+    assert!(matches!(
+        &messages[1].content[0],
+        ContentBlock::Text(text) if text == "object metadata assistant"
+    ));
+    assert!(
+        matches!(&messages[2].content[0], ContentBlock::ToolUse(tool) if tool.id == "call-object" && tool.name == "Read")
+    );
+    assert!(
+        matches!(&messages[3].content[0], ContentBlock::ToolResult(result) if result.tool_call_id == "call-object" && result.output == "tool ok")
+    );
+}

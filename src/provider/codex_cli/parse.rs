@@ -25,19 +25,18 @@ pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
         path,
         |record| {
             let entry = record.value;
-            if let Some(ts) = &entry.timestamp {
-                if let Some(dt) = parse_utc(ts) {
-                    if first_timestamp.is_none() {
-                        first_timestamp = Some(dt);
-                    }
-                    last_timestamp = Some(dt);
+            if let Some(dt) = timestamp_value_to_utc(entry.timestamp.as_ref()) {
+                if first_timestamp.is_none() {
+                    first_timestamp = Some(dt);
                 }
+                last_timestamp = Some(dt);
             }
 
-            match entry.entry_type.as_deref() {
+            let entry_type = stringish(entry.entry_type.as_ref(), &["type"]);
+            match entry_type.as_deref() {
                 Some("user" | "assistant") => {
                     message_count += 1;
-                    if entry.entry_type.as_deref() == Some("user") && first_user_message.is_none() {
+                    if entry_type.as_deref() == Some("user") && first_user_message.is_none() {
                         first_user_message = entry
                             .content
                             .as_ref()
@@ -48,11 +47,10 @@ pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
                 Some("event_msg") => {
                     // Newer Codex format
                     if let Some(ref payload) = entry.payload {
-                        if let Some("user_message" | "agent_message") =
-                            payload.entry_type.as_deref()
-                        {
+                        let payload_type = stringish(payload.entry_type.as_ref(), &["type"]);
+                        if let Some("user_message" | "agent_message") = payload_type.as_deref() {
                             message_count += 1;
-                            if payload.entry_type.as_deref() == Some("user_message")
+                            if payload_type.as_deref() == Some("user_message")
                                 && first_user_message.is_none()
                             {
                                 first_user_message = payload
@@ -108,8 +106,8 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
         |record| {
             let line_number = record.line_number;
             let entry = record.value;
-            let entry_type = entry.entry_type.as_deref().unwrap_or("");
-            let role = match entry_type {
+            let entry_type = stringish(entry.entry_type.as_ref(), &["type"]).unwrap_or_default();
+            let role = match entry_type.as_str() {
                 "user" => Role::User,
                 "assistant" => Role::Assistant,
                 "tool_use" => Role::Tool,
@@ -129,7 +127,10 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
                 }
                 _ => {
                     skipped_types += 1;
-                    tracing::trace!(entry_type, "skipping non-message entry");
+                    tracing::trace!(
+                        entry_type = entry_type.as_str(),
+                        "skipping non-message entry"
+                    );
                     return;
                 }
             };
@@ -141,7 +142,7 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
                 empty_content += 1;
                 tracing::trace!(
                     line_num = line_number,
-                    entry_type,
+                    entry_type = entry_type.as_str(),
                     "skipping entry with empty content"
                 );
                 return;
@@ -170,7 +171,8 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
 }
 
 fn entry_timestamp(entry: &RawEntry) -> DateTime<Utc> {
-    parse_utc_or_now(entry.timestamp.as_deref())
+    let timestamp = stringish(entry.timestamp.as_ref(), &["timestamp", "time"]);
+    parse_utc_or_now(timestamp.as_deref())
 }
 
 fn message(role: Role, timestamp: DateTime<Utc>, content: Vec<ContentBlock>) -> Message {
@@ -215,9 +217,9 @@ fn push_event_msg(messages: &mut Vec<Message>, entry: &RawEntry) {
     let Some(payload) = entry.payload.as_ref() else {
         return;
     };
-    let payload_type = payload.entry_type.as_deref().unwrap_or("");
+    let payload_type = stringish(payload.entry_type.as_ref(), &["type"]).unwrap_or_default();
     let timestamp = entry_timestamp(entry);
-    match payload_type {
+    match payload_type.as_str() {
         "user_message" => {
             if let Some(msg_text) = payload.message.as_ref().map(entry_text) {
                 push_text_message(messages, Role::User, timestamp, &msg_text);
@@ -228,7 +230,7 @@ fn push_event_msg(messages: &mut Vec<Message>, entry: &RawEntry) {
                 push_text_message(messages, Role::Assistant, timestamp, &msg_text);
             }
         }
-        _ => tracing::trace!(payload_type, "skipping event_msg"),
+        _ => tracing::trace!(payload_type = payload_type.as_str(), "skipping event_msg"),
     }
 }
 
@@ -236,9 +238,9 @@ fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
     let Some(payload) = entry.payload.as_ref() else {
         return;
     };
-    let payload_type = payload.entry_type.as_deref().unwrap_or("");
+    let payload_type = stringish(payload.entry_type.as_ref(), &["type"]).unwrap_or_default();
     let timestamp = entry_timestamp(entry);
-    match payload_type {
+    match payload_type.as_str() {
         "function_call" => messages.push(message(
             Role::Tool,
             timestamp,
@@ -246,12 +248,12 @@ fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
                 payload
                     .call_id
                     .as_ref()
-                    .and_then(|value| stringish(value, &["call_id", "id"]))
+                    .and_then(|value| stringish(Some(value), &["call_id", "id"]))
                     .unwrap_or_default(),
                 payload
                     .name
                     .as_ref()
-                    .and_then(|value| stringish(value, &["name", "tool"]))
+                    .and_then(|value| stringish(Some(value), &["name", "tool"]))
                     .unwrap_or_else(|| "unknown".to_string()),
                 payload
                     .arguments
@@ -270,7 +272,7 @@ fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
                         payload
                             .call_id
                             .as_ref()
-                            .and_then(|value| stringish(value, &["call_id", "id"]))
+                            .and_then(|value| stringish(Some(value), &["call_id", "id"]))
                             .unwrap_or_default(),
                         true,
                         output,
@@ -278,7 +280,10 @@ fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
                 ));
             }
         }
-        _ => tracing::trace!(payload_type, "skipping response_item"),
+        _ => tracing::trace!(
+            payload_type = payload_type.as_str(),
+            "skipping response_item"
+        ),
     }
 }
 
@@ -308,14 +313,28 @@ fn entry_text(value: &Value) -> String {
     string_or_object_field_or_pretty(value, &["text", "content", "message", "output", "error"])
 }
 
-fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
+fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
+    let value = value?;
     match value {
         Value::String(s) => Some(s.clone()),
         Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(_) => {
-            let text = string_or_object_field(value, object_fields);
-            (!text.is_empty()).then_some(text)
-        }
+        Value::Object(map) => object_fields
+            .iter()
+            .find_map(|field| stringish(map.get(*field), object_fields))
+            .or_else(|| {
+                let text = string_or_object_field(value, object_fields);
+                (!text.is_empty()).then_some(text)
+            }),
+        _ => None,
+    }
+}
+
+fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
+    match value? {
+        Value::String(text) => parse_utc(text),
+        Value::Object(map) => ["timestamp", "time", "value"]
+            .iter()
+            .find_map(|field| timestamp_value_to_utc(map.get(*field))),
         _ => None,
     }
 }
@@ -323,9 +342,9 @@ fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
 #[derive(Deserialize)]
 struct RawEntry {
     #[serde(rename = "type")]
-    entry_type: Option<String>,
+    entry_type: Option<Value>,
     content: Option<Value>,
-    timestamp: Option<String>,
+    timestamp: Option<Value>,
     tool_calls: Option<serde_json::Value>,
     error: Option<Value>,
     /// Newer Codex format wraps messages in a payload object
@@ -335,7 +354,7 @@ struct RawEntry {
 #[derive(Deserialize)]
 struct RawPayload {
     #[serde(rename = "type")]
-    entry_type: Option<String>,
+    entry_type: Option<Value>,
     /// `event_msg`: user/agent message text
     message: Option<Value>,
     /// `response_item` `function_call`: tool name
