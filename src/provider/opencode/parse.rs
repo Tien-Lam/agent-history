@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::{string_or_object_field_or_pretty, stringish, value_u64};
 use crate::provider::parse_common::{
-    millis_to_utc, parse_utc_opt, pretty_json_opt, token_usage_from_options, tool_result_block,
+    pretty_json_opt, timestamp_value_to_utc, token_usage_from_options, tool_result_block,
     tool_use_block,
 };
 use crate::provider::project_name_from_path;
@@ -249,24 +249,11 @@ fn timestamp_from_values(
     millis: Option<&Value>,
     raw: Option<&Value>,
 ) -> Option<chrono::DateTime<chrono::Utc>> {
-    timestamp_value_to_utc(millis).or_else(|| timestamp_value_to_utc(raw))
+    opencode_timestamp(millis).or_else(|| opencode_timestamp(raw))
 }
 
-fn timestamp_value_to_utc(value: Option<&Value>) -> Option<chrono::DateTime<chrono::Utc>> {
-    let value = value?;
-    match value {
-        Value::String(text) => {
-            parse_utc_opt(Some(text)).or_else(|| text.parse::<i64>().ok().and_then(millis_to_utc))
-        }
-        Value::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok()))
-            .and_then(millis_to_utc),
-        Value::Object(map) => ["created", "updated", "timestamp", "value"]
-            .iter()
-            .find_map(|field| timestamp_value_to_utc(map.get(*field))),
-        _ => None,
-    }
+fn opencode_timestamp(value: Option<&Value>) -> Option<chrono::DateTime<chrono::Utc>> {
+    timestamp_value_to_utc(value, &["created", "updated", "timestamp", "value"])
 }
 
 #[derive(Deserialize)]

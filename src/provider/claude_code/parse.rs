@@ -8,10 +8,10 @@ use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::{
     string_or_object_field_or_pretty, string_or_typed_text_array_or_pretty, stringish, value_bool,
-    value_i64, value_u64,
+    value_u64,
 };
 use crate::provider::parse_common::{
-    millis_to_utc, nonzero_token_usage, parse_jsonl_records, parse_utc, pretty_json_opt,
+    nonzero_token_usage, parse_jsonl_records, pretty_json_opt, timestamp_value_to_utc,
     token_usage_from_options, tool_result_block, tool_use_block, visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
@@ -60,7 +60,7 @@ pub(crate) fn build_session_metadata(
         source_path,
         |record| {
             let entry = record.value;
-            if let Some(dt) = timestamp_value_to_utc(entry.timestamp.as_ref()) {
+            if let Some(dt) = claude_timestamp(entry.timestamp.as_ref()) {
                 if first_timestamp.is_none() {
                     first_timestamp = Some(dt);
                 }
@@ -126,7 +126,7 @@ pub(crate) fn build_session_metadata(
                 stringish(e.session_id.as_ref(), &["sessionId", "id"]).as_deref()
                     == Some(session_id)
             })
-            .and_then(|e| timestamp_value_to_utc(e.timestamp.as_ref()))
+            .and_then(|e| claude_timestamp(e.timestamp.as_ref()))
     })?;
 
     let token_usage = nonzero_token_usage(total_input_tokens, total_output_tokens, None, None);
@@ -206,8 +206,7 @@ pub(crate) fn parse_session_messages(path: &Path) -> Result<Vec<Message>, Provid
                 return;
             };
 
-            let timestamp =
-                timestamp_value_to_utc(entry.timestamp.as_ref()).unwrap_or_else(Utc::now);
+            let timestamp = claude_timestamp(entry.timestamp.as_ref()).unwrap_or_else(Utc::now);
 
             let id = stringish(entry.uuid.as_ref(), &["uuid", "id"]).unwrap_or_default();
 
@@ -330,18 +329,8 @@ fn extract_tool_result_text(item: &serde_json::Value) -> String {
         .unwrap_or_default()
 }
 
-fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
-    let value = value?;
-    match value {
-        Value::String(text) => {
-            parse_utc(text).or_else(|| text.parse::<i64>().ok().and_then(millis_to_utc))
-        }
-        Value::Number(_) => value_i64(Some(value)).and_then(millis_to_utc),
-        Value::Object(map) => ["timestamp", "createdAt", "value"]
-            .iter()
-            .find_map(|field| timestamp_value_to_utc(map.get(*field))),
-        _ => None,
-    }
+fn claude_timestamp(value: Option<&Value>) -> Option<DateTime<Utc>> {
+    timestamp_value_to_utc(value, &["timestamp", "createdAt", "value"])
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::{string_or_object_field_or_pretty, stringish, value_u64};
 use crate::provider::parse_common::{
-    millis_to_utc, nonzero_token_usage, parse_utc_opt, pretty_json_opt, token_usage_from_options,
+    nonzero_token_usage, pretty_json_opt, timestamp_value_to_utc, token_usage_from_options,
     tool_result_block, tool_use_block,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
@@ -62,9 +62,9 @@ pub(crate) fn build_session_from_file(
         return None;
     }
 
-    let started_at = timestamp_value_to_utc(raw.start_time.as_ref())
+    let started_at = gemini_timestamp(raw.start_time.as_ref())
         .or_else(|| first_message_timestamp(&raw.messages))?;
-    let ended_at = timestamp_value_to_utc(raw.last_updated.as_ref())
+    let ended_at = gemini_timestamp(raw.last_updated.as_ref())
         .or_else(|| last_message_timestamp(&raw.messages));
 
     let project_path = project_map.get(project_slug).map(PathBuf::from);
@@ -118,7 +118,7 @@ fn first_message_timestamp(messages: &[RawMessage]) -> Option<DateTime<Utc>> {
     messages
         .iter()
         .filter(|m| raw_role(m.msg_type.as_ref()).is_some())
-        .find_map(|m| timestamp_value_to_utc(m.timestamp.as_ref()))
+        .find_map(|m| gemini_timestamp(m.timestamp.as_ref()))
 }
 
 fn last_message_timestamp(messages: &[RawMessage]) -> Option<DateTime<Utc>> {
@@ -126,7 +126,7 @@ fn last_message_timestamp(messages: &[RawMessage]) -> Option<DateTime<Utc>> {
         .iter()
         .rev()
         .filter(|m| raw_role(m.msg_type.as_ref()).is_some())
-        .find_map(|m| timestamp_value_to_utc(m.timestamp.as_ref()))
+        .find_map(|m| gemini_timestamp(m.timestamp.as_ref()))
 }
 
 fn extract_user_text(msg: &RawMessage) -> Option<String> {
@@ -201,7 +201,7 @@ fn raw_role(msg_type: Option<&Value>) -> Option<Role> {
 }
 
 fn message_timestamp(raw: Option<&Value>) -> DateTime<Utc> {
-    timestamp_value_to_utc(raw).unwrap_or_else(Utc::now)
+    gemini_timestamp(raw).unwrap_or_else(Utc::now)
 }
 
 fn message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
@@ -361,21 +361,8 @@ struct RawToolCall {
     error: Option<serde_json::Value>,
 }
 
-fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
-    let value = value?;
-    match value {
-        Value::String(text) => {
-            parse_utc_opt(Some(text)).or_else(|| text.parse::<i64>().ok().and_then(millis_to_utc))
-        }
-        Value::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok()))
-            .and_then(millis_to_utc),
-        Value::Object(map) => ["timestamp", "startTime", "lastUpdated", "value"]
-            .iter()
-            .find_map(|field| timestamp_value_to_utc(map.get(*field))),
-        _ => None,
-    }
+fn gemini_timestamp(value: Option<&Value>) -> Option<DateTime<Utc>> {
+    timestamp_value_to_utc(value, &["timestamp", "startTime", "lastUpdated", "value"])
 }
 
 fn deserialize_vec_skip_invalid<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>

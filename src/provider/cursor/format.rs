@@ -1,9 +1,10 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::provider::json_text::{string_or_object_field_or_pretty, stringish};
+use crate::provider::parse_common::timestamp_value_to_utc;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ComposerData {
@@ -109,22 +110,11 @@ pub(crate) struct ToolCallData {
     pub(crate) status: Option<Value>,
 }
 
-pub(crate) fn millis_to_datetime(millis: i64) -> Option<DateTime<Utc>> {
-    Utc.timestamp_millis_opt(millis).single()
-}
-
 pub(crate) fn millis_value_to_datetime(value: &Value) -> Option<DateTime<Utc>> {
-    match value {
-        Value::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok()))
-            .and_then(millis_to_datetime),
-        Value::String(text) => text.parse::<i64>().ok().and_then(millis_to_datetime),
-        Value::Object(map) => ["createdAt", "lastUpdatedAt", "timestamp", "value"]
-            .iter()
-            .find_map(|field| map.get(*field).and_then(millis_value_to_datetime)),
-        _ => None,
-    }
+    timestamp_value_to_utc(
+        Some(value),
+        &["createdAt", "lastUpdatedAt", "timestamp", "value"],
+    )
 }
 
 pub(crate) fn value_u8(value: &Value) -> Option<u8> {

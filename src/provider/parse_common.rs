@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::model::{ContentBlock, TokenUsage, ToolCall, ToolResult};
-use crate::provider::json_text::pretty_json;
+use crate::provider::json_text::{pretty_json, value_i64};
 use crate::provider::ProviderError;
 
 pub(crate) struct JsonlRecord<T> {
@@ -89,6 +89,22 @@ pub(crate) fn parse_utc_or_now(raw: Option<&str>) -> DateTime<Utc> {
 
 pub(crate) fn millis_to_utc(millis: i64) -> Option<DateTime<Utc>> {
     Utc.timestamp_millis_opt(millis).single()
+}
+
+pub(crate) fn timestamp_value_to_utc(
+    value: Option<&Value>,
+    object_fields: &[&str],
+) -> Option<DateTime<Utc>> {
+    match value? {
+        Value::String(text) => {
+            parse_utc(text).or_else(|| text.parse::<i64>().ok().and_then(millis_to_utc))
+        }
+        Value::Number(_) => value_i64(value).and_then(millis_to_utc),
+        Value::Object(map) => object_fields
+            .iter()
+            .find_map(|field| timestamp_value_to_utc(map.get(*field), object_fields)),
+        _ => None,
+    }
 }
 
 pub(crate) fn file_modified_utc(path: &Path) -> Option<DateTime<Utc>> {

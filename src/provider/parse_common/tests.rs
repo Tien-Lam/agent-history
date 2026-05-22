@@ -49,6 +49,28 @@ fn timestamp_with_index_millis_preserves_order_without_panicking_on_huge_idx() {
 }
 
 #[test]
+fn timestamp_value_to_utc_accepts_rfc3339_millis_and_nested_fields() {
+    let timestamp = timestamp_value_to_utc(
+        Some(&serde_json::json!("2026-01-01T00:00:00Z")),
+        &["timestamp"],
+    )
+    .unwrap();
+    assert_eq!(timestamp, parse_utc("2026-01-01T00:00:00Z").unwrap());
+
+    let timestamp =
+        timestamp_value_to_utc(Some(&serde_json::json!(1767225600123_i64)), &["timestamp"])
+            .unwrap();
+    assert_eq!(timestamp, parse_utc("2026-01-01T00:00:00.123Z").unwrap());
+
+    let timestamp = timestamp_value_to_utc(
+        Some(&serde_json::json!({"createdAt": "1767225600007"})),
+        &["createdAt", "timestamp"],
+    )
+    .unwrap();
+    assert_eq!(timestamp, parse_utc("2026-01-01T00:00:00.007Z").unwrap());
+}
+
+#[test]
 fn token_usage_from_options_defaults_missing_counts() {
     let usage = token_usage_from_options(None, Some(7), Some(3), None);
 

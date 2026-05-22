@@ -8,8 +8,7 @@ use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::{string_or_object_field_or_pretty, string_or_pretty, stringish};
 use crate::provider::parse_common::{
-    parse_utc, parse_utc_or_now, pretty_json_opt, tool_result_block, tool_use_block,
-    visit_jsonl_records,
+    pretty_json_opt, timestamp_value_to_utc, tool_result_block, tool_use_block, visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -23,7 +22,9 @@ pub(crate) fn build_session_from_rollout(path: &Path) -> Option<Session> {
         path,
         |record| {
             let entry = record.value;
-            if let Some(dt) = timestamp_value_to_utc(entry.timestamp.as_ref()) {
+            if let Some(dt) =
+                timestamp_value_to_utc(entry.timestamp.as_ref(), &["timestamp", "time", "value"])
+            {
                 if first_timestamp.is_none() {
                     first_timestamp = Some(dt);
                 }
@@ -169,8 +170,8 @@ pub(crate) fn parse_rollout_messages(path: &Path) -> Result<Vec<Message>, Provid
 }
 
 fn entry_timestamp(entry: &RawEntry) -> DateTime<Utc> {
-    let timestamp = stringish(entry.timestamp.as_ref(), &["timestamp", "time"]);
-    parse_utc_or_now(timestamp.as_deref())
+    timestamp_value_to_utc(entry.timestamp.as_ref(), &["timestamp", "time", "value"])
+        .unwrap_or_else(Utc::now)
 }
 
 fn message(role: Role, timestamp: DateTime<Utc>, content: Vec<ContentBlock>) -> Message {
@@ -309,16 +310,6 @@ fn legacy_content(entry: &RawEntry, role: Role) -> Vec<ContentBlock> {
 
 fn entry_text(value: &Value) -> String {
     string_or_object_field_or_pretty(value, &["text", "content", "message", "output", "error"])
-}
-
-fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
-    match value? {
-        Value::String(text) => parse_utc(text),
-        Value::Object(map) => ["timestamp", "time", "value"]
-            .iter()
-            .find_map(|field| timestamp_value_to_utc(map.get(*field))),
-        _ => None,
-    }
 }
 
 #[derive(Deserialize)]

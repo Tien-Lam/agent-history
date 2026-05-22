@@ -6,9 +6,9 @@ use serde_json::Value;
 
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
-use crate::provider::json_text::{stringish, value_i64};
+use crate::provider::json_text::stringish;
 use crate::provider::parse_common::{
-    file_modified_utc, millis_to_utc, timestamp_with_index_millis,
+    file_modified_utc, millis_to_utc, timestamp_value_to_utc, timestamp_with_index_millis,
 };
 
 pub(crate) const API_HISTORY_FILE: &str = "api_conversation_history.json";
@@ -70,7 +70,9 @@ fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
     let meta_path = path.join(METADATA_FILE);
     if let Ok(bytes) = std::fs::read(&meta_path) {
         if let Ok(meta) = serde_json::from_slice::<TaskMetadata>(&bytes) {
-            if let Some(dt) = meta.created_at.as_ref().and_then(millis_value_to_utc) {
+            if let Some(dt) = meta.created_at.as_ref().and_then(|value| {
+                timestamp_value_to_utc(Some(value), &["createdAt", "timestamp", "value"])
+            }) {
                 return dt;
             }
         }
@@ -143,14 +145,4 @@ pub(crate) fn parse_api_history(
     }
 
     Ok(messages)
-}
-
-fn millis_value_to_utc(value: &Value) -> Option<DateTime<Utc>> {
-    match value {
-        Value::Number(_) | Value::String(_) => value_i64(Some(value)).and_then(millis_to_utc),
-        Value::Object(map) => ["createdAt", "timestamp", "value"]
-            .iter()
-            .find_map(|field| map.get(*field).and_then(millis_value_to_utc)),
-        _ => None,
-    }
 }
