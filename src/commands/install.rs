@@ -16,6 +16,12 @@ enum InstallOperation {
     Uninstall,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RemovalTarget {
+    Directory(PathBuf),
+    File(PathBuf),
+}
+
 impl InstallOperation {
     fn verb(self) -> &'static str {
         match self {
@@ -31,7 +37,7 @@ pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
 
     let index_dir = search::SearchIndex::default_index_dir();
     let config_path = config::Config::resolved_path();
-    let config_dir = config_path.as_deref().and_then(|p| p.parent());
+    let config_target = config_removal_target(config_path.as_deref());
     let marker = release_install_marker_path(&exe);
 
     eprintln!("This will remove:");
@@ -44,10 +50,8 @@ pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
     if index_dir.exists() {
         eprintln!("  search index: {}", index_dir.display());
     }
-    if let Some(dir) = config_dir {
-        if dir.exists() {
-            eprintln!("  config:       {}", dir.display());
-        }
+    if let Some(target) = &config_target {
+        eprintln!("  config:       {}", target.display_path().display());
     }
 
     eprint!("\nContinue? [y/N] ");
@@ -69,16 +73,14 @@ pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
         })?;
         eprintln!("Removed {}", index_dir.display());
     }
-    if let Some(dir) = config_dir {
-        if dir.exists() {
-            std::fs::remove_dir_all(dir).map_err(|e| {
-                ErrorEnvelope::new(
-                    "io-error",
-                    format!("failed to remove {}: {e}", dir.display()),
-                )
-            })?;
-            eprintln!("Removed {}", dir.display());
-        }
+    if let Some(target) = &config_target {
+        target.remove().map_err(|e| {
+            ErrorEnvelope::new(
+                "io-error",
+                format!("failed to remove {}: {e}", target.display_path().display()),
+            )
+        })?;
+        eprintln!("Removed {}", target.display_path().display());
     }
 
     if let Some(marker) = marker {
@@ -187,6 +189,45 @@ fn release_install_marker_path(exe: &Path) -> Option<PathBuf> {
     Some(exe.with_file_name(marker_name))
 }
 
+fn config_removal_target(config_path: Option<&Path>) -> Option<RemovalTarget> {
+    let default_config_path = config::Config::config_path();
+    config_removal_target_for(config_path, default_config_path.as_deref())
+}
+
+fn config_removal_target_for(
+    config_path: Option<&Path>,
+    default_config_path: Option<&Path>,
+) -> Option<RemovalTarget> {
+    let path = config_path?;
+    if Some(path) == default_config_path {
+        let dir = path.parent()?;
+        if dir.exists() {
+            return Some(RemovalTarget::Directory(dir.to_path_buf()));
+        }
+        return None;
+    }
+    if path.exists() {
+        Some(RemovalTarget::File(path.to_path_buf()))
+    } else {
+        None
+    }
+}
+
+impl RemovalTarget {
+    fn display_path(&self) -> &Path {
+        match self {
+            Self::Directory(path) | Self::File(path) => path,
+        }
+    }
+
+    fn remove(&self) -> std::io::Result<()> {
+        match self {
+            Self::Directory(path) => std::fs::remove_dir_all(path),
+            Self::File(path) => std::fs::remove_file(path),
+        }
+    }
+}
+
 fn ensure_self_managed_install(
     exe: &Path,
     operation: InstallOperation,
@@ -276,5 +317,51 @@ mod tests {
             release_install_marker_path(&exe).unwrap(),
             root.path().join("aghist.install")
         );
+    }
+
+    #[test]
+    fn default_config_target_removes_aghist_config_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let config_dir = root.path().join("aghist");
+        let config_path = config_dir.join("config.toml");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(&config_path, "cache_size = 20\n").unwrap();
+
+        let target = config_removal_target_for(Some(&config_path), Some(&config_path))
+            .expect("default config dir should be targeted");
+
+        assert_eq!(target, RemovalTarget::Directory(config_dir));
+    }
+
+    #[test]
+    fn override_config_target_removes_only_config_file() {
+        let root = tempfile::tempdir().unwrap();
+        let shared_dir = root.path().join("shared");
+        let config_path = shared_dir.join("aghist.toml");
+        let keep_path = shared_dir.join("keep.txt");
+        let default_config_path = root.path().join("default").join("config.toml");
+        std::fs::create_dir_all(&shared_dir).unwrap();
+        std::fs::write(&config_path, "cache_size = 20\n").unwrap();
+        std::fs::write(&keep_path, "keep\n").unwrap();
+
+        let target = config_removal_target_for(Some(&config_path), Some(&default_config_path))
+            .expect("existing override config file should be targeted");
+
+        assert_eq!(target, RemovalTarget::File(config_path.clone()));
+        target.remove().unwrap();
+        assert!(!config_path.exists());
+        assert!(shared_dir.exists());
+        assert!(keep_path.exists());
+    }
+
+    #[test]
+    fn missing_override_config_has_no_removal_target() {
+        let root = tempfile::tempdir().unwrap();
+        let config_path = root.path().join("shared").join("aghist.toml");
+        let default_config_path = root.path().join("default").join("config.toml");
+
+        let target = config_removal_target_for(Some(&config_path), Some(&default_config_path));
+
+        assert_eq!(target, None);
     }
 }
