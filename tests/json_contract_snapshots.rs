@@ -83,65 +83,44 @@ fn command_schema(name: &str) -> Value {
     parse_stdout_json(&output)
 }
 
-fn required_fields(schema: &Value) -> Vec<&str> {
-    schema["required"]
-        .as_array()
-        .expect("schema required array")
-        .iter()
-        .map(|item| item.as_str().expect("required field name"))
-        .collect()
+fn command_response_schema(name: &str) -> Value {
+    let schema = command_schema(name);
+    serde_json::json!({
+        "$schema": schema["$schema"].clone(),
+        "$id": format!("aghist:schema/{name}/response-test"),
+        "$ref": "#/response",
+        "response": schema["response"].clone(),
+        "definitions": schema.get("definitions").cloned().unwrap_or_else(|| serde_json::json!({})),
+    })
 }
 
-fn assert_required_fields_present(schema: &Value, doc: &Value, label: &str) {
-    for field in required_fields(schema) {
-        assert!(
-            doc.get(field).is_some(),
-            "{label} is missing schema-required field {field}: {doc:#}"
-        );
-    }
+fn assert_json_schema_matches(schema: &Value, doc: &Value, label: &str) {
+    let validator = jsonschema::validator_for(schema)
+        .unwrap_or_else(|err| panic!("{label} schema failed to compile: {err}\n{schema:#}"));
+    let errors = validator
+        .iter_errors(doc)
+        .map(|err| format!("{}: {err}", err.instance_path()))
+        .collect::<Vec<_>>();
+    assert!(
+        errors.is_empty(),
+        "{label} failed JSON Schema validation:\n{}\ninstance:\n{doc:#}\nschema:\n{schema:#}",
+        errors.join("\n")
+    );
 }
 
 fn assert_index_schema_matches_output(doc: &Value) {
-    let schema = command_schema("index");
-    assert_required_fields_present(&schema["response"], doc, "index response");
-    assert_required_fields_present(
-        &schema["response"]["properties"]["embeddings"],
-        &doc["embeddings"],
-        "index embeddings",
-    );
+    assert_json_schema_matches(&command_response_schema("index"), doc, "index response");
 }
 
 fn assert_search_schema_matches_output(doc: &Value) {
-    let schema = command_schema("search");
-    let response = &schema["response"];
-    assert_required_fields_present(response, doc, "search response");
-    assert_eq!(response["type"], "object");
-    assert_eq!(response["properties"]["hits"]["type"], "array");
-    assert_eq!(response["properties"]["meta"]["type"], "object");
-
-    assert_required_fields_present(&response["properties"]["meta"], &doc["meta"], "search meta");
-
-    let hit_schema = &response["properties"]["hits"]["items"];
+    assert_json_schema_matches(&command_response_schema("search"), doc, "search response");
     let hits = doc["hits"].as_array().expect("search hits array");
     assert!(!hits.is_empty(), "contract fixture should produce a hit");
-    assert_required_fields_present(hit_schema, &hits[0], "search hit");
 }
 
-fn assert_health_schema_matches_output(schema: &Value, doc: &Value) {
-    assert_required_fields_present(schema, doc, "health response");
-
+fn assert_health_fixture_is_exercised(doc: &Value) {
     let checks = doc["checks"].as_array().expect("health checks array");
     assert!(!checks.is_empty(), "contract fixture should produce checks");
-    assert_required_fields_present(
-        &schema["properties"]["checks"]["items"],
-        &checks[0],
-        "health check",
-    );
-    assert_required_fields_present(
-        &schema["properties"]["summary"],
-        &doc["summary"],
-        "health summary",
-    );
 
     let fidelity = doc["provider_fidelity"]
         .as_array()
@@ -149,23 +128,6 @@ fn assert_health_schema_matches_output(schema: &Value, doc: &Value) {
     assert!(
         !fidelity.is_empty(),
         "contract fixture should produce provider fidelity"
-    );
-    let fidelity_schema = &schema["properties"]["provider_fidelity"]["items"];
-    assert_required_fields_present(fidelity_schema, &fidelity[0], "provider fidelity");
-    assert_required_fields_present(
-        &fidelity_schema["properties"]["parse"],
-        &fidelity[0]["parse"],
-        "provider parse stats",
-    );
-    assert_required_fields_present(
-        &fidelity_schema["properties"]["blocks"],
-        &fidelity[0]["blocks"],
-        "provider block counts",
-    );
-    assert_required_fields_present(
-        &fidelity_schema["properties"]["tool_call_fidelity"],
-        &fidelity[0]["tool_call_fidelity"],
-        "provider tool-call fidelity",
     );
 }
 
@@ -259,8 +221,10 @@ fn list_json_session_contract_snapshot() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
+    let doc = parse_stdout_json(&output);
 
-    assert_json_snapshot("list_json_session_contract", &parse_stdout_json(&output));
+    assert_json_schema_matches(&command_response_schema("list"), &doc, "list response");
+    assert_json_snapshot("list_json_session_contract", &doc);
 }
 
 #[test]
@@ -312,8 +276,10 @@ fn show_json_contract_snapshot() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
+    let doc = parse_stdout_json(&output);
 
-    assert_json_snapshot("show_json_contract", &parse_stdout_json(&output));
+    assert_json_schema_matches(&command_response_schema("show"), &doc, "show response");
+    assert_json_snapshot("show_json_contract", &doc);
 }
 
 #[test]
@@ -342,8 +308,10 @@ fn diff_json_contract_snapshot() {
         .env("AGHIST_HOME", home)
         .assert()
         .success();
+    let doc = parse_stdout_json(&output);
 
-    assert_json_snapshot("diff_json_contract", &parse_stdout_json(&output));
+    assert_json_schema_matches(&command_response_schema("diff"), &doc, "diff response");
+    assert_json_snapshot("diff_json_contract", &doc);
 }
 
 #[test]
@@ -365,7 +333,8 @@ fn health_json_contract_snapshot() {
         .assert()
         .success();
     let mut doc = parse_stdout_json(&output);
-    assert_health_schema_matches_output(&command_schema("health")["response"], &doc);
+    assert_json_schema_matches(&command_response_schema("health"), &doc, "health response");
+    assert_health_fixture_is_exercised(&doc);
     normalize_health_doc(&mut doc);
 
     assert_json_snapshot("health_json_contract", &doc);
@@ -423,7 +392,7 @@ fn mcp_reindex_contract_snapshot() {
 
     assert_eq!(responses.len(), 2, "got: {responses:#?}");
     let mut summary = responses[1]["result"]["structuredContent"].clone();
-    assert_required_fields_present(
+    assert_json_schema_matches(
         mcp_tool_output_schema(&responses[0]["result"], "reindex"),
         &summary,
         "mcp reindex structuredContent",
@@ -465,10 +434,12 @@ fn mcp_health_contract_snapshot() {
 
     assert_eq!(responses.len(), 2, "got: {responses:#?}");
     let mut doc = responses[1]["result"]["structuredContent"].clone();
-    assert_health_schema_matches_output(
+    assert_json_schema_matches(
         mcp_tool_output_schema(&responses[0]["result"], "health"),
         &doc,
+        "mcp health structuredContent",
     );
+    assert_health_fixture_is_exercised(&doc);
     normalize_health_doc(&mut doc);
     assert_json_snapshot("mcp_health_contract", &doc);
 }
