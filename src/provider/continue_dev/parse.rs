@@ -2,9 +2,11 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
+use crate::provider::json_text::string_or_object_field;
 use crate::provider::parse_common::{
     file_modified_utc, parse_utc_opt, timestamp_with_index_millis, visit_jsonl_records,
 };
@@ -13,7 +15,7 @@ pub(crate) const INDEX_FILE: &str = "index.json";
 
 #[derive(Deserialize)]
 struct SessionLine {
-    role: String,
+    role: Option<Value>,
     #[serde(default)]
     content: AnthropicContent,
 }
@@ -22,16 +24,22 @@ struct SessionLine {
 #[derive(Deserialize)]
 pub(crate) struct IndexEntry {
     #[serde(rename = "sessionId")]
-    session_id: String,
+    session_id: Option<Value>,
     #[serde(default)]
-    title: Option<String>,
+    title: Option<Value>,
     #[serde(rename = "dateCreated", default)]
-    date_created: Option<String>,
+    date_created: Option<Value>,
 }
 
 pub(crate) fn load_index(sessions_dir: &Path) -> Option<Vec<IndexEntry>> {
     let bytes = std::fs::read(sessions_dir.join(INDEX_FILE)).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    let entries: Vec<Value> = serde_json::from_slice(&bytes).ok()?;
+    Some(
+        entries
+            .into_iter()
+            .filter_map(|entry| serde_json::from_value(entry).ok())
+            .collect(),
+    )
 }
 
 pub(crate) fn build_session_from_file(
@@ -39,14 +47,25 @@ pub(crate) fn build_session_from_file(
     session_id: String,
     index: Option<&[IndexEntry]>,
 ) -> Session {
-    let meta = index.and_then(|idx| idx.iter().find(|e| e.session_id == session_id));
+    let meta = index.and_then(|idx| {
+        idx.iter().find(|e| {
+            stringish(e.session_id.as_ref(), &["sessionId", "id"]).as_deref()
+                == Some(session_id.as_str())
+        })
+    });
 
     let started_at = meta
-        .and_then(|m| parse_utc_opt(m.date_created.as_deref()))
+        .and_then(|m| {
+            stringish(
+                m.date_created.as_ref(),
+                &["dateCreated", "timestamp", "value"],
+            )
+            .and_then(|raw| parse_utc_opt(Some(raw.as_str())))
+        })
         .or_else(|| file_modified_utc(&path))
         .unwrap_or_else(Utc::now);
 
-    let summary = meta.and_then(|m| m.title.clone());
+    let summary = meta.and_then(|m| stringish(m.title.as_ref(), &["title", "text", "content"]));
     let message_count = parse_jsonl(&path, &started_at).map_or(0, |m| m.len());
 
     Session {
@@ -75,10 +94,10 @@ pub(crate) fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Me
         |record| {
             let idx = record.line_number.saturating_sub(1);
             let parsed = record.value;
-            let role = match parsed.role.as_str() {
-                "user" => Role::User,
-                "assistant" => Role::Assistant,
-                "system" => Role::System,
+            let role = match stringish(parsed.role.as_ref(), &["role", "type"]).as_deref() {
+                Some("user") => Role::User,
+                Some("assistant") => Role::Assistant,
+                Some("system") => Role::System,
                 _ => {
                     skipped_roles += 1;
                     return;
@@ -119,4 +138,17 @@ pub(crate) fn parse_jsonl(path: &Path, base_ts: &DateTime<Utc>) -> Result<Vec<Me
     );
 
     Ok(messages)
+}
+
+fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
+    let value = value?;
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(_) => {
+            let text = string_or_object_field(value, object_fields);
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
 }

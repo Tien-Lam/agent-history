@@ -66,6 +66,43 @@ fn uses_index_title_as_summary() {
 }
 
 #[test]
+fn tolerates_object_index_and_role_fields() {
+    let tmp = TempDir::new().unwrap();
+    let sd = sessions_dir(tmp.path());
+    fs::create_dir_all(&sd).unwrap();
+    fs::write(
+        sd.join(INDEX_FILE),
+        r#"[
+            {"sessionId":{"id":"uuid1"},"title":{"text":"Object title"},"dateCreated":{"timestamp":"2026-01-01T00:00:00Z"}},
+            "skip malformed index entry"
+        ]"#,
+    )
+    .unwrap();
+    write_session(
+        tmp.path(),
+        "uuid1",
+        r#"{"role":{"role":"user"},"content":{"text":"object content"}}
+{"role":{"type":"assistant"},"content":"reply"}"#,
+    );
+
+    let p = provider_for(&tmp);
+    let sessions = p.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].summary.as_deref(), Some("Object title"));
+    assert_eq!(sessions[0].started_at.timestamp(), 1_767_225_600);
+    assert_eq!(sessions[0].message_count, 2);
+
+    let msgs = p.load_messages(&sessions[0]).unwrap();
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(msgs[0].role, Role::User);
+    assert!(matches!(
+        &msgs[0].content[0],
+        ContentBlock::Text(text) if text == "object content"
+    ));
+    assert_eq!(msgs[1].role, Role::Assistant);
+}
+
+#[test]
 fn parses_string_content() {
     let tmp = TempDir::new().unwrap();
     write_session(
