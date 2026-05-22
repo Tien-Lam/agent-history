@@ -65,19 +65,12 @@ const PATTERNS: &[(&str, f32, &str)] = &[
     // ─── comparative choice ──────────────────────────────────────────
     ("instead of", 3.0, "instead of"),
     ("rather than", 3.0, "rather than"),
-    ("not ", 0.0, "not"), // placeholder — see SOFT below
     // ─── soft markers (only push borderline cases over the threshold) ──
     ("let's ", 2.0, "let's"),
     ("let us ", 2.0, "let us"),
     ("should ", 1.0, "should"),
     ("because ", 1.0, "because"),
 ];
-
-// The "not " entry above is a placeholder so the table format stays uniform —
-// strip it back out of the live patterns.
-fn live_patterns() -> impl Iterator<Item = &'static (&'static str, f32, &'static str)> {
-    PATTERNS.iter().filter(|(_, w, _)| *w > 0.0)
-}
 
 /// Extract candidates from one message, scoping the citation turn so the
 /// caller can fan out to many messages without the per-message helper
@@ -129,7 +122,7 @@ fn score_sentence(sentence: &str) -> Scored {
     let lower = sentence.to_lowercase();
     let mut score = 0.0;
     let mut markers: Vec<String> = Vec::new();
-    for (needle, weight, label) in live_patterns() {
+    for (needle, weight, label) in PATTERNS {
         if lower.contains(needle) {
             score += weight;
             let label = (*label).to_string();
