@@ -29,6 +29,7 @@ pub fn run_session_with_config_and_sources_cache(
     cmd.arg("mcp")
         .env("AGHIST_HOME", env_home)
         .env("AGHIST_INDEX_DIR", env_home.join("aghist-index"))
+        .env("AGHIST_METADATA_DB", env_home.join("metadata.db"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -37,6 +38,8 @@ pub fn run_session_with_config_and_sources_cache(
     }
     if let Some(path) = sources_cache {
         cmd.env("AGHIST_SOURCES_CACHE_DIR", path);
+    } else {
+        cmd.env("AGHIST_SOURCES_CACHE_DIR", env_home.join("sources-cache"));
     }
     let mut child = cmd.spawn().expect("spawn aghist mcp");
 

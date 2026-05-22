@@ -3,15 +3,16 @@ use std::io;
 use aghist::cli_error::{ErrorEnvelope, EXIT_ERROR, EXIT_OK};
 use aghist::health::{self, HealthCheck, HealthStatus};
 use aghist::output::{write_json_line, OutputMode};
-use aghist::provider;
 use aghist::provider_diagnostic::ProviderDiagnostic;
+use aghist::{provider, query_scope};
 
 pub(crate) fn health_command(
     providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
     mode: OutputMode,
 ) -> Result<i32, ErrorEnvelope> {
     let fidelity = health::run_provider_fidelity(providers);
-    let mut checks = health::run_health_checks(providers);
+    let mut checks = health::run_health_checks(providers, scope);
     if let Some(check) = health::provider_parse_health_check(&fidelity) {
         checks.push(check);
     }

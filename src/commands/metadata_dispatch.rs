@@ -20,7 +20,7 @@ pub(crate) fn dispatch_metadata_command(
         MetadataCommand::Sources { command } => {
             dispatch_sources_command(command, ctx.providers(), one_shot_mode)
         }
-        MetadataCommand::Health => health_command(ctx.providers(), one_shot_mode),
+        MetadataCommand::Health => health_command(ctx.providers(), ctx.scope(), one_shot_mode),
         MetadataCommand::Note { command } => note_dispatch(command, one_shot_mode),
         MetadataCommand::Tag { command } => tag_dispatch(command, one_shot_mode),
         MetadataCommand::Star { reference } => star_command(&reference, one_shot_mode),

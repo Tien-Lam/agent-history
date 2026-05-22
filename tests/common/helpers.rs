@@ -35,7 +35,9 @@ pub fn isolated_aghist(label: &str) -> Command {
 
     let mut cmd = aghist_command();
     cmd.env("AGHIST_HOME", home)
-        .env("AGHIST_CONFIG", root.join("config.toml"));
+        .env("AGHIST_CONFIG", root.join("config.toml"))
+        .env("AGHIST_METADATA_DB", root.join("metadata.db"))
+        .env("AGHIST_SOURCES_CACHE_DIR", root.join("sources-cache"));
     cmd
 }
 

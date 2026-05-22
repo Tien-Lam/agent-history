@@ -213,7 +213,7 @@ impl McpServer {
 
     fn tool_health(&self, _args: &Value) -> Value {
         let fidelity = run_provider_fidelity(&self.providers);
-        let mut checks = run_health_checks(&self.providers);
+        let mut checks = run_health_checks(&self.providers, self.scope());
         if let Some(check) = provider_parse_health_check(&fidelity) {
             checks.push(check);
         }

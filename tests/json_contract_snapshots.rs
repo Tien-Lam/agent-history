@@ -43,6 +43,10 @@ fn normalize_health_doc(doc: &mut Value) {
         for check in checks {
             if check["name"] == "index-dir-writable" {
                 check["message"] = serde_json::json!("index dir writable: [index-dir]");
+            } else if check["name"] == "metadata-db-readable" {
+                check["message"] = serde_json::json!(
+                    "metadata db absent; will be created on first write: [metadata-db]"
+                );
             }
         }
     }
@@ -137,6 +141,8 @@ fn run_mcp_session(env_home: &Path, requests: &[Value]) -> Vec<Value> {
         .env("AGHIST_HOME", env_home)
         .env("AGHIST_CONFIG", env_home.join("config.toml"))
         .env("AGHIST_INDEX_DIR", env_home.join("aghist-index"))
+        .env("AGHIST_METADATA_DB", env_home.join("metadata.db"))
+        .env("AGHIST_SOURCES_CACHE_DIR", env_home.join("sources-cache"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

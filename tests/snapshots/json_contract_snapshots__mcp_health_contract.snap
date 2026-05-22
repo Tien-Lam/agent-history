@@ -1,5 +1,6 @@
 ---
 source: tests/json_contract_snapshots.rs
+assertion_line: 20
 expression: pretty
 ---
 {
@@ -25,6 +26,31 @@ expression: pretty
       "message": "Tantivy meta.json missing — index has not been initialised",
       "name": "index-schema-present",
       "status": "warn"
+    },
+    {
+      "message": "metadata db absent; will be created on first write: [metadata-db]",
+      "name": "metadata-db-readable",
+      "status": "ok"
+    },
+    {
+      "message": "no remote sources registered",
+      "name": "source-registry-valid",
+      "status": "ok"
+    },
+    {
+      "message": "no remote source caches to inspect",
+      "name": "source-cache-manifests",
+      "status": "ok"
+    },
+    {
+      "message": "embedding consent absent; semantic indexing is opt-in",
+      "name": "embedding-consent-readable",
+      "status": "ok"
+    },
+    {
+      "message": "embedding store absent; lexical search remains available",
+      "name": "embedding-store-readable",
+      "status": "ok"
     },
     {
       "message": "sampled provider records parsed without warnings",
@@ -71,7 +97,7 @@ expression: pretty
   ],
   "summary": {
     "fail_count": 0,
-    "ok_count": 3,
+    "ok_count": 8,
     "warn_count": 2
   }
 }

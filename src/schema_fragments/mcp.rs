@@ -54,7 +54,7 @@ pub(crate) fn mcp_tool_contracts() -> Vec<McpToolContract> {
         },
         McpToolContract {
             name: "health",
-            description: "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
+            description: "Run the same checks as `aghist health`: provider detection, index state, source caches, metadata DB, and embedding sidecars.",
             input_schema: mcp_health_input_schema(),
             output_schema: Some(health_response_schema()),
         },

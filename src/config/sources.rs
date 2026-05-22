@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteSource {
@@ -137,10 +138,37 @@ pub struct SourceCacheManifest {
     pub file_count: u64,
 }
 
+#[derive(Debug, Error)]
+pub enum SourceCacheManifestLoadError {
+    #[error("failed to read {path}: {source}")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to parse {path}: {source}")]
+    Parse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
 impl SourceCacheManifest {
+    pub fn try_load(path: &Path) -> Result<Self, SourceCacheManifestLoadError> {
+        let text =
+            std::fs::read_to_string(path).map_err(|source| SourceCacheManifestLoadError::Read {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        serde_json::from_str(&text).map_err(|source| SourceCacheManifestLoadError::Parse {
+            path: path.to_path_buf(),
+            source,
+        })
+    }
+
     pub fn load(path: &Path) -> Option<Self> {
-        let text = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&text).ok()
+        Self::try_load(path).ok()
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {

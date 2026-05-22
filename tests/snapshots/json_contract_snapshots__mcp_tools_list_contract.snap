@@ -1,5 +1,6 @@
 ---
 source: tests/json_contract_snapshots.rs
+assertion_line: 20
 expression: pretty
 ---
 {
@@ -167,7 +168,7 @@ expression: pretty
       }
     },
     {
-      "description": "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
+      "description": "Run the same checks as `aghist health`: provider detection, index state, source caches, metadata DB, and embedding sidecars.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
