@@ -157,3 +157,75 @@ fn diff_schema_includes_source_qualified_session_pattern() {
         "diff session ref pattern should reject turn suffixes"
     );
 }
+
+#[test]
+fn citation_ref_outputs_require_turn_suffixes() {
+    let citation_pattern = common::source_qualified_citation_ref_pattern();
+
+    for (schema_name, path) in [
+        (
+            "decisions",
+            "response.oneOf.0.properties.decisions.items.properties.ref.pattern",
+        ),
+        (
+            "decisions",
+            "response.oneOf.1.properties.decisions.items.properties.ref.pattern",
+        ),
+        (
+            "todos",
+            "response.oneOf.0.properties.todos.items.properties.ref.pattern",
+        ),
+        (
+            "todos",
+            "response.oneOf.1.properties.todos.items.properties.ref.pattern",
+        ),
+        (
+            "project",
+            "response.properties.decisions.items.properties.ref.pattern",
+        ),
+        (
+            "project",
+            "response.properties.todos.items.properties.ref.pattern",
+        ),
+        (
+            "report",
+            "response.properties.decisions.items.properties.ref.pattern",
+        ),
+        (
+            "report",
+            "response.properties.todos.items.properties.ref.pattern",
+        ),
+    ] {
+        let schema = schema_for(schema_name).unwrap();
+        let pattern = schema_path(&schema, path).as_str().unwrap();
+        assert_eq!(
+            pattern, citation_pattern,
+            "{schema_name} {path} should require a citation ref with #turn"
+        );
+    }
+
+    let todos = schema_for("todos").unwrap();
+    let target_session_pattern = schema_path(
+        &todos,
+        "response.oneOf.1.properties.todos.items.properties.target_session.pattern",
+    )
+    .as_str()
+    .unwrap();
+    assert_eq!(
+        target_session_pattern,
+        common::source_qualified_session_ref_pattern(),
+        "target_session may be session-level and should keep the broader pattern"
+    );
+}
+
+fn schema_path<'a>(schema: &'a serde_json::Value, path: &str) -> &'a serde_json::Value {
+    let mut current = schema;
+    for segment in path.split('.') {
+        current = if let Ok(index) = segment.parse::<usize>() {
+            &current[index]
+        } else {
+            &current[segment]
+        };
+    }
+    current
+}

@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     closed_object_schema, exit_codes, provider_slug_enum, schema_props_with_filters,
-    source_qualified_session_ref_pattern, SCHEMA_DRAFT,
+    source_qualified_citation_ref_pattern, source_qualified_session_ref_pattern, SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn todos_schema() -> Value {
@@ -82,7 +82,7 @@ fn todos_response_heuristic() -> Value {
                         "properties": {
                             "ref": {
                                 "type": "string",
-                                "pattern": source_qualified_session_ref_pattern(),
+                                "pattern": source_qualified_citation_ref_pattern(),
                                 "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions. Pass to `aghist show` to inspect."
                             },
                             "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },
@@ -126,7 +126,7 @@ fn todos_response_llm() -> Value {
                     "properties": {
                         "ref": {
                             "type": "string",
-                            "pattern": source_qualified_session_ref_pattern(),
+                            "pattern": source_qualified_citation_ref_pattern(),
                             "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
                         },
                         "source": { "type": "string", "description": "`local` for this host, or a registered remote source name." },

@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::common::{
     array_schema, object_schema, provider_slug_enum, schema_props,
-    source_qualified_session_ref_pattern,
+    source_qualified_citation_ref_pattern,
 };
 
 mod project;
@@ -53,7 +53,7 @@ fn decision_candidate_item_schema() -> Value {
                 "ref",
                 json!({
                     "type": "string",
-                    "pattern": source_qualified_session_ref_pattern(),
+                    "pattern": source_qualified_citation_ref_pattern(),
                     "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
                 }),
             ),
@@ -96,7 +96,7 @@ fn todo_candidate_item_schema() -> Value {
                 "ref",
                 json!({
                     "type": "string",
-                    "pattern": source_qualified_session_ref_pattern(),
+                    "pattern": source_qualified_citation_ref_pattern(),
                     "description": "Citation ref `<provider>/<session-id>#<turn>` for local sessions, or `<source>:<provider>/<session-id>#<turn>` for remote source sessions."
                 }),
             ),
