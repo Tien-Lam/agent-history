@@ -175,12 +175,16 @@ fn load_skips_corrupt_jsonl_lines() {
     write_session(
         tmp.path(),
         "uuid1",
-        "not json\n{\"role\":\"user\",\"content\":\"kept\"}",
+        "not json\n{\"role\":\"unknown\",\"content\":\"skip\"}\n{\"role\":\"assistant\",\"content\":\"\"}\n{\"role\":\"user\",\"content\":\"kept\"}",
     );
     let p = provider_for(&tmp);
     let sessions = p.discover_sessions().unwrap();
     assert_eq!(sessions[0].message_count, 1);
-    let msgs = p.load_messages(&sessions[0]).unwrap();
-    assert_eq!(msgs.len(), 1);
-    assert!(matches!(&msgs[0].content[0], ContentBlock::Text(text) if text == "kept"));
+    let load = p.load_messages_with_stats(&sessions[0]).unwrap();
+    assert_eq!(load.messages.len(), 1);
+    assert!(matches!(&load.messages[0].content[0], ContentBlock::Text(text) if text == "kept"));
+    assert_eq!(load.parse_stats.records_seen, 4);
+    assert_eq!(load.parse_stats.parse_errors, 1);
+    assert_eq!(load.parse_stats.skipped_records, 1);
+    assert_eq!(load.parse_stats.empty_content, 1);
 }

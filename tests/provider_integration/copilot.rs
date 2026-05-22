@@ -90,6 +90,31 @@ fn copilot_tolerates_object_content_and_freeform_tool_result() {
 }
 
 #[test]
+fn copilot_load_messages_with_stats_reports_parse_skips_and_empty_content() {
+    let fixture = common::fixtures::copilot::CopilotFixtureBuilder::new()
+        .add_session("copilot-stats")
+        .raw_line("not json")
+        .raw_line(r#"{"id":"evt-skip","type":"session.updated","timestamp":"2025-01-01T00:00:00Z"}"#)
+        .raw_line(r#"{"id":"evt-empty","type":"user.message","timestamp":"2025-01-01T00:00:01Z","content":""}"#)
+        .raw_line(r#"{"id":"evt-user","type":"user.message","timestamp":"2025-01-01T00:00:02Z","content":"kept"}"#)
+        .done()
+        .build();
+    let provider = CopilotCliProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let load = provider.load_messages_with_stats(&sessions[0]).unwrap();
+
+    assert_eq!(load.messages.len(), 1);
+    assert!(matches!(
+        &load.messages[0].content[0],
+        ContentBlock::Text(text) if text == "kept"
+    ));
+    assert_eq!(load.parse_stats.records_seen, 4);
+    assert_eq!(load.parse_stats.parse_errors, 1);
+    assert_eq!(load.parse_stats.skipped_records, 1);
+    assert_eq!(load.parse_stats.empty_content, 1);
+}
+
+#[test]
 fn copilot_tolerates_object_event_metadata_fields() {
     let fixture = common::fixtures::copilot::CopilotFixtureBuilder::new()
         .add_session("copilot-object-metadata")

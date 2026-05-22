@@ -21,11 +21,16 @@ fn claude_zero_message_session_skipped() {
 fn claude_corrupt_jsonl_lines_skipped() {
     let provider = ClaudeCodeProvider::new(vec![edge_cases_dir().join("claude")]);
     let sessions = provider.discover_sessions().unwrap();
-    let messages = provider.load_messages(&sessions[0]).unwrap();
+    let load = provider.load_messages_with_stats(&sessions[0]).unwrap();
+    let messages = load.messages;
 
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].role, Role::User);
     assert_eq!(messages[1].role, Role::Assistant);
+    assert_eq!(load.parse_stats.records_seen, 5);
+    assert_eq!(load.parse_stats.parse_errors, 2);
+    assert_eq!(load.parse_stats.skipped_records, 0);
+    assert_eq!(load.parse_stats.empty_content, 1);
 }
 
 #[test]
@@ -53,11 +58,16 @@ fn codex_zero_message_session_skipped() {
 fn codex_corrupt_jsonl_lines_skipped() {
     let provider = CodexCliProvider::new(vec![edge_cases_dir().join("codex")]);
     let sessions = provider.discover_sessions().unwrap();
-    let messages = provider.load_messages(&sessions[0]).unwrap();
+    let load = provider.load_messages_with_stats(&sessions[0]).unwrap();
+    let messages = load.messages;
 
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].role, Role::User);
     assert_eq!(messages[1].role, Role::Assistant);
+    assert_eq!(load.parse_stats.records_seen, 4);
+    assert_eq!(load.parse_stats.parse_errors, 2);
+    assert_eq!(load.parse_stats.skipped_records, 0);
+    assert_eq!(load.parse_stats.empty_content, 0);
 }
 
 #[test]
