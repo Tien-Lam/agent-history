@@ -49,16 +49,10 @@ pub(crate) fn search_command(
         hybrid_weight,
         metadata_keys,
     } = request;
-    let resolved = match resolve_nonempty_search_query(query, query_file, stdin) {
-        Ok(q) => q,
-        Err(exit) => return Ok(exit),
-    };
+    let resolved = resolve_nonempty_search_query(query, query_file, stdin)?;
     let query = resolved.as_str();
 
-    let after = match decode_search_cursor(cursor) {
-        Ok(c) => c,
-        Err(exit) => return Ok(exit),
-    };
+    let after = decode_search_cursor(cursor)?;
 
     let federation = federated_discovery_for_commands(providers, scope);
     let page = search_service::search_sessions(

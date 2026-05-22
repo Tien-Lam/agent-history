@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::io::{self, IsTerminal};
 
-use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
+use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::{provider, query_scope};
 use chrono::Utc;
 
@@ -75,8 +75,10 @@ pub(crate) fn project_command(
 ) -> Result<i32, ErrorEnvelope> {
     let needle = name.trim();
     if needle.is_empty() {
-        ErrorEnvelope::new("usage", "project <name> must not be empty").emit();
-        return Ok(EXIT_USAGE);
+        return Err(ErrorEnvelope::new(
+            "usage",
+            "project <name> must not be empty",
+        ));
     }
     let needle_lower = needle.to_lowercase();
     let extra_project = normalized_project_filter(filters);

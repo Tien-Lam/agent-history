@@ -1,6 +1,6 @@
 use std::io::{self, Write as _};
 
-use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK, EXIT_USAGE};
+use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::dto::{CursorMeta, ListEnvelope, SessionRow};
 use aghist::model::Provider;
 use aghist::output::{write_json_line, OutputMode};
@@ -33,10 +33,11 @@ pub(crate) fn list_sessions(
     ) {
         Ok(page) => page,
         Err(list_service::ListSessionsError::InvalidCursor) => {
-            ErrorEnvelope::new("usage", "invalid --cursor token")
-                .with_hint("Cursors are opaque; pass back the `meta.next_cursor` value verbatim.")
-                .emit();
-            return Ok(EXIT_USAGE);
+            return Err(
+                ErrorEnvelope::new("usage", "invalid --cursor token").with_hint(
+                    "Cursors are opaque; pass back the `meta.next_cursor` value verbatim.",
+                ),
+            );
         }
     };
     for warning in &page.warnings {

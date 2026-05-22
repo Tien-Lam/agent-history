@@ -1,6 +1,6 @@
 use std::io;
 
-use aghist::cli_error::{ErrorEnvelope, EXIT_OK, EXIT_USAGE};
+use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::output::write_json_line;
 use aghist::{mcp, schema};
 
@@ -24,10 +24,10 @@ pub(crate) fn schema_command(
             );
         }
     } else {
-        ErrorEnvelope::new("usage", "schema requires <SUBCMD>, --list, or --all")
-            .with_hint("Run `aghist schema --list` to see available subcommands.")
-            .emit();
-        return Ok(EXIT_USAGE);
+        return Err(
+            ErrorEnvelope::new("usage", "schema requires <SUBCMD>, --list, or --all")
+                .with_hint("Run `aghist schema --list` to see available subcommands."),
+        );
     };
 
     let mut out = io::stdout().lock();

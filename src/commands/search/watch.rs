@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::time::Duration;
 
-use aghist::cli_error::{ErrorEnvelope, EXIT_OK, EXIT_USAGE};
+use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
 use aghist::metadata;
 use aghist::model::Session;
 use aghist::search::{self, SearchFilters};
@@ -29,19 +29,11 @@ pub(crate) fn search_watch_command(
         filters,
         metadata_keys,
     } = request;
-    let resolved = match resolve_search_query(query, query_file, stdin) {
-        Ok(q) => q,
-        Err(env) => {
-            env.emit();
-            return Ok(EXIT_USAGE);
-        }
-    };
+    let resolved = resolve_search_query(query, query_file, stdin)?;
     let query = resolved.as_str();
     if query.trim().is_empty() {
-        ErrorEnvelope::new("usage", "search query is empty")
-            .with_hint("Run `aghist search --help` for usage.")
-            .emit();
-        return Ok(EXIT_USAGE);
+        return Err(ErrorEnvelope::new("usage", "search query is empty")
+            .with_hint("Run `aghist search --help` for usage."));
     }
 
     let index_dir = search::SearchIndex::default_index_dir();

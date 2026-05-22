@@ -91,7 +91,9 @@ fn search_query_file_missing_path_emits_io_error() {
         .env("AGHIST_HOME", dir.path())
         .output()
         .unwrap();
-    cli::assert_exit_code(&output, 2);
+    cli::assert_exit_code(&output, 1);
+    let envelope = cli::output_stderr_error(&output);
+    assert_eq!(envelope["error"]["kind"], "io-error");
     let stderr = cli::output_stderr(&output);
     assert!(
         stderr.contains("failed to read query file"),

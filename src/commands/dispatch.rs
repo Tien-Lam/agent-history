@@ -8,7 +8,7 @@ use super::metadata_dispatch::dispatch_metadata_command;
 use super::reports_dispatch::dispatch_report_command;
 use super::system::{run_mcp_server, schema_command};
 use super::tui::run_tui;
-use aghist::cli_error::{ErrorEnvelope, EXIT_USAGE};
+use aghist::cli_error::ErrorEnvelope;
 use aghist::output::CommandKind;
 use aghist::search;
 
@@ -18,9 +18,7 @@ enum ContextLoadedCommand {
 }
 
 pub(crate) fn run(cli: Cli) -> Result<i32, ErrorEnvelope> {
-    if let Some(exit) = reject_conflicting_output_flags(cli.json, cli.ndjson) {
-        return Ok(exit);
-    }
+    reject_conflicting_output_flags(cli.json, cli.ndjson)?;
 
     let Cli {
         list,
@@ -95,14 +93,13 @@ fn clear_search_index_if_requested(reindex: bool) -> Result<(), ErrorEnvelope> {
     Ok(())
 }
 
-fn reject_conflicting_output_flags(json: bool, ndjson: bool) -> Option<i32> {
+fn reject_conflicting_output_flags(json: bool, ndjson: bool) -> Result<(), ErrorEnvelope> {
     if json && ndjson {
-        ErrorEnvelope::new("usage", "--json and --ndjson are mutually exclusive")
+        return Err(ErrorEnvelope::new("usage", "--json and --ndjson are mutually exclusive")
             .with_hint("Pick one. Without either, output auto-detects: JSON/NDJSON on a pipe, human format on a TTY.")
-            .emit();
-        return Some(EXIT_USAGE);
+        );
     }
-    None
+    Ok(())
 }
 
 fn dispatch_command(command: ContextCommand, ctx: &CommandContext) -> Result<i32, ErrorEnvelope> {
