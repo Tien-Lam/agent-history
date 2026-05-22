@@ -24,6 +24,11 @@ fn health_returns_ok_envelope_with_writable_index() {
         .find(|c| c["name"] == "providers-detected")
         .expect("providers-detected check missing");
     assert_eq!(providers_check["status"], "ok");
+    let parse_check = checks
+        .iter()
+        .find(|c| c["name"] == "provider-parse-warnings")
+        .expect("provider-parse-warnings check missing");
+    assert_eq!(parse_check["status"], "ok");
 
     assert!(parsed["summary"]["ok_count"].as_u64().unwrap() >= 2);
 
@@ -40,6 +45,7 @@ fn health_returns_ok_envelope_with_writable_index() {
     let row = &fidelity[0];
     assert_eq!(row["provider"], "claude-code");
     assert!(row["session_count"].as_u64().unwrap() >= 1);
+    assert!(row["parse"]["records_seen"].as_u64().unwrap() >= 1);
     assert!(row["tool_call_fidelity"]["empty_names"].as_u64().unwrap() == 0);
 }
 #[test]

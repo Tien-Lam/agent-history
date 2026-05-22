@@ -8,7 +8,9 @@ use super::server::McpServer;
 
 use crate::dto::{McpListResponse, McpSessionRow};
 use crate::federated;
-use crate::health::{run_health_checks, HealthStatus};
+use crate::health::{
+    provider_parse_health_check, run_health_checks, run_provider_fidelity, HealthStatus,
+};
 use crate::indexing::{self, IndexingOptions, UnfilteredIndexScope};
 use crate::model::QualifiedCitationRef;
 use crate::schema_fragments::{
@@ -210,7 +212,11 @@ impl McpServer {
     }
 
     fn tool_health(&self, _args: &Value) -> Value {
-        let checks = run_health_checks(&self.providers);
+        let fidelity = run_provider_fidelity(&self.providers);
+        let mut checks = run_health_checks(&self.providers);
+        if let Some(check) = provider_parse_health_check(&fidelity) {
+            checks.push(check);
+        }
         let any_failed = checks.iter().any(|c| c.status == HealthStatus::Fail);
         let summary = json!({
             "ok_count": checks.iter().filter(|c| c.status == HealthStatus::Ok).count(),
@@ -221,6 +227,7 @@ impl McpServer {
             "ok": !any_failed,
             "checks": checks,
             "summary": summary,
+            "provider_fidelity": fidelity,
         })
     }
 }

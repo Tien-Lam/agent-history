@@ -10,8 +10,11 @@ pub(crate) fn health_command(
     providers: &[Box<dyn provider::HistoryProvider>],
     mode: OutputMode,
 ) -> Result<i32, ErrorEnvelope> {
-    let checks = health::run_health_checks(providers);
     let fidelity = health::run_provider_fidelity(providers);
+    let mut checks = health::run_health_checks(providers);
+    if let Some(check) = health::provider_parse_health_check(&fidelity) {
+        checks.push(check);
+    }
     let any_failed = checks.iter().any(|c| c.status == HealthStatus::Fail);
 
     let stdout = io::stdout();
@@ -63,13 +66,18 @@ fn render_health_human<W: io::Write>(
         )?;
         for d in fidelity {
             let f = &d.tool_call_fidelity;
+            let p = &d.parse;
             writeln!(
                 out,
-                "  {} ({}): sessions={} messages={} tool_calls={} paired={} unpaired={} orphan_results={} empty_names={}",
+                "  {} ({}): sessions={} messages={} records={} parse_errors={} skipped={} empty={} tool_calls={} paired={} unpaired={} orphan_results={} empty_names={}",
                 d.label,
                 d.provider,
                 d.session_count,
                 d.message_count,
+                p.records_seen,
+                p.parse_errors,
+                p.skipped_records,
+                p.empty_content,
                 f.tool_calls,
                 f.paired,
                 f.unpaired_calls,
