@@ -3,10 +3,11 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 
 use super::super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Role};
-use crate::provider::json_text::string_or_object_field;
+use crate::provider::json_text::{string_or_object_field, string_or_object_field_or_pretty};
 use crate::provider::parse_common::{
     parse_utc_or_now, pretty_json_opt, token_usage_from_options, tool_result_block, tool_use_block,
 };
@@ -104,7 +105,10 @@ fn event_message(
         role,
         timestamp,
         content,
-        model: event.model.clone(),
+        model: event
+            .model
+            .as_ref()
+            .and_then(|value| stringish(value, &["model", "id", "name"])),
         token_usage: event
             .usage
             .as_ref()
@@ -132,7 +136,8 @@ fn push_tool_execution_start(messages: &mut Vec<Message>, event: &RawEvent) {
         vec![tool_use_block(
             data.tool_call_id.clone().unwrap_or_default(),
             data.tool_name
-                .clone()
+                .as_ref()
+                .and_then(|value| stringish(value, &["name", "toolName", "tool"]))
                 .unwrap_or_else(|| "unknown".to_string()),
             pretty_json_opt(data.arguments.as_ref()),
         )],
@@ -163,23 +168,43 @@ fn push_tool_result(messages: &mut Vec<Message>, event: &RawEvent) {
 
 fn event_content(event: &RawEvent) -> Vec<ContentBlock> {
     let mut content = Vec::new();
-    let text = event
-        .content
-        .as_deref()
-        .or_else(|| event.data.as_ref().and_then(|d| d.content.as_deref()));
+    let text = event.content.as_ref().map(event_text).or_else(|| {
+        event
+            .data
+            .as_ref()
+            .and_then(|d| d.content.as_ref().map(event_text))
+    });
     if let Some(text) = text.filter(|text| !text.is_empty()) {
-        content.extend(parse_text_with_code_blocks(text));
+        content.extend(parse_text_with_code_blocks(&text));
     }
     push_top_level_tool_use(&mut content, event);
     push_nested_tool_requests(&mut content, event.data.as_ref());
     content
 }
 
+fn event_text(value: &Value) -> String {
+    string_or_object_field_or_pretty(value, &["content", "text", "message"])
+}
+
+fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(_) => {
+            let text = string_or_object_field(value, object_fields);
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
+}
+
 fn push_top_level_tool_use(content: &mut Vec<ContentBlock>, event: &RawEvent) {
     if let Some(tool_name) = &event.tool_name {
         content.push(tool_use_block(
             event.tool_call_id.clone().unwrap_or_default(),
-            tool_name.clone(),
+            stringish(tool_name, &["name", "toolName", "tool"])
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| "unknown".to_string()),
             pretty_json_opt(event.tool_args.as_ref()),
         ));
     }
@@ -192,7 +217,10 @@ fn push_nested_tool_requests(content: &mut Vec<ContentBlock>, data: Option<&RawE
     for tr in tool_requests {
         content.push(tool_use_block(
             tr.tool_call_id.clone().unwrap_or_default(),
-            tr.name.clone().unwrap_or_else(|| "unknown".to_string()),
+            tr.name
+                .as_ref()
+                .and_then(|value| stringish(value, &["name", "toolName", "tool"]))
+                .unwrap_or_else(|| "unknown".to_string()),
             pretty_json_opt(tr.arguments.as_ref()),
         ));
     }
@@ -204,42 +232,45 @@ struct RawEvent {
     #[serde(rename = "type")]
     event_type: Option<String>,
     timestamp: Option<String>,
-    content: Option<String>,
-    model: Option<String>,
+    content: Option<Value>,
+    model: Option<Value>,
     #[serde(rename = "toolName")]
-    tool_name: Option<String>,
+    tool_name: Option<Value>,
     #[serde(rename = "toolCallId")]
     tool_call_id: Option<String>,
     #[serde(rename = "toolArgs")]
-    tool_args: Option<serde_json::Value>,
+    tool_args: Option<Value>,
     usage: Option<RawUsage>,
     data: Option<RawEventData>,
 }
 
 #[derive(Deserialize)]
 struct RawEventData {
-    content: Option<String>,
+    content: Option<Value>,
     #[serde(rename = "toolRequests")]
     tool_requests: Option<Vec<RawToolRequest>>,
     #[serde(rename = "toolName")]
-    tool_name: Option<String>,
+    tool_name: Option<Value>,
     #[serde(rename = "toolCallId")]
     tool_call_id: Option<String>,
-    arguments: Option<serde_json::Value>,
+    arguments: Option<Value>,
     success: Option<bool>,
-    result: Option<serde_json::Value>,
+    result: Option<Value>,
 }
 
-fn extract_result_text(v: &serde_json::Value) -> String {
-    string_or_object_field(v, &["detailedContent", "content"])
+fn extract_result_text(v: &Value) -> String {
+    string_or_object_field_or_pretty(
+        v,
+        &["detailedContent", "content", "output", "result", "text"],
+    )
 }
 
 #[derive(Deserialize)]
 struct RawToolRequest {
     #[serde(rename = "toolCallId")]
     tool_call_id: Option<String>,
-    name: Option<String>,
-    arguments: Option<serde_json::Value>,
+    name: Option<Value>,
+    arguments: Option<Value>,
 }
 
 #[derive(Deserialize)]

@@ -61,3 +61,29 @@ fn copilot_tool_result_prefers_detailed_content() {
         matches!(&messages[0].content[0], ContentBlock::ToolResult(tr) if tr.tool_call_id == "call-1" && tr.output == "long detailed output")
     );
 }
+
+#[test]
+fn copilot_tolerates_object_content_and_freeform_tool_result() {
+    let fixture = common::fixtures::copilot::CopilotFixtureBuilder::new()
+        .add_session("copilot-shape-drift")
+        .raw_line(
+            r#"{"id":"evt-object","type":"user.message","timestamp":"2025-01-01T00:00:00Z","content":{"text":"object content"},"model":{"id":"gpt-object"}}"#,
+        )
+        .raw_line(
+            r#"{"id":"evt-result","type":"tool.execution_complete","timestamp":"2025-01-01T00:00:01Z","data":{"toolCallId":"call-1","success":true,"result":{"stdout":["line one","line two"]}}}"#,
+        )
+        .done()
+        .build();
+    let provider = CopilotCliProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].model.as_deref(), Some("gpt-object"));
+    assert!(
+        matches!(&messages[0].content[0], ContentBlock::Text(text) if text == "object content")
+    );
+    assert!(
+        matches!(&messages[1].content[0], ContentBlock::ToolResult(tr) if tr.tool_call_id == "call-1" && tr.output.contains("line one"))
+    );
+}
