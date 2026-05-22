@@ -161,7 +161,10 @@ expression: pretty
         },
         "type": "object"
       },
-      "name": "reindex"
+      "name": "reindex",
+      "outputSchema": {
+        "$ref": "aghist:schema/mcp/tool-output/reindex"
+      }
     },
     {
       "description": "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
@@ -170,7 +173,10 @@ expression: pretty
         "properties": {},
         "type": "object"
       },
-      "name": "health"
+      "name": "health",
+      "outputSchema": {
+        "$ref": "aghist:schema/mcp/tool-output/health"
+      }
     }
   ]
 }

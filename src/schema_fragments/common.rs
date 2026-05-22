@@ -59,7 +59,15 @@ pub(super) fn schema_props(
         .collect()
 }
 
+pub(super) fn object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
+    object_schema_with(properties, required, false)
+}
+
 pub(super) fn closed_object_schema(properties: SchemaProperties, required: &[&str]) -> Value {
+    object_schema_with(properties, required, true)
+}
+
+fn object_schema_with(properties: SchemaProperties, required: &[&str], closed: bool) -> Value {
     let mut schema = schema_props([
         ("type", json!("object")),
         ("properties", Value::Object(properties)),
@@ -67,7 +75,9 @@ pub(super) fn closed_object_schema(properties: SchemaProperties, required: &[&st
     if !required.is_empty() {
         schema.insert("required".to_string(), json!(required));
     }
-    schema.insert("additionalProperties".to_string(), json!(false));
+    if closed {
+        schema.insert("additionalProperties".to_string(), json!(false));
+    }
     Value::Object(schema)
 }
 

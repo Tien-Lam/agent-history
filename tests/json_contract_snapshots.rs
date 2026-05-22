@@ -38,6 +38,16 @@ fn normalize_search_scores(doc: &mut Value) {
     }
 }
 
+fn normalize_health_doc(doc: &mut Value) {
+    if let Some(checks) = doc.get_mut("checks").and_then(Value::as_array_mut) {
+        for check in checks {
+            if check["name"] == "index-dir-writable" {
+                check["message"] = serde_json::json!("index dir writable: [index-dir]");
+            }
+        }
+    }
+}
+
 fn compact_mcp_tools_list_contract(result: &Value) -> Value {
     let mut compact = result.clone();
     let tools = compact["tools"]
@@ -55,6 +65,17 @@ fn compact_mcp_tools_list_contract(result: &Value) -> Value {
         }
     }
     compact
+}
+
+fn mcp_tool_output_schema<'a>(tools_result: &'a Value, name: &str) -> &'a Value {
+    tools_result["tools"]
+        .as_array()
+        .expect("tools/list result has tools array")
+        .iter()
+        .find(|tool| tool["name"] == name)
+        .unwrap_or_else(|| panic!("tools/list missing {name}"))
+        .get("outputSchema")
+        .unwrap_or_else(|| panic!("tools/list missing outputSchema for {name}"))
 }
 
 fn command_schema(name: &str) -> Value {
@@ -104,6 +125,48 @@ fn assert_search_schema_matches_output(doc: &Value) {
     let hits = doc["hits"].as_array().expect("search hits array");
     assert!(!hits.is_empty(), "contract fixture should produce a hit");
     assert_required_fields_present(hit_schema, &hits[0], "search hit");
+}
+
+fn assert_health_schema_matches_output(schema: &Value, doc: &Value) {
+    assert_required_fields_present(schema, doc, "health response");
+
+    let checks = doc["checks"].as_array().expect("health checks array");
+    assert!(!checks.is_empty(), "contract fixture should produce checks");
+    assert_required_fields_present(
+        &schema["properties"]["checks"]["items"],
+        &checks[0],
+        "health check",
+    );
+    assert_required_fields_present(
+        &schema["properties"]["summary"],
+        &doc["summary"],
+        "health summary",
+    );
+
+    let fidelity = doc["provider_fidelity"]
+        .as_array()
+        .expect("health provider_fidelity array");
+    assert!(
+        !fidelity.is_empty(),
+        "contract fixture should produce provider fidelity"
+    );
+    let fidelity_schema = &schema["properties"]["provider_fidelity"]["items"];
+    assert_required_fields_present(fidelity_schema, &fidelity[0], "provider fidelity");
+    assert_required_fields_present(
+        &fidelity_schema["properties"]["parse"],
+        &fidelity[0]["parse"],
+        "provider parse stats",
+    );
+    assert_required_fields_present(
+        &fidelity_schema["properties"]["blocks"],
+        &fidelity[0]["blocks"],
+        "provider block counts",
+    );
+    assert_required_fields_present(
+        &fidelity_schema["properties"]["tool_call_fidelity"],
+        &fidelity[0]["tool_call_fidelity"],
+        "provider tool-call fidelity",
+    );
 }
 
 fn run_mcp_session(env_home: &Path, requests: &[Value]) -> Vec<Value> {
@@ -284,6 +347,31 @@ fn diff_json_contract_snapshot() {
 }
 
 #[test]
+fn health_json_contract_snapshot() {
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
+        .add_session("json-contract-health")
+        .project("contract-project")
+        .user("health prompt")
+        .assistant("health answer")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .arg("health")
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .assert()
+        .success();
+    let mut doc = parse_stdout_json(&output);
+    assert_health_schema_matches_output(&command_schema("health")["response"], &doc);
+    normalize_health_doc(&mut doc);
+
+    assert_json_snapshot("health_json_contract", &doc);
+}
+
+#[test]
 fn mcp_tools_list_contract_snapshot() {
     let home = tempfile::tempdir().unwrap();
     let responses = run_mcp_session(
@@ -315,19 +403,72 @@ fn mcp_reindex_contract_snapshot() {
 
     let responses = run_mcp_session(
         home,
-        &[serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": "reindex",
-                "arguments": { "force": true }
-            }
-        })],
+        &[
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list"
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "reindex",
+                    "arguments": { "force": true }
+                }
+            }),
+        ],
     );
 
-    assert_eq!(responses.len(), 1, "got: {responses:#?}");
-    let mut summary = responses[0]["result"]["structuredContent"].clone();
+    assert_eq!(responses.len(), 2, "got: {responses:#?}");
+    let mut summary = responses[1]["result"]["structuredContent"].clone();
+    assert_required_fields_present(
+        mcp_tool_output_schema(&responses[0]["result"], "reindex"),
+        &summary,
+        "mcp reindex structuredContent",
+    );
     normalize_index_summary(&mut summary);
     assert_json_snapshot("mcp_reindex_contract", &summary);
+}
+
+#[test]
+fn mcp_health_contract_snapshot() {
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
+        .add_session("json-contract-mcp-health")
+        .project("contract-project")
+        .user("mcp health prompt")
+        .assistant("mcp health answer")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+
+    let responses = run_mcp_session(
+        home,
+        &[
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list"
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "health",
+                    "arguments": {}
+                }
+            }),
+        ],
+    );
+
+    assert_eq!(responses.len(), 2, "got: {responses:#?}");
+    let mut doc = responses[1]["result"]["structuredContent"].clone();
+    assert_health_schema_matches_output(
+        mcp_tool_output_schema(&responses[0]["result"], "health"),
+        &doc,
+    );
+    normalize_health_doc(&mut doc);
+    assert_json_snapshot("mcp_health_contract", &doc);
 }

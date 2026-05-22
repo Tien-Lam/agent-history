@@ -5,8 +5,8 @@ use super::common::{
     source_qualified_citation_ref_pattern,
 };
 use super::responses::{
-    mcp_get_message_response_schema, mcp_get_session_response_schema, mcp_list_response_schema,
-    mcp_search_response_schema,
+    health_response_schema, mcp_get_message_response_schema, mcp_get_session_response_schema,
+    mcp_list_response_schema, mcp_reindex_response_schema, mcp_search_response_schema,
 };
 use super::{
     MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX, MCP_LIST_LIMIT_DEFAULT,
@@ -50,13 +50,13 @@ pub(crate) fn mcp_tool_contracts() -> Vec<McpToolContract> {
             name: "reindex",
             description: "Refresh the search index (incremental by default). Returns counts of added/updated/unchanged sessions.",
             input_schema: mcp_reindex_input_schema(),
-            output_schema: None,
+            output_schema: Some(mcp_reindex_response_schema()),
         },
         McpToolContract {
             name: "health",
             description: "Run the same checks as `aghist health`: provider detection, index dir writability, manifest sanity, schema presence.",
             input_schema: mcp_health_input_schema(),
-            output_schema: None,
+            output_schema: Some(health_response_schema()),
         },
     ]
 }

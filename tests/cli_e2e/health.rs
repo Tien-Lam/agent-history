@@ -70,3 +70,41 @@ fn health_warns_when_no_providers() {
         .clone();
     assert_eq!(providers_check["status"], "warn");
 }
+
+#[test]
+fn health_warns_when_provider_sample_has_parse_warnings() {
+    let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
+        .add_session("health-parse-warnings")
+        .project("health-project")
+        .user("valid prompt")
+        .raw_line("not-json")
+        .raw_line(
+            r#"{"type":"user","uuid":"empty-content","timestamp":"2025-01-01T00:00:05Z","message":{"role":"user","content":""}}"#,
+        )
+        .assistant("valid answer")
+        .done()
+        .build();
+    let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let assert = aghist()
+        .args(["health"])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .assert()
+        .success();
+    let parsed = common::cli::assert_stdout_json(&assert);
+
+    let parse_check = parsed["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|c| c["name"] == "provider-parse-warnings")
+        .expect("provider-parse-warnings check missing");
+    assert_eq!(parse_check["status"], "warn");
+    let message = parse_check["message"].as_str().expect("message string");
+    assert!(message.contains("claude-code"));
+    assert!(message.contains("parse_errors=1"));
+    assert!(message.contains("empty=1"));
+    assert!(parsed["summary"]["warn_count"].as_u64().unwrap() >= 1);
+}

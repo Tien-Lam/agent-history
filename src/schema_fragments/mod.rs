@@ -21,7 +21,10 @@ pub(crate) use common::{
     todo_target_ref_pattern,
 };
 pub(crate) use mcp::mcp_tool_contracts;
-pub(crate) use responses::{list_response_schema, search_response_schema, session_row_schema};
+pub(crate) use responses::{
+    health_response_schema, index_response_schema, list_response_schema, search_response_schema,
+    session_row_schema,
+};
 
 #[cfg(test)]
 pub(crate) use mcp::mcp_tool_output_schema;

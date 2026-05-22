@@ -166,6 +166,8 @@ fn tool_output_schemas_use_shared_registry() {
             "list_sessions",
             "get_session",
             "get_message",
+            "reindex",
+            "health",
         ]
     );
 }

@@ -1,0 +1,77 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "checks": [
+    {
+      "message": "1 provider(s) detected: claude-code",
+      "name": "providers-detected",
+      "status": "ok"
+    },
+    {
+      "message": "index dir writable: [index-dir]",
+      "name": "index-dir-writable",
+      "status": "ok"
+    },
+    {
+      "hint": "Run `aghist index` to populate the search index.",
+      "message": "no manifest.json — index has not been built",
+      "name": "manifest-sane",
+      "status": "warn"
+    },
+    {
+      "hint": "Run `aghist index` to create the index.",
+      "message": "Tantivy meta.json missing — index has not been initialised",
+      "name": "index-schema-present",
+      "status": "warn"
+    },
+    {
+      "message": "sampled provider records parsed without warnings",
+      "name": "provider-parse-warnings",
+      "status": "ok"
+    }
+  ],
+  "ok": true,
+  "provider_fidelity": [
+    {
+      "blocks": {
+        "code_block": 0,
+        "error": 0,
+        "text": 2,
+        "thinking": 0,
+        "tool_result": 0,
+        "tool_use": 0,
+        "total": 2
+      },
+      "label": "claude-code",
+      "message_count": 2,
+      "parse": {
+        "empty_content": 0,
+        "parse_errors": 0,
+        "records_seen": 2,
+        "skipped_records": 0
+      },
+      "provider": "claude-code",
+      "session_count": 1,
+      "tool_call_fidelity": {
+        "empty_call_ids": 0,
+        "empty_names": 0,
+        "empty_result_ids": 0,
+        "failure_results": 0,
+        "invalid_json_args": 0,
+        "orphan_results": 0,
+        "paired": 0,
+        "success_results": 0,
+        "tool_calls": 0,
+        "tool_results": 0,
+        "unpaired_calls": 0
+      }
+    }
+  ],
+  "summary": {
+    "fail_count": 0,
+    "ok_count": 3,
+    "warn_count": 2
+  }
+}
