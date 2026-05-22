@@ -87,3 +87,45 @@ fn copilot_tolerates_object_content_and_freeform_tool_result() {
         matches!(&messages[1].content[0], ContentBlock::ToolResult(tr) if tr.tool_call_id == "call-1" && tr.output.contains("line one"))
     );
 }
+
+#[test]
+fn copilot_tolerates_object_event_metadata_fields() {
+    let fixture = common::fixtures::copilot::CopilotFixtureBuilder::new()
+        .add_session("copilot-object-metadata")
+        .raw_line(
+            r#"{"id":{"id":"evt-user"},"type":{"type":"user.message"},"timestamp":{"timestamp":"2025-01-01T00:00:00Z"},"content":{"text":"object metadata content"}}"#,
+        )
+        .raw_line(
+            r#"{"id":{"id":"evt-assistant"},"type":{"type":"assistant.message"},"timestamp":{"timestamp":"2025-01-01T00:00:01Z"},"content":"assistant reply","model":{"id":"gpt-object"},"usage":{"inputTokens":"4","outputTokens":{"tokens":5}}}"#,
+        )
+        .raw_line(
+            r#"{"id":{"id":"evt-tool-start"},"type":{"type":"tool.execution_start"},"timestamp":{"timestamp":"2025-01-01T00:00:02Z"},"data":{"toolCallId":{"id":"call-object"},"toolName":{"name":"Run"},"arguments":{"cmd":"true"}}}"#,
+        )
+        .raw_line(
+            r#"{"id":{"id":"evt-tool-result"},"type":{"type":"tool.execution_complete"},"timestamp":{"timestamp":"2025-01-01T00:00:03Z"},"data":{"toolCallId":{"id":"call-object"},"success":{"success":true},"result":{"content":"ok"}}}"#,
+        )
+        .done()
+        .build();
+    let provider = CopilotCliProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].message_count, 4);
+
+    let messages = provider.load_messages(&sessions[0]).unwrap();
+    assert_eq!(messages.len(), 4);
+    assert_eq!(messages[0].id.0, "evt-user");
+    assert!(matches!(
+        &messages[0].content[0],
+        ContentBlock::Text(text) if text == "object metadata content"
+    ));
+    assert_eq!(messages[1].model.as_deref(), Some("gpt-object"));
+    let usage = messages[1].token_usage.as_ref().unwrap();
+    assert_eq!(usage.input_tokens, 4);
+    assert_eq!(usage.output_tokens, 5);
+    assert!(
+        matches!(&messages[2].content[0], ContentBlock::ToolUse(tool) if tool.id == "call-object" && tool.name == "Run")
+    );
+    assert!(
+        matches!(&messages[3].content[0], ContentBlock::ToolResult(result) if result.tool_call_id == "call-object" && result.success && result.output == "ok")
+    );
+}

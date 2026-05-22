@@ -2,8 +2,10 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::model::{Provider, Session, SessionId};
+use crate::provider::json_text::string_or_object_field;
 use crate::provider::parse_common::parse_utc;
 use crate::provider::project_name_from_path;
 
@@ -64,13 +66,35 @@ fn count_message_events(path: &Path) -> usize {
     reader
         .lines()
         .map_while(Result::ok)
-        .filter(|l| {
-            l.contains("\"user.message\"")
-                || l.contains("\"assistant.message\"")
-                || l.contains("\"tool.execution_start\"")
-                || l.contains("\"tool.execution_complete\"")
-                || l.contains("\"tool.invoke\"")
-                || l.contains("\"tool.result\"")
+        .filter(|line| {
+            let Ok(value) = serde_json::from_str::<Value>(line) else {
+                return false;
+            };
+            let Some(event_type) = value
+                .get("type")
+                .and_then(|value| stringish(Some(value), &["type", "event"]))
+            else {
+                return false;
+            };
+            event_type.contains("user.message")
+                || event_type.contains("assistant.message")
+                || event_type == "tool.execution_start"
+                || event_type == "tool.execution_complete"
+                || event_type == "tool.invoke"
+                || event_type == "tool.result"
         })
         .count()
+}
+
+fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
+    let value = value?;
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(_) => {
+            let text = string_or_object_field(value, object_fields);
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
 }

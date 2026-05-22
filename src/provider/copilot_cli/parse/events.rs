@@ -39,7 +39,9 @@ pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderEr
             }
         };
 
-        let event_type_str = event.event_type.as_deref().unwrap_or("");
+        let event_type =
+            stringish(event.event_type.as_ref(), &["type", "event"]).unwrap_or_default();
+        let event_type_str = event_type.as_str();
 
         let role = match event_type_str {
             t if t.contains("user") => Role::User,
@@ -91,7 +93,8 @@ pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderEr
 }
 
 fn event_timestamp(event: &RawEvent) -> DateTime<Utc> {
-    parse_utc_or_now(event.timestamp.as_deref())
+    let timestamp = stringish(event.timestamp.as_ref(), &["timestamp", "time"]);
+    parse_utc_or_now(timestamp.as_deref())
 }
 
 fn event_message(
@@ -101,24 +104,28 @@ fn event_message(
     content: Vec<ContentBlock>,
 ) -> Message {
     Message {
-        id: MessageId(event.id.clone().unwrap_or_default()),
+        id: MessageId(stringish(event.id.as_ref(), &["id"]).unwrap_or_default()),
         role,
         timestamp,
         content,
         model: event
             .model
             .as_ref()
-            .and_then(|value| stringish(value, &["model", "id", "name"])),
-        token_usage: event
-            .usage
-            .as_ref()
-            .map(|u| token_usage_from_options(u.input_tokens, u.output_tokens, None, None)),
+            .and_then(|value| stringish(Some(value), &["model", "id", "name"])),
+        token_usage: event.usage.as_ref().map(|u| {
+            token_usage_from_options(
+                value_u64(u.input_tokens.as_ref()),
+                value_u64(u.output_tokens.as_ref()),
+                None,
+                None,
+            )
+        }),
     }
 }
 
 fn tool_message(event: &RawEvent, content: Vec<ContentBlock>) -> Message {
     Message {
-        id: MessageId(event.id.clone().unwrap_or_default()),
+        id: MessageId(stringish(event.id.as_ref(), &["id"]).unwrap_or_default()),
         role: Role::Tool,
         timestamp: event_timestamp(event),
         content,
@@ -134,10 +141,10 @@ fn push_tool_execution_start(messages: &mut Vec<Message>, event: &RawEvent) {
     messages.push(tool_message(
         event,
         vec![tool_use_block(
-            data.tool_call_id.clone().unwrap_or_default(),
+            stringish(data.tool_call_id.as_ref(), &["toolCallId", "id"]).unwrap_or_default(),
             data.tool_name
                 .as_ref()
-                .and_then(|value| stringish(value, &["name", "toolName", "tool"]))
+                .and_then(|value| stringish(Some(value), &["name", "toolName", "tool"]))
                 .unwrap_or_else(|| "unknown".to_string()),
             pretty_json_opt(data.arguments.as_ref()),
         )],
@@ -159,8 +166,8 @@ fn push_tool_result(messages: &mut Vec<Message>, event: &RawEvent) {
     messages.push(tool_message(
         event,
         vec![tool_result_block(
-            data.tool_call_id.clone().unwrap_or_default(),
-            data.success.unwrap_or(true),
+            stringish(data.tool_call_id.as_ref(), &["toolCallId", "id"]).unwrap_or_default(),
+            value_bool(data.success.as_ref()).unwrap_or(true),
             output,
         )],
     ));
@@ -186,14 +193,42 @@ fn event_text(value: &Value) -> String {
     string_or_object_field_or_pretty(value, &["content", "text", "message"])
 }
 
-fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
+fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
+    let value = value?;
     match value {
         Value::String(s) => Some(s.clone()),
         Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
-        Value::Object(_) => {
-            let text = string_or_object_field(value, object_fields);
-            (!text.is_empty()).then_some(text)
-        }
+        Value::Object(map) => object_fields
+            .iter()
+            .find_map(|field| stringish(map.get(*field), object_fields))
+            .or_else(|| {
+                let text = string_or_object_field(value, object_fields);
+                (!text.is_empty()).then_some(text)
+            }),
+        _ => None,
+    }
+}
+
+fn value_u64(value: Option<&Value>) -> Option<u64> {
+    match value? {
+        Value::Number(number) => number
+            .as_u64()
+            .or_else(|| number.as_i64().and_then(|n| u64::try_from(n).ok())),
+        Value::String(text) => text.parse::<u64>().ok(),
+        Value::Object(map) => ["value", "tokens", "count"]
+            .iter()
+            .find_map(|field| value_u64(map.get(*field))),
+        _ => None,
+    }
+}
+
+fn value_bool(value: Option<&Value>) -> Option<bool> {
+    match value? {
+        Value::Bool(flag) => Some(*flag),
+        Value::String(text) => text.parse::<bool>().ok(),
+        Value::Object(map) => ["success", "ok", "value"]
+            .iter()
+            .find_map(|field| value_bool(map.get(*field))),
         _ => None,
     }
 }
@@ -201,8 +236,8 @@ fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
 fn push_top_level_tool_use(content: &mut Vec<ContentBlock>, event: &RawEvent) {
     if let Some(tool_name) = &event.tool_name {
         content.push(tool_use_block(
-            event.tool_call_id.clone().unwrap_or_default(),
-            stringish(tool_name, &["name", "toolName", "tool"])
+            stringish(event.tool_call_id.as_ref(), &["toolCallId", "id"]).unwrap_or_default(),
+            stringish(Some(tool_name), &["name", "toolName", "tool"])
                 .filter(|name| !name.is_empty())
                 .unwrap_or_else(|| "unknown".to_string()),
             pretty_json_opt(event.tool_args.as_ref()),
@@ -216,10 +251,10 @@ fn push_nested_tool_requests(content: &mut Vec<ContentBlock>, data: Option<&RawE
     };
     for tr in tool_requests {
         content.push(tool_use_block(
-            tr.tool_call_id.clone().unwrap_or_default(),
+            stringish(tr.tool_call_id.as_ref(), &["toolCallId", "id"]).unwrap_or_default(),
             tr.name
                 .as_ref()
-                .and_then(|value| stringish(value, &["name", "toolName", "tool"]))
+                .and_then(|value| stringish(Some(value), &["name", "toolName", "tool"]))
                 .unwrap_or_else(|| "unknown".to_string()),
             pretty_json_opt(tr.arguments.as_ref()),
         ));
@@ -228,16 +263,16 @@ fn push_nested_tool_requests(content: &mut Vec<ContentBlock>, data: Option<&RawE
 
 #[derive(Deserialize)]
 struct RawEvent {
-    id: Option<String>,
+    id: Option<Value>,
     #[serde(rename = "type")]
-    event_type: Option<String>,
-    timestamp: Option<String>,
+    event_type: Option<Value>,
+    timestamp: Option<Value>,
     content: Option<Value>,
     model: Option<Value>,
     #[serde(rename = "toolName")]
     tool_name: Option<Value>,
     #[serde(rename = "toolCallId")]
-    tool_call_id: Option<String>,
+    tool_call_id: Option<Value>,
     #[serde(rename = "toolArgs")]
     tool_args: Option<Value>,
     usage: Option<RawUsage>,
@@ -252,9 +287,9 @@ struct RawEventData {
     #[serde(rename = "toolName")]
     tool_name: Option<Value>,
     #[serde(rename = "toolCallId")]
-    tool_call_id: Option<String>,
+    tool_call_id: Option<Value>,
     arguments: Option<Value>,
-    success: Option<bool>,
+    success: Option<Value>,
     result: Option<Value>,
 }
 
@@ -268,7 +303,7 @@ fn extract_result_text(v: &Value) -> String {
 #[derive(Deserialize)]
 struct RawToolRequest {
     #[serde(rename = "toolCallId")]
-    tool_call_id: Option<String>,
+    tool_call_id: Option<Value>,
     name: Option<Value>,
     arguments: Option<Value>,
 }
@@ -276,7 +311,7 @@ struct RawToolRequest {
 #[derive(Deserialize)]
 struct RawUsage {
     #[serde(rename = "inputTokens")]
-    input_tokens: Option<u64>,
+    input_tokens: Option<Value>,
     #[serde(rename = "outputTokens")]
-    output_tokens: Option<u64>,
+    output_tokens: Option<Value>,
 }
