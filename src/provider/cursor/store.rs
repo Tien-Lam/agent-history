@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
-use super::format::{millis_to_datetime, ComposerData, HeaderEntry};
+use super::format::{
+    millis_value_to_datetime, optional_string, value_u8, ComposerData, HeaderEntry,
+};
 use super::message::build_message;
 use super::ProviderError;
 use crate::model::{Message, Provider, Session, SessionId};
@@ -71,24 +73,35 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
         }
     };
 
-    let id = raw.composer_id.unwrap_or(composer_id);
+    let id =
+        optional_string(raw.composer_id.as_ref(), &["composerId", "id"]).unwrap_or(composer_id);
 
     let started_at = raw
         .created_at
-        .and_then(millis_to_datetime)
-        .or_else(|| raw.last_updated_at.and_then(millis_to_datetime))?;
-    let ended_at = raw.last_updated_at.and_then(millis_to_datetime);
+        .as_ref()
+        .and_then(millis_value_to_datetime)
+        .or_else(|| {
+            raw.last_updated_at
+                .as_ref()
+                .and_then(millis_value_to_datetime)
+        })?;
+    let ended_at = raw
+        .last_updated_at
+        .as_ref()
+        .and_then(millis_value_to_datetime);
 
-    let project_path = raw.workspace_folder.clone().map(PathBuf::from);
-    let project_name = raw
-        .workspace_folder
-        .as_deref()
-        .and_then(project_name_from_path);
+    let workspace_folder = optional_string(
+        raw.workspace_folder.as_ref(),
+        &["currentWorkspaceFolder", "workspace", "path"],
+    );
+    let project_path = workspace_folder.clone().map(PathBuf::from);
+    let project_name = workspace_folder.as_deref().and_then(project_name_from_path);
 
     let message_count = raw
         .headers
-        .as_ref()
-        .map_or(0, |h| h.iter().filter(|e| e.bubble_id.is_some()).count());
+        .iter()
+        .filter(|e| optional_string(e.bubble_id.as_ref(), &["bubbleId", "id"]).is_some())
+        .count();
 
     Some(Session {
         id: SessionId(id),
@@ -98,8 +111,8 @@ fn build_session_from_row(key: &str, value: &[u8], db_path: &Path) -> Option<Ses
         git_branch: None,
         started_at,
         ended_at,
-        summary: raw.name,
-        model: raw.model,
+        summary: optional_string(raw.name.as_ref(), &["name", "title", "summary"]),
+        model: optional_string(raw.model.as_ref(), &["model", "id", "name"]),
         token_usage: None,
         message_count,
         source_path: db_path.to_path_buf(),
@@ -130,10 +143,10 @@ pub(crate) fn load_messages_from_db(
         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
 
     let headers: Vec<HeaderEntry> = composer
-        .and_then(|c| c.headers)
+        .map(|c| c.headers)
         .unwrap_or_default()
         .into_iter()
-        .filter(|h| h.bubble_id.is_some())
+        .filter(|h| optional_string(h.bubble_id.as_ref(), &["bubbleId", "id"]).is_some())
         .collect();
 
     // 2. Read each bubble keyed under this composer. We collect both ways:
@@ -144,13 +157,14 @@ pub(crate) fn load_messages_from_db(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (idx, h) in headers.iter().enumerate() {
-        let Some(bid) = h.bubble_id.as_deref() else {
+        let Some(bid) = optional_string(h.bubble_id.as_ref(), &["bubbleId", "id"]) else {
             continue;
         };
         let key = format!("bubbleId:{composer_id}:{bid}");
         if let Some(bytes) = read_value(&conn, &key)? {
-            if let Some(msg) = build_message(bid, h.bubble_type, &bytes, idx) {
-                seen.insert(bid.to_string());
+            let header_type = h.bubble_type.as_ref().and_then(value_u8);
+            if let Some(msg) = build_message(&bid, header_type, &bytes, idx) {
+                seen.insert(bid.clone());
                 messages.push(msg);
             }
         }

@@ -130,6 +130,88 @@ fn parses_composer_and_bubbles() {
 }
 
 #[test]
+fn tolerates_object_shaped_string_fields() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = setup_db(tmp.path());
+    let conn = Connection::open(&db_path).unwrap();
+
+    let composer = serde_json::json!({
+        "composerId": {"id": "comp-object"},
+        "name": {"title": "Object Cursor chat"},
+        "createdAt": "1767225600000",
+        "lastUpdatedAt": {"value": 1_767_225_700_000_i64},
+        "currentWorkspaceFolder": {"path": "/home/me/projects/cursorapp"},
+        "model": {"id": "cursor-model"},
+        "fullConversationHeadersOnly": [
+            {"bubbleId": {"id": "b-object"}, "type": "2"},
+            "skip invalid header"
+        ],
+    });
+    insert(&conn, "composerData:comp-object", &composer);
+
+    let bubble = serde_json::json!({
+        "type": {"value": 2},
+        "text": {"content": "object cursor text"},
+        "createdAt": "1767225600000",
+        "model": {"id": "bubble-model"},
+        "codeBlocks": [
+            {"languageId": {"id": "rust"}, "code": {"text": "fn cursor() {}"}},
+            "skip invalid code block"
+        ],
+        "toolCalls": [
+            {
+                "id": {"id": "tool-object"},
+                "name": {"name": "Read"},
+                "arguments": {"path": "src/lib.rs"},
+                "result": {"content": "read ok"},
+                "status": {"state": "success"}
+            },
+            "skip invalid tool call"
+        ],
+    });
+    insert(&conn, "bubbleId:comp-object:b-object", &bubble);
+    drop(conn);
+
+    let provider = CursorProvider::new(vec![tmp.path().to_path_buf()]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    let session = &sessions[0];
+    assert_eq!(session.id.0, "comp-object");
+    assert_eq!(session.summary.as_deref(), Some("Object Cursor chat"));
+    assert_eq!(session.project_name.as_deref(), Some("cursorapp"));
+    assert_eq!(session.model.as_deref(), Some("cursor-model"));
+    assert_eq!(session.message_count, 1);
+
+    let messages = provider.load_messages(session).unwrap();
+    assert_eq!(messages.len(), 1);
+    let message = &messages[0];
+    assert_eq!(message.id.0, "b-object");
+    assert_eq!(message.role, Role::Assistant);
+    assert_eq!(message.model.as_deref(), Some("bubble-model"));
+    assert!(matches!(
+        &message.content[0],
+        ContentBlock::Text(text) if text == "object cursor text"
+    ));
+    assert!(message.content.iter().any(|block| {
+        matches!(
+            block,
+            ContentBlock::CodeBlock { language, code }
+                if language.as_deref() == Some("rust") && code == "fn cursor() {}"
+        )
+    }));
+    assert!(message
+        .content
+        .iter()
+        .any(|block| matches!(block, ContentBlock::ToolUse(tool) if tool.name == "Read")));
+    assert!(
+        message
+            .content
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolResult(result) if result.tool_call_id == "tool-object"))
+    );
+}
+
+#[test]
 fn corrupt_bubble_value_does_not_crash() {
     let tmp = TempDir::new().unwrap();
     let db_path = setup_db(tmp.path());
