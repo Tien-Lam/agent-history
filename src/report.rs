@@ -37,8 +37,8 @@ pub struct ReportLimits {
 }
 
 impl ReportLimits {
-    /// Defaults sized for a weekly review snapshot. The bead spec calls for
-    /// "top 3 active projects"; the rest mirror the per-project dashboard.
+    /// Defaults sized for a weekly review snapshot. The top-project cap keeps
+    /// the Markdown report scannable; the rest mirror the per-project dashboard.
     pub const DEFAULTS: Self = Self {
         top_projects: 3,
         decisions: 5,

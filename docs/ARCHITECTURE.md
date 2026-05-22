@@ -206,15 +206,15 @@ The system **fails open**: without consent or without the `embeddings` build fea
 
 `aghist mcp` runs a JSON-RPC 2.0 server over stdio per the [MCP stdio transport](https://modelcontextprotocol.io/). It exposes aghist's read paths to agent clients without requiring them to parse the CLI:
 
-Tool definitions live in `src/mcp/payload.rs` and handlers under
-`src/mcp/tool_handlers/`; keep those as the source of truth. At a high level,
-the server exposes search/list/get-message/get-session, reindex, and health
-paths with the same read-only constraints as the CLI.
+Tool contracts live in `src/schema_fragments/mcp.rs`; `src/mcp/payload.rs`
+renders `tools/list` from that registry, and handlers live under
+`src/mcp/tool_handlers/`. At a high level, the server exposes
+search/list/get-message/get-session, reindex, and health paths with the same
+read-only constraints as the CLI.
 
-Output schemas for tools are registered under `src/schema_fragments/`, with
-MCP-specific fragments in `src/schema_fragments/mcp.rs`; the large row schemas
-are tested through that shared registry while the tool-list snapshot records
-compact schema refs.
+Output schemas for tools are registered through the same MCP contract registry.
+Large row schemas live under `src/schema_fragments/`, and the tool-list
+snapshot records compact schema refs.
 
 Resources are exposed as `aghist://session/<provider>/<session-id>` and `aghist://session/<provider>/<session-id>/turn/<n>` for local sessions, plus `aghist://source/<source>/session/<provider>/<session-id>` forms for remote-source sessions — agents can attach an entire session or a single turn as context.
 

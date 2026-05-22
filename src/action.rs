@@ -14,7 +14,7 @@ pub enum Action {
     PageDown,
     GoToTop,
     GoToBottom,
-    // Search (future)
+    // Search
     SearchStart,
     SearchInput(char),
     SearchBackspace,

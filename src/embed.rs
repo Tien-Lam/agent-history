@@ -1,6 +1,6 @@
 //! Semantic embedding integration (`FastEmbed` + sidecar storage).
 //!
-//! This module is the scaffold for ahist-y3o.4 (semantic search). It owns:
+//! This module owns the optional semantic-search path:
 //!
 //! - **Consent** (`embeddings-consent.json`): a per-index marker recording that
 //!   the user has authorised the one-off model download via `--accept-download`.
@@ -11,9 +11,8 @@
 //! - **Embedder** (feature `embeddings`): a thin wrapper around `fastembed`'s
 //!   `AllMiniLML6V2` model. Building this triggers the model download on first use.
 //!
-//! Hybrid scoring (RRF) lives in a follow-up bead (ahist-y3o.4.2). Cache
-//! invalidation by content hash is handled here: each stored vector is keyed
-//! by `(message_id, sha256(text))` so a message whose content changes gets
+//! Hybrid scoring uses Reciprocal Rank Fusion. Cache invalidation is keyed by
+//! `(message_id, sha256(text))` so a message whose content changes gets
 //! re-embedded on the next index pass. A bumped `STORE_VERSION` evicts the
 //! whole sidecar — readers treat older versions as a schema mismatch.
 

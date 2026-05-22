@@ -1,11 +1,11 @@
 //! Heuristic extraction of unresolved TODOs / follow-ups / open beads
 //! from session transcripts.
 //!
-//! Spike for `aghist todos` (ahist-y3o.7.2). The bead epic
-//! "Decision/TODO/thread extraction (research)" calls for a heuristic-first
-//! v1: regex-style scans, deterministic output, no LLM. Agents can chain
-//! follow-up extraction (e.g. drop refs whose `bd show` reports closed) on
-//! top of the JSON shape produced here.
+//! The default path is deliberately heuristic-first: regex-style scans,
+//! deterministic output, and no network calls. Agents can chain follow-up
+//! extraction (e.g. drop refs whose `bd show` reports closed) on top of the
+//! JSON shape produced here. The CLI also has an optional LLM refinement mode
+//! layered above these candidates.
 //!
 //! Heuristics scanned per line:
 //!   * `TODO` keyword (uppercase, word-bounded — avoids `todo` in prose
