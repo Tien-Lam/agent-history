@@ -1,6 +1,45 @@
 use super::diagnose_all_fixtures;
 
 #[test]
+fn generated_provider_diagnostics_cover_every_registered_provider() {
+    let (_dirs, providers) = super::common::fixtures::generated::all_generated_providers(1, 2);
+
+    let mut actual = providers
+        .iter()
+        .map(|provider| provider.provider())
+        .collect::<Vec<_>>();
+    actual.sort_by_key(|provider| provider.slug());
+
+    let mut expected = aghist::model::Provider::all().to_vec();
+    expected.sort_by_key(|provider| provider.slug());
+
+    assert_eq!(
+        actual, expected,
+        "generated fixture provider matrix drifted away from registered providers",
+    );
+
+    for provider in providers {
+        let label = provider.provider().slug();
+        let diagnostic =
+            aghist::provider_diagnostic::analyze_provider(label, provider.as_ref(), None)
+                .unwrap_or_else(|err| panic!("{label}: analyze_provider failed: {err}"));
+
+        assert_eq!(
+            diagnostic.session_count, 1,
+            "{label}: generated diagnostics should keep one session per provider",
+        );
+        assert_eq!(
+            diagnostic.message_count, 2,
+            "{label}: generated diagnostics should keep two messages per provider",
+        );
+        assert!(
+            diagnostic.blocks.total >= 2,
+            "{label}: generated diagnostics should produce message blocks",
+        );
+    }
+}
+
+#[test]
 fn all_fixture_providers_tool_call_fidelity() {
     let diagnostics = diagnose_all_fixtures();
 
