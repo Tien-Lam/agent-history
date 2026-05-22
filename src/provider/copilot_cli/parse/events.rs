@@ -1,4 +1,3 @@
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
@@ -12,79 +11,68 @@ use crate::provider::json_text::{
 };
 use crate::provider::parse_common::{
     parse_utc_or_now, pretty_json_opt, token_usage_from_options, tool_result_block, tool_use_block,
+    visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub(crate) fn parse_events_jsonl(path: &Path) -> Result<Vec<Message>, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Copilot CLI messages");
-    let file = std::fs::File::open(path)?;
-    let reader = BufReader::new(file);
     let mut messages = Vec::new();
-    let mut line_count: usize = 0;
-    let mut parse_errors: usize = 0;
     let mut skipped_types: usize = 0;
     let mut empty_content: usize = 0;
 
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        line_count += 1;
+    let stats = visit_jsonl_records::<RawEvent, _, _>(
+        path,
+        |record| {
+            let event = record.value;
+            let event_type =
+                stringish(event.event_type.as_ref(), &["type", "event"]).unwrap_or_default();
+            let event_type_str = event_type.as_str();
 
-        let event: RawEvent = match serde_json::from_str(&line) {
-            Ok(e) => e,
-            Err(e) => {
-                parse_errors += 1;
-                tracing::warn!(line_num = line_count, error = %e, "failed to parse JSONL line");
-                continue;
+            let role = match event_type_str {
+                t if t.contains("user") => Role::User,
+                t if t.contains("assistant.message") => Role::Assistant,
+                "tool.execution_start" => {
+                    push_tool_execution_start(&mut messages, &event);
+                    return;
+                }
+                "tool.execution_complete" | "tool.result" => {
+                    push_tool_result(&mut messages, &event);
+                    return;
+                }
+                t if t.contains("tool") => Role::Tool,
+                _ => {
+                    skipped_types += 1;
+                    tracing::trace!(event_type = event_type_str, "skipping non-message event");
+                    return;
+                }
+            };
+
+            let timestamp = event_timestamp(&event);
+            let content = event_content(&event);
+
+            if content.is_empty() {
+                empty_content += 1;
+                tracing::debug!(
+                    event_type = event_type_str,
+                    has_data = event.data.is_some(),
+                    data_has_content = event.data.as_ref().is_some_and(|d| d.content.is_some()),
+                    "skipping event with empty content"
+                );
+                return;
             }
-        };
 
-        let event_type =
-            stringish(event.event_type.as_ref(), &["type", "event"]).unwrap_or_default();
-        let event_type_str = event_type.as_str();
-
-        let role = match event_type_str {
-            t if t.contains("user") => Role::User,
-            t if t.contains("assistant.message") => Role::Assistant,
-            "tool.execution_start" => {
-                push_tool_execution_start(&mut messages, &event);
-                continue;
-            }
-            "tool.execution_complete" | "tool.result" => {
-                push_tool_result(&mut messages, &event);
-                continue;
-            }
-            t if t.contains("tool") => Role::Tool,
-            _ => {
-                skipped_types += 1;
-                tracing::trace!(event_type = event_type_str, "skipping non-message event");
-                continue;
-            }
-        };
-
-        let timestamp = event_timestamp(&event);
-        let content = event_content(&event);
-
-        if content.is_empty() {
-            empty_content += 1;
-            tracing::debug!(
-                event_type = event_type_str,
-                has_data = event.data.is_some(),
-                data_has_content = event.data.as_ref().is_some_and(|d| d.content.is_some()),
-                "skipping event with empty content"
-            );
-            continue;
-        }
-
-        messages.push(event_message(&event, role, timestamp, content));
-    }
+            messages.push(event_message(&event, role, timestamp, content));
+        },
+        |error| {
+            tracing::warn!(line_num = error.line_number, error = %error.error, "failed to parse JSONL line");
+        },
+    )?;
 
     tracing::info!(
         path = %path.display(),
-        lines = line_count,
-        parse_errors,
+        lines = stats.line_count,
+        parse_errors = stats.parse_errors,
         skipped_types,
         empty_content,
         messages = messages.len(),
