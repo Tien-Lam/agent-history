@@ -10,7 +10,7 @@ pub mod embed;
 pub mod event;
 pub mod export;
 pub mod federated;
-pub mod fs_atomic;
+pub(crate) mod fs_atomic;
 pub mod health;
 pub mod indexing;
 pub mod llm;
