@@ -159,3 +159,41 @@ fn search_index_unscoped_partial_rebuild_prunes_nothing() {
         "no-prune partial rebuild must preserve existing Gemini docs"
     );
 }
+
+#[test]
+fn corrupt_manifest_resets_index_before_rebuild() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+
+    let providers = all_providers();
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    index.build_index(&sessions, &providers, &tx).unwrap();
+    assert!(
+        !index.search("missing semicolon", 10).unwrap().is_empty(),
+        "Claude fixture should be indexed before manifest corruption"
+    );
+
+    fs::write(index_dir.path().join("manifest.json"), "{not json").unwrap();
+
+    let gemini_sessions: Vec<_> = sessions
+        .into_iter()
+        .filter(|session| session.provider == Provider::GeminiCli)
+        .collect();
+    index
+        .build_index(&gemini_sessions, &providers, &tx)
+        .unwrap();
+
+    assert!(
+        index.search("missing semicolon", 10).unwrap().is_empty(),
+        "corrupt manifest rebuild must not leave stale Claude docs behind"
+    );
+    assert!(
+        !index.search("async", 10).unwrap().is_empty(),
+        "current Gemini sessions should be re-indexed after manifest reset"
+    );
+}

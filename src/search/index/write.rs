@@ -23,6 +23,20 @@ fn should_prune_session_key(key: &str, prune_providers: Option<&HashSet<Provider
 }
 
 impl SearchIndex {
+    fn load_manifest_or_reset(
+        &self,
+        writer: &mut IndexWriter<TantivyDocument>,
+    ) -> Result<Manifest, SearchError> {
+        match self.load_manifest() {
+            Ok(manifest) => Ok(manifest),
+            Err(SearchError::Json(_)) => {
+                writer.delete_all_documents()?;
+                Ok(Manifest::default())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn build_index(
         &self,
         sessions: &[Session],
@@ -59,8 +73,8 @@ impl SearchIndex {
         progress_tx: &crossbeam_channel::Sender<Action>,
         prune_providers: Option<&HashSet<Provider>>,
     ) -> Result<IndexStats, SearchError> {
-        let mut manifest = self.load_manifest();
         let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
+        let mut manifest = self.load_manifest_or_reset(&mut writer)?;
 
         if manifest_has_legacy_path_keys(&manifest) {
             writer.delete_all_documents()?;
@@ -168,8 +182,8 @@ impl SearchIndex {
     /// via Tantivy's MUST clauses — which is the right behaviour, since those
     /// dimensions don't apply to a free-form annotation.
     pub fn index_notes(&self, notes: &[Note]) -> Result<NotesIndexStats, SearchError> {
-        let mut manifest = self.load_manifest();
         let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
+        let mut manifest = self.load_manifest_or_reset(&mut writer)?;
         let mut stats = NotesIndexStats::default();
 
         // Track ids seen this pass so we can prune stale manifest entries.
@@ -235,15 +249,14 @@ impl SearchIndex {
 
     pub fn clear_providers(&self, providers: &HashSet<Provider>) -> Result<(), SearchError> {
         let mut writer: IndexWriter<TantivyDocument> = self.index.writer(50_000_000)?;
+        let mut manifest = self.load_manifest_or_reset(&mut writer)?;
         for provider in providers {
             writer.delete_term(Term::from_field_text(self.fields.provider, provider.slug()));
         }
-        writer.commit()?;
-
-        let mut manifest = self.load_manifest();
         manifest
             .sessions
             .retain(|key, _| !should_prune_session_key(key, Some(providers)));
+        writer.commit()?;
         self.save_manifest(&manifest)?;
         Ok(())
     }

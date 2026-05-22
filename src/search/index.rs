@@ -68,12 +68,14 @@ impl SearchIndex {
         )
     }
 
-    fn load_manifest(&self) -> Manifest {
+    fn load_manifest(&self) -> Result<Manifest, SearchError> {
         let path = self.index_dir.join("manifest.json");
-        fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        let contents = match fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Manifest::default()),
+            Err(e) => return Err(e.into()),
+        };
+        serde_json::from_str(&contents).map_err(Into::into)
     }
 
     fn save_manifest(&self, manifest: &Manifest) -> Result<(), SearchError> {
