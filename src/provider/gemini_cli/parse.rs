@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 
 use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
-use crate::provider::json_text::string_or_object_field_or_pretty;
+use crate::provider::json_text::{string_or_object_field, string_or_object_field_or_pretty};
 use crate::provider::parse_common::{
-    nonzero_token_usage, parse_utc_opt, parse_utc_or_now, pretty_json_opt,
-    token_usage_from_options, tool_result_block, tool_use_block,
+    millis_to_utc, nonzero_token_usage, parse_utc_opt, pretty_json_opt, token_usage_from_options,
+    tool_result_block, tool_use_block,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -45,27 +46,32 @@ pub(crate) fn build_session_from_file(
 ) -> Option<Session> {
     let data = std::fs::read_to_string(path).ok()?;
     let raw: RawSession = serde_json::from_str(&data).ok()?;
+    let session_id = stringish(raw.session_id.as_ref(), &["sessionId", "id"]).or_else(|| {
+        path.file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_string)
+    })?;
 
     let message_count = raw
         .messages
         .iter()
-        .filter(|m| raw_role(m.msg_type.as_deref()).is_some())
+        .filter(|m| raw_role(m.msg_type.as_ref()).is_some())
         .count();
 
     if message_count == 0 {
         return None;
     }
 
-    let started_at = parse_utc_opt(raw.start_time.as_deref())
+    let started_at = timestamp_value_to_utc(raw.start_time.as_ref())
         .or_else(|| first_message_timestamp(&raw.messages))?;
-    let ended_at = parse_utc_opt(raw.last_updated.as_deref())
+    let ended_at = timestamp_value_to_utc(raw.last_updated.as_ref())
         .or_else(|| last_message_timestamp(&raw.messages));
 
     let project_path = project_map.get(project_slug).map(PathBuf::from);
 
     // Get first user message as summary
     let summary = raw.messages.iter().find_map(|m| {
-        if m.msg_type.as_deref() == Some("user") {
+        if raw_role(m.msg_type.as_ref()) == Some(Role::User) {
             extract_user_text(m).map(|t| t.chars().take(80).collect())
         } else {
             None
@@ -73,14 +79,17 @@ pub(crate) fn build_session_from_file(
     });
 
     // Get model from first gemini message
-    let model = raw.messages.iter().find_map(|m| m.model.clone());
+    let model = raw
+        .messages
+        .iter()
+        .find_map(|m| stringish(m.model.as_ref(), &["model", "id", "name"]));
 
     // Sum tokens
     let (input_total, output_total) = raw.messages.iter().fold((0u64, 0u64), |(inp, out), m| {
         if let Some(ref tokens) = m.tokens {
             (
-                inp + tokens.input.unwrap_or(0),
-                out + tokens.output.unwrap_or(0),
+                inp + value_u64(tokens.input.as_ref()).unwrap_or(0),
+                out + value_u64(tokens.output.as_ref()).unwrap_or(0),
             )
         } else {
             (inp, out)
@@ -90,7 +99,7 @@ pub(crate) fn build_session_from_file(
     let token_usage = nonzero_token_usage(input_total, output_total, None, None);
 
     Some(Session {
-        id: SessionId(raw.session_id),
+        id: SessionId(session_id),
         provider: Provider::GeminiCli,
         project_path,
         project_name: Some(project_slug.to_string()),
@@ -108,16 +117,16 @@ pub(crate) fn build_session_from_file(
 fn first_message_timestamp(messages: &[RawMessage]) -> Option<DateTime<Utc>> {
     messages
         .iter()
-        .filter(|m| raw_role(m.msg_type.as_deref()).is_some())
-        .find_map(|m| parse_utc_opt(m.timestamp.as_deref()))
+        .filter(|m| raw_role(m.msg_type.as_ref()).is_some())
+        .find_map(|m| timestamp_value_to_utc(m.timestamp.as_ref()))
 }
 
 fn last_message_timestamp(messages: &[RawMessage]) -> Option<DateTime<Utc>> {
     messages
         .iter()
         .rev()
-        .filter(|m| raw_role(m.msg_type.as_deref()).is_some())
-        .find_map(|m| parse_utc_opt(m.timestamp.as_deref()))
+        .filter(|m| raw_role(m.msg_type.as_ref()).is_some())
+        .find_map(|m| timestamp_value_to_utc(m.timestamp.as_ref()))
 }
 
 fn extract_user_text(msg: &RawMessage) -> Option<String> {
@@ -125,11 +134,12 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
         RawContent::Text(s) => Some(s.clone()),
         RawContent::Parts(parts) => {
             // Use displayContent if available, otherwise first text part
-            if let Some(ref dc) = msg.display_content {
-                dc.iter().find_map(|p| p.text.clone())
+            let text = if let Some(ref dc) = msg.display_content {
+                text_parts(dc)
             } else {
-                parts.iter().find_map(|p| p.text.clone())
-            }
+                text_parts(parts)
+            };
+            (!text.is_empty()).then_some(text)
         }
         RawContent::Json(value) => Some(string_or_object_field_or_pretty(
             value,
@@ -158,7 +168,7 @@ fn convert_messages(raw_messages: &[RawMessage]) -> Vec<Message> {
 }
 
 fn convert_message(msg: &RawMessage) -> Option<Message> {
-    let role = raw_role(msg.msg_type.as_deref())?;
+    let role = raw_role(msg.msg_type.as_ref())?;
     let mut content = message_content(msg, role);
 
     if content.is_empty() {
@@ -166,27 +176,32 @@ fn convert_message(msg: &RawMessage) -> Option<Message> {
     }
 
     Some(Message {
-        id: MessageId(msg.id.clone().unwrap_or_default()),
+        id: MessageId(stringish(msg.id.as_ref(), &["id"]).unwrap_or_default()),
         role,
-        timestamp: message_timestamp(msg.timestamp.as_deref()),
+        timestamp: message_timestamp(msg.timestamp.as_ref()),
         content: std::mem::take(&mut content),
-        model: msg.model.clone(),
+        model: stringish(msg.model.as_ref(), &["model", "id", "name"]),
         token_usage: msg.tokens.as_ref().map(|tokens| {
-            token_usage_from_options(tokens.input, tokens.output, tokens.cached, None)
+            token_usage_from_options(
+                value_u64(tokens.input.as_ref()),
+                value_u64(tokens.output.as_ref()),
+                value_u64(tokens.cached.as_ref()),
+                None,
+            )
         }),
     })
 }
 
-fn raw_role(msg_type: Option<&str>) -> Option<Role> {
-    match msg_type {
+fn raw_role(msg_type: Option<&Value>) -> Option<Role> {
+    match stringish(msg_type, &["type", "role"]).as_deref() {
         Some("user") => Some(Role::User),
         Some("gemini") => Some(Role::Assistant),
         _ => None,
     }
 }
 
-fn message_timestamp(raw: Option<&str>) -> DateTime<Utc> {
-    parse_utc_or_now(raw)
+fn message_timestamp(raw: Option<&Value>) -> DateTime<Utc> {
+    timestamp_value_to_utc(raw).unwrap_or_else(Utc::now)
 }
 
 fn message_content(msg: &RawMessage, role: Role) -> Vec<ContentBlock> {
@@ -220,8 +235,7 @@ fn message_text(msg: &RawMessage, role: Role) -> String {
 fn text_parts(parts: &[TextPart]) -> String {
     parts
         .iter()
-        .filter_map(|p| p.text.as_ref())
-        .cloned()
+        .filter_map(|p| stringish(p.text.as_ref(), &["text", "content", "message"]))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -232,9 +246,13 @@ fn append_thoughts(content: &mut Vec<ContentBlock>, thoughts: Option<&[Thought]>
     };
 
     for thought in thoughts {
-        let desc = thought.description.as_deref().unwrap_or("");
-        if !desc.is_empty() {
-            content.push(ContentBlock::Thinking(desc.to_string()));
+        if let Some(desc) = stringish(
+            thought.description.as_ref(),
+            &["description", "text", "content"],
+        )
+        .filter(|desc| !desc.is_empty())
+        {
+            content.push(ContentBlock::Thinking(desc));
         }
     }
 }
@@ -245,10 +263,11 @@ fn append_tool_calls(content: &mut Vec<ContentBlock>, tool_calls: Option<&[RawTo
     };
 
     for tc in tool_calls {
-        let id = tc.id.clone().unwrap_or_default();
+        let id = stringish(tc.id.as_ref(), &["id", "toolCallId"]).unwrap_or_default();
         content.push(tool_use_block(
             id.clone(),
-            tc.name.clone().unwrap_or_else(|| "unknown".to_string()),
+            stringish(tc.name.as_ref(), &["name", "toolName"])
+                .unwrap_or_else(|| "unknown".to_string()),
             pretty_json_opt(tc.args.as_ref()),
         ));
 
@@ -269,21 +288,21 @@ fn append_tool_response(content: &mut Vec<ContentBlock>, tc: &RawToolCall, id: S
 #[derive(Deserialize)]
 struct RawSession {
     #[serde(rename = "sessionId")]
-    session_id: String,
+    session_id: Option<Value>,
     #[serde(rename = "startTime")]
-    start_time: Option<String>,
+    start_time: Option<Value>,
     #[serde(rename = "lastUpdated")]
-    last_updated: Option<String>,
-    #[serde(default)]
+    last_updated: Option<Value>,
+    #[serde(default, deserialize_with = "deserialize_vec_skip_invalid")]
     messages: Vec<RawMessage>,
 }
 
 #[derive(Deserialize)]
 struct RawMessage {
-    id: Option<String>,
-    timestamp: Option<String>,
+    id: Option<Value>,
+    timestamp: Option<Value>,
     #[serde(rename = "type")]
-    msg_type: Option<String>,
+    msg_type: Option<Value>,
     #[serde(default)]
     content: RawContent,
     #[serde(rename = "displayContent")]
@@ -295,7 +314,7 @@ struct RawMessage {
     #[serde(rename = "toolCalls")]
     #[serde(default, deserialize_with = "deserialize_optional_vec")]
     tool_calls: Option<Vec<RawToolCall>>,
-    model: Option<String>,
+    model: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -314,25 +333,25 @@ impl Default for RawContent {
 
 #[derive(Deserialize)]
 struct TextPart {
-    text: Option<String>,
+    text: Option<Value>,
 }
 
 #[derive(Deserialize)]
 struct Thought {
-    description: Option<String>,
+    description: Option<Value>,
 }
 
 #[derive(Deserialize)]
 struct RawTokens {
-    input: Option<u64>,
-    output: Option<u64>,
-    cached: Option<u64>,
+    input: Option<Value>,
+    output: Option<Value>,
+    cached: Option<Value>,
 }
 
 #[derive(Deserialize)]
 struct RawToolCall {
-    id: Option<String>,
-    name: Option<String>,
+    id: Option<Value>,
+    name: Option<Value>,
     args: Option<serde_json::Value>,
     /// Populated by gemini-cli after the tool has executed. Shape varies -
     /// often `{"output": "..."}` or a free-form provider blob - so we
@@ -340,6 +359,71 @@ struct RawToolCall {
     response: Option<serde_json::Value>,
     /// Set when the tool execution failed.
     error: Option<serde_json::Value>,
+}
+
+fn timestamp_value_to_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
+    let value = value?;
+    match value {
+        Value::String(text) => {
+            parse_utc_opt(Some(text)).or_else(|| text.parse::<i64>().ok().and_then(millis_to_utc))
+        }
+        Value::Number(number) => number
+            .as_i64()
+            .or_else(|| number.as_u64().and_then(|n| i64::try_from(n).ok()))
+            .and_then(millis_to_utc),
+        Value::Object(map) => ["timestamp", "startTime", "lastUpdated", "value"]
+            .iter()
+            .find_map(|field| timestamp_value_to_utc(map.get(*field))),
+        _ => None,
+    }
+}
+
+fn stringish(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
+    let value = value?;
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(map) => object_fields
+            .iter()
+            .find_map(|field| stringish(map.get(*field), object_fields))
+            .or_else(|| {
+                let text = string_or_object_field(value, object_fields);
+                (!text.is_empty()).then_some(text)
+            }),
+        _ => None,
+    }
+}
+
+fn value_u64(value: Option<&Value>) -> Option<u64> {
+    match value? {
+        Value::Number(number) => number
+            .as_u64()
+            .or_else(|| number.as_i64().and_then(|n| u64::try_from(n).ok())),
+        Value::String(text) => text.parse::<u64>().ok(),
+        Value::Object(map) => ["value", "tokens", "count"]
+            .iter()
+            .find_map(|field| value_u64(map.get(*field))),
+        _ => None,
+    }
+}
+
+fn deserialize_vec_skip_invalid<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
+        return Ok(Vec::new());
+    };
+
+    let Value::Array(items) = value else {
+        return Ok(Vec::new());
+    };
+
+    Ok(items
+        .into_iter()
+        .filter_map(|item| serde_json::from_value(item).ok())
+        .collect())
 }
 
 fn deserialize_optional_vec<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>

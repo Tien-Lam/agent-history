@@ -123,3 +123,88 @@ fn gemini_tolerates_shape_drift_without_dropping_session() {
     assert!(matches!(&messages[0].content[0], ContentBlock::Text(t) if t == "object user text"));
     assert_eq!(messages[1].role, Role::Assistant);
 }
+
+#[test]
+fn gemini_tolerates_object_message_metadata_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path();
+    fs::write(
+        base.join("projects.json"),
+        r#"{"projects":{"/tmp/object":"object-project"}}"#,
+    )
+    .unwrap();
+    let chats = base.join("tmp").join("object-project").join("chats");
+    fs::create_dir_all(&chats).unwrap();
+    fs::write(
+        chats.join("session-object.json"),
+        r#"{
+          "sessionId":{"id":"gemini-object"},
+          "startTime":{"timestamp":"2025-01-01T00:00:00Z"},
+          "lastUpdated":{"timestamp":"2025-01-01T00:00:02Z"},
+          "messages":[
+            "skip malformed message",
+            {
+              "id":{"id":"gm-user"},
+              "timestamp":{"timestamp":"2025-01-01T00:00:01Z"},
+              "type":{"type":"user"},
+              "content":[{"text":{"content":"display object text"}}],
+              "displayContent":[{"text":{"text":"display object text"}}],
+              "tokens":{"input":"4","output":{"value":5}}
+            },
+            {
+              "id":{"id":"gm-assistant"},
+              "timestamp":{"timestamp":"2025-01-01T00:00:02Z"},
+              "type":{"type":"gemini"},
+              "content":[{"text":{"content":"assistant object text"}}],
+              "thoughts":[{"description":{"text":"thinking object"}}],
+              "toolCalls":[{"id":{"id":"tool-1"},"name":{"name":"inspect"},"args":{"path":"src/main.rs"},"response":{"output":{"text":"tool ok"}}}],
+              "model":{"id":"gemini-object-model"},
+              "tokens":{"input":{"tokens":6},"output":"7","cached":{"count":2}}
+            }
+          ]
+        }"#,
+    )
+    .unwrap();
+
+    let provider = GeminiCliProvider::new(vec![base.to_path_buf()]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    let session = &sessions[0];
+    assert_eq!(session.id.0, "gemini-object");
+    assert_eq!(session.project_name.as_deref(), Some("object-project"));
+    assert_eq!(session.model.as_deref(), Some("gemini-object-model"));
+    assert_eq!(session.summary.as_deref(), Some("display object text"));
+    assert_eq!(session.message_count, 2);
+    let usage = session.token_usage.as_ref().unwrap();
+    assert_eq!(usage.input_tokens, 10);
+    assert_eq!(usage.output_tokens, 12);
+
+    let messages = provider.load_messages(session).unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].id.0, "gm-user");
+    assert_eq!(messages[0].role, Role::User);
+    assert!(matches!(
+        &messages[0].content[0],
+        ContentBlock::Text(text) if text == "display object text"
+    ));
+
+    let assistant = &messages[1];
+    assert_eq!(assistant.id.0, "gm-assistant");
+    assert_eq!(assistant.model.as_deref(), Some("gemini-object-model"));
+    assert!(assistant
+        .content
+        .iter()
+        .any(|block| matches!(block, ContentBlock::Thinking(text) if text == "thinking object")));
+    assert!(
+        assistant
+            .content
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolUse(tool) if tool.id == "tool-1" && tool.name == "inspect"))
+    );
+    assert!(
+        assistant
+            .content
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolResult(result) if result.tool_call_id == "tool-1" && result.output.contains("tool ok")))
+    );
+}
