@@ -2,19 +2,21 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 
 use super::ProviderError;
 use crate::model::{Message, MessageId, Provider, Role, Session, SessionId};
+use crate::provider::json_text::{string_or_object_field, string_or_object_field_or_pretty};
 use crate::provider::parse_common::{epoch_timestamp_for_index, file_modified_utc, millis_to_utc};
 use crate::provider::project_name_from_path;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 #[derive(Debug, Deserialize)]
 struct ZedConversation {
-    id: Option<String>,
-    summary: Option<String>,
-    model: Option<String>,
-    workspace: Option<String>,
+    id: Option<Value>,
+    summary: Option<Value>,
+    model: Option<Value>,
+    workspace: Option<Value>,
     #[serde(default, alias = "createdAt")]
     created_at: Option<Timestamp>,
     #[serde(default, alias = "updatedAt")]
@@ -25,13 +27,13 @@ struct ZedConversation {
 
 #[derive(Debug, Deserialize)]
 struct ZedMessage {
-    id: Option<String>,
-    role: Option<String>,
+    id: Option<Value>,
+    role: Option<Value>,
     #[serde(default, alias = "content")]
-    text: Option<String>,
+    text: Option<Value>,
     #[serde(default, alias = "createdAt")]
     timestamp: Option<Timestamp>,
-    model: Option<String>,
+    model: Option<Value>,
 }
 
 /// Accepts either an RFC3339 string or epoch milliseconds. Older Zed builds
@@ -69,11 +71,15 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
     };
 
     // Recover an ID: explicit field → file stem → skip.
-    let id = raw.id.clone().or_else(|| {
-        path.file_stem()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
-    });
+    let id = raw
+        .id
+        .as_ref()
+        .and_then(|value| stringish(value, &["id"]))
+        .or_else(|| {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .map(str::to_string)
+        });
     let Some(id) = id else { return Ok(None) };
 
     // Started_at: created_at → earliest message timestamp → file mtime → skip.
@@ -93,8 +99,12 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
         .and_then(Timestamp::to_utc)
         .or_else(|| latest_message_ts(&raw));
 
-    let project_path = raw.workspace.clone().map(PathBuf::from);
-    let project_name = raw.workspace.as_deref().and_then(project_name_from_path);
+    let workspace = raw
+        .workspace
+        .as_ref()
+        .and_then(|value| stringish(value, &["path", "workspace"]));
+    let project_path = workspace.clone().map(PathBuf::from);
+    let project_name = workspace.as_deref().and_then(project_name_from_path);
 
     let message_count = raw.messages.len();
 
@@ -106,8 +116,14 @@ pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError
         git_branch: None,
         started_at,
         ended_at,
-        summary: raw.summary,
-        model: raw.model,
+        summary: raw
+            .summary
+            .as_ref()
+            .and_then(|value| stringish(value, &["summary", "title", "text"])),
+        model: raw
+            .model
+            .as_ref()
+            .and_then(|value| stringish(value, &["model", "id", "name"])),
         token_usage: None,
         message_count,
         source_path: path.to_path_buf(),
@@ -127,7 +143,7 @@ pub(crate) fn load_messages_from_path(path: &Path) -> Result<Vec<Message>, Provi
 
     let messages = raw
         .messages
-        .into_iter()
+        .iter()
         .enumerate()
         .filter_map(|(idx, m)| build_message(m, idx))
         .collect();
@@ -148,9 +164,13 @@ fn latest_message_ts(conv: &ZedConversation) -> Option<DateTime<Utc>> {
         .max()
 }
 
-fn build_message(raw: ZedMessage, idx: usize) -> Option<Message> {
-    let role = parse_role(raw.role.as_deref())?;
-    let body = raw.text.unwrap_or_default();
+fn build_message(raw: &ZedMessage, idx: usize) -> Option<Message> {
+    let role_text = raw
+        .role
+        .as_ref()
+        .and_then(|value| stringish(value, &["role"]));
+    let role = parse_role(role_text.as_deref())?;
+    let body = raw.text.as_ref().map(message_text).unwrap_or_default();
 
     let timestamp = raw
         .timestamp
@@ -158,7 +178,11 @@ fn build_message(raw: ZedMessage, idx: usize) -> Option<Message> {
         .and_then(Timestamp::to_utc)
         .unwrap_or_else(|| epoch_timestamp_for_index(idx));
 
-    let id = raw.id.unwrap_or_else(|| format!("zed-msg-{idx}"));
+    let id = raw
+        .id
+        .as_ref()
+        .and_then(|value| stringish(value, &["id"]))
+        .unwrap_or_else(|| format!("zed-msg-{idx}"));
     let content = if body.is_empty() {
         Vec::new()
     } else {
@@ -170,9 +194,28 @@ fn build_message(raw: ZedMessage, idx: usize) -> Option<Message> {
         role,
         timestamp,
         content,
-        model: raw.model,
+        model: raw
+            .model
+            .as_ref()
+            .and_then(|value| stringish(value, &["model", "id", "name"])),
         token_usage: None,
     })
+}
+
+fn message_text(value: &Value) -> String {
+    string_or_object_field_or_pretty(value, &["text", "content", "message"])
+}
+
+fn stringish(value: &Value, object_fields: &[&str]) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Object(_) => {
+            let text = string_or_object_field(value, object_fields);
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
 }
 
 fn parse_role(role: Option<&str>) -> Option<Role> {

@@ -109,6 +109,47 @@ fn parses_conversation_with_millis_timestamps() {
 }
 
 #[test]
+fn tolerates_object_shaped_string_fields() {
+    let tmp = TempDir::new().unwrap();
+    let json = serde_json::json!({
+        "id": {"id": "conv-object"},
+        "summary": {"title": "Object summary"},
+        "model": {"id": "zed-model"},
+        "workspace": {"path": "/home/me/projects/objectapp"},
+        "created_at": "2026-01-01T00:00:00Z",
+        "messages": [
+            {
+                "id": {"id": "m1"},
+                "role": {"role": "user"},
+                "text": {"content": "object text"},
+                "timestamp": "2026-01-01T00:00:00Z",
+                "model": {"id": "message-model"}
+            }
+        ]
+    });
+    write_conv(tmp.path(), "conv-object.json", &json);
+
+    let provider = ZedAiProvider::new(vec![tmp.path().to_path_buf()]);
+    let sessions = provider.discover_sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    let s = &sessions[0];
+    assert_eq!(s.id.0, "conv-object");
+    assert_eq!(s.summary.as_deref(), Some("Object summary"));
+    assert_eq!(s.project_name.as_deref(), Some("objectapp"));
+    assert_eq!(s.model.as_deref(), Some("zed-model"));
+
+    let messages = provider.load_messages(s).unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].id.0, "m1");
+    assert_eq!(messages[0].role, Role::User);
+    assert_eq!(messages[0].model.as_deref(), Some("message-model"));
+    assert!(matches!(
+        &messages[0].content[0],
+        ContentBlock::Text(text) if text == "object text"
+    ));
+}
+
+#[test]
 fn skips_corrupt_json_without_crash() {
     let tmp = TempDir::new().unwrap();
     let conv_dir = tmp.path().join(CONVERSATIONS_SUBDIR);
