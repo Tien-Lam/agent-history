@@ -171,3 +171,21 @@ fn tool_output_schemas_use_shared_registry() {
         ]
     );
 }
+
+#[test]
+fn tool_output_schemas_are_closed_at_the_envelope() {
+    let tools = tool_definitions();
+    let tools = tools.as_array().unwrap();
+
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap();
+        let output_schema = tool
+            .get("outputSchema")
+            .unwrap_or_else(|| panic!("{name} missing outputSchema"));
+        assert_eq!(output_schema["type"], "object", "{name} outputSchema type");
+        assert_eq!(
+            output_schema["additionalProperties"], false,
+            "{name} outputSchema should reject undocumented top-level fields"
+        );
+    }
+}

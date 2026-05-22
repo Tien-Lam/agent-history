@@ -96,6 +96,7 @@ fn search_schema_describes_json_envelope() {
 fn index_schema_describes_summary_contract() {
     let schema = schema_for("index").unwrap();
     let response = &schema["response"];
+    assert_eq!(response["additionalProperties"], false);
     for field in [
         "providers",
         "sessions_total",
@@ -129,12 +130,14 @@ fn index_schema_describes_summary_contract() {
 fn health_schema_documents_provider_fidelity_contract() {
     let schema = schema_for("health").unwrap();
     let response = &schema["response"];
+    assert_eq!(response["additionalProperties"], false);
     assert!(
         string_array(&response["required"]).contains(&"provider_fidelity"),
         "health response must require provider_fidelity"
     );
 
     let row = &response["properties"]["provider_fidelity"]["items"];
+    assert_eq!(row["additionalProperties"], false);
     for field in [
         "label",
         "provider",

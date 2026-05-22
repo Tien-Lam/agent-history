@@ -339,7 +339,7 @@ fn embeddings_status_schema() -> Value {
 }
 
 pub(crate) fn indexing_summary_response_schema() -> Value {
-    object_schema(
+    closed_object_schema(
         schema_props([
             (
                 "providers",
@@ -409,7 +409,7 @@ fn with_description(mut schema: Value, description: &str) -> Value {
 }
 
 pub(crate) fn health_response_schema() -> Value {
-    object_schema(
+    closed_object_schema(
         schema_props([
             ("ok", json!({ "type": "boolean" })),
             ("checks", array_schema(health_check_schema())),
@@ -424,7 +424,7 @@ pub(crate) fn health_response_schema() -> Value {
 }
 
 fn health_check_schema() -> Value {
-    object_schema(
+    closed_object_schema(
         schema_props([
             ("name", json!({ "type": "string" })),
             (
@@ -439,7 +439,7 @@ fn health_check_schema() -> Value {
 }
 
 fn health_summary_schema() -> Value {
-    object_schema(
+    closed_object_schema(
         schema_props([
             ("ok_count", json!({ "type": "integer", "minimum": 0 })),
             ("warn_count", json!({ "type": "integer", "minimum": 0 })),
@@ -450,7 +450,7 @@ fn health_summary_schema() -> Value {
 }
 
 fn provider_parse_stats_schema() -> Value {
-    object_schema(
+    closed_object_schema(
         schema_props([
             ("records_seen", json!({ "type": "integer", "minimum": 0 })),
             ("parse_errors", json!({ "type": "integer", "minimum": 0 })),
@@ -470,7 +470,7 @@ fn provider_parse_stats_schema() -> Value {
 }
 
 fn provider_block_counts_schema() -> Value {
-    object_schema(
+    closed_object_schema(
         schema_props([
             ("text", json!({ "type": "integer", "minimum": 0 })),
             ("code_block", json!({ "type": "integer", "minimum": 0 })),
@@ -493,7 +493,7 @@ fn provider_block_counts_schema() -> Value {
 }
 
 fn provider_tool_call_fidelity_schema() -> Value {
-    object_schema(
+    closed_object_schema(
         schema_props([
             ("tool_calls", json!({ "type": "integer", "minimum": 0 })),
             ("tool_results", json!({ "type": "integer", "minimum": 0 })),
@@ -536,7 +536,7 @@ fn provider_tool_call_fidelity_schema() -> Value {
 }
 
 fn provider_fidelity_item_schema() -> Value {
-    object_schema(
+    closed_object_schema(
         schema_props([
             ("label", json!({ "type": "string" })),
             ("provider", json!({ "type": "string" })),
