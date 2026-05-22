@@ -236,7 +236,7 @@ fn list_invalid_note_substring_emits_usage_envelope() {
         .env("AGHIST_HOME", &home)
         .env("AGHIST_METADATA_DB", &db)
         .assert()
-        .code(1);
+        .code(2);
     let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
     let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
     let env: serde_json::Value = serde_json::from_str(line).unwrap();

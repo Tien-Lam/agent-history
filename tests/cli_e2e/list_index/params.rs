@@ -23,7 +23,7 @@ fn index_params_unknown_provider_slug_emits_usage() {
         .args(["index", "--params", &body])
         .env("AGHIST_HOME", home.path())
         .assert()
-        .code(1);
+        .code(2);
     let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }

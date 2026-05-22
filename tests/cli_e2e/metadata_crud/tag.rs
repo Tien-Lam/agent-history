@@ -203,7 +203,7 @@ fn tag_add_rejects_empty_tag_with_envelope() {
     let assert = tag_env(&db)
         .args(["tag", "add", "claude-code/abc", "   "])
         .assert()
-        .code(1);
+        .code(2);
     let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
     let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
     let env: serde_json::Value = serde_json::from_str(line).unwrap();

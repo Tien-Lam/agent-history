@@ -209,7 +209,7 @@ fn show_invalid_ref_emits_usage_envelope() {
         .args(["show", "not-a-ref"])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .code(1);
+        .code(2);
     let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }

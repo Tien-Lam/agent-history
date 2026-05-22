@@ -186,7 +186,7 @@ fn sources_add_rejects_path_like_name() {
         .env("AGHIST_CONFIG", &config_path)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8(output.stderr).unwrap();
     let line = stderr
         .lines()
@@ -209,7 +209,7 @@ fn sources_add_rejects_rsync_option_like_host() {
         .env("AGHIST_CONFIG", &config_path)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8(output.stderr).unwrap();
     let line = stderr
         .lines()

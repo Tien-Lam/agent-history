@@ -103,7 +103,7 @@ fn decisions_llm_model_without_llm_flag_is_usage_error() {
         .env("AGHIST_HOME", dir.path())
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
         stderr.contains("\"kind\":\"usage\""),

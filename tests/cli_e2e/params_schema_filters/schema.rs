@@ -129,9 +129,9 @@ fn schema_all_dumps_every_subcommand() {
 }
 
 #[test]
-fn schema_unknown_subcommand_exits_one_with_envelope() {
+fn schema_unknown_subcommand_exits_two_with_envelope() {
     let output = aghist().args(["schema", "nonsense"]).output().unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8(output.stderr).unwrap();
     let parsed: serde_json::Value =
         serde_json::from_str(stderr.trim().lines().last().unwrap()).unwrap();

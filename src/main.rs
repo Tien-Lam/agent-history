@@ -1,4 +1,4 @@
-use aghist::cli_error::{ErrorEnvelope, EXIT_ERROR, EXIT_USAGE};
+use aghist::cli_error::{ErrorEnvelope, EXIT_USAGE};
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -50,8 +50,9 @@ fn main() -> ExitCode {
     match commands::dispatch::run(cli) {
         Ok(code) => exit_code(code),
         Err(env) => {
+            let code = env.exit_code();
             env.emit();
-            exit_code(EXIT_ERROR)
+            exit_code(code)
         }
     }
 }

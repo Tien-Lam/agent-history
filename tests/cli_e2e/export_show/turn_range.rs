@@ -84,7 +84,7 @@ fn export_turn_range_invalid_emits_usage_envelope() {
         ])
         .env("AGHIST_HOME", home)
         .assert()
-        .code(1); // ErrorEnvelope without explicit EXIT_USAGE return → exit 1
+        .code(2);
     let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }

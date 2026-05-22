@@ -74,6 +74,14 @@ impl ErrorEnvelope {
             )
         })
     }
+
+    pub fn exit_code(&self) -> i32 {
+        if self.kind == "usage" {
+            EXIT_USAGE
+        } else {
+            EXIT_ERROR
+        }
+    }
 }
 
 #[cfg(test)]
@@ -110,5 +118,14 @@ mod tests {
         assert_eq!(EXIT_ERROR, 1);
         assert_eq!(EXIT_USAGE, 2);
         assert_eq!(EXIT_EMPTY, 3);
+    }
+
+    #[test]
+    fn usage_envelopes_exit_two() {
+        assert_eq!(ErrorEnvelope::new("usage", "bad flag").exit_code(), 2);
+        assert_eq!(
+            ErrorEnvelope::new("session-not-found", "missing").exit_code(),
+            1
+        );
     }
 }

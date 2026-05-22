@@ -169,7 +169,7 @@ fn diff_invalid_ref_emits_usage_envelope() {
         .args(["diff", "not-a-session-ref", "claude-code/anything"])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .code(1);
+        .code(2);
     let parsed = common::cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }

@@ -59,7 +59,7 @@ fn export_params_invalid_json_emits_usage_envelope() {
         .args(["export", "--params", "{not valid"])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .code(1); // ErrorEnvelope without explicit EXIT_USAGE return → exit 1
+        .code(2);
     let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
     assert!(parsed["error"]["message"]
@@ -80,7 +80,7 @@ fn export_params_unknown_field_rejected() {
         .args(["export", "--params", &body])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .code(1);
+        .code(2);
     let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
@@ -92,7 +92,7 @@ fn export_params_invalid_format_value_emits_usage() {
         .args(["export", "--params", &body])
         .env("AGHIST_HOME", dir.path())
         .assert()
-        .code(1);
+        .code(2);
     let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
     assert!(parsed["error"]["message"]

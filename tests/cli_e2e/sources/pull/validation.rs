@@ -33,7 +33,7 @@ fn sources_pull_requires_name_or_all() {
         .env("AGHIST_SOURCES_CACHE_DIR", dir.path().join("cache"))
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(2));
     assert_eq!(stderr_error_kind(&output), "usage");
 }
 
