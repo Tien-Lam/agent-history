@@ -1,9 +1,9 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use super::EmbedError;
+use crate::fs_atomic;
 
 const CONSENT_FILENAME: &str = "embeddings-consent.json";
 
@@ -21,20 +21,19 @@ impl Consent {
     }
 
     pub fn load(index_dir: &Path) -> Option<Self> {
-        let raw = fs::read_to_string(Self::path(index_dir)).ok()?;
+        let raw = std::fs::read_to_string(Self::path(index_dir)).ok()?;
         serde_json::from_str(&raw).ok()
     }
 
     /// Writes (or refreshes) consent. Creates `index_dir` if needed.
     pub fn record(index_dir: &Path, model: &str) -> Result<Self, EmbedError> {
-        fs::create_dir_all(index_dir)?;
         let consent = Self {
             model: model.to_string(),
             accepted_at: chrono::Utc::now(),
         };
         let path = Self::path(index_dir);
         let json = serde_json::to_string_pretty(&consent)?;
-        fs::write(&path, json)?;
+        fs_atomic::write(&path, json.as_bytes())?;
         Ok(consent)
     }
 }

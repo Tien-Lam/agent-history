@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::fs_atomic;
 use crate::model::Provider;
 
 mod sources;
@@ -160,17 +161,9 @@ impl Config {
     /// Serialize to TOML and write atomically to `path`. Creates the parent
     /// directory if missing. Returns the path that was written.
     pub fn save_to(&self, path: &Path) -> std::io::Result<()> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
         let toml = toml::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        // Write to a sibling temp file, then rename — avoids partial writes.
-        let tmp = path.with_extension("toml.tmp");
-        std::fs::write(&tmp, toml)?;
-        std::fs::rename(&tmp, path)?;
+        fs_atomic::write(path, toml.as_bytes())?;
         Ok(())
     }
 

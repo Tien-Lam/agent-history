@@ -3,6 +3,8 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
+use crate::fs_atomic;
+
 use super::{EmbedError, HASH_LEN};
 
 mod codec;
@@ -160,17 +162,11 @@ impl EmbeddingStore {
         before - self.entries.len()
     }
 
-    /// Atomically rewrite the sidecar with the current contents. Writes to a
-    /// `.tmp` file first, then renames — so a crash mid-write can't corrupt
-    /// an existing store.
+    /// Atomically rewrite the sidecar through a sibling temp file so a crash
+    /// mid-write can't corrupt an existing store.
     pub fn flush(&self) -> Result<(), EmbedError> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let bytes = encode(self.dim, &self.model, &self.entries)?;
-        let tmp = self.path.with_extension("bin.tmp");
-        fs::write(&tmp, &bytes)?;
-        fs::rename(&tmp, &self.path)?;
+        fs_atomic::write(&self.path, &bytes)?;
         Ok(())
     }
 }

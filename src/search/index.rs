@@ -5,6 +5,8 @@ use tantivy::{Index, IndexReader, ReloadPolicy};
 
 mod write;
 
+use crate::fs_atomic;
+
 use super::fields::SearchFields;
 use super::storage::{reset_index_dir, write_index_sentinel};
 use super::types::{Manifest, SearchError};
@@ -80,7 +82,7 @@ impl SearchIndex {
 
     fn save_manifest(&self, manifest: &Manifest) -> Result<(), SearchError> {
         let json = serde_json::to_string(manifest)?;
-        fs::write(self.index_dir.join("manifest.json"), json)?;
+        fs_atomic::write(&self.index_dir.join("manifest.json"), json.as_bytes())?;
         Ok(())
     }
 }

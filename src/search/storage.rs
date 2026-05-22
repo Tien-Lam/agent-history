@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::fs_atomic;
+
 use super::types::SearchError;
 
 const INDEX_SENTINEL: &str = ".aghist-search-index";
@@ -51,29 +53,26 @@ fn unsafe_index_entries(index_dir: &Path) -> Result<Vec<String>, SearchError> {
 fn should_remove_on_index_reset(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
-        .is_some_and(|name| {
-            name == INDEX_SENTINEL
-                || name == "meta.json"
-                || name == "manifest.json"
-                || name == "embeddings.bin"
-                || name == "embeddings.bin.tmp"
-                || name == "embeddings-consent.json"
-                || is_tantivy_segment_file(name)
-        })
+        .is_some_and(is_managed_index_file_name)
 }
 
 fn is_known_index_file(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
-        .is_some_and(|name| {
-            name == INDEX_SENTINEL
-                || name == "meta.json"
-                || name == "manifest.json"
-                || name == "embeddings.bin"
-                || name == "embeddings.bin.tmp"
-                || name == "embeddings-consent.json"
-                || is_tantivy_segment_file(name)
-        })
+        .is_some_and(is_managed_index_file_name)
+}
+
+fn is_managed_index_file_name(name: &str) -> bool {
+    name == INDEX_SENTINEL
+        || name == "meta.json"
+        || name == "manifest.json"
+        || fs_atomic::is_temp_file_for(name, "manifest.json")
+        || name == "embeddings.bin"
+        || name == "embeddings.bin.tmp"
+        || fs_atomic::is_temp_file_for(name, "embeddings.bin")
+        || name == "embeddings-consent.json"
+        || fs_atomic::is_temp_file_for(name, "embeddings-consent.json")
+        || is_tantivy_segment_file(name)
 }
 
 fn is_tantivy_segment_file(name: &str) -> bool {
