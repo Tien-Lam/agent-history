@@ -2,16 +2,16 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use serde_json::Value;
 
 use super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Provider, Role, Session, SessionId};
 use crate::provider::json_text::{string_or_object_field_or_pretty, stringish, value_u64};
 use crate::provider::parse_common::{
-    nonzero_token_usage, pretty_json_opt, timestamp_value_to_utc, token_usage_from_options,
-    tool_result_block, tool_use_block,
+    deserialize_optional_vec_skip_invalid, deserialize_vec_skip_invalid, nonzero_token_usage,
+    pretty_json_opt, timestamp_value_to_utc, token_usage_from_options, tool_result_block,
+    tool_use_block,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
@@ -306,13 +306,13 @@ struct RawMessage {
     #[serde(default)]
     content: RawContent,
     #[serde(rename = "displayContent")]
-    #[serde(default, deserialize_with = "deserialize_optional_vec")]
+    #[serde(default, deserialize_with = "deserialize_optional_vec_skip_invalid")]
     display_content: Option<Vec<TextPart>>,
-    #[serde(default, deserialize_with = "deserialize_optional_vec")]
+    #[serde(default, deserialize_with = "deserialize_optional_vec_skip_invalid")]
     thoughts: Option<Vec<Thought>>,
     tokens: Option<RawTokens>,
     #[serde(rename = "toolCalls")]
-    #[serde(default, deserialize_with = "deserialize_optional_vec")]
+    #[serde(default, deserialize_with = "deserialize_optional_vec_skip_invalid")]
     tool_calls: Option<Vec<RawToolCall>>,
     model: Option<Value>,
 }
@@ -363,45 +363,6 @@ struct RawToolCall {
 
 fn gemini_timestamp(value: Option<&Value>) -> Option<DateTime<Utc>> {
     timestamp_value_to_utc(value, &["timestamp", "startTime", "lastUpdated", "value"])
-}
-
-fn deserialize_vec_skip_invalid<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
-        return Ok(Vec::new());
-    };
-
-    let Value::Array(items) = value else {
-        return Ok(Vec::new());
-    };
-
-    Ok(items
-        .into_iter()
-        .filter_map(|item| serde_json::from_value(item).ok())
-        .collect())
-}
-
-fn deserialize_optional_vec<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let Some(value) = Option::<serde_json::Value>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
-
-    let serde_json::Value::Array(items) = value else {
-        return Ok(None);
-    };
-
-    let parsed = items
-        .into_iter()
-        .filter_map(|item| serde_json::from_value(item).ok())
-        .collect();
-    Ok(Some(parsed))
 }
 
 fn extract_tool_response_text(v: &serde_json::Value) -> String {

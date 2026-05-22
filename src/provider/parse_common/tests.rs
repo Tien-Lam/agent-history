@@ -7,6 +7,16 @@ struct Row {
     value: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct TolerantRows {
+    #[serde(default, deserialize_with = "deserialize_vec_skip_invalid")]
+    rows: Vec<Row>,
+    #[serde(default, deserialize_with = "deserialize_optional_vec_skip_invalid")]
+    optional_rows: Option<Vec<Row>>,
+    #[serde(default, deserialize_with = "deserialize_optional_struct_skip_invalid")]
+    optional_row: Option<Row>,
+}
+
 #[test]
 fn visit_jsonl_records_skips_blank_lines_and_tracks_malformed_lines() {
     let dir = tempfile::tempdir().unwrap();
@@ -38,6 +48,46 @@ fn visit_jsonl_records_skips_blank_lines_and_tracks_malformed_lines() {
 }
 
 #[test]
+fn tolerant_deserializers_skip_invalid_values() {
+    let parsed: TolerantRows = serde_json::from_value(serde_json::json!({
+        "rows": [{"value": "one"}, {"wrong": "shape"}, "bad"],
+        "optional_rows": [{"value": "two"}, 3],
+        "optional_row": {"value": "three"}
+    }))
+    .unwrap();
+
+    assert_eq!(
+        parsed.rows,
+        vec![Row {
+            value: "one".into()
+        }]
+    );
+    assert_eq!(
+        parsed.optional_rows,
+        Some(vec![Row {
+            value: "two".into()
+        }])
+    );
+    assert_eq!(
+        parsed.optional_row,
+        Some(Row {
+            value: "three".into()
+        })
+    );
+
+    let parsed: TolerantRows = serde_json::from_value(serde_json::json!({
+        "rows": {"not": "an array"},
+        "optional_rows": {"not": "an array"},
+        "optional_row": {"wrong": "shape"}
+    }))
+    .unwrap();
+
+    assert!(parsed.rows.is_empty());
+    assert_eq!(parsed.optional_rows, None);
+    assert_eq!(parsed.optional_row, None);
+}
+
+#[test]
 fn timestamp_with_index_millis_preserves_order_without_panicking_on_huge_idx() {
     let base = parse_utc("2026-01-01T00:00:00Z").unwrap();
 
@@ -57,9 +107,11 @@ fn timestamp_value_to_utc_accepts_rfc3339_millis_and_nested_fields() {
     .unwrap();
     assert_eq!(timestamp, parse_utc("2026-01-01T00:00:00Z").unwrap());
 
-    let timestamp =
-        timestamp_value_to_utc(Some(&serde_json::json!(1767225600123_i64)), &["timestamp"])
-            .unwrap();
+    let timestamp = timestamp_value_to_utc(
+        Some(&serde_json::json!(1_767_225_600_123_i64)),
+        &["timestamp"],
+    )
+    .unwrap();
     assert_eq!(timestamp, parse_utc("2026-01-01T00:00:00.123Z").unwrap());
 
     let timestamp = timestamp_value_to_utc(

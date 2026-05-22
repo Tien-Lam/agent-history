@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::provider::json_text::{string_or_object_field_or_pretty, stringish};
-use crate::provider::parse_common::timestamp_value_to_utc;
+use crate::provider::parse_common::{
+    deserialize_optional_struct_skip_invalid, deserialize_vec_skip_invalid, timestamp_value_to_utc,
+};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ComposerData {
@@ -57,7 +58,7 @@ pub(crate) struct BubbleData {
     #[serde(
         rename = "toolFormerData",
         default,
-        deserialize_with = "deserialize_optional_struct"
+        deserialize_with = "deserialize_optional_struct_skip_invalid"
     )]
     pub(crate) tool_former: Option<ToolFormerData>,
     /// Newer multi-tool-call structure.
@@ -138,35 +139,4 @@ pub(crate) fn optional_string(value: Option<&Value>, object_fields: &[&str]) -> 
 pub(crate) fn optional_text(value: Option<&Value>, object_fields: &[&str]) -> Option<String> {
     let text = string_or_object_field_or_pretty(value?, object_fields);
     (!text.is_empty()).then_some(text)
-}
-
-fn deserialize_vec_skip_invalid<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
-        return Ok(Vec::new());
-    };
-
-    let Value::Array(items) = value else {
-        return Ok(Vec::new());
-    };
-
-    Ok(items
-        .into_iter()
-        .filter_map(|item| serde_json::from_value(item).ok())
-        .collect())
-}
-
-fn deserialize_optional_struct<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
-
-    Ok(serde_json::from_value(value).ok())
 }
