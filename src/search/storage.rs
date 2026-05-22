@@ -87,3 +87,40 @@ fn is_tantivy_segment_file(name: &str) -> bool {
     }
     matches!(ext, "idx" | "term" | "store" | "fast" | "fieldnorm" | "pos")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_temp_files_are_managed_index_files() {
+        for name in [
+            ".manifest.json.123-0.tmp",
+            ".embeddings.bin.123-0.tmp",
+            ".embeddings-consent.json.123-0.tmp",
+        ] {
+            let path = Path::new(name);
+            assert!(is_known_index_file(path), "{name} should be known");
+            assert!(
+                should_remove_on_index_reset(path),
+                "{name} should be resettable"
+            );
+        }
+    }
+
+    #[test]
+    fn unrelated_temp_files_are_not_managed_index_files() {
+        for name in [
+            ".notes.json.123-0.tmp",
+            "manifest.json.tmp",
+            ".manifest.json.tmp",
+        ] {
+            let path = Path::new(name);
+            assert!(!is_known_index_file(path), "{name} should be unknown");
+            assert!(
+                !should_remove_on_index_reset(path),
+                "{name} should not be resettable"
+            );
+        }
+    }
+}
