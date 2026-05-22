@@ -4,26 +4,51 @@ use std::path::{Path, PathBuf};
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::config;
 use aghist::output::{write_json_line, OutputMode};
+use aghist::services::source_registry::{self, SourceRegistryError};
 
 mod pull;
 
 pub(crate) use pull::sources_pull_remote;
 
 pub(super) fn resolve_config_path() -> Result<PathBuf, ErrorEnvelope> {
-    config::Config::resolved_path().ok_or_else(|| {
-        ErrorEnvelope::new(
-            "config-error",
-            "could not determine config path; HOME and XDG_CONFIG_HOME are unset",
-        )
-        .with_hint("Set AGHIST_CONFIG=/path/to/config.toml to override.")
-    })
+    source_registry::resolve_config_path().map_err(registry_error_to_envelope)
 }
 
 pub(super) fn load_sources_config(config_path: &Path) -> Result<config::Config, ErrorEnvelope> {
-    config::Config::try_load_from(config_path).map_err(|e| {
-        ErrorEnvelope::new("config-error", format!("{e}"))
-            .with_hint("Fix the TOML before changing the remote-source registry.")
-    })
+    source_registry::load_config(config_path).map_err(registry_error_to_envelope)
+}
+
+fn registry_error_to_envelope(error: SourceRegistryError) -> ErrorEnvelope {
+    match error {
+        SourceRegistryError::ConfigPathUnavailable => ErrorEnvelope::new(
+            "config-error",
+            "could not determine config path; HOME and XDG_CONFIG_HOME are unset",
+        )
+        .with_hint("Set AGHIST_CONFIG=/path/to/config.toml to override."),
+        SourceRegistryError::ConfigLoad(error) => {
+            ErrorEnvelope::new("config-error", format!("{error}"))
+                .with_hint("Fix the TOML before changing the remote-source registry.")
+        }
+        SourceRegistryError::InvalidName(message) => ErrorEnvelope::new("usage", message)
+            .with_hint("Pick a stable identifier, e.g. `laptop` or `prod-box`."),
+        SourceRegistryError::InvalidHost(message) | SourceRegistryError::InvalidPath(message) => {
+            ErrorEnvelope::new("usage", message)
+        }
+        SourceRegistryError::DuplicateSource(name) => ErrorEnvelope::new(
+            "duplicate-source",
+            format!("a source named '{name}' already exists"),
+        )
+        .with_hint("Use `aghist sources remove <name>` first, or pick a different name."),
+        SourceRegistryError::SourceNotFound(name) => ErrorEnvelope::new(
+            "source-not-found",
+            format!("no registered source named '{name}'"),
+        )
+        .with_hint("Run `aghist sources list` to see registered sources."),
+        SourceRegistryError::Save { path, source } => ErrorEnvelope::new(
+            "io-error",
+            format!("failed to write {}: {source}", path.display()),
+        ),
+    }
 }
 
 fn write_sources_payload<W: io::Write>(
@@ -128,12 +153,13 @@ fn render_remote_sources_human<W: io::Write>(
 
 pub(crate) fn sources_list_remote(mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let config_path = resolve_config_path()?;
-    let config = load_sources_config(&config_path)?;
+    let sources =
+        source_registry::list_remote_sources(&config_path).map_err(registry_error_to_envelope)?;
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    write_sources_payload(&mut out, &config.sources, &config_path, mode)
+    write_sources_payload(&mut out, &sources, &config_path, mode)
         .map_err(|e| ErrorEnvelope::io("failed to write sources output", e))?;
-    if config.sources.is_empty() {
+    if sources.is_empty() {
         Ok(EXIT_EMPTY)
     } else {
         Ok(EXIT_OK)
@@ -147,41 +173,9 @@ pub(crate) fn sources_add_remote(
     transport: config::Transport,
     mode: OutputMode,
 ) -> Result<i32, ErrorEnvelope> {
-    let trimmed_name = name.trim();
-    if let Err(message) = config::validate_source_name(name) {
-        return Err(ErrorEnvelope::new("usage", message)
-            .with_hint("Pick a stable identifier, e.g. `laptop` or `prod-box`."));
-    }
-    if let Err(message) = config::validate_rsync_endpoint(host, "--host") {
-        return Err(ErrorEnvelope::new("usage", message));
-    }
-    if let Err(message) = config::validate_rsync_endpoint(path, "--path") {
-        return Err(ErrorEnvelope::new("usage", message));
-    }
-
     let config_path = resolve_config_path()?;
-    let mut config = load_sources_config(&config_path)?;
-    if config.sources.iter().any(|s| s.name == trimmed_name) {
-        return Err(ErrorEnvelope::new(
-            "duplicate-source",
-            format!("a source named '{trimmed_name}' already exists"),
-        )
-        .with_hint("Use `aghist sources remove <name>` first, or pick a different name."));
-    }
-
-    let new_source = config::RemoteSource {
-        name: trimmed_name.to_string(),
-        host: host.to_string(),
-        path: path.to_string(),
-        transport,
-    };
-    config.sources.push(new_source.clone());
-    config.save_to(&config_path).map_err(|e| {
-        ErrorEnvelope::new(
-            "io-error",
-            format!("failed to write {}: {e}", config_path.display()),
-        )
-    })?;
+    let new_source = source_registry::add_remote_source(&config_path, name, host, path, transport)
+        .map_err(registry_error_to_envelope)?;
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -192,39 +186,11 @@ pub(crate) fn sources_add_remote(
 
 pub(crate) fn sources_remove_remote(name: &str, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let config_path = resolve_config_path()?;
-    let mut config = load_sources_config(&config_path)?;
-    let before = config.sources.len();
-    let mut removed: Option<config::RemoteSource> = None;
-    config.sources.retain(|s| {
-        if s.name == name {
-            removed = Some(s.clone());
-            false
-        } else {
-            true
-        }
-    });
-    if config.sources.len() == before {
-        return Err(ErrorEnvelope::new(
-            "source-not-found",
-            format!("no registered source named '{name}'"),
-        )
-        .with_hint("Run `aghist sources list` to see registered sources."));
-    }
-    config.save_to(&config_path).map_err(|e| {
-        ErrorEnvelope::new(
-            "io-error",
-            format!("failed to write {}: {e}", config_path.display()),
-        )
-    })?;
+    let removed = source_registry::remove_remote_source(&config_path, name)
+        .map_err(registry_error_to_envelope)?;
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    let Some(removed) = removed else {
-        return Err(ErrorEnvelope::new(
-            "internal-error",
-            "source removal changed the list without retaining the removed source",
-        ));
-    };
     write_removed_source(&mut out, &removed, &config_path, mode)
         .map_err(|e| ErrorEnvelope::io("failed to write sources output", e))?;
     Ok(EXIT_OK)
