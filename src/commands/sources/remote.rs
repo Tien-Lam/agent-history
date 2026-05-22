@@ -19,6 +19,13 @@ pub(super) fn resolve_config_path() -> Result<PathBuf, ErrorEnvelope> {
     })
 }
 
+pub(super) fn load_sources_config(config_path: &Path) -> Result<config::Config, ErrorEnvelope> {
+    config::Config::try_load_from(config_path).map_err(|e| {
+        ErrorEnvelope::new("config-error", format!("{e}"))
+            .with_hint("Fix the TOML before changing the remote-source registry.")
+    })
+}
+
 fn write_sources_payload<W: io::Write>(
     out: &mut W,
     sources: &[config::RemoteSource],
@@ -121,7 +128,7 @@ fn render_remote_sources_human<W: io::Write>(
 
 pub(crate) fn sources_list_remote(mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let config_path = resolve_config_path()?;
-    let config = config::Config::load_from(&config_path);
+    let config = load_sources_config(&config_path)?;
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_sources_payload(&mut out, &config.sources, &config_path, mode)
@@ -153,7 +160,7 @@ pub(crate) fn sources_add_remote(
     }
 
     let config_path = resolve_config_path()?;
-    let mut config = config::Config::load_from(&config_path);
+    let mut config = load_sources_config(&config_path)?;
     if config.sources.iter().any(|s| s.name == trimmed_name) {
         return Err(ErrorEnvelope::new(
             "duplicate-source",
@@ -185,7 +192,7 @@ pub(crate) fn sources_add_remote(
 
 pub(crate) fn sources_remove_remote(name: &str, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let config_path = resolve_config_path()?;
-    let mut config = config::Config::load_from(&config_path);
+    let mut config = load_sources_config(&config_path)?;
     let before = config.sources.len();
     let mut removed: Option<config::RemoteSource> = None;
     config.sources.retain(|s| {
@@ -272,5 +279,17 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn sources_config_loader_surfaces_parse_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(&config_path, "not = [valid").unwrap();
+
+        let err = load_sources_config(&config_path).unwrap_err();
+
+        assert_eq!(err.kind, "config-error");
+        assert!(err.message.contains("failed to parse"), "{}", err.message);
     }
 }

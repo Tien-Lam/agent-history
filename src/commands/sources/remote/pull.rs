@@ -6,7 +6,7 @@ use aghist::config;
 use aghist::output::OutputMode;
 use chrono::Utc;
 
-use super::resolve_config_path;
+use super::{load_sources_config, resolve_config_path};
 use output::{write_pull_results, PullResult};
 use rsync::run_rsync_pull;
 use safety::{count_dir, ensure_cache_dir, ensure_cache_root_safe, resolve_sources_cache_root};
@@ -22,7 +22,7 @@ pub(crate) fn sources_pull_remote(
     mode: OutputMode,
 ) -> Result<i32, ErrorEnvelope> {
     let config_path = resolve_config_path()?;
-    let config = config::Config::load_from(&config_path);
+    let config = load_sources_config(&config_path)?;
 
     let targets: Vec<config::RemoteSource> = match (name, all) {
         (Some(n), false) => {
