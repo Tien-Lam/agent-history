@@ -89,6 +89,29 @@ fn skips_unknown_roles() {
 }
 
 #[test]
+fn load_messages_with_stats_reports_malformed_skipped_and_empty_entries() {
+    let tmp = TempDir::new().unwrap();
+    let api = r#"[
+            "not an api message",
+            {"role":"system","content":[{"type":"text","text":"sys"}]},
+            {"role":"assistant","content":[]},
+            {"role":"user","content":[{"type":"text","text":"hello"}]}
+        ]"#;
+    make_task(tmp.path(), "1698765432000", api);
+    let p = provider_for(&tmp);
+    let sessions = p.discover_sessions().unwrap();
+
+    let load = p.load_messages_with_stats(&sessions[0]).unwrap();
+
+    assert_eq!(load.messages.len(), 1);
+    assert_eq!(load.messages[0].role, Role::User);
+    assert_eq!(load.parse_stats.records_seen, 4);
+    assert_eq!(load.parse_stats.parse_errors, 1);
+    assert_eq!(load.parse_stats.skipped_records, 1);
+    assert_eq!(load.parse_stats.empty_content, 1);
+}
+
+#[test]
 fn parses_tool_use_and_tool_result_blocks() {
     let tmp = TempDir::new().unwrap();
     let api = r#"[

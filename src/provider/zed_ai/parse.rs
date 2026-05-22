@@ -25,7 +25,7 @@ struct ZedConversation {
     #[serde(default, alias = "updatedAt")]
     updated_at: Option<Value>,
     #[serde(default)]
-    messages: Vec<ZedMessage>,
+    messages: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,8 +131,12 @@ pub(crate) fn load_messages_from_path_with_stats(
         .messages
         .iter()
         .enumerate()
-        .filter_map(|(idx, m)| {
+        .filter_map(|(idx, raw_message)| {
             parse_stats.record_seen();
+            let Ok(m) = serde_json::from_value::<ZedMessage>(raw_message.clone()) else {
+                parse_stats.record_parse_error();
+                return None;
+            };
             let role_text = m
                 .role
                 .as_ref()
@@ -142,7 +146,7 @@ pub(crate) fn load_messages_from_path_with_stats(
                 return None;
             }
 
-            let message = build_message(m, idx)?;
+            let message = build_message(&m, idx)?;
             if message.content.is_empty() {
                 parse_stats.record_empty_content();
             }
@@ -158,6 +162,7 @@ pub(crate) fn load_messages_from_path_with_stats(
 fn earliest_message_ts(conv: &ZedConversation) -> Option<DateTime<Utc>> {
     conv.messages
         .iter()
+        .filter_map(|m| serde_json::from_value::<ZedMessage>(m.clone()).ok())
         .filter_map(|m| zed_timestamp(m.timestamp.as_ref()))
         .min()
 }
@@ -165,6 +170,7 @@ fn earliest_message_ts(conv: &ZedConversation) -> Option<DateTime<Utc>> {
 fn latest_message_ts(conv: &ZedConversation) -> Option<DateTime<Utc>> {
     conv.messages
         .iter()
+        .filter_map(|m| serde_json::from_value::<ZedMessage>(m.clone()).ok())
         .filter_map(|m| zed_timestamp(m.timestamp.as_ref()))
         .max()
 }

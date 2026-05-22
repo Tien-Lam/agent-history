@@ -223,10 +223,11 @@ fn corrupt_bubble_value_does_not_crash() {
         "fullConversationHeadersOnly": [
             {"bubbleId": "b1", "type": 1},
             {"bubbleId": "b2", "type": 2},
+            {"bubbleId": "b3", "type": 99},
+            {"bubbleId": "b4", "type": 2},
         ],
     });
     insert(&conn, "composerData:comp-x", &composer);
-    // Bubble 1 valid, bubble 2 garbage.
     insert(
         &conn,
         "bubbleId:comp-x:b1",
@@ -237,13 +238,25 @@ fn corrupt_bubble_value_does_not_crash() {
         rusqlite::params!["bubbleId:comp-x:b2", b"not-json"],
     )
     .unwrap();
+    insert(
+        &conn,
+        "bubbleId:comp-x:b3",
+        &serde_json::json!({"type": 99, "text": "skip me"}),
+    );
+    insert(&conn, "bubbleId:comp-x:b4", &serde_json::json!({"type": 2}));
     drop(conn);
 
     let provider = CursorProvider::new(vec![tmp.path().to_path_buf()]);
     let sessions = provider.discover_sessions().unwrap();
-    let messages = provider.load_messages(&sessions[0]).unwrap();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].id.0, "b1");
+    let load = provider.load_messages_with_stats(&sessions[0]).unwrap();
+
+    assert_eq!(load.messages.len(), 2);
+    assert_eq!(load.messages[0].id.0, "b1");
+    assert_eq!(load.messages[1].id.0, "b4");
+    assert_eq!(load.parse_stats.records_seen, 4);
+    assert_eq!(load.parse_stats.parse_errors, 1);
+    assert_eq!(load.parse_stats.skipped_records, 1);
+    assert_eq!(load.parse_stats.empty_content, 1);
 }
 
 #[test]

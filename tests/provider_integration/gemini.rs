@@ -125,6 +125,33 @@ fn gemini_tolerates_shape_drift_without_dropping_session() {
 }
 
 #[test]
+fn gemini_load_messages_with_stats_reports_malformed_skipped_and_empty_entries() {
+    let fixture = common::fixtures::gemini::GeminiFixtureBuilder::new()
+        .add_session("gemini-malformed")
+        .raw_message(r#""not a gemini message""#)
+        .raw_message(
+            r#"{"id":"gm-system","timestamp":"2025-01-01T00:00:01Z","type":"system","content":"skip"}"#,
+        )
+        .raw_message(
+            r#"{"id":"gm-empty","timestamp":"2025-01-01T00:00:02Z","type":"user","content":""}"#,
+        )
+        .user("kept")
+        .done()
+        .build();
+
+    let provider = GeminiCliProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let load = provider.load_messages_with_stats(&sessions[0]).unwrap();
+
+    assert_eq!(load.messages.len(), 1);
+    assert_eq!(load.messages[0].role, Role::User);
+    assert_eq!(load.parse_stats.records_seen, 4);
+    assert_eq!(load.parse_stats.parse_errors, 1);
+    assert_eq!(load.parse_stats.skipped_records, 1);
+    assert_eq!(load.parse_stats.empty_content, 1);
+}
+
+#[test]
 fn gemini_tolerates_object_message_metadata_fields() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();

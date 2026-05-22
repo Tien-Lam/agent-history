@@ -85,6 +85,35 @@ fn opencode_tolerates_object_content_and_tool_output() {
 }
 
 #[test]
+fn opencode_load_messages_with_stats_reports_malformed_skipped_and_empty_files() {
+    let fixture = super::common::fixtures::opencode::OpenCodeFixtureBuilder::new()
+        .add_session("oc-malformed")
+        .raw_message("msg-bad-json", "not-json")
+        .raw_message(
+            "msg-unknown-role",
+            r#"{"id":"msg-unknown-role","role":"system","timestamp":"2025-01-01T00:00:01Z","content":"skip"}"#,
+        )
+        .raw_message(
+            "msg-empty",
+            r#"{"id":"msg-empty","role":"assistant","timestamp":"2025-01-01T00:00:02Z","content":""}"#,
+        )
+        .user("kept")
+        .done()
+        .build();
+
+    let provider = OpenCodeProvider::new(vec![fixture.base_path.clone()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let load = provider.load_messages_with_stats(&sessions[0]).unwrap();
+
+    assert_eq!(load.messages.len(), 1);
+    assert_eq!(load.messages[0].role, Role::User);
+    assert_eq!(load.parse_stats.records_seen, 4);
+    assert_eq!(load.parse_stats.parse_errors, 1);
+    assert_eq!(load.parse_stats.skipped_records, 1);
+    assert_eq!(load.parse_stats.empty_content, 1);
+}
+
+#[test]
 fn opencode_tolerates_object_metadata_fields() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();

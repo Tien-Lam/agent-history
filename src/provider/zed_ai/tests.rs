@@ -186,18 +186,23 @@ fn skips_message_with_unknown_role() {
         "created_at": "2026-01-01T00:00:00Z",
         "messages": [
             {"role": "user", "text": "hi", "timestamp": "2026-01-01T00:00:00Z"},
+            "not a zed message",
             {"role": "narrator", "text": "ignored", "timestamp": "2026-01-01T00:00:30Z"},
-            {"role": "assistant", "text": "yo", "timestamp": "2026-01-01T00:01:00Z"},
+            {"role": "assistant", "text": "", "timestamp": "2026-01-01T00:01:00Z"},
         ]
     });
     write_conv(tmp.path(), "conv.json", &json);
 
     let provider = ZedAiProvider::new(vec![tmp.path().to_path_buf()]);
     let sessions = provider.discover_sessions().unwrap();
-    let messages = provider.load_messages(&sessions[0]).unwrap();
-    assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0].role, Role::User);
-    assert_eq!(messages[1].role, Role::Assistant);
+    let load = provider.load_messages_with_stats(&sessions[0]).unwrap();
+    assert_eq!(load.messages.len(), 2);
+    assert_eq!(load.messages[0].role, Role::User);
+    assert_eq!(load.messages[1].role, Role::Assistant);
+    assert_eq!(load.parse_stats.records_seen, 4);
+    assert_eq!(load.parse_stats.parse_errors, 1);
+    assert_eq!(load.parse_stats.skipped_records, 1);
+    assert_eq!(load.parse_stats.empty_content, 1);
 }
 
 #[test]
