@@ -23,6 +23,7 @@ cargo insta review                   # after test failures that update snapshots
 - `src/main.rs` — binary boundary: tracing, clap errors, dispatch entrypoint
 - `src/commands/` — CLI command routing and implementations
 - `src/session_resolver.rs`, `src/session_resolver/` — local/remote/source-qualified session and citation lookup
+- `src/services/source_registry.rs` — remote-source registry mutation logic shared by commands/tests
 - `src/lib.rs` — re-exports everything for integration tests
 - Search index at `~/.cache/aghist/search-index/`; metadata sidecar at `~/.local/share/aghist/metadata.db`
 

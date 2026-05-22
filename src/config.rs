@@ -159,7 +159,7 @@ impl Config {
     }
 
     /// Serialize to TOML and write atomically to `path`. Creates the parent
-    /// directory if missing. Returns the path that was written.
+    /// directory if missing.
     pub fn save_to(&self, path: &Path) -> std::io::Result<()> {
         let toml = toml::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;

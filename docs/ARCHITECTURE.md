@@ -17,7 +17,7 @@ graph TD
     HP["<b>HistoryProvider trait</b><br>discover_sessions() / load_messages()"]
 
     HP --> FD[Federated discovery]
-    FD --> SV[Service layer<br>lookup / list / search / index]
+    FD --> SV[Service layer<br>lookup / list / search / index / source registry]
     SV --> SI[Search index]
     SV --> CMD[CLI commands]
     SV --> MCP[MCP server]
@@ -111,6 +111,7 @@ not grow divergent copies of provider lookup or pagination logic.
 - **`list.rs`** — applies list filters, metadata filters, cursor pagination, provider/source counts, and skipped-session warnings for message-level filters.
 - **`search.rs`** — wraps `SearchService`, applies cursor pagination, resolves message hit citations, and carries skipped-session warnings.
 - **`index/`** — indexing orchestration shared by CLI and CI feature checks.
+- **`source_registry.rs`** — validates, loads, and mutates remote-source registry entries.
 
 When adding a new command path, prefer extending one of these services over
 calling providers directly from `src/commands/` or `src/mcp/`.
