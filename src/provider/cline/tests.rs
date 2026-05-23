@@ -2,6 +2,7 @@ use super::*;
 use crate::model::{ContentBlock, Role};
 use parse::{METADATA_FILE, UI_MESSAGES_FILE};
 use std::fs;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 fn write_file(dir: &Path, name: &str, content: &str) {

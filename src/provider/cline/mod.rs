@@ -32,17 +32,18 @@
 //! Content blocks may also include `tool_use` / `tool_result` entries.
 //! Unknown block types and unknown roles are silently skipped.
 
-use std::cmp::Reverse;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+mod discovery;
 mod parse;
 
-use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
-use parse::{parse_api_history_with_stats, parse_task_dir, API_HISTORY_FILE};
+use discovery::{base_dirs, discover_sessions, tasks_dir};
+use parse::{parse_api_history_with_stats, API_HISTORY_FILE};
 
-const EXTENSION_ID: &str = "saoudrizwan.claude-dev";
-const TASKS_SUBDIR: &str = "tasks";
+#[cfg(test)]
+use discovery::{EXTENSION_ID, TASKS_SUBDIR};
 
 pub struct ClineProvider {
     dirs: Vec<PathBuf>,
@@ -63,49 +64,6 @@ impl ClineProvider {
     }
 }
 
-fn tasks_dir(base: &Path) -> PathBuf {
-    base.join(EXTENSION_ID).join(TASKS_SUBDIR)
-}
-
-/// VS Code (and fork) global-storage directories, each being the parent that
-/// holds `saoudrizwan.claude-dev/tasks/`. We check VS Code, Cursor, and
-/// Windsurf. Honors `CLINE_HOME` for testability.
-fn base_dirs() -> Vec<PathBuf> {
-    let mut result: Vec<PathBuf> = Vec::new();
-
-    if let Ok(cline_home) = std::env::var("CLINE_HOME") {
-        result.push(PathBuf::from(cline_home));
-        return result;
-    }
-
-    if let Some(home) = super::home_dir() {
-        for editor in &["Code", "Cursor", "Windsurf"] {
-            result.push(
-                home.join(".config")
-                    .join(editor)
-                    .join("User")
-                    .join("globalStorage"),
-            );
-            result.push(
-                home.join("Library")
-                    .join("Application Support")
-                    .join(editor)
-                    .join("User")
-                    .join("globalStorage"),
-            );
-            result.push(
-                home.join("AppData")
-                    .join("Roaming")
-                    .join(editor)
-                    .join("User")
-                    .join("globalStorage"),
-            );
-        }
-    }
-
-    result
-}
-
 // ── Provider impl ─────────────────────────────────────────────────────────────
 
 impl HistoryProvider for ClineProvider {
@@ -118,33 +76,7 @@ impl HistoryProvider for ClineProvider {
     }
 
     fn discover_sessions(&self) -> Result<Vec<Session>, ProviderError> {
-        let mut sessions = Vec::new();
-        let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-
-        for base in &self.dirs {
-            let td = tasks_dir(base);
-            if !td.is_dir() {
-                continue;
-            }
-            let entries = std::fs::read_dir(&td).map_err(discovery_error("Cline"))?;
-            for entry in entries {
-                let entry = entry.map_err(discovery_error("Cline"))?;
-                let path = entry.path();
-                if !path.is_dir() {
-                    continue;
-                }
-                let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
-                if !seen.insert(canonical) {
-                    continue;
-                }
-                if let Some(session) = parse_task_dir(&path) {
-                    sessions.push(session);
-                }
-            }
-        }
-
-        sessions.sort_by_key(|s| Reverse(s.started_at));
-        Ok(sessions)
+        discover_sessions(&self.dirs)
     }
 
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
