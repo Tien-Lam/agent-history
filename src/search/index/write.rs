@@ -30,6 +30,14 @@ fn should_prune_session_key(key: &str, prune_providers: Option<&HashSet<Provider
         .is_some_and(|provider| providers.contains(&provider))
 }
 
+fn record_load_error(stats: &mut IndexStats, session: &Session, error: impl std::fmt::Display) {
+    stats.load_errors.push(IndexLoadError {
+        provider: session.provider,
+        session_id: session.id.0.clone(),
+        error: error.to_string(),
+    });
+}
+
 impl SearchIndex {
     fn load_manifest_or_reset(
         &self,
@@ -94,9 +102,16 @@ impl SearchIndex {
         let mut current_session_keys = HashSet::with_capacity(sessions.len());
 
         for (i, session) in sessions.iter().enumerate() {
-            let current_fingerprint = file_fingerprint(&session.source_path);
             let session_key = session.identity_key();
             current_session_keys.insert(session_key.clone());
+            let current_fingerprint = match file_fingerprint(&session.source_path) {
+                Ok(fingerprint) => fingerprint,
+                Err(error) => {
+                    record_load_error(&mut stats, session, error);
+                    let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
+                    continue;
+                }
+            };
 
             let change = match manifest.sessions.get(&session_key) {
                 Some(cached) if cached == &current_fingerprint => {
@@ -111,11 +126,7 @@ impl SearchIndex {
             let messages = match crate::provider::load_messages_for_session(session, providers) {
                 Ok(messages) => messages,
                 Err(error) => {
-                    stats.load_errors.push(IndexLoadError {
-                        provider: session.provider,
-                        session_id: session.id.0.clone(),
-                        error: error.to_string(),
-                    });
+                    record_load_error(&mut stats, session, error);
                     let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
                     continue;
                 }

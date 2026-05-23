@@ -6,8 +6,12 @@ fn session_ids_with_messages_filters_by_role() {
     let index = SearchIndex::open_or_create(dir.path()).unwrap();
 
     let stub = StubProvider::new(Provider::ClaudeCode);
-    let s_user = make_session("sess-user-only", "alpha");
-    let s_mixed = make_session("sess-mixed", "beta");
+    let mut s_user = make_session("sess-user-only", "alpha");
+    s_user.source_path = dir.path().join("sess-user-only.jsonl");
+    std::fs::write(&s_user.source_path, "user").unwrap();
+    let mut s_mixed = make_session("sess-mixed", "beta");
+    s_mixed.source_path = dir.path().join("sess-mixed.jsonl");
+    std::fs::write(&s_mixed.source_path, "mixed").unwrap();
     stub.add(s_user.clone(), vec![make_message("u-1", "user only msg")]);
     let mut asst = make_message("a-1", "assistant reply");
     asst.role = Role::Assistant;
@@ -41,8 +45,12 @@ fn session_ids_with_messages_filters_by_has_tool_call() {
     let index = SearchIndex::open_or_create(dir.path()).unwrap();
 
     let stub = StubProvider::new(Provider::ClaudeCode);
-    let s_plain = make_session("sess-plain", "alpha");
-    let s_with_tool = make_session("sess-with-tool", "beta");
+    let mut s_plain = make_session("sess-plain", "alpha");
+    s_plain.source_path = dir.path().join("sess-plain.jsonl");
+    std::fs::write(&s_plain.source_path, "plain").unwrap();
+    let mut s_with_tool = make_session("sess-with-tool", "beta");
+    s_with_tool.source_path = dir.path().join("sess-with-tool.jsonl");
+    std::fs::write(&s_with_tool.source_path, "with-tool").unwrap();
     stub.add(s_plain.clone(), vec![make_message("p-1", "no tool here")]);
     let mut tool_msg = make_message("t-1", "calling tool");
     tool_msg.role = Role::Assistant;

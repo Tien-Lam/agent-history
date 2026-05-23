@@ -122,13 +122,17 @@ fn make_message(id: &str, text: &str) -> Message {
 /// Builds a tiny Tantivy index with two sessions / four messages and
 /// returns the open `SearchIndex`. Used to exercise hybrid scoring against
 /// a real index without depending on filesystem fixtures.
-fn build_tiny_index() -> (tempfile::TempDir, SearchIndex) {
+fn build_tiny_index() -> (tempfile::TempDir, SearchIndex, Session, Session) {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();
 
     let stub = StubProvider::new(Provider::ClaudeCode);
-    let s1 = make_session("sess-1", "alpha");
-    let s2 = make_session("sess-2", "beta");
+    let mut s1 = make_session("sess-1", "alpha");
+    s1.source_path = dir.path().join("sess-1.jsonl");
+    std::fs::write(&s1.source_path, "sess-1").unwrap();
+    let mut s2 = make_session("sess-2", "beta");
+    s2.source_path = dir.path().join("sess-2.jsonl");
+    std::fs::write(&s2.source_path, "sess-2").unwrap();
     stub.add(
         s1.clone(),
         vec![
@@ -145,9 +149,9 @@ fn build_tiny_index() -> (tempfile::TempDir, SearchIndex) {
     );
 
     let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
-    let sessions: Vec<Session> = vec![s1, s2];
+    let sessions: Vec<Session> = vec![s1.clone(), s2.clone()];
     let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
     index.build_index(&sessions, &providers, &tx).unwrap();
 
-    (dir, index)
+    (dir, index, s1, s2)
 }

@@ -12,7 +12,7 @@ fn make_note(id: i64, session_ref: &str, body: &str, updated_at: &str) -> Note {
 }
 #[test]
 fn index_notes_makes_bodies_searchable_with_kind_note() {
-    let (_dir, index) = build_tiny_index();
+    let (_dir, index, _s1, _s2) = build_tiny_index();
     let notes = vec![make_note(
         1,
         "claude-code/sess-1#3",
@@ -36,7 +36,7 @@ fn index_notes_makes_bodies_searchable_with_kind_note() {
 }
 #[test]
 fn index_notes_is_incremental_on_unchanged_updated_at() {
-    let (_dir, index) = build_tiny_index();
+    let (_dir, index, _s1, _s2) = build_tiny_index();
     let notes = vec![make_note(
         42,
         "claude-code/sess-1",
@@ -53,7 +53,7 @@ fn index_notes_is_incremental_on_unchanged_updated_at() {
 }
 #[test]
 fn index_notes_replaces_doc_when_updated_at_advances() {
-    let (_dir, index) = build_tiny_index();
+    let (_dir, index, _s1, _s2) = build_tiny_index();
     let v1 = vec![make_note(
         7,
         "claude-code/sess-1",
@@ -86,7 +86,7 @@ fn index_notes_replaces_doc_when_updated_at_advances() {
 }
 #[test]
 fn index_notes_prunes_removed_rows() {
-    let (_dir, index) = build_tiny_index();
+    let (_dir, index, _s1, _s2) = build_tiny_index();
     let v1 = vec![make_note(
         9,
         "claude-code/sess-1",

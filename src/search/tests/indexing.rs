@@ -115,6 +115,32 @@ fn build_index_reports_session_load_errors() {
 }
 
 #[test]
+fn build_index_reports_source_fingerprint_errors() {
+    let dir = tempdir().unwrap();
+    let index = SearchIndex::open_or_create(dir.path()).unwrap();
+    let stub = StubProvider::new(Provider::ClaudeCode);
+
+    let mut missing = make_session("missing-source", "broken");
+    missing.source_path = dir.path().join("missing.jsonl");
+    stub.add(
+        missing.clone(),
+        vec![make_message("msg", "should never be indexed")],
+    );
+
+    let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+    let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+    let stats = index.build_index(&[missing], &providers, &tx).unwrap();
+
+    assert_eq!(stats.sessions_indexed, 0);
+    assert_eq!(stats.messages_indexed, 0);
+    assert_eq!(stats.load_errors.len(), 1);
+    assert_eq!(stats.load_errors[0].provider, Provider::ClaudeCode);
+    assert_eq!(stats.load_errors[0].session_id, "missing-source");
+    assert!(stats.load_errors[0].error.contains("missing.jsonl"));
+    assert!(index.search("should", 10).unwrap().is_empty());
+}
+
+#[test]
 fn load_error_preserves_existing_indexed_docs() {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();
@@ -188,9 +214,9 @@ fn file_fingerprint_includes_content_hash() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("session.jsonl");
     std::fs::write(&path, "first").unwrap();
-    let first = file_fingerprint(&path);
+    let first = file_fingerprint(&path).unwrap();
     std::fs::write(&path, "second").unwrap();
-    let second = file_fingerprint(&path);
+    let second = file_fingerprint(&path).unwrap();
 
     assert_ne!(first.sha256, second.sha256);
 }

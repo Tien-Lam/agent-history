@@ -22,7 +22,7 @@ fn cosine_similarity_handles_identical_orthogonal_and_zero_vectors() {
 
 #[test]
 fn search_hybrid_falls_back_to_lexical_when_weight_is_zero() {
-    let (_dir, index) = build_tiny_index();
+    let (_dir, index, _s1, s2) = build_tiny_index();
     let lex = index
         .search_with_filters("tantivy", 10, &SearchFilters::default())
         .unwrap();
@@ -30,7 +30,7 @@ fn search_hybrid_falls_back_to_lexical_when_weight_is_zero() {
         .search_hybrid(
             "tantivy",
             &[SemanticCandidate {
-                message_key: make_session("sess-2", "beta").message_key(1, "m-4"),
+                message_key: s2.message_key(1, "m-4"),
                 message_id: "m-4".to_string(),
                 similarity: 0.9,
             }],
@@ -51,7 +51,7 @@ fn search_hybrid_falls_back_to_lexical_when_weight_is_zero() {
 
 #[test]
 fn search_hybrid_falls_back_to_lexical_when_semantic_pool_is_empty() {
-    let (_dir, index) = build_tiny_index();
+    let (_dir, index, _s1, _s2) = build_tiny_index();
     let lex = index
         .search_with_filters("tantivy", 10, &SearchFilters::default())
         .unwrap();
@@ -70,15 +70,15 @@ fn search_hybrid_promotes_semantic_only_hits() {
     // model thinks m-4 ("fastembed semantic vectors") is the top semantic
     // match, RRF should return BOTH — proving hybrid surfaces hits the
     // lexical pass alone wouldn't.
-    let (_dir, index) = build_tiny_index();
+    let (_dir, index, _s1, s2) = build_tiny_index();
     let semantic = vec![
         SemanticCandidate {
-            message_key: make_session("sess-2", "beta").message_key(1, "m-4"),
+            message_key: s2.message_key(1, "m-4"),
             message_id: "m-4".to_string(),
             similarity: 0.95,
         },
         SemanticCandidate {
-            message_key: make_session("sess-2", "beta").message_key(0, "m-3"),
+            message_key: s2.message_key(0, "m-3"),
             message_id: "m-3".to_string(),
             similarity: 0.80,
         },
@@ -107,19 +107,19 @@ fn search_hybrid_applies_filters_to_semantic_candidates() {
     // Filter to a project that only contains sess-1, but feed in semantic
     // candidates that include m-4 (in sess-2). Hybrid must drop m-4 — the
     // filter applies symmetrically to both ranking sources.
-    let (_dir, index) = build_tiny_index();
+    let (_dir, index, s1, s2) = build_tiny_index();
     let filters = SearchFilters {
         project: Some("alpha".to_string()),
         ..SearchFilters::default()
     };
     let semantic = vec![
         SemanticCandidate {
-            message_key: make_session("sess-2", "beta").message_key(1, "m-4"),
+            message_key: s2.message_key(1, "m-4"),
             message_id: "m-4".to_string(),
             similarity: 0.95,
         },
         SemanticCandidate {
-            message_key: make_session("sess-1", "alpha").message_key(0, "m-1"),
+            message_key: s1.message_key(0, "m-1"),
             message_id: "m-1".to_string(),
             similarity: 0.70,
         },
