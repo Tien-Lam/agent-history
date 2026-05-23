@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 use parse::{
     build_session_from_rollout, parse_rollout_messages, parse_rollout_messages_with_stats,
@@ -56,7 +56,7 @@ impl HistoryProvider for CodexCliProvider {
             }
 
             // Scan {YYYY}/{MM}/{DD}/rollout-*.jsonl
-            collect_rollout_files(base, &mut sessions);
+            collect_rollout_files(base, &mut sessions)?;
         }
 
         sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
@@ -75,40 +75,38 @@ impl HistoryProvider for CodexCliProvider {
     }
 }
 
-fn collect_rollout_files(base: &Path, sessions: &mut Vec<Session>) {
+fn collect_rollout_files(base: &Path, sessions: &mut Vec<Session>) -> Result<(), ProviderError> {
     // Walk year/month/day directories
-    let Ok(years) = std::fs::read_dir(base) else {
-        return;
-    };
+    let years = std::fs::read_dir(base).map_err(discovery_error("Codex CLI"))?;
 
-    for year_entry in years.flatten() {
+    for year_entry in years {
+        let year_entry = year_entry.map_err(discovery_error("Codex CLI"))?;
         if !year_entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
 
-        let Ok(months) = std::fs::read_dir(year_entry.path()) else {
-            continue;
-        };
+        let months = std::fs::read_dir(year_entry.path()).map_err(discovery_error("Codex CLI"))?;
 
-        for month_entry in months.flatten() {
+        for month_entry in months {
+            let month_entry = month_entry.map_err(discovery_error("Codex CLI"))?;
             if !month_entry.file_type().is_ok_and(|t| t.is_dir()) {
                 continue;
             }
 
-            let Ok(days) = std::fs::read_dir(month_entry.path()) else {
-                continue;
-            };
+            let days =
+                std::fs::read_dir(month_entry.path()).map_err(discovery_error("Codex CLI"))?;
 
-            for day_entry in days.flatten() {
+            for day_entry in days {
+                let day_entry = day_entry.map_err(discovery_error("Codex CLI"))?;
                 if !day_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
-                let Ok(files) = std::fs::read_dir(day_entry.path()) else {
-                    continue;
-                };
+                let files =
+                    std::fs::read_dir(day_entry.path()).map_err(discovery_error("Codex CLI"))?;
 
-                for file_entry in files.flatten() {
+                for file_entry in files {
+                    let file_entry = file_entry.map_err(discovery_error("Codex CLI"))?;
                     let path = file_entry.path();
                     let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
@@ -125,4 +123,5 @@ fn collect_rollout_files(base: &Path, sessions: &mut Vec<Session>) {
             }
         }
     }
+    Ok(())
 }

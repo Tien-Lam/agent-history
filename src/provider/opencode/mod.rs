@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats};
+use super::{
+    discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats,
+};
 use crate::model::{Message, Provider, Session};
 use parse::{build_session_from_file, parse_message_file_with_stats};
 
@@ -90,21 +92,19 @@ impl HistoryProvider for OpenCodeProvider {
             }
 
             let project_dirs =
-                std::fs::read_dir(&session_dir).map_err(|e| ProviderError::Discovery {
-                    provider: "OpenCode",
-                    source: e,
-                })?;
+                std::fs::read_dir(&session_dir).map_err(discovery_error("OpenCode"))?;
 
-            for project_entry in project_dirs.flatten() {
+            for project_entry in project_dirs {
+                let project_entry = project_entry.map_err(discovery_error("OpenCode"))?;
                 if !project_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
 
-                let Ok(files) = std::fs::read_dir(project_entry.path()) else {
-                    continue;
-                };
+                let files =
+                    std::fs::read_dir(project_entry.path()).map_err(discovery_error("OpenCode"))?;
 
-                for file_entry in files.flatten() {
+                for file_entry in files {
+                    let file_entry = file_entry.map_err(discovery_error("OpenCode"))?;
                     let path = file_entry.path();
                     if path.extension().and_then(|e| e.to_str()) != Some("json") {
                         continue;
@@ -143,7 +143,8 @@ impl HistoryProvider for OpenCodeProvider {
         let mut parse_stats = ProviderParseStats::default();
         let files = std::fs::read_dir(&message_dir)?;
 
-        for file_entry in files.flatten() {
+        for file_entry in files {
+            let file_entry = file_entry?;
             let path = file_entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;

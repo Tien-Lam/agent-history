@@ -38,7 +38,9 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats};
+use super::{
+    discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats,
+};
 use crate::model::{Message, Provider, Session};
 use parse::{load_messages_from_file, parse_sessions_in_file};
 
@@ -101,7 +103,7 @@ impl HistoryProvider for AiderProvider {
                 continue;
             }
             let mut history_files = Vec::new();
-            collect_history_files(base, 0, &mut history_files);
+            collect_history_files(base, 0, &mut history_files)?;
             for file in history_files {
                 match parse_sessions_in_file(&file) {
                     Ok(found) => sessions.extend(found),
@@ -135,16 +137,19 @@ impl HistoryProvider for AiderProvider {
 /// Recursively scans `dir` for `.aider.chat.history.md` files. Bounded by
 /// [`MAX_WALK_DEPTH`] because Aider history lives at project roots — going
 /// deeper just wades into `node_modules`, `.git`, etc.
-fn collect_history_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+fn collect_history_files(
+    dir: &Path,
+    depth: usize,
+    out: &mut Vec<PathBuf>,
+) -> Result<(), ProviderError> {
     if depth > MAX_WALK_DEPTH {
-        return;
+        return Ok(());
     }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    let entries = std::fs::read_dir(dir).map_err(discovery_error("Aider"))?;
+    for entry in entries {
+        let entry = entry.map_err(discovery_error("Aider"))?;
         let path = entry.path();
-        let Ok(ft) = entry.file_type() else { continue };
+        let ft = entry.file_type().map_err(discovery_error("Aider"))?;
         if ft.is_file() {
             if path.file_name().and_then(|n| n.to_str()) == Some(HISTORY_FILE) {
                 out.push(path);
@@ -162,9 +167,10 @@ fn collect_history_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
                     continue;
                 }
             }
-            collect_history_files(&path, depth + 1, out);
+            collect_history_files(&path, depth + 1, out)?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]

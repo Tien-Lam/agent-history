@@ -45,6 +45,10 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf())
 }
 
+pub(crate) fn discovery_error(provider: &'static str) -> impl Fn(std::io::Error) -> ProviderError {
+    move |source| ProviderError::Discovery { provider, source }
+}
+
 pub trait HistoryProvider: Send + Sync {
     fn provider(&self) -> Provider;
     fn base_dirs(&self) -> &[PathBuf];

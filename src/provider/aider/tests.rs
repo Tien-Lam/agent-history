@@ -21,6 +21,24 @@ fn detect_returns_none_when_root_missing() {
 }
 
 #[test]
+fn discovery_reports_existing_root_that_is_not_a_directory() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("not-a-directory");
+    fs::write(&root, "not a directory").unwrap();
+
+    let provider = AiderProvider::new(vec![root]);
+    let err = provider.discover_sessions().unwrap_err();
+
+    assert!(matches!(
+        err,
+        ProviderError::Discovery {
+            provider: "Aider",
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parses_single_session_with_user_and_assistant() {
     let tmp = TempDir::new().unwrap();
     let body = "\

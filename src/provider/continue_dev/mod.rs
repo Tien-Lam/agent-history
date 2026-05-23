@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 use parse::{build_session_from_file, load_index, parse_jsonl, parse_jsonl_with_stats};
 
@@ -90,11 +90,10 @@ impl HistoryProvider for ContinueDevProvider {
             // Load index for enriched metadata (optional)
             let index = load_index(&sessions_dir);
 
-            let Ok(entries) = std::fs::read_dir(&sessions_dir) else {
-                continue;
-            };
+            let entries = std::fs::read_dir(&sessions_dir).map_err(discovery_error("Continue"))?;
 
-            for entry in entries.flatten() {
+            for entry in entries {
+                let entry = entry.map_err(discovery_error("Continue"))?;
                 let path = entry.path();
                 let Some(ext) = path.extension() else {
                     continue;

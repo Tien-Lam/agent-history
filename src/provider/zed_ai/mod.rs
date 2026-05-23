@@ -43,7 +43,7 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 use parse::{load_messages_from_path_with_stats, read_session};
 
@@ -123,14 +123,9 @@ impl HistoryProvider for ZedAiProvider {
             if !conv_dir.exists() {
                 continue;
             }
-            let entries = match std::fs::read_dir(&conv_dir) {
-                Ok(e) => e,
-                Err(e) => {
-                    tracing::warn!(path = %conv_dir.display(), error = %e, "skipping unreadable Zed conversations dir");
-                    continue;
-                }
-            };
-            for entry in entries.flatten() {
+            let entries = std::fs::read_dir(&conv_dir).map_err(discovery_error("Zed AI"))?;
+            for entry in entries {
+                let entry = entry.map_err(discovery_error("Zed AI"))?;
                 let path = entry.path();
                 if path.extension().is_none_or(|x| x != "json") {
                     continue;

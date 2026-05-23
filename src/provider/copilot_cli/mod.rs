@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 use parse::{
     build_session, parse_checkpoint_md, parse_events_jsonl, parse_events_jsonl_with_stats,
@@ -52,12 +52,10 @@ impl HistoryProvider for CopilotCliProvider {
                 continue;
             }
 
-            let session_dirs = std::fs::read_dir(base).map_err(|e| ProviderError::Discovery {
-                provider: "Copilot CLI",
-                source: e,
-            })?;
+            let session_dirs = std::fs::read_dir(base).map_err(discovery_error("Copilot CLI"))?;
 
-            for entry in session_dirs.flatten() {
+            for entry in session_dirs {
+                let entry = entry.map_err(discovery_error("Copilot CLI"))?;
                 if !entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }

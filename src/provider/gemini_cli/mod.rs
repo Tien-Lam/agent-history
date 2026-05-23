@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 use parse::{build_session_from_file, load_messages_from_path_with_stats, load_project_map};
 
@@ -56,12 +56,10 @@ impl HistoryProvider for GeminiCliProvider {
             }
 
             let project_dirs =
-                std::fs::read_dir(&tmp_dir).map_err(|e| ProviderError::Discovery {
-                    provider: "Gemini CLI",
-                    source: e,
-                })?;
+                std::fs::read_dir(&tmp_dir).map_err(discovery_error("Gemini CLI"))?;
 
-            for project_entry in project_dirs.flatten() {
+            for project_entry in project_dirs {
+                let project_entry = project_entry.map_err(discovery_error("Gemini CLI"))?;
                 if !project_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
@@ -74,12 +72,10 @@ impl HistoryProvider for GeminiCliProvider {
                 }
 
                 let chat_files =
-                    std::fs::read_dir(&chats_dir).map_err(|e| ProviderError::Discovery {
-                        provider: "Gemini CLI",
-                        source: e,
-                    })?;
+                    std::fs::read_dir(&chats_dir).map_err(discovery_error("Gemini CLI"))?;
 
-                for file_entry in chat_files.flatten() {
+                for file_entry in chat_files {
+                    let file_entry = file_entry.map_err(discovery_error("Gemini CLI"))?;
                     let path = file_entry.path();
                     let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 

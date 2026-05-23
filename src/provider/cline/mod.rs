@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 use parse::{parse_api_history_with_stats, parse_task_dir, API_HISTORY_FILE};
 
@@ -126,10 +126,9 @@ impl HistoryProvider for ClineProvider {
             if !td.is_dir() {
                 continue;
             }
-            let Ok(entries) = std::fs::read_dir(&td) else {
-                continue;
-            };
-            for entry in entries.flatten() {
+            let entries = std::fs::read_dir(&td).map_err(discovery_error("Cline"))?;
+            for entry in entries {
+                let entry = entry.map_err(discovery_error("Cline"))?;
                 let path = entry.path();
                 if !path.is_dir() {
                     continue;

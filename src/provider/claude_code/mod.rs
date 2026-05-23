@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 pub use crate::provider::text_blocks::parse_text_with_code_blocks;
 use parse::{
@@ -69,12 +69,10 @@ impl HistoryProvider for ClaudeCodeProvider {
             }
 
             let project_dirs =
-                std::fs::read_dir(&projects).map_err(|e| ProviderError::Discovery {
-                    provider: "Claude Code",
-                    source: e,
-                })?;
+                std::fs::read_dir(&projects).map_err(discovery_error("Claude Code"))?;
 
-            for project_entry in project_dirs.flatten() {
+            for project_entry in project_dirs {
+                let project_entry = project_entry.map_err(discovery_error("Claude Code"))?;
                 if !project_entry.file_type().is_ok_and(|t| t.is_dir()) {
                     continue;
                 }
@@ -84,12 +82,10 @@ impl HistoryProvider for ClaudeCodeProvider {
                     decode_project_name(project_entry.file_name().to_string_lossy().as_ref());
 
                 let entries =
-                    std::fs::read_dir(&project_dir).map_err(|e| ProviderError::Discovery {
-                        provider: "Claude Code",
-                        source: e,
-                    })?;
+                    std::fs::read_dir(&project_dir).map_err(discovery_error("Claude Code"))?;
 
-                for file_entry in entries.flatten() {
+                for file_entry in entries {
+                    let file_entry = file_entry.map_err(discovery_error("Claude Code"))?;
                     let path = file_entry.path();
                     if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                         continue;

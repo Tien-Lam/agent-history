@@ -205,7 +205,14 @@ fn load_parts_into_content(part_dir: &Path, content: &mut Vec<ContentBlock>) {
 
     let mut parts: Vec<(String, RawPart)> = Vec::new();
 
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                tracing::warn!(part_dir = %part_dir.display(), error = %e, "skipping unreadable OpenCode part entry");
+                continue;
+            }
+        };
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
