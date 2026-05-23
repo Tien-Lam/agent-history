@@ -72,9 +72,7 @@ impl ListCursor {
 }
 
 fn encode<T: Serialize>(value: &T) -> String {
-    // serde_json on a small struct cannot fail, but if it ever does we'd
-    // rather emit an empty cursor than poison the response.
-    let json = serde_json::to_vec(value).unwrap_or_default();
+    let json = serde_json::to_vec(value).expect("cursor serialization should be infallible");
     URL_SAFE_NO_PAD.encode(json)
 }
 

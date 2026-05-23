@@ -138,5 +138,5 @@ fn stringify_json(v: &serde_json::Value) -> String {
     if let Some(s) = v.as_str() {
         return s.to_string();
     }
-    serde_json::to_string(v).unwrap_or_default()
+    serde_json::to_string(v).expect("serde_json::Value serialization should be infallible")
 }
