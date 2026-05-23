@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use super::*;
-use crate::config::Transport;
+use crate::config::{RemoteSource, Transport};
 use crate::provider::{claude_code::ClaudeCodeProvider, HistoryProvider};
 
 fn write_claude_fixture(home: &Path, session_id: &str) {
