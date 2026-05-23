@@ -90,6 +90,31 @@ fn sessions_sharing_one_source_path_are_all_indexed() {
 }
 
 #[test]
+fn build_index_reports_session_load_errors() {
+    let dir = tempdir().unwrap();
+    let index = SearchIndex::open_or_create(dir.path()).unwrap();
+    let stub = StubProvider::new(Provider::ClaudeCode);
+
+    let mut bad = make_session("bad-session", "broken");
+    bad.source_path = dir.path().join("bad.jsonl");
+    std::fs::write(&bad.source_path, "bad").unwrap();
+    stub.fail(bad.clone(), "fixture parse exploded");
+
+    let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+    let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+    let stats = index.build_index(&[bad], &providers, &tx).unwrap();
+
+    assert_eq!(stats.sessions_indexed, 0);
+    assert_eq!(stats.messages_indexed, 0);
+    assert_eq!(stats.load_errors.len(), 1);
+    assert_eq!(stats.load_errors[0].provider, Provider::ClaudeCode);
+    assert_eq!(stats.load_errors[0].session_id, "bad-session");
+    assert!(stats.load_errors[0]
+        .error
+        .contains("fixture parse exploded"));
+}
+
+#[test]
 fn build_index_prunes_sessions_no_longer_discovered() {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();

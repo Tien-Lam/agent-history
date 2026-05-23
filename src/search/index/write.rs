@@ -10,7 +10,9 @@ use crate::provider::HistoryProvider;
 
 use super::super::document::{extract_content, extract_tool_output, message_has_tool_call};
 use super::super::fingerprint::{file_fingerprint, manifest_has_legacy_path_keys};
-use super::super::types::{HitKind, IndexStats, Manifest, NotesIndexStats, SearchError};
+use super::super::types::{
+    HitKind, IndexLoadError, IndexStats, Manifest, NotesIndexStats, SearchError,
+};
 use super::SearchIndex;
 
 fn should_prune_session_key(key: &str, prune_providers: Option<&HashSet<Provider>>) -> bool {
@@ -106,36 +108,43 @@ impl SearchIndex {
                 &session_key,
             ));
 
-            if let Ok(messages) = crate::provider::load_messages_for_session(session, providers) {
-                for (turn_index, msg) in messages.iter().enumerate() {
-                    let content = extract_content(msg);
-                    let tool_output = extract_tool_output(msg);
-                    if content.is_empty() && tool_output.is_empty() {
-                        continue;
-                    }
-                    let project = session.project_name.as_deref().unwrap_or("");
-                    let has_tool_call = i64::from(message_has_tool_call(msg));
-                    let message_key = session.message_key(turn_index, &msg.id.0);
-                    let mut doc = TantivyDocument::default();
-                    doc.add_text(self.fields.kind, HitKind::Message.slug());
-                    doc.add_text(self.fields.session_key, &session_key);
-                    doc.add_text(self.fields.session_id, &session.id.0);
-                    doc.add_text(self.fields.message_key, &message_key);
-                    doc.add_text(self.fields.message_id, &msg.id.0);
-                    doc.add_text(self.fields.provider, session.provider.slug());
-                    doc.add_text(self.fields.project, project);
-                    doc.add_text(self.fields.project_raw, project);
-                    doc.add_text(self.fields.role, msg.role.slug());
-                    doc.add_text(self.fields.content, &content);
-                    doc.add_text(self.fields.tool_output, &tool_output);
-                    doc.add_i64(self.fields.timestamp, msg.timestamp.timestamp());
-                    doc.add_i64(self.fields.has_tool_call, has_tool_call);
-                    writer.add_document(doc)?;
-                    stats.messages_indexed += 1;
+            let messages = match crate::provider::load_messages_for_session(session, providers) {
+                Ok(messages) => messages,
+                Err(error) => {
+                    stats.load_errors.push(IndexLoadError {
+                        provider: session.provider,
+                        session_id: session.id.0.clone(),
+                        error: error.to_string(),
+                    });
+                    let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
+                    continue;
                 }
-            } else {
-                let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
-                continue;
+            };
+            for (turn_index, msg) in messages.iter().enumerate() {
+                let content = extract_content(msg);
+                let tool_output = extract_tool_output(msg);
+                if content.is_empty() && tool_output.is_empty() {
+                    continue;
+                }
+                let project = session.project_name.as_deref().unwrap_or("");
+                let has_tool_call = i64::from(message_has_tool_call(msg));
+                let message_key = session.message_key(turn_index, &msg.id.0);
+                let mut doc = TantivyDocument::default();
+                doc.add_text(self.fields.kind, HitKind::Message.slug());
+                doc.add_text(self.fields.session_key, &session_key);
+                doc.add_text(self.fields.session_id, &session.id.0);
+                doc.add_text(self.fields.message_key, &message_key);
+                doc.add_text(self.fields.message_id, &msg.id.0);
+                doc.add_text(self.fields.provider, session.provider.slug());
+                doc.add_text(self.fields.project, project);
+                doc.add_text(self.fields.project_raw, project);
+                doc.add_text(self.fields.role, msg.role.slug());
+                doc.add_text(self.fields.content, &content);
+                doc.add_text(self.fields.tool_output, &tool_output);
+                doc.add_i64(self.fields.timestamp, msg.timestamp.timestamp());
+                doc.add_i64(self.fields.has_tool_call, has_tool_call);
+                writer.add_document(doc)?;
+                stats.messages_indexed += 1;
             }
 
             manifest.sessions.insert(session_key, current_fingerprint);

@@ -23,6 +23,7 @@ struct StubProvider {
     // the caller noticing — we don't actually share across threads in tests.
     sessions: Mutex<Vec<Session>>,
     messages: Mutex<std::collections::HashMap<String, Vec<Message>>>,
+    failures: Mutex<std::collections::HashMap<String, String>>,
     base: Vec<PathBuf>,
 }
 
@@ -32,6 +33,7 @@ impl StubProvider {
             provider,
             sessions: Mutex::new(Vec::new()),
             messages: Mutex::new(std::collections::HashMap::new()),
+            failures: Mutex::new(std::collections::HashMap::new()),
             base: Vec::new(),
         }
     }
@@ -41,6 +43,14 @@ impl StubProvider {
             .lock()
             .unwrap()
             .insert(session.identity_key(), messages);
+        self.sessions.lock().unwrap().push(session);
+    }
+
+    fn fail(&self, session: Session, reason: &str) {
+        self.failures
+            .lock()
+            .unwrap()
+            .insert(session.identity_key(), reason.to_string());
         self.sessions.lock().unwrap().push(session);
     }
 }
@@ -59,6 +69,12 @@ impl crate::provider::HistoryProvider for StubProvider {
         &self,
         session: &Session,
     ) -> Result<Vec<Message>, crate::provider::ProviderError> {
+        if let Some(reason) = self.failures.lock().unwrap().get(&session.identity_key()) {
+            return Err(crate::provider::ProviderError::Parse {
+                path: session.source_path.clone(),
+                reason: reason.clone(),
+            });
+        }
         Ok(self
             .messages
             .lock()

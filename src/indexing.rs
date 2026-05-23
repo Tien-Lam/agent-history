@@ -90,6 +90,19 @@ pub fn run_indexing(
     }
 
     let stats = build_index(&index, &discovery.sessions, providers, scope, options)?;
+    let mut errors = discovery.errors;
+    errors.extend(
+        stats
+            .load_errors
+            .iter()
+            .map(|load_error| IndexingError::Provider {
+                provider: load_error.provider.slug().to_string(),
+                error: format!(
+                    "failed to load session {}: {}",
+                    load_error.session_id, load_error.error
+                ),
+            }),
+    );
 
     let summary = IndexingSummary {
         providers: provider_slugs(
@@ -108,7 +121,7 @@ pub fn run_indexing(
         force: options.force,
         index_dir: index_dir.display().to_string(),
         duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        errors: discovery.errors,
+        errors,
     };
 
     Ok(IndexingOutcome {

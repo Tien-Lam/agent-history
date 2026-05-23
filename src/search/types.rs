@@ -92,6 +92,15 @@ pub struct IndexStats {
     pub unchanged: usize,
     /// Sessions present in the manifest but no longer discovered this pass.
     pub removed: usize,
+    /// Discovered sessions that could not be loaded and therefore were not indexed.
+    pub load_errors: Vec<IndexLoadError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexLoadError {
+    pub provider: Provider,
+    pub session_id: String,
+    pub error: String,
 }
 
 /// Outcome of a single index-notes pass. Mirrors [`IndexStats`] in spirit but
