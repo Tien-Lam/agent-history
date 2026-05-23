@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::{Provider, SessionId};
 use proptest::prelude::*;
 
 fn sid(s: &str) -> SessionId {
