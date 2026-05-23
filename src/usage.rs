@@ -21,9 +21,11 @@
 
 mod aggregate;
 mod pricing;
+mod types;
 
-pub use aggregate::{aggregate, GroupBy, UsageReport, UsageRow, UsageTotals};
+pub use aggregate::aggregate;
 pub use pricing::{pricing_for, ModelPricing};
+pub use types::{GroupBy, UsageReport, UsageRow, UsageTotals};
 
 /// Round a USD figure to 4 decimal places (1/100th of a cent). Cost
 /// totals over many sessions accumulate sub-cent fractions — rounding
