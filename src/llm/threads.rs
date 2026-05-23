@@ -1,12 +1,14 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::common::{post_request, response_json_object, LlmConfig, LlmError, LlmTransport};
+use super::common::{post_request, LlmConfig, LlmError, LlmTransport};
 use crate::model::{Provider, SessionId};
 
 mod prompt;
+mod response;
 
 pub use prompt::{build_threads_request_body, user_message_threads, SYSTEM_PROMPT_THREADS};
+pub use response::parse_threads_response;
 
 /// One session as seen by the threads extractor. Compact on purpose:
 /// digests dominate the input token count, so we send only what the LLM
@@ -51,25 +53,6 @@ pub struct StructuredThread {
     pub topic_summary: String,
     pub member_refs: Vec<String>,
     pub time_span: TimeSpan,
-}
-
-#[derive(Deserialize)]
-struct ThreadsPayload {
-    threads: Vec<StructuredThread>,
-}
-
-/// Parse the Messages API response body into structured threads. Same
-/// JSON-extraction rules as `parse_response`: tolerate code fences and
-/// trailing prose.
-pub fn parse_threads_response(body: &str) -> Result<Vec<StructuredThread>, LlmError> {
-    let json_slice = response_json_object(body)?;
-    let parsed: ThreadsPayload = serde_json::from_str(&json_slice).map_err(|e| {
-        LlmError::Parse(format!(
-            "threads payload: {e} (slice starts: {})",
-            json_slice.chars().take(80).collect::<String>()
-        ))
-    })?;
-    Ok(parsed.threads)
 }
 
 /// Run topic-clustering over all `digests` in a single API call. The
