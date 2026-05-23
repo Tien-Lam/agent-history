@@ -3,29 +3,20 @@ use std::hash::BuildHasher;
 
 use crate::cli_error::ErrorEnvelope;
 use crate::federated::{FederatedDiscovery, LOCAL_SOURCE};
-use crate::model::{CitationRef, Message, Provider, QualifiedCitationRef, Session};
-use crate::provider::{self, HistoryProvider};
+use crate::model::{CitationRef, Provider, QualifiedCitationRef};
+use crate::provider::HistoryProvider;
 use crate::session_resolver::{LookupSource, SelectorShape, SessionResolver};
 
-#[derive(Debug)]
-pub struct LoadedSession {
-    pub session: Session,
-    pub source: String,
-    pub session_ref: String,
-    pub messages: Vec<Message>,
-}
+mod loader;
+mod types;
+mod visibility;
+mod window;
 
-#[derive(Debug)]
-pub struct LoadedCitationWindow {
-    pub session: Session,
-    pub source: String,
-    pub citation: CitationRef,
-    pub citation_ref: String,
-    pub messages: Vec<Message>,
-    pub start_idx: usize,
-    pub target_idx: usize,
-    pub total_messages: usize,
-}
+pub use types::{LoadedCitationWindow, LoadedSession};
+
+use loader::load_messages;
+use visibility::ensure_provider_visible;
+use window::citation_window;
 
 pub fn load_session_by_selector(
     providers: &[Box<dyn HistoryProvider>],
@@ -141,75 +132,4 @@ pub fn load_exact_citation_window<S: BuildHasher>(
         loaded.messages,
         include_context,
     )
-}
-
-fn load_messages(
-    providers: &[Box<dyn HistoryProvider>],
-    session: &Session,
-    display_ref: &str,
-) -> Result<Vec<Message>, ErrorEnvelope> {
-    provider::load_messages_for_session(session, providers).map_err(|e| {
-        ErrorEnvelope::new(
-            "provider-error",
-            format!("failed to load messages for {display_ref}: {e}"),
-        )
-    })
-}
-
-fn citation_window(
-    session: Session,
-    source: String,
-    citation: CitationRef,
-    citation_ref: String,
-    messages: Vec<Message>,
-    include_context: usize,
-) -> Result<LoadedCitationWindow, ErrorEnvelope> {
-    let total = messages.len();
-    let turn = citation.turn as usize;
-    if turn == 0 || turn > total {
-        return Err(ErrorEnvelope::new(
-            "session-not-found",
-            format!("turn {turn} out of range: session has {total} message(s)"),
-        )
-        .with_hint("Use `aghist export` to inspect the full session, or pick a smaller turn."));
-    }
-
-    let target_idx = turn - 1;
-    let start_idx = target_idx.saturating_sub(include_context);
-    let end_idx = (target_idx + include_context + 1).min(total);
-    let messages = messages
-        .into_iter()
-        .skip(start_idx)
-        .take(end_idx - start_idx)
-        .collect();
-    Ok(LoadedCitationWindow {
-        session,
-        source,
-        citation,
-        citation_ref,
-        messages,
-        start_idx,
-        target_idx,
-        total_messages: total,
-    })
-}
-
-fn ensure_provider_visible<S: BuildHasher>(
-    provider: Option<Provider>,
-    visible_providers: Option<&HashSet<Provider, S>>,
-) -> Result<(), ErrorEnvelope> {
-    let Some(provider) = provider else {
-        return Ok(());
-    };
-    if visible_providers.is_none_or(|visible| visible.contains(&provider)) {
-        Ok(())
-    } else {
-        Err(ErrorEnvelope::new(
-            "provider-unavailable",
-            format!(
-                "provider '{}' is not enabled or not visible to MCP",
-                provider.slug()
-            ),
-        ))
-    }
 }
