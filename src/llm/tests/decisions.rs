@@ -70,6 +70,24 @@ fn parse_response_handles_trailing_prose() {
 }
 
 #[test]
+fn parse_response_reads_json_from_later_text_block() {
+    let body = r#"{
+        "id": "msg_x",
+        "content": [
+            {"type": "text", "text": "I will return the JSON next."},
+            {"type": "tool_use", "name": "ignored", "input": {}},
+            {"type": "text", "text": "{\"decisions\":[{\"summary\":\"Use WAL\",\"rationale\":\"sqlite concurrency\",\"alternatives\":[],\"turn\":3}]}"}
+        ]
+    }"#;
+
+    let out = parse_response(body).unwrap();
+
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].summary, "Use WAL");
+    assert_eq!(out[0].turn, 3);
+}
+
+#[test]
 fn parse_response_errors_on_no_json() {
     let body = assistant_response("the model refused");
     let err = parse_response(&body).unwrap_err();

@@ -261,9 +261,11 @@ pub(super) fn response_json_object(body: &str) -> Result<String, LlmError> {
     let text = resp
         .content
         .into_iter()
-        .find(|b| b.kind == "text")
+        .filter(|b| b.kind == "text")
         .map(|b| b.text)
-        .unwrap_or_default();
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
     if text.trim().is_empty() {
         return Err(LlmError::NoJson("empty assistant text".into()));
     }
