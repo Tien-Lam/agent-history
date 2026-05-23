@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::{TimeZone, Utc};
 
 use super::*;
-use crate::model::SessionId;
+use crate::model::{Provider, Session, SessionId, TokenUsage};
 
 mod aggregate;
 mod pricing;
