@@ -1,8 +1,10 @@
 use chrono::Utc;
 
 use super::*;
-use crate::model::{MessageId, Provider, Role, Session, SessionId, ToolCall, ToolResult};
-use crate::provider::{HistoryProvider, ProviderMessageLoad, ProviderParseStats};
+use crate::model::{
+    ContentBlock, Message, MessageId, Provider, Role, Session, SessionId, ToolCall, ToolResult,
+};
+use crate::provider::{HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats};
 use std::path::PathBuf;
 
 fn msg(content: Vec<ContentBlock>) -> Message {
