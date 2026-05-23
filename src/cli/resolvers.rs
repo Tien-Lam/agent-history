@@ -2,101 +2,14 @@ use std::path::PathBuf;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::model::Provider;
-use aghist::schema_fragments::{SEARCH_LIMIT_DEFAULT, SHOW_INCLUDE_CONTEXT_DEFAULT};
 use aghist::todos::TodoKind;
 use aghist::{config, export};
+
+mod params;
 
 pub(super) fn parse_transport(raw: &str) -> Result<config::Transport, String> {
     config::Transport::from_slug(raw)
         .ok_or_else(|| format!("unknown transport '{raw}'. Valid: ssh, rsync"))
-}
-
-/// JSON `--params` body for `aghist export`.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ExportParams {
-    format: String,
-    session: String,
-    #[serde(default)]
-    output: Option<PathBuf>,
-    #[serde(default)]
-    turn_range: Option<String>,
-    #[serde(default)]
-    include_notes: bool,
-}
-
-/// JSON `--params` body for `aghist index`.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct IndexParams {
-    #[serde(default)]
-    provider: Option<String>,
-    #[serde(default)]
-    force: bool,
-    #[serde(default)]
-    accept_download: bool,
-}
-
-/// JSON `--params` body for `aghist search`.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SearchParams {
-    query: String,
-    #[serde(default = "SearchParams::default_limit")]
-    limit: usize,
-    #[serde(default)]
-    cursor: Option<String>,
-    #[serde(default)]
-    json: bool,
-    #[serde(default)]
-    hybrid_weight: f32,
-}
-
-impl SearchParams {
-    fn default_limit() -> usize {
-        SEARCH_LIMIT_DEFAULT
-    }
-}
-
-/// JSON `--params` body for `aghist show`.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ShowParams {
-    reference: String,
-    #[serde(default = "ShowParams::default_format")]
-    format: String,
-    #[serde(default = "ShowParams::default_include_context")]
-    include_context: u32,
-}
-
-impl ShowParams {
-    fn default_format() -> String {
-        "md".to_string()
-    }
-
-    fn default_include_context() -> u32 {
-        SHOW_INCLUDE_CONTEXT_DEFAULT
-    }
-}
-
-fn parse_params<T: serde::de::DeserializeOwned>(json: &str, cmd: &str) -> Result<T, ErrorEnvelope> {
-    serde_json::from_str(json).map_err(|e| {
-        ErrorEnvelope::new(
-            "usage",
-            format!("--params for `{cmd}` is not valid JSON: {e}"),
-        )
-        .with_hint("Pass a JSON object matching the subcommand schema.")
-    })
-}
-
-fn parse_params_field<T, E: std::fmt::Display>(
-    raw: &str,
-    field: &str,
-    parse: impl FnOnce(&str) -> Result<T, E>,
-) -> Result<T, ErrorEnvelope> {
-    parse(raw).map_err(|e| {
-        ErrorEnvelope::new("usage", format!("--params field `{field}` is invalid: {e}"))
-    })
 }
 
 fn missing_required_arg(arg: &str, cmd: &str) -> ErrorEnvelope {
@@ -169,15 +82,7 @@ pub(crate) fn resolve_export_args(
     params: Option<String>,
 ) -> Result<ResolvedExport, ErrorEnvelope> {
     if let Some(json) = params {
-        let p: ExportParams = parse_params(&json, "export")?;
-        let format = parse_params_field(&p.format, "format", str::parse::<export::ExportFormat>)?;
-        Ok(ResolvedExport {
-            format,
-            session: p.session,
-            output: p.output,
-            turn_range: p.turn_range,
-            include_notes: p.include_notes,
-        })
+        params::resolve_export_params(&json)
     } else {
         Ok(ResolvedExport {
             format: format.ok_or_else(|| missing_required_arg("--format", "export"))?,
@@ -196,12 +101,7 @@ pub(crate) fn resolve_index_args(
     params: Option<String>,
 ) -> Result<(Option<Provider>, bool, bool), ErrorEnvelope> {
     if let Some(json) = params {
-        let p: IndexParams = parse_params(&json, "index")?;
-        let provider = match p.provider {
-            Some(slug) => Some(parse_params_field(&slug, "provider", parse_provider_slug)?),
-            None => None,
-        };
-        Ok((provider, p.force, p.accept_download))
+        params::resolve_index_params(&json)
     } else {
         Ok((provider, force, accept_download))
     }
@@ -222,16 +122,7 @@ pub(crate) fn resolve_search_args(
     params: Option<String>,
 ) -> Result<SearchArgs, ErrorEnvelope> {
     if let Some(raw) = params {
-        let p: SearchParams = parse_params(&raw, "search")?;
-        Ok(SearchArgs {
-            query: Some(p.query),
-            query_file: None,
-            stdin: false,
-            limit: p.limit,
-            cursor: p.cursor,
-            json: p.json,
-            hybrid_weight: p.hybrid_weight,
-        })
+        params::resolve_search_params(&raw)
     } else {
         Ok(args)
     }
@@ -244,9 +135,7 @@ pub(crate) fn resolve_show_args(
     params: Option<String>,
 ) -> Result<(String, ShowFormat, u32), ErrorEnvelope> {
     if let Some(json) = params {
-        let p: ShowParams = parse_params(&json, "show")?;
-        let format = parse_params_field(&p.format, "format", str::parse::<ShowFormat>)?;
-        Ok((p.reference, format, p.include_context))
+        params::resolve_show_params(&json)
     } else {
         Ok((
             reference.ok_or_else(|| missing_required_arg("REF", "show"))?,
