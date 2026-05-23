@@ -11,7 +11,7 @@ mod sources;
 
 pub use sources::{
     sources_cache_root, validate_rsync_endpoint, validate_source_name, RemoteSource,
-    SourceCacheManifest, Transport,
+    SourceCacheManifest, SourceCacheManifestLoadError, Transport,
 };
 
 #[derive(Debug, Error)]
