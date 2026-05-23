@@ -49,6 +49,7 @@ fn write_via_temp(path: &Path, tmp: &Path, bytes: &[u8]) -> io::Result<()> {
         .create_new(true)
         .open(tmp)?;
     file.write_all(bytes)?;
+    file.sync_all()?;
     drop(file);
     std::fs::rename(tmp, path)
 }
