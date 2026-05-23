@@ -6,6 +6,7 @@
 //! but the structure is the contract.
 
 mod fs;
+mod index;
 mod provider_fidelity;
 mod sidecars;
 
@@ -14,13 +15,12 @@ use serde::Serialize;
 use crate::model::Provider;
 use crate::provider::HistoryProvider;
 use crate::query_scope::QueryScope;
-use crate::search::SearchIndex;
 
 pub use provider_fidelity::{
     provider_parse_health_check, run_provider_fidelity, HEALTH_FIDELITY_SAMPLE_PER_PROVIDER,
 };
 
-use fs::check_dir_writable;
+use index::index_health_checks;
 use sidecars::{
     embedding_consent_health_check, embedding_store_health_check, metadata_db_health_check,
     source_cache_manifest_health_check, source_registry_health_check,
@@ -73,73 +73,8 @@ pub fn run_health_checks(
         });
     }
 
-    let index_dir = SearchIndex::default_index_dir();
-    match check_dir_writable(&index_dir) {
-        Ok(()) => checks.push(HealthCheck {
-            name: "index-dir-writable",
-            status: HealthStatus::Ok,
-            message: format!("index dir writable: {}", index_dir.display()),
-            hint: None,
-        }),
-        Err(e) => checks.push(HealthCheck {
-            name: "index-dir-writable",
-            status: HealthStatus::Fail,
-            message: format!("index dir not writable ({}): {e}", index_dir.display()),
-            hint: Some("Set $AGHIST_INDEX_DIR to a writable path, or fix permissions.".to_string()),
-        }),
-    }
-
-    let manifest_path = index_dir.join("manifest.json");
-    if manifest_path.exists() {
-        match std::fs::read_to_string(&manifest_path)
-            .map_err(|e| e.to_string())
-            .and_then(|raw| {
-                serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string())
-            }) {
-            Ok(v) if v.get("sessions").is_some() => checks.push(HealthCheck {
-                name: "manifest-sane",
-                status: HealthStatus::Ok,
-                message: "manifest.json parses and has 'sessions' field".to_string(),
-                hint: None,
-            }),
-            Ok(_) => checks.push(HealthCheck {
-                name: "manifest-sane",
-                status: HealthStatus::Warn,
-                message: "manifest.json parses but is missing 'sessions' field".to_string(),
-                hint: Some("Run `aghist index --force` to rebuild the manifest.".to_string()),
-            }),
-            Err(e) => checks.push(HealthCheck {
-                name: "manifest-sane",
-                status: HealthStatus::Fail,
-                message: format!("manifest.json failed to parse: {e}"),
-                hint: Some("Run `aghist index --force` to rebuild the manifest.".to_string()),
-            }),
-        }
-    } else {
-        checks.push(HealthCheck {
-            name: "manifest-sane",
-            status: HealthStatus::Warn,
-            message: "no manifest.json — index has not been built".to_string(),
-            hint: Some("Run `aghist index` to populate the search index.".to_string()),
-        });
-    }
-
-    let meta_path = index_dir.join("meta.json");
-    if meta_path.exists() {
-        checks.push(HealthCheck {
-            name: "index-schema-present",
-            status: HealthStatus::Ok,
-            message: "Tantivy meta.json present".to_string(),
-            hint: None,
-        });
-    } else {
-        checks.push(HealthCheck {
-            name: "index-schema-present",
-            status: HealthStatus::Warn,
-            message: "Tantivy meta.json missing — index has not been initialised".to_string(),
-            hint: Some("Run `aghist index` to create the index.".to_string()),
-        });
-    }
+    let index_dir = crate::search::SearchIndex::default_index_dir();
+    checks.extend(index_health_checks(&index_dir));
 
     checks.push(metadata_db_health_check());
     checks.push(source_registry_health_check(scope.sources()));
