@@ -1,32 +1,13 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
-use crate::model::{CitationRef, Provider, Session, SessionRef};
+use crate::model::{Provider, Session};
 
 use super::error::ResolutionError;
+use super::parse::{parse_citation_ref, parse_session_ref};
 use super::refs::{qualified_citation_ref, qualified_session_ref, source_for_session};
 use super::source::{split_valid_source_prefix, LookupSource};
-
-#[derive(Clone, Copy)]
-pub enum SelectorShape {
-    SessionRefOnly,
-    SessionRefOrIdPrefix,
-}
-
-#[derive(Debug)]
-pub struct SelectedSession<'a> {
-    pub session: &'a Session,
-    pub source: &'a str,
-    pub session_ref: String,
-}
-
-#[derive(Debug)]
-pub struct SelectedCitation<'a> {
-    pub session: &'a Session,
-    pub source: &'a str,
-    pub citation: CitationRef,
-    pub citation_ref: String,
-}
+use super::types::{SelectedCitation, SelectedSession, SelectorShape};
 
 pub struct SessionResolver<'a, S = std::collections::hash_map::RandomState> {
     sessions: &'a [Session],
@@ -203,20 +184,4 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
             candidates,
         }
     }
-}
-
-fn parse_session_ref(raw: &str, full_selector: &str) -> Result<SessionRef, ResolutionError> {
-    raw.parse::<SessionRef>()
-        .map_err(|e| ResolutionError::InvalidSessionRef {
-            selector: full_selector.to_string(),
-            message: e.to_string(),
-        })
-}
-
-fn parse_citation_ref(raw: &str, full_selector: &str) -> Result<CitationRef, ResolutionError> {
-    raw.parse::<CitationRef>()
-        .map_err(|e| ResolutionError::InvalidCitationRef {
-            selector: full_selector.to_string(),
-            message: e.to_string(),
-        })
 }
