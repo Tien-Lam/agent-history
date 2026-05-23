@@ -40,7 +40,7 @@ to `src/commands/dispatch.rs`. Command implementations live under
 The dispatcher handles two broad execution paths:
 
 1. **TUI mode** (no subcommand, no `--list`) — sets up the terminal with crossterm, creates `App`, runs the event loop, then restores terminal state on exit.
-2. **One-shot CLI subcommands** — see the full surface in [`CLAUDE.md`](../CLAUDE.md#agent-friendly-cli-surface). Each subcommand emits stable JSON on a pipe, uses semantic exit codes, and has a discoverable JSON Schema (`aghist schema <subcmd>`).
+2. **One-shot CLI subcommands** — see the full surface in the [`README`](../README.md#agent-friendly-cli). Each subcommand emits stable JSON on a pipe, uses semantic exit codes, and has a discoverable JSON Schema (`aghist schema <subcmd>`).
 
 CLI parsing uses clap with derive macros. Configuration is loaded from `~/.config/aghist/config.toml` (or `%APPDATA%\aghist\config.toml` on Windows) via `Config::load()`. Providers are auto-detected, then filtered against the config's enabled list.
 

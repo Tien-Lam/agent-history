@@ -4,9 +4,6 @@ Cross-platform TUI for viewing and searching AI agent conversation history.
 
 [![CI](https://github.com/Tien-Lam/agent-history/actions/workflows/ci.yml/badge.svg)](https://github.com/Tien-Lam/agent-history/actions/workflows/ci.yml)
 
-<!-- To record: install VHS (https://github.com/charmbracelet/vhs) and run `vhs demo.tape` -->
-![demo](demo.gif)
-
 ## Supported Providers
 
 - **Claude Code** — `~/.claude/projects/` conversations
