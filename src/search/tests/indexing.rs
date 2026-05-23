@@ -115,6 +115,47 @@ fn build_index_reports_session_load_errors() {
 }
 
 #[test]
+fn load_error_preserves_existing_indexed_docs() {
+    let dir = tempdir().unwrap();
+    let index = SearchIndex::open_or_create(dir.path()).unwrap();
+    let stub = StubProvider::new(Provider::ClaudeCode);
+
+    let mut session = make_session("kept-session", "stable");
+    session.source_path = dir.path().join("kept.jsonl");
+    std::fs::write(&session.source_path, "first").unwrap();
+    stub.add(
+        session.clone(),
+        vec![make_message("msg", "durable indexed content")],
+    );
+
+    let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+    let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+    index
+        .build_index(&[session.clone()], &providers, &tx)
+        .unwrap();
+    assert_eq!(index.search("durable", 10).unwrap().len(), 1);
+
+    std::fs::write(&session.source_path, "second").unwrap();
+    let failing_stub = StubProvider::new(Provider::ClaudeCode);
+    failing_stub.fail(session.clone(), "second load failed");
+    let failing_providers: Vec<Box<dyn crate::provider::HistoryProvider>> =
+        vec![Box::new(failing_stub)];
+
+    let stats = index
+        .build_index(&[session], &failing_providers, &tx)
+        .unwrap();
+
+    assert_eq!(stats.updated, 0);
+    assert_eq!(stats.sessions_indexed, 0);
+    assert_eq!(stats.load_errors.len(), 1);
+    assert_eq!(
+        index.search("durable", 10).unwrap().len(),
+        1,
+        "last good docs should remain searchable when reload fails"
+    );
+}
+
+#[test]
 fn build_index_prunes_sessions_no_longer_discovered() {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();

@@ -15,6 +15,12 @@ use super::super::types::{
 };
 use super::SearchIndex;
 
+#[derive(Clone, Copy)]
+enum IndexChange {
+    Added,
+    Updated,
+}
+
 fn should_prune_session_key(key: &str, prune_providers: Option<&HashSet<Provider>>) -> bool {
     let Some(providers) = prune_providers else {
         return true;
@@ -92,21 +98,15 @@ impl SearchIndex {
             let session_key = session.identity_key();
             current_session_keys.insert(session_key.clone());
 
-            let existing_fingerprint = manifest.sessions.get(&session_key);
-            match existing_fingerprint {
+            let change = match manifest.sessions.get(&session_key) {
                 Some(cached) if cached == &current_fingerprint => {
                     stats.unchanged += 1;
                     let _ = progress_tx.send(Action::IndexProgress(i + 1, total));
                     continue;
                 }
-                Some(_) => stats.updated += 1,
-                None => stats.added += 1,
-            }
-
-            writer.delete_term(tantivy::Term::from_field_text(
-                self.fields.session_key,
-                &session_key,
-            ));
+                Some(_) => IndexChange::Updated,
+                None => IndexChange::Added,
+            };
 
             let messages = match crate::provider::load_messages_for_session(session, providers) {
                 Ok(messages) => messages,
@@ -120,6 +120,14 @@ impl SearchIndex {
                     continue;
                 }
             };
+            writer.delete_term(tantivy::Term::from_field_text(
+                self.fields.session_key,
+                &session_key,
+            ));
+            match change {
+                IndexChange::Added => stats.added += 1,
+                IndexChange::Updated => stats.updated += 1,
+            }
             for (turn_index, msg) in messages.iter().enumerate() {
                 let content = extract_content(msg);
                 let tool_output = extract_tool_output(msg);

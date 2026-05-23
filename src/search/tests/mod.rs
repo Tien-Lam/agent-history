@@ -47,11 +47,15 @@ impl StubProvider {
     }
 
     fn fail(&self, session: Session, reason: &str) {
+        self.fail_existing(&session, reason);
+        self.sessions.lock().unwrap().push(session);
+    }
+
+    fn fail_existing(&self, session: &Session, reason: &str) {
         self.failures
             .lock()
             .unwrap()
             .insert(session.identity_key(), reason.to_string());
-        self.sessions.lock().unwrap().push(session);
     }
 }
 
