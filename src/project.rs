@@ -11,15 +11,17 @@
 //! involved — agents that want richer interpretation can post-process by
 //! `aghist show`-ing the citation refs.
 
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::decisions::DEFAULT_THRESHOLD as DECISIONS_THRESHOLD;
 use crate::model::{Message, Session};
-use crate::threads::{self, ClusterOptions, Thread, DEFAULT_GAP_HOURS};
+use crate::threads::{Thread, DEFAULT_GAP_HOURS};
 
 mod extract;
 mod files;
+mod meta;
+mod ranking;
 mod tokens;
 
 pub use extract::{
@@ -28,6 +30,10 @@ pub use extract::{
 };
 use files::top_files;
 pub use files::FileTouch;
+use meta::{collect_projects, time_of_day_histogram};
+pub(crate) use ranking::{
+    clustered_threads_with_refs, ranked_decisions_with_refs, ranked_todos_with_refs,
+};
 pub use tokens::{aggregate_tokens, ProjectTokens};
 
 /// Per-section caps. Zero means "no cap" for the corresponding section.
@@ -201,97 +207,6 @@ pub fn aggregate_with_refs(
             decisions_threshold: DECISIONS_THRESHOLD,
         },
     }
-}
-
-pub(crate) fn ranked_decisions_with_refs(
-    sessions: &[(Session, Vec<Message>)],
-    limit: usize,
-    source_for_session: impl Fn(&Session) -> String,
-    citation_ref_for_turn: impl Fn(&Session, u32) -> String,
-) -> (usize, Vec<DecisionRow>) {
-    let mut rows = collect_decisions_with_refs(sessions, source_for_session, citation_ref_for_turn);
-    rows.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.timestamp.cmp(&a.timestamp))
-            .then_with(|| a.session_id.cmp(&b.session_id))
-            .then_with(|| a.turn.cmp(&b.turn))
-    });
-    let total = rows.len();
-    truncate_if_limited(&mut rows, limit);
-    (total, rows)
-}
-
-pub(crate) fn ranked_todos_with_refs(
-    sessions: &[(Session, Vec<Message>)],
-    limit: usize,
-    source_for_session: impl Fn(&Session) -> String,
-    citation_ref_for_turn: impl Fn(&Session, u32) -> String,
-) -> (usize, Vec<TodoRow>) {
-    let mut rows = collect_todos_with_refs(sessions, source_for_session, citation_ref_for_turn);
-    // Newest first, mirroring `aghist todos`.
-    rows.sort_by(|a, b| {
-        b.timestamp
-            .cmp(&a.timestamp)
-            .then_with(|| a.session_id.cmp(&b.session_id))
-            .then_with(|| a.turn.cmp(&b.turn))
-            .then_with(|| (a.kind as u8).cmp(&(b.kind as u8)))
-    });
-    let total = rows.len();
-    truncate_if_limited(&mut rows, limit);
-    (total, rows)
-}
-
-pub(crate) fn clustered_threads_with_refs(
-    sessions: &[(Session, Vec<Message>)],
-    limit: usize,
-    session_ref_for_session: impl Fn(&Session) -> String,
-) -> (usize, Vec<Thread>) {
-    let session_only: Vec<Session> = sessions.iter().map(|(s, _)| s.clone()).collect();
-    let mut rows = threads::cluster_with_session_refs(
-        &session_only,
-        ClusterOptions {
-            gap: chrono::Duration::hours(DEFAULT_GAP_HOURS),
-            min_sessions: 1,
-        },
-        session_ref_for_session,
-    );
-    let total = rows.len();
-    truncate_if_limited(&mut rows, limit);
-    (total, rows)
-}
-
-fn truncate_if_limited<T>(rows: &mut Vec<T>, limit: usize) {
-    if limit > 0 && rows.len() > limit {
-        rows.truncate(limit);
-    }
-}
-
-fn collect_projects(sessions: &[(Session, Vec<Message>)]) -> Vec<String> {
-    let mut seen: Vec<String> = Vec::new();
-    for (s, _) in sessions {
-        if let Some(name) = &s.project_name {
-            if !seen.iter().any(|p| p == name) {
-                seen.push(name.clone());
-            }
-        }
-    }
-    seen.sort();
-    seen
-}
-
-fn time_of_day_histogram(sessions: &[(Session, Vec<Message>)]) -> [u64; 24] {
-    let mut hist = [0u64; 24];
-    for (_, msgs) in sessions {
-        for msg in msgs {
-            let h = msg.timestamp.hour() as usize;
-            if h < 24 {
-                hist[h] = hist[h].saturating_add(1);
-            }
-        }
-    }
-    hist
 }
 
 #[cfg(test)]
