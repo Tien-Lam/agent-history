@@ -10,7 +10,8 @@ use crate::provider::parse_common::{
     nonzero_token_usage, parse_jsonl_records, visit_jsonl_records,
 };
 
-use super::{claude_timestamp, ProviderError, RawSessionEntry};
+use super::record::{claude_timestamp, RawSessionEntry};
+use super::ProviderError;
 
 #[derive(Deserialize)]
 pub(crate) struct HistoryEntry {

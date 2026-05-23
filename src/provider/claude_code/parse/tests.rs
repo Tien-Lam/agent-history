@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::{ContentBlock, Role};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
