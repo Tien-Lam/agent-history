@@ -1,136 +1,19 @@
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::model::{ContentBlock, TokenUsage, ToolCall, ToolResult};
 use crate::provider::json_text::{pretty_json, value_i64};
-use crate::provider::ProviderError;
 
-pub(crate) struct JsonlRecord<T> {
-    pub line_number: usize,
-    pub value: T,
-}
+mod jsonl;
+mod tolerant;
 
-pub(crate) struct JsonlError {
-    pub line_number: usize,
-    pub error: serde_json::Error,
-}
-
-pub(crate) struct JsonlScan<T> {
-    pub records: Vec<JsonlRecord<T>>,
-}
-
-pub(crate) struct JsonlStats {
-    pub line_count: usize,
-    pub parse_errors: usize,
-}
-
-pub(crate) fn visit_jsonl_records<T, F, E>(
-    path: &Path,
-    mut on_record: F,
-    mut on_error: E,
-) -> Result<JsonlStats, ProviderError>
-where
-    T: DeserializeOwned,
-    F: FnMut(JsonlRecord<T>),
-    E: FnMut(JsonlError),
-{
-    let file = std::fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut line_count = 0;
-    let mut parse_errors = 0;
-
-    for (idx, line) in reader.lines().enumerate() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let line_number = idx + 1;
-        line_count += 1;
-        match serde_json::from_str(&line) {
-            Ok(value) => on_record(JsonlRecord { line_number, value }),
-            Err(error) => {
-                parse_errors += 1;
-                on_error(JsonlError { line_number, error });
-            }
-        }
-    }
-
-    Ok(JsonlStats {
-        line_count,
-        parse_errors,
-    })
-}
-
-pub(crate) fn parse_jsonl_records<T>(path: &Path) -> Result<JsonlScan<T>, ProviderError>
-where
-    T: DeserializeOwned,
-{
-    let mut records = Vec::new();
-    visit_jsonl_records(path, |record| records.push(record), |_| {})?;
-
-    Ok(JsonlScan { records })
-}
-
-pub(crate) fn deserialize_vec_skip_invalid<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
-        return Ok(Vec::new());
-    };
-
-    let Value::Array(items) = value else {
-        return Ok(Vec::new());
-    };
-
-    Ok(items
-        .into_iter()
-        .filter_map(|item| serde_json::from_value(item).ok())
-        .collect())
-}
-
-pub(crate) fn deserialize_optional_vec_skip_invalid<'de, D, T>(
-    deserializer: D,
-) -> Result<Option<Vec<T>>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
-
-    let Value::Array(items) = value else {
-        return Ok(None);
-    };
-
-    Ok(Some(
-        items
-            .into_iter()
-            .filter_map(|item| serde_json::from_value(item).ok())
-            .collect(),
-    ))
-}
-
-pub(crate) fn deserialize_optional_struct_skip_invalid<'de, D, T>(
-    deserializer: D,
-) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
-
-    Ok(serde_json::from_value(value).ok())
-}
+pub(crate) use jsonl::{parse_jsonl_records, visit_jsonl_records};
+pub(crate) use tolerant::{
+    deserialize_optional_struct_skip_invalid, deserialize_optional_vec_skip_invalid,
+    deserialize_vec_skip_invalid,
+};
 
 pub(crate) fn parse_utc(raw: &str) -> Option<DateTime<Utc>> {
     raw.parse::<DateTime<Utc>>().ok()
