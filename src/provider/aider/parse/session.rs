@@ -2,7 +2,9 @@ use std::path::Path;
 
 use crate::model::{ContentBlock, Message, Provider, Role, Session, SessionId};
 
-use super::{parse_messages, split_sessions, ProviderError};
+use super::blocks::split_sessions;
+use super::messages::parse_messages;
+use super::ProviderError;
 
 pub(crate) fn parse_sessions_in_file(path: &Path) -> Result<Vec<Session>, ProviderError> {
     let content = std::fs::read_to_string(path).map_err(|e| ProviderError::Parse {
