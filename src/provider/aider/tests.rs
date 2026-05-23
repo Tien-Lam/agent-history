@@ -1,7 +1,9 @@
 use super::*;
 use std::fs;
+use std::path::Path;
 
 use crate::model::{ContentBlock, Role};
+use discovery::HISTORY_FILE;
 use tempfile::TempDir;
 
 fn write_history(dir: &Path, project: &str, body: &str) -> PathBuf {
