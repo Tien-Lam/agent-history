@@ -1,5 +1,5 @@
 #[cfg(feature = "self-update")]
-use std::io::Write as _;
+use std::io::{self, Write as _};
 use std::path::PathBuf;
 
 use aghist::cli_error::ErrorEnvelope;
