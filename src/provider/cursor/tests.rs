@@ -260,6 +260,37 @@ fn corrupt_bubble_value_does_not_crash() {
 }
 
 #[test]
+fn orphan_bubble_row_decode_error_is_reported() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = setup_db(tmp.path());
+    let conn = Connection::open(&db_path).unwrap();
+
+    insert(
+        &conn,
+        "composerData:comp-row-error",
+        &serde_json::json!({
+            "composerId": "comp-row-error",
+            "createdAt": 1_767_225_600_000_i64,
+        }),
+    );
+    conn.execute(
+        "INSERT INTO cursorDiskKV (key, value) VALUES (?1, ?2)",
+        rusqlite::params!["bubbleId:comp-row-error:b1", 42_i64],
+    )
+    .unwrap();
+    drop(conn);
+
+    let provider = CursorProvider::new(vec![tmp.path().to_path_buf()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let err = provider.load_messages_with_stats(&sessions[0]).unwrap_err();
+
+    assert!(matches!(
+        err,
+        ProviderError::Parse { reason, .. } if reason.contains("Invalid column type")
+    ));
+}
+
+#[test]
 fn skips_composer_without_timestamp() {
     let tmp = TempDir::new().unwrap();
     let db_path = setup_db(tmp.path());

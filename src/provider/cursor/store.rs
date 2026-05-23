@@ -187,8 +187,8 @@ pub(crate) fn load_messages_from_db_with_stats(
         })
         .map_err(sql_err(db_path))?;
     let mut orphans: Vec<Message> = Vec::new();
-    for row in rows.flatten() {
-        let (key, value) = row;
+    for row in rows {
+        let (key, value) = row.map_err(sql_err(db_path))?;
         let prefix = format!("bubbleId:{composer_id}:");
         let Some(bid) = key.strip_prefix(&prefix) else {
             continue;
