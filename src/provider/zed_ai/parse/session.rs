@@ -6,8 +6,9 @@ use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
 use crate::provider::parse_common::file_modified_utc;
 use crate::provider::project_name_from_path;
+use crate::provider::ProviderError;
 
-use super::{zed_timestamp, ProviderError, ZedConversation, ZedMessage};
+use super::{zed_timestamp, ZedConversation, ZedMessage};
 
 pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError> {
     let bytes = std::fs::read(path).map_err(|e| ProviderError::Parse {
