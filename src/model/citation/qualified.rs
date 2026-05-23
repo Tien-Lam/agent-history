@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use serde::Serialize;
 
-use super::base::{CitationParseError, CitationRef};
+use super::{CitationParseError, CitationRef};
 
 /// Split an optional source prefix from a ref.
 ///

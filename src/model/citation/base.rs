@@ -1,8 +1,6 @@
 use std::fmt;
-use std::str::FromStr;
 
 use serde::Serialize;
-use thiserror::Error;
 
 use crate::model::provider::Provider;
 use crate::model::session::SessionId;
@@ -79,91 +77,6 @@ impl fmt::Display for CitationRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum CitationParseError {
-    #[error("citation ref is empty")]
-    Empty,
-    #[error("citation ref missing provider segment (expected '<provider>/<session-id>#<turn>')")]
-    MissingProvider,
-    #[error("citation ref missing session id (expected '<provider>/<session-id>#<turn>')")]
-    MissingSessionId,
-    #[error("citation ref missing turn (expected '<provider>/<session-id>#<turn>')")]
-    MissingTurn,
-    #[error("unknown provider slug '{0}'")]
-    UnknownProvider(String),
-    #[error("invalid turn '{0}' (must be a positive integer)")]
-    InvalidTurn(String),
-}
-
-fn parse_session_head(s: &str) -> Result<(Provider, SessionId), CitationParseError> {
-    if s.is_empty() {
-        return Err(CitationParseError::Empty);
-    }
-    let (provider_slug, session_str) = s
-        .split_once('/')
-        .ok_or(CitationParseError::MissingSessionId)?;
-    if provider_slug.is_empty() {
-        return Err(CitationParseError::MissingProvider);
-    }
-    if session_str.is_empty() {
-        return Err(CitationParseError::MissingSessionId);
-    }
-
-    let provider = Provider::from_slug(provider_slug)
-        .ok_or_else(|| CitationParseError::UnknownProvider(provider_slug.to_string()))?;
-    Ok((provider, SessionId(session_str.to_string())))
-}
-
-impl FromStr for SessionRef {
-    type Err = CitationParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.is_empty() {
-            return Err(CitationParseError::Empty);
-        }
-        if s.contains('#') {
-            return Err(CitationParseError::InvalidTurn(
-                s.rsplit_once('#').map_or("", |(_, turn)| turn).to_string(),
-            ));
-        }
-        let (provider, session_id) = parse_session_head(s)?;
-        Ok(Self {
-            provider,
-            session_id,
-        })
-    }
-}
-
-impl FromStr for CitationRef {
-    type Err = CitationParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.is_empty() {
-            return Err(CitationParseError::Empty);
-        }
-        // Split on '#' first so a session id containing '/' (none today, but
-        // be defensive) does not interfere with locating the turn.
-        let (head, turn_str) = s.rsplit_once('#').ok_or(CitationParseError::MissingTurn)?;
-        if turn_str.is_empty() {
-            return Err(CitationParseError::MissingTurn);
-        }
-
-        let (provider, session_id) = parse_session_head(head)?;
-        let turn: u32 = turn_str
-            .parse()
-            .map_err(|_| CitationParseError::InvalidTurn(turn_str.to_string()))?;
-        if turn == 0 {
-            return Err(CitationParseError::InvalidTurn(turn_str.to_string()));
-        }
-
-        Ok(Self {
-            provider,
-            session_id,
-            turn,
-        })
-    }
-}
-
 /// A metadata ref accepts either a session ref or a turn-level citation ref.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum SessionOrTurnRef {
@@ -192,18 +105,6 @@ impl fmt::Display for SessionOrTurnRef {
         match self {
             Self::Session(session) => session.fmt(f),
             Self::Turn(citation) => citation.fmt(f),
-        }
-    }
-}
-
-impl FromStr for SessionOrTurnRef {
-    type Err = CitationParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.contains('#') {
-            s.parse::<CitationRef>().map(Self::Turn)
-        } else {
-            s.parse::<SessionRef>().map(Self::Session)
         }
     }
 }

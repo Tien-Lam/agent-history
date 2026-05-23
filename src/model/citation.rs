@@ -19,9 +19,11 @@
 //! Turns are 1-based. Turn `0` is rejected at parse time.
 
 mod base;
+mod parse;
 mod qualified;
 
-pub use base::{CitationParseError, CitationRef, SessionOrTurnRef, SessionRef};
+pub use base::{CitationRef, SessionOrTurnRef, SessionRef};
+pub use parse::CitationParseError;
 pub use qualified::{split_source_prefix, QualifiedCitationRef};
 
 #[cfg(test)]
