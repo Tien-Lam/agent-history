@@ -22,6 +22,7 @@ pub use service::{
     index_notes_best_effort, SearchCollection, SearchService, SearchServiceError, SearchServiceHit,
     SearchServiceOutput, SearchServiceRequest,
 };
+pub use storage::remove_managed_index_dir;
 pub use types::{
     HitKind, IndexStats, NotesIndexStats, SearchError, SearchFilters, SearchHit, SemanticCandidate,
     RRF_K,

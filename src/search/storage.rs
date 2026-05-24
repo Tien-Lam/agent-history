@@ -32,6 +32,38 @@ pub(super) fn reset_index_dir(index_dir: &Path) -> Result<(), SearchError> {
     Ok(())
 }
 
+pub fn remove_managed_index_dir(index_dir: &Path) -> Result<bool, SearchError> {
+    let metadata = match fs::symlink_metadata(index_dir) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e.into()),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(SearchError::UnsafeIndexDir {
+            path: index_dir.to_path_buf(),
+            entries: "index path is not a directory".to_string(),
+        });
+    }
+
+    if !index_dir.join(INDEX_SENTINEL).is_file() {
+        return Err(SearchError::UnsafeIndexDir {
+            path: index_dir.to_path_buf(),
+            entries: format!("missing {INDEX_SENTINEL} sentinel"),
+        });
+    }
+
+    let unsafe_entries = unsafe_index_entries(index_dir)?;
+    if !unsafe_entries.is_empty() {
+        return Err(SearchError::UnsafeIndexDir {
+            path: index_dir.to_path_buf(),
+            entries: unsafe_entries.join(", "),
+        });
+    }
+
+    fs::remove_dir_all(index_dir)?;
+    Ok(true)
+}
+
 fn unsafe_index_entries(index_dir: &Path) -> Result<Vec<String>, SearchError> {
     let mut entries = Vec::new();
     for entry in fs::read_dir(index_dir)? {
@@ -125,5 +157,55 @@ mod tests {
                 "{name} should not be resettable"
             );
         }
+    }
+
+    #[test]
+    fn managed_index_dir_removal_requires_sentinel() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_dir = dir.path().join("index");
+        fs::create_dir(&index_dir).unwrap();
+        fs::write(index_dir.join("manifest.json"), "{}").unwrap();
+
+        let err = remove_managed_index_dir(&index_dir).unwrap_err();
+
+        assert!(matches!(err, SearchError::UnsafeIndexDir { .. }));
+        assert!(index_dir.exists());
+    }
+
+    #[test]
+    fn managed_index_dir_removal_refuses_unknown_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_dir = dir.path().join("index");
+        fs::create_dir(&index_dir).unwrap();
+        fs::write(index_dir.join(INDEX_SENTINEL), "aghist search index\n").unwrap();
+        fs::write(index_dir.join("keep.txt"), "user data").unwrap();
+
+        let err = remove_managed_index_dir(&index_dir).unwrap_err();
+
+        assert!(matches!(err, SearchError::UnsafeIndexDir { .. }));
+        assert!(index_dir.join("keep.txt").exists());
+    }
+
+    #[test]
+    fn managed_index_dir_removal_deletes_known_index_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_dir = dir.path().join("index");
+        fs::create_dir(&index_dir).unwrap();
+        fs::write(index_dir.join(INDEX_SENTINEL), "aghist search index\n").unwrap();
+        fs::write(index_dir.join("manifest.json"), "{}").unwrap();
+        fs::write(index_dir.join("meta.json"), "{}").unwrap();
+        fs::create_dir(index_dir.join("models")).unwrap();
+
+        assert!(remove_managed_index_dir(&index_dir).unwrap());
+
+        assert!(!index_dir.exists());
+    }
+
+    #[test]
+    fn managed_index_dir_removal_ignores_missing_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_dir = dir.path().join("missing");
+
+        assert!(!remove_managed_index_dir(&index_dir).unwrap());
     }
 }

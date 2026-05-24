@@ -42,11 +42,12 @@ pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
     }
 
     if index_dir.exists() {
-        std::fs::remove_dir_all(&index_dir).map_err(|e| {
+        search::remove_managed_index_dir(&index_dir).map_err(|e| {
             ErrorEnvelope::new(
-                "io-error",
-                format!("failed to remove {}: {e}", index_dir.display()),
+                "index-error",
+                format!("failed to remove search index {}: {e}", index_dir.display()),
             )
+            .with_hint("Unset AGHIST_INDEX_DIR or remove the directory manually after verifying it contains only aghist index files.")
         })?;
         eprintln!("Removed {}", index_dir.display());
     }
