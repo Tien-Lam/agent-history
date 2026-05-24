@@ -68,7 +68,11 @@ pub fn search_sessions<'a>(
     let page_end = page_start
         .saturating_add(request.limit)
         .min(output.hits.len());
-    let hits = output.hits[page_start..page_end].to_vec();
+    let hits = output
+        .hits
+        .get(page_start..page_end)
+        .unwrap_or(&[])
+        .to_vec();
     let next_cursor =
         search::next_search_cursor(&hits, page_end < output.hits.len(), &output.session_meta)
             .map_err(SearchServiceError::Cursor)?;

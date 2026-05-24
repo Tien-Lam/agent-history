@@ -102,7 +102,7 @@ pub fn list_sessions_page(
         None => 0,
     };
     let page_end = page_start.saturating_add(request.limit).min(sessions.len());
-    let page = sessions[page_start..page_end].to_vec();
+    let page = sessions.get(page_start..page_end).unwrap_or(&[]).to_vec();
     let next_cursor = if page_end < sessions.len() {
         page.last()
             .map(|listed| {
