@@ -50,10 +50,10 @@ fn duplicate_raw_session_ids_do_not_overwrite_each_other() {
         1,
         "second duplicate-id session was lost: {beta:?}"
     );
-    assert_eq!(alpha[0].session_id, "shared-id");
-    assert_eq!(beta[0].session_id, "shared-id");
-    assert_ne!(alpha[0].session_key, beta[0].session_key);
-    assert_ne!(alpha[0].message_key, beta[0].message_key);
+    assert_eq!(alpha[0].session_id(), "shared-id");
+    assert_eq!(beta[0].session_id(), "shared-id");
+    assert_ne!(alpha[0].session_key(), beta[0].session_key());
+    assert_ne!(alpha[0].message_key(), beta[0].message_key());
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use super::*;
+use crate::search::HitKind;
 use chrono::TimeZone;
 use proptest::prelude::*;
 
@@ -20,7 +21,7 @@ fn search_cursor_roundtrip() {
         session_id: "abc-123".to_string(),
         message_key: "claude-code\x1fabc-123\x1f/tmp/session.jsonl\x1f0\x1fmsg-1".to_string(),
         message_id: "msg-1".to_string(),
-        kind: "message".to_string(),
+        kind: HitKind::Message,
         note_id: None,
     };
     let token = c.encode();
@@ -49,7 +50,7 @@ fn cursor_token_is_url_safe() {
         session_id: "id-with/slash+plus".to_string(),
         message_key: String::new(),
         message_id: String::new(),
-        kind: "message".to_string(),
+        kind: HitKind::Message,
         note_id: None,
     };
     let token = c.encode();
@@ -66,6 +67,25 @@ fn malformed_token_is_rejected() {
     ));
     assert!(matches!(
         SearchCursor::decode("aGVsbG8"), // valid b64 of "hello", invalid JSON
+        Err(CursorError::Payload)
+    ));
+}
+
+#[test]
+fn search_cursor_rejects_unknown_hit_kind() {
+    let token = encode(&serde_json::json!({
+        "score": 1.0,
+        "started_at": null,
+        "session_key": "claude-code\u{1f}abc",
+        "session_id": "abc",
+        "message_key": "claude-code\u{1f}abc\u{1f}0\u{1f}msg-1",
+        "message_id": "msg-1",
+        "kind": "bogus",
+        "note_id": null
+    }));
+
+    assert!(matches!(
+        SearchCursor::decode(&token),
         Err(CursorError::Payload)
     ));
 }
@@ -97,7 +117,7 @@ proptest! {
         session_id in cursor_string_strategy(),
         message_key in cursor_string_strategy(),
         message_id in cursor_string_strategy(),
-        kind in prop::sample::select(vec!["message".to_string(), "note".to_string()]),
+        kind in prop::sample::select(vec![HitKind::Message, HitKind::Note]),
         note_id in prop::option::of(0i64..1_000_000),
     ) {
         let cursor = SearchCursor {

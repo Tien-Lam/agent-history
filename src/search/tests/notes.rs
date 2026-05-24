@@ -27,12 +27,9 @@ fn index_notes_makes_bodies_searchable_with_kind_note() {
         .search_with_filters("xylophone", 10, &SearchFilters::default())
         .unwrap();
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].kind, HitKind::Note);
-    assert_eq!(hits[0].note_id, Some(1));
-    assert_eq!(
-        hits[0].note_session_ref.as_deref(),
-        Some("claude-code/sess-1#3")
-    );
+    assert_eq!(hits[0].kind(), HitKind::Note);
+    assert_eq!(hits[0].note_id(), Some(1));
+    assert_eq!(hits[0].note_session_ref(), Some("claude-code/sess-1#3"));
 }
 #[test]
 fn index_notes_is_incremental_on_unchanged_updated_at() {
@@ -75,14 +72,14 @@ fn index_notes_replaces_doc_when_updated_at_advances() {
         .search_with_filters("old", 10, &SearchFilters::default())
         .unwrap();
     assert!(
-        old_hits.iter().all(|h| h.kind != HitKind::Note),
+        old_hits.iter().all(|h| h.kind() != HitKind::Note),
         "old note body should have been replaced: {old_hits:?}"
     );
     // New body must match.
     let new_hits = index
         .search_with_filters("new", 10, &SearchFilters::default())
         .unwrap();
-    assert!(new_hits.iter().any(|h| h.kind == HitKind::Note));
+    assert!(new_hits.iter().any(|h| h.kind() == HitKind::Note));
 }
 #[test]
 fn index_notes_prunes_removed_rows() {
@@ -100,7 +97,7 @@ fn index_notes_prunes_removed_rows() {
         .search_with_filters("soon-to-vanish", 10, &SearchFilters::default())
         .unwrap();
     assert!(
-        hits.iter().all(|h| h.kind != HitKind::Note),
+        hits.iter().all(|h| h.kind() != HitKind::Note),
         "pruned note must not match: {hits:?}"
     );
 }

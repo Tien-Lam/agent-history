@@ -69,9 +69,9 @@ pub(crate) fn search_watch_command(
         let mut handle = stdout.lock();
         for h in &hits {
             if let Some(keys) = metadata_keys {
-                let allowed = match h.kind {
+                let allowed = match h.kind() {
                     search::HitKind::Message => session_meta
-                        .get(h.session_key.as_str())
+                        .get(h.session_key())
                         .map(|session| {
                             qualified_session_metadata_key(
                                 session,
@@ -80,8 +80,7 @@ pub(crate) fn search_watch_command(
                         })
                         .is_some_and(|k| keys.contains(&k)),
                     search::HitKind::Note => h
-                        .note_session_ref
-                        .as_deref()
+                        .note_session_ref()
                         .and_then(|raw| metadata::session_key_from_ref(raw).ok())
                         .is_some_and(|k| keys.contains(&k)),
                 };
@@ -89,7 +88,7 @@ pub(crate) fn search_watch_command(
                     continue;
                 }
             }
-            if !seen.insert(h.message_key.clone()) {
+            if !seen.insert(h.message_key().to_string()) {
                 continue;
             }
             if write_watch_hit(&mut handle, h, &session_meta, &federation.source_by_session)

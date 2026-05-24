@@ -17,16 +17,15 @@ pub(super) fn filter_hits_by_metadata(
         return hits;
     };
     hits.into_iter()
-        .filter(|(hit, _)| match hit.kind {
+        .filter(|(hit, _)| match hit.kind() {
             HitKind::Message => session_meta
-                .get(hit.session_key.as_str())
+                .get(hit.session_key())
                 .map(|s| {
                     qualified_session_metadata_key(s, source_for_session(source_by_session, s))
                 })
                 .is_some_and(|k| keys.contains(&k)),
             HitKind::Note => hit
-                .note_session_ref
-                .as_deref()
+                .note_session_ref()
                 .and_then(|raw| metadata::session_key_from_ref(raw).ok())
                 .is_some_and(|k| keys.contains(&k)),
         })
@@ -46,11 +45,10 @@ pub(super) fn filter_hits_to_current_sessions(
         .collect();
 
     hits.into_iter()
-        .filter(|(hit, _)| match hit.kind {
-            HitKind::Message => session_meta.contains_key(hit.session_key.as_str()),
+        .filter(|(hit, _)| match hit.kind() {
+            HitKind::Message => session_meta.contains_key(hit.session_key()),
             HitKind::Note => hit
-                .note_session_ref
-                .as_deref()
+                .note_session_ref()
                 .and_then(|raw| metadata::session_key_from_ref(raw).ok())
                 .is_some_and(|session_ref| session_refs.contains(&session_ref)),
         })
@@ -66,17 +64,13 @@ pub(super) fn sort_search_hits(
             .partial_cmp(&a.0.score)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| {
-                let a_started = session_meta
-                    .get(a.0.session_key.as_str())
-                    .map(|s| s.started_at);
-                let b_started = session_meta
-                    .get(b.0.session_key.as_str())
-                    .map(|s| s.started_at);
+                let a_started = session_meta.get(a.0.session_key()).map(|s| s.started_at);
+                let b_started = session_meta.get(b.0.session_key()).map(|s| s.started_at);
                 b_started.cmp(&a_started)
             })
-            .then_with(|| a.0.session_key.cmp(&b.0.session_key))
-            .then_with(|| a.0.message_key.cmp(&b.0.message_key))
-            .then_with(|| a.0.kind.slug().cmp(b.0.kind.slug()))
-            .then_with(|| a.0.note_id.cmp(&b.0.note_id))
+            .then_with(|| a.0.session_key().cmp(b.0.session_key()))
+            .then_with(|| a.0.message_key().cmp(b.0.message_key()))
+            .then_with(|| a.0.kind().slug().cmp(b.0.kind().slug()))
+            .then_with(|| a.0.note_id().cmp(&b.0.note_id()))
     });
 }

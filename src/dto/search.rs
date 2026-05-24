@@ -42,19 +42,19 @@ impl SearchHitJson {
         SessionHasher: BuildHasher,
         SourceHasher: BuildHasher,
     {
-        match hit.kind {
+        match hit.kind() {
             HitKind::Note => Self::from_hit(
                 hit,
                 None,
-                source_from_note_ref(hit.note_session_ref.as_deref()),
-                hit.note_session_ref.clone(),
+                source_from_note_ref(hit.note_session_ref()),
+                hit.note_session_ref().map(str::to_string),
                 None,
                 explanation,
             ),
             HitKind::Message => {
-                let session = sessions.get(hit.session_key.as_str()).copied();
+                let session = sessions.get(hit.session_key()).copied();
                 let source = source_for_search_hit(hit, session, source_by_session);
-                let citation = citations.and_then(|refs| refs.get(hit.message_key.as_str()));
+                let citation = citations.and_then(|refs| refs.get(hit.message_key()));
                 Self::from_hit(
                     hit,
                     session,
@@ -75,11 +75,11 @@ impl SearchHitJson {
         turn: Option<usize>,
         explanation: Option<&Explanation>,
     ) -> Self {
-        match hit.kind {
+        match hit.kind() {
             HitKind::Message => Self {
                 kind: HitKind::Message.slug(),
-                session_id: hit.session_id.clone(),
-                message_id: hit.message_id.clone(),
+                session_id: hit.session_id().to_string(),
+                message_id: hit.message_id().to_string(),
                 score: hit.score,
                 snippet: hit.snippet.clone(),
                 provider: session.map(|s| s.provider),
@@ -93,16 +93,16 @@ impl SearchHitJson {
             },
             HitKind::Note => Self {
                 kind: HitKind::Note.slug(),
-                session_id: hit.session_id.clone(),
-                message_id: hit.message_id.clone(),
+                session_id: hit.session_id().to_string(),
+                message_id: hit.message_id().to_string(),
                 score: hit.score,
                 snippet: hit.snippet.clone(),
                 provider: None,
                 project: None,
                 started_at: None,
-                source: source_from_note_ref(hit.note_session_ref.as_deref()).to_string(),
-                note_id: hit.note_id,
-                ref_: ref_.or_else(|| hit.note_session_ref.clone()),
+                source: source_from_note_ref(hit.note_session_ref()).to_string(),
+                note_id: hit.note_id(),
+                ref_: ref_.or_else(|| hit.note_session_ref().map(str::to_string)),
                 turn: None,
                 explanation: explanation.and_then(explanation_value),
             },
@@ -153,7 +153,7 @@ fn source_for_search_hit<'a, SourceHasher>(
 where
     SourceHasher: BuildHasher,
 {
-    if let Some(source) = source_by_session.get(hit.session_key.as_str()) {
+    if let Some(source) = source_by_session.get(hit.session_key()) {
         return source;
     }
     let Some(session) = session else {

@@ -50,7 +50,7 @@ pub(super) fn print_search_table(
     let mut out = io::stdout().lock();
     let any_remote = hits.iter().any(|(h, _)| {
         source_by_session
-            .get(h.session_key.as_str())
+            .get(h.session_key())
             .is_some_and(|s| s != federated::LOCAL_SOURCE)
     });
 
@@ -104,8 +104,8 @@ fn write_table_row<W: Write>(
     source_by_session: &HashMap<String, String>,
     any_remote: bool,
 ) -> io::Result<()> {
-    let is_note = matches!(hit.kind, search::HitKind::Note);
-    let session = sessions.get(hit.session_key.as_str()).copied();
+    let is_note = matches!(hit.kind(), search::HitKind::Note);
+    let session = sessions.get(hit.session_key()).copied();
     let started = if is_note {
         String::new()
     } else {
@@ -119,8 +119,7 @@ fn write_table_row<W: Write>(
         session.map_or("", |s| s.provider.as_str())
     };
     let project_owned = if is_note {
-        hit.note_session_ref
-            .as_deref()
+        hit.note_session_ref()
             .map(|r| strip_turn_suffix(r).to_string())
             .unwrap_or_default()
     } else {
@@ -131,19 +130,19 @@ fn write_table_row<W: Write>(
     };
     let project = truncate(&project_owned, 20);
     let session_label = if is_note {
-        hit.note_id
+        hit.note_id()
             .map_or_else(String::new, |id| format!("note#{id}"))
     } else {
-        hit.session_id.clone()
+        hit.session_id().to_string()
     };
     let session_short = truncate(&session_label, 14);
     let snippet = truncate(&hit.snippet, 80);
     if any_remote {
         let source = if is_note {
-            aghist::dto::source_from_note_ref(hit.note_session_ref.as_deref())
+            aghist::dto::source_from_note_ref(hit.note_session_ref())
         } else {
             source_by_session
-                .get(hit.session_key.as_str())
+                .get(hit.session_key())
                 .map_or(federated::LOCAL_SOURCE, String::as_str)
         };
         let source = truncate(source, 10);

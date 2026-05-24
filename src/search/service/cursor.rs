@@ -17,15 +17,13 @@ pub fn next_search_cursor<S: BuildHasher>(
     page.last().map(|(h, _)| {
         crate::cursor::SearchCursor {
             score: h.score,
-            started_at: session_meta
-                .get(h.session_key.as_str())
-                .map(|s| s.started_at),
-            session_key: h.session_key.clone(),
-            session_id: h.session_id.clone(),
-            message_key: h.message_key.clone(),
-            message_id: h.message_id.clone(),
-            kind: h.kind.slug().to_string(),
-            note_id: h.note_id,
+            started_at: session_meta.get(h.session_key()).map(|s| s.started_at),
+            session_key: h.session_key().to_string(),
+            session_id: h.session_id().to_string(),
+            message_key: h.message_key().to_string(),
+            message_id: h.message_id().to_string(),
+            kind: h.kind(),
+            note_id: h.note_id(),
         }
         .encode()
     })
@@ -41,15 +39,15 @@ pub fn search_hit_is_after_cursor<S: BuildHasher>(
         return hit.score < cursor.score;
     }
 
-    let hit_started = sessions.get(hit.session_key.as_str()).map(|s| s.started_at);
+    let hit_started = sessions.get(hit.session_key()).map(|s| s.started_at);
     if hit_started != cursor.started_at {
         return cursor.started_at.cmp(&hit_started).is_gt();
     }
 
-    let hit_session_key = if hit.session_key.is_empty() {
-        hit.session_id.as_str()
+    let hit_session_key = if hit.session_key().is_empty() {
+        hit.session_id()
     } else {
-        hit.session_key.as_str()
+        hit.session_key()
     };
     let cursor_session_key = if cursor.session_key.is_empty() {
         cursor.session_id.as_str()
@@ -60,10 +58,10 @@ pub fn search_hit_is_after_cursor<S: BuildHasher>(
         return hit_session_key > cursor_session_key;
     }
 
-    let hit_message_key = if hit.message_key.is_empty() {
-        hit.message_id.as_str()
+    let hit_message_key = if hit.message_key().is_empty() {
+        hit.message_id()
     } else {
-        hit.message_key.as_str()
+        hit.message_key()
     };
     let cursor_message_key = if cursor.message_key.is_empty() {
         cursor.message_id.as_str()
@@ -74,10 +72,10 @@ pub fn search_hit_is_after_cursor<S: BuildHasher>(
         return hit_message_key > cursor_message_key;
     }
 
-    let hit_kind = hit.kind.slug();
+    let hit_kind = hit.kind();
     if hit_kind != cursor.kind {
-        return hit_kind > cursor.kind.as_str();
+        return hit_kind.slug() > cursor.kind.slug();
     }
 
-    hit.note_id > cursor.note_id
+    hit.note_id() > cursor.note_id
 }

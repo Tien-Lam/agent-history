@@ -8,7 +8,7 @@ use tantivy::{TantivyDocument, Term};
 use crate::search::document::field_text;
 use crate::search::index::SearchIndex;
 use crate::search::snippet::best_snippet;
-use crate::search::types::{HitKind, SearchError, SearchFilters, SearchHit};
+use crate::search::types::{SearchError, SearchFilters, SearchHit};
 
 impl SearchIndex {
     /// Look up indexed messages by internal `message_key`, applying the same
@@ -72,17 +72,14 @@ impl SearchIndex {
             let snippet = best_snippet(&content, &tool_output, query_str, 120);
             by_msg_key.insert(
                 message_key.clone(),
-                SearchHit {
-                    kind: HitKind::Message,
+                SearchHit::message(
                     session_key,
                     session_id,
                     message_key,
                     message_id,
                     snippet,
-                    score: 0.0,
-                    note_id: None,
-                    note_session_ref: None,
-                },
+                    0.0,
+                ),
             );
         }
 

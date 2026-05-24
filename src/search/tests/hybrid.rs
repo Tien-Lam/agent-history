@@ -44,7 +44,7 @@ fn search_hybrid_falls_back_to_lexical_when_weight_is_zero() {
     // BM25 scores — not RRF scores.
     assert_eq!(hybrid.len(), lex.len());
     for (a, b) in hybrid.iter().zip(lex.iter()) {
-        assert_eq!(a.message_id, b.message_id);
+        assert_eq!(a.message_id(), b.message_id());
         assert!((a.score - b.score).abs() < 1e-6);
     }
 }
@@ -60,7 +60,7 @@ fn search_hybrid_falls_back_to_lexical_when_semantic_pool_is_empty() {
         .unwrap();
     assert_eq!(hybrid.len(), lex.len());
     for (a, b) in hybrid.iter().zip(lex.iter()) {
-        assert_eq!(a.message_id, b.message_id);
+        assert_eq!(a.message_id(), b.message_id());
     }
 }
 
@@ -86,7 +86,7 @@ fn search_hybrid_promotes_semantic_only_hits() {
     let hybrid = index
         .search_hybrid("tantivy", &semantic, 10, &SearchFilters::default(), 0.5, 50)
         .unwrap();
-    let ids: Vec<&str> = hybrid.iter().map(|h| h.message_id.as_str()).collect();
+    let ids: Vec<&str> = hybrid.iter().map(SearchHit::message_id).collect();
     assert!(ids.contains(&"m-3"), "lexical hit must survive: {ids:?}");
     assert!(
         ids.contains(&"m-4"),
@@ -94,8 +94,16 @@ fn search_hybrid_promotes_semantic_only_hits() {
     );
     // m-3 appears in both pools → its fused score should beat m-4 (which
     // is semantic-only) when weight=0.5.
-    let m3_score = hybrid.iter().find(|h| h.message_id == "m-3").unwrap().score;
-    let m4_score = hybrid.iter().find(|h| h.message_id == "m-4").unwrap().score;
+    let m3_score = hybrid
+        .iter()
+        .find(|h| h.message_id() == "m-3")
+        .unwrap()
+        .score;
+    let m4_score = hybrid
+        .iter()
+        .find(|h| h.message_id() == "m-4")
+        .unwrap()
+        .score;
     assert!(
             m3_score > m4_score,
             "lexical+semantic hit (m-3, score {m3_score}) should outrank semantic-only (m-4, score {m4_score})"
@@ -127,7 +135,7 @@ fn search_hybrid_applies_filters_to_semantic_candidates() {
     let hybrid = index
         .search_hybrid("rust", &semantic, 10, &filters, 0.5, 50)
         .unwrap();
-    let ids: Vec<&str> = hybrid.iter().map(|h| h.message_id.as_str()).collect();
+    let ids: Vec<&str> = hybrid.iter().map(SearchHit::message_id).collect();
     assert!(
         !ids.contains(&"m-4"),
         "project filter must drop m-4 from semantic pool: {ids:?}"

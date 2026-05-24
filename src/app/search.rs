@@ -169,13 +169,13 @@ impl App {
                 self.sessions.iter().map(Session::identity_key).collect();
             let hits: Vec<_> = hits
                 .into_iter()
-                .filter(|hit| current_session_keys.contains(&hit.session_key))
+                .filter(|hit| current_session_keys.contains(hit.session_key()))
                 .collect();
             let mut seen = HashSet::new();
             let ids: Vec<String> = hits
                 .iter()
-                .filter(|h| seen.insert(h.session_key.clone()))
-                .map(|h| h.session_key.clone())
+                .filter(|h| seen.insert(h.session_key().to_string()))
+                .map(|h| h.session_key().to_string())
                 .collect();
             self.filtered_session_ids = Some(ids);
             self.search_results = hits;

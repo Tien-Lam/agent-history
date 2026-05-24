@@ -16,6 +16,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::search::HitKind;
+
 #[derive(Debug, Error)]
 pub enum CursorError {
     #[error("invalid cursor: not valid base64")]
@@ -37,8 +39,8 @@ pub struct SearchCursor {
     pub message_key: String,
     #[serde(default)]
     pub message_id: String,
-    #[serde(default)]
-    pub kind: String,
+    #[serde(default = "default_search_hit_kind")]
+    pub kind: HitKind,
     #[serde(default)]
     pub note_id: Option<i64>,
 }
@@ -81,6 +83,10 @@ fn decode<T: for<'de> Deserialize<'de>>(token: &str) -> Result<T, CursorError> {
         .decode(token.trim())
         .map_err(|_| CursorError::Base64)?;
     serde_json::from_slice(&bytes).map_err(|_| CursorError::Payload)
+}
+
+fn default_search_hit_kind() -> HitKind {
+    HitKind::Message
 }
 
 #[cfg(test)]

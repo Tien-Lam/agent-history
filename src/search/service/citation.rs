@@ -32,13 +32,13 @@ pub fn resolve_search_hit_citations<SessionHasher: BuildHasher, SourceHasher: Bu
     let mut seen_sessions = HashSet::new();
 
     for (hit, _) in hits {
-        if !matches!(hit.kind, HitKind::Message) {
+        if !matches!(hit.kind(), HitKind::Message) {
             continue;
         }
-        if !seen_sessions.insert(hit.session_key.as_str()) {
+        if !seen_sessions.insert(hit.session_key()) {
             continue;
         }
-        let Some(session) = sessions.get(hit.session_key.as_str()).copied() else {
+        let Some(session) = sessions.get(hit.session_key()).copied() else {
             continue;
         };
         let source = source_for_session(source_by_session, session);

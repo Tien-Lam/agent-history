@@ -64,8 +64,8 @@ fn search_incremental_reindex_after_file_change() {
         !hits.is_empty(),
         "new content should appear after incremental reindex"
     );
-    assert_eq!(hits[0].session_id, "session-abc123");
-    assert_eq!(hits[0].message_id, "msg-005");
+    assert_eq!(hits[0].session_id(), "session-abc123");
+    assert_eq!(hits[0].message_id(), "msg-005");
 
     let hits = index.search("build error", 10).unwrap();
     assert!(

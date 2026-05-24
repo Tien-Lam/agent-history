@@ -19,7 +19,7 @@ fn search_roundtrip_verifies_message_ids() {
 
     let claude_hits: Vec<_> = hits
         .iter()
-        .filter(|h| h.session_id == "session-abc123")
+        .filter(|h| h.session_id() == "session-abc123")
         .collect();
     assert!(
         claude_hits.len() >= 2,
@@ -27,7 +27,7 @@ fn search_roundtrip_verifies_message_ids() {
         claude_hits.len()
     );
 
-    let hit_message_ids: Vec<&str> = claude_hits.iter().map(|h| h.message_id.as_str()).collect();
+    let hit_message_ids: Vec<&str> = claude_hits.iter().map(|h| h.message_id()).collect();
     assert!(
         hit_message_ids.contains(&"msg-001"),
         "should find user message msg-001, got: {hit_message_ids:?}"
@@ -48,9 +48,9 @@ fn search_roundtrip_verifies_message_ids() {
     );
     let claude_hit = hits
         .iter()
-        .find(|h| h.session_id == "session-abc123")
+        .find(|h| h.session_id() == "session-abc123")
         .expect("should have a hit from session-abc123");
-    assert_eq!(claude_hit.message_id, "msg-004");
+    assert_eq!(claude_hit.message_id(), "msg-004");
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn search_index_finds_tool_output() {
         !hits.is_empty(),
         "search for tool-output-only token '{token}' should return a hit"
     );
-    assert_eq!(hits[0].session_id, "session-tool-out");
+    assert_eq!(hits[0].session_id(), "session-tool-out");
     assert!(
         hits[0].snippet.contains(token),
         "snippet should reflect the matching tool output, got: {:?}",

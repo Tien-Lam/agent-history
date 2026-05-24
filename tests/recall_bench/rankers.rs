@@ -30,9 +30,9 @@ pub(crate) fn rank_lexical(index: &SearchIndex, query: &str) -> Vec<RankedHit> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for hit in raw {
-        if seen.insert(hit.session_id.clone()) {
+        if seen.insert(hit.session_id().to_string()) {
             out.push(RankedHit {
-                session_id: hit.session_id,
+                session_id: hit.session_id().to_string(),
                 score: hit.score,
             });
         }

@@ -20,7 +20,7 @@ fn search_index_build_and_query() {
         !hits.is_empty(),
         "should find 'build error' in Claude fixture"
     );
-    assert_eq!(hits[0].session_id, "session-abc123");
+    assert_eq!(hits[0].session_id(), "session-abc123");
     assert!(!hits[0].snippet.is_empty());
 
     let hits = index.search("async", 10).unwrap();

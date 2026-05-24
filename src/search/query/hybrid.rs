@@ -71,11 +71,11 @@ impl SearchIndex {
         // rank means "absent from that pool" and contributes 0 to RRF.
         let mut by_id: HashMap<String, (Option<usize>, Option<usize>, SearchHit)> = HashMap::new();
         for (i, hit) in lexical.into_iter().enumerate() {
-            by_id.insert(hit.message_key.clone(), (Some(i + 1), None, hit));
+            by_id.insert(hit.message_key().to_string(), (Some(i + 1), None, hit));
         }
         for (i, hit) in semantic.into_iter().enumerate() {
             by_id
-                .entry(hit.message_key.clone())
+                .entry(hit.message_key().to_string())
                 .and_modify(|entry| entry.1 = Some(i + 1))
                 .or_insert((None, Some(i + 1), hit));
         }
@@ -100,8 +100,8 @@ impl SearchIndex {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.session_key.cmp(&b.session_key))
-                .then_with(|| a.message_key.cmp(&b.message_key))
+                .then_with(|| a.session_key().cmp(b.session_key()))
+                .then_with(|| a.message_key().cmp(b.message_key()))
         });
         fused.truncate(limit);
         Ok(fused)
