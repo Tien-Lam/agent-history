@@ -17,6 +17,8 @@ pub enum LlmError {
         status: u16,
         body: String,
     },
+    #[error("LLM request body exceeds {max_bytes} byte limit ({bytes} bytes)")]
+    RequestTooLarge { bytes: usize, max_bytes: usize },
     #[error("could not parse LLM response: {0}")]
     Parse(String),
     #[error("model returned no parsable JSON in its reply: {0}")]
