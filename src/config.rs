@@ -15,7 +15,7 @@ const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 pub use sources::{
     sources_cache_root, validate_rsync_endpoint, validate_rsync_host, validate_rsync_path,
     validate_source_name, RemoteSource, SourceCacheManifest, SourceCacheManifestLoadError,
-    Transport,
+    Transport, MAX_REMOTE_SOURCES,
 };
 
 #[derive(Debug, Error)]
@@ -45,6 +45,12 @@ pub enum ConfigLoadError {
         index: usize,
         name: String,
         reason: String,
+    },
+    #[error("too many remote sources in {path}: {count} exceeds {max}")]
+    TooManyRemoteSources {
+        path: PathBuf,
+        count: usize,
+        max: usize,
     },
 }
 
@@ -177,6 +183,13 @@ impl Config {
     }
 
     fn validate_remote_sources(&self, path: &Path) -> Result<(), ConfigLoadError> {
+        if self.sources.len() > MAX_REMOTE_SOURCES {
+            return Err(ConfigLoadError::TooManyRemoteSources {
+                path: path.to_path_buf(),
+                count: self.sources.len(),
+                max: MAX_REMOTE_SOURCES,
+            });
+        }
         let mut seen = HashSet::new();
         for (idx, source) in self.sources.iter().enumerate() {
             source
@@ -280,9 +293,10 @@ fn config_path_from_env_value(value: Option<String>) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
     use std::path::PathBuf;
 
-    use super::{config_path_from_env_value, Config, ConfigLoadError};
+    use super::{config_path_from_env_value, Config, ConfigLoadError, MAX_REMOTE_SOURCES};
 
     #[test]
     fn config_path_from_env_value_ignores_blank_values() {
@@ -351,6 +365,37 @@ path = "~/.claude"
                 reason,
                 ..
             } if reason == "duplicate source name"
+        ));
+    }
+
+    #[test]
+    fn config_load_rejects_too_many_remote_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut toml = String::new();
+        for idx in 0..=MAX_REMOTE_SOURCES {
+            write!(
+                toml,
+                r#"
+[[sources]]
+name = "source_{idx}"
+host = "example{idx}.test"
+path = "~/.claude"
+"#
+            )
+            .unwrap();
+        }
+        std::fs::write(&path, toml).unwrap();
+
+        let err = Config::try_load_from(&path).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConfigLoadError::TooManyRemoteSources {
+                count,
+                max: MAX_REMOTE_SOURCES,
+                ..
+            } if count == MAX_REMOTE_SOURCES + 1
         ));
     }
 }
