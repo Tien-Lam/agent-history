@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -61,13 +62,7 @@ impl SearchIndex {
     }
 
     pub fn default_index_dir() -> PathBuf {
-        if let Ok(dir) = std::env::var("AGHIST_INDEX_DIR") {
-            return PathBuf::from(dir);
-        }
-        directories::ProjectDirs::from("", "", "aghist").map_or_else(
-            || PathBuf::from(".aghist-index"),
-            |d| d.cache_dir().join("search-index"),
-        )
+        default_index_dir_from_env_value(std::env::var_os("AGHIST_INDEX_DIR"))
     }
 
     fn load_manifest(&self) -> Result<Manifest, SearchError> {
@@ -84,5 +79,42 @@ impl SearchIndex {
         let json = serde_json::to_string(manifest)?;
         fs_atomic::write(&self.index_dir.join("manifest.json"), json.as_bytes())?;
         Ok(())
+    }
+}
+
+fn default_index_dir_from_env_value(override_dir: Option<OsString>) -> PathBuf {
+    if let Some(dir) = override_dir {
+        if !dir.is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    default_platform_index_dir()
+}
+
+fn default_platform_index_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", "aghist").map_or_else(
+        || PathBuf::from(".aghist-index"),
+        |d| d.cache_dir().join("search-index"),
+    )
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn default_index_dir_ignores_empty_env_override() {
+        assert_eq!(
+            default_index_dir_from_env_value(Some(OsString::new())),
+            default_platform_index_dir()
+        );
+    }
+
+    #[test]
+    fn default_index_dir_uses_non_empty_env_override() {
+        assert_eq!(
+            default_index_dir_from_env_value(Some(OsString::from("/tmp/aghist-index"))),
+            PathBuf::from("/tmp/aghist-index")
+        );
     }
 }
