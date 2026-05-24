@@ -11,6 +11,9 @@ pub(super) const STORE_MAGIC: &[u8; 6] = b"AGEMB\0";
 /// builds a fresh one) — readers surface this as `SchemaMismatch`.
 pub(super) const STORE_VERSION: u32 = 2;
 pub(super) const MAX_STRING_FIELD_BYTES: usize = u32::MAX as usize;
+pub(super) const MAX_MODEL_FIELD_BYTES: usize = 4 * 1024;
+pub(super) const MAX_MESSAGE_KEY_FIELD_BYTES: usize = 64 * 1024;
+pub(super) const MAX_EMBEDDING_DIM: u32 = 8192;
 
 pub(super) struct DecodedStore {
     pub(super) dim: u32,
@@ -23,14 +26,17 @@ pub(super) fn encode(
     model: &str,
     entries: &HashMap<String, Entry>,
 ) -> Result<Vec<u8>, EmbedError> {
-    let per_record = 4 + 32 + HASH_LEN + (dim as usize) * 4;
+    let dim_usize = checked_dim(dim)?;
+    let per_record = 4 + 32 + HASH_LEN + dim_usize * 4;
     let mut out =
         Vec::with_capacity(STORE_MAGIC.len() + 4 * 3 + model.len() + entries.len() * per_record);
     out.extend_from_slice(STORE_MAGIC);
     out.extend_from_slice(&STORE_VERSION.to_le_bytes());
     out.extend_from_slice(&dim.to_le_bytes());
     let model_bytes = model.as_bytes();
-    out.extend_from_slice(&u32_len("model", model_bytes)?.to_le_bytes());
+    out.extend_from_slice(
+        &bounded_u32_len("model", model_bytes, MAX_MODEL_FIELD_BYTES)?.to_le_bytes(),
+    );
     out.extend_from_slice(model_bytes);
     // Stable order: sorting lets snapshots and fixture tests be deterministic.
     let mut ids: Vec<&String> = entries.keys().collect();
@@ -38,7 +44,9 @@ pub(super) fn encode(
     for id in ids {
         let entry = &entries[id];
         let id_bytes = id.as_bytes();
-        out.extend_from_slice(&u32_len("message key", id_bytes)?.to_le_bytes());
+        out.extend_from_slice(
+            &bounded_u32_len("message key", id_bytes, MAX_MESSAGE_KEY_FIELD_BYTES)?.to_le_bytes(),
+        );
         out.extend_from_slice(id_bytes);
         out.extend_from_slice(&entry.hash);
         for f in &entry.vector {
@@ -67,7 +75,9 @@ pub(super) fn decode(path: &Path, bytes: &[u8]) -> Result<DecodedStore, EmbedErr
     if dim == 0 {
         return Err(cur.corrupt("dim is zero"));
     }
+    let dim_usize = cur.checked_dim(dim)?;
     let model_len = cur.read_u32()? as usize;
+    cur.check_field_len("model name", model_len, MAX_MODEL_FIELD_BYTES)?;
     let model_bytes = cur.take(model_len)?;
     let model = std::str::from_utf8(model_bytes)
         .map_err(|_| cur.corrupt("model name is not utf-8"))?
@@ -76,6 +86,7 @@ pub(super) fn decode(path: &Path, bytes: &[u8]) -> Result<DecodedStore, EmbedErr
     let mut entries = HashMap::new();
     while !cur.is_eof() {
         let id_len = cur.read_u32()? as usize;
+        cur.check_field_len("message id", id_len, MAX_MESSAGE_KEY_FIELD_BYTES)?;
         let id_bytes = cur.take(id_len)?;
         let id = std::str::from_utf8(id_bytes)
             .map_err(|_| cur.corrupt("message id is not utf-8"))?
@@ -84,8 +95,8 @@ pub(super) fn decode(path: &Path, bytes: &[u8]) -> Result<DecodedStore, EmbedErr
         let hash: [u8; HASH_LEN] = hash_bytes
             .try_into()
             .map_err(|_| cur.corrupt("content hash length mismatch"))?;
-        let vec_bytes = cur.take((dim as usize) * 4)?;
-        let mut vector = Vec::with_capacity(dim as usize);
+        let vec_bytes = cur.take(dim_usize * 4)?;
+        let mut vector = Vec::with_capacity(dim_usize);
         for chunk in vec_bytes.chunks_exact(4) {
             let arr: [u8; 4] = chunk
                 .try_into()
@@ -102,7 +113,14 @@ pub(super) fn decode(path: &Path, bytes: &[u8]) -> Result<DecodedStore, EmbedErr
     })
 }
 
-fn u32_len(field: &'static str, bytes: &[u8]) -> Result<u32, EmbedError> {
+fn bounded_u32_len(field: &'static str, bytes: &[u8], max: usize) -> Result<u32, EmbedError> {
+    if bytes.len() > max {
+        return Err(EmbedError::FieldTooLarge {
+            field,
+            len: bytes.len(),
+            max,
+        });
+    }
     checked_field_len(field, bytes.len())
 }
 
@@ -112,6 +130,17 @@ pub(super) fn checked_field_len(field: &'static str, len: usize) -> Result<u32, 
         len,
         max: MAX_STRING_FIELD_BYTES,
     })
+}
+
+fn checked_dim(dim: u32) -> Result<usize, EmbedError> {
+    if dim > MAX_EMBEDDING_DIM {
+        return Err(EmbedError::FieldTooLarge {
+            field: "dimension",
+            len: dim as usize,
+            max: MAX_EMBEDDING_DIM as usize,
+        });
+    }
+    Ok(dim as usize)
 }
 
 struct Cursor<'a> {
@@ -160,6 +189,29 @@ impl<'a> Cursor<'a> {
             .try_into()
             .map_err(|_| self.corrupt("u32 field length mismatch"))?;
         Ok(u32::from_le_bytes(arr))
+    }
+
+    fn checked_dim(&self, dim: u32) -> Result<usize, EmbedError> {
+        if dim > MAX_EMBEDDING_DIM {
+            return Err(self.corrupt(&format!(
+                "dim {dim} exceeds max supported dimension {MAX_EMBEDDING_DIM}"
+            )));
+        }
+        Ok(dim as usize)
+    }
+
+    fn check_field_len(
+        &self,
+        field: &'static str,
+        len: usize,
+        max: usize,
+    ) -> Result<(), EmbedError> {
+        if len > max {
+            return Err(self.corrupt(&format!(
+                "{field} length {len} exceeds max supported length {max}"
+            )));
+        }
+        Ok(())
     }
 
     fn corrupt(&self, reason: &str) -> EmbedError {

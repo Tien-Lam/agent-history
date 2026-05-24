@@ -3,7 +3,10 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::codec::{checked_field_len, MAX_STRING_FIELD_BYTES, STORE_MAGIC, STORE_VERSION};
+use super::codec::{
+    checked_field_len, MAX_EMBEDDING_DIM, MAX_MESSAGE_KEY_FIELD_BYTES, MAX_MODEL_FIELD_BYTES,
+    MAX_STRING_FIELD_BYTES, STORE_MAGIC, STORE_VERSION,
+};
 use super::*;
 use crate::embed::{content_hash, DEFAULT_MODEL};
 
@@ -151,6 +154,27 @@ fn checked_field_len_rejects_values_outside_store_format() {
 }
 
 #[test]
+fn flush_rejects_oversized_message_keys() {
+    let dir = tempdir().unwrap();
+    let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
+    let long_key = "x".repeat(MAX_MESSAGE_KEY_FIELD_BYTES + 1);
+    store
+        .upsert(&long_key, content_hash("x"), vec![0.0; 4])
+        .unwrap();
+
+    let err = store.flush().unwrap_err();
+
+    assert!(matches!(
+        err,
+        EmbedError::FieldTooLarge {
+            field: "message key",
+            len,
+            max: MAX_MESSAGE_KEY_FIELD_BYTES,
+        } if len == MAX_MESSAGE_KEY_FIELD_BYTES + 1
+    ));
+}
+
+#[test]
 fn corrupt_magic_yields_corrupt_error() {
     let dir = tempdir().unwrap();
     let path = dir.path().join(STORE_FILENAME);
@@ -177,6 +201,45 @@ fn truncated_store_yields_corrupt_error() {
     match EmbeddingStore::open(dir.path()) {
         Err(EmbedError::Corrupt { reason, .. }) => {
             assert!(reason.contains("expected 10 bytes"), "{reason}");
+        }
+        Ok(_) => panic!("expected corrupt error, got Ok"),
+        Err(e) => panic!("expected Corrupt, got {e}"),
+    }
+}
+
+#[test]
+fn oversized_store_dimension_yields_corrupt_error_before_vector_read() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join(STORE_FILENAME);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(STORE_MAGIC);
+    bytes.extend_from_slice(&STORE_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&(MAX_EMBEDDING_DIM + 1).to_le_bytes());
+    fs::write(&path, &bytes).unwrap();
+
+    match EmbeddingStore::open(dir.path()) {
+        Err(EmbedError::Corrupt { reason, .. }) => {
+            assert!(reason.contains("max supported dimension"), "{reason}");
+        }
+        Ok(_) => panic!("expected corrupt error, got Ok"),
+        Err(e) => panic!("expected Corrupt, got {e}"),
+    }
+}
+
+#[test]
+fn oversized_model_length_yields_corrupt_error_before_read() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join(STORE_FILENAME);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(STORE_MAGIC);
+    bytes.extend_from_slice(&STORE_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&4u32.to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(MAX_MODEL_FIELD_BYTES + 1).unwrap()).to_le_bytes());
+    fs::write(&path, &bytes).unwrap();
+
+    match EmbeddingStore::open(dir.path()) {
+        Err(EmbedError::Corrupt { reason, .. }) => {
+            assert!(reason.contains("model name length"), "{reason}");
         }
         Ok(_) => panic!("expected corrupt error, got Ok"),
         Err(e) => panic!("expected Corrupt, got {e}"),
