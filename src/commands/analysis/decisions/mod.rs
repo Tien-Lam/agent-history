@@ -105,12 +105,12 @@ pub(crate) fn decisions_command(
             .then_with(|| a.candidate.turn.cmp(&b.candidate.turn))
     });
 
-    if use_llm {
-        return run_llm_decisions(rows, limit, force_json, llm_model);
-    }
-
     if rows.len() > limit {
         rows.truncate(limit);
+    }
+
+    if use_llm {
+        return run_llm_decisions(rows, limit, force_json, llm_model);
     }
 
     if rows.is_empty() {

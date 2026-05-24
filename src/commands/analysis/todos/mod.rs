@@ -46,33 +46,17 @@ pub(crate) fn todos_command(
         return Err(ErrorEnvelope::new("usage", "--llm-model requires --llm"));
     }
 
-    if use_llm {
-        let all =
-            collect_federated_todo_candidates(providers, scope, filters, metadata_keys, kinds);
-        return run_llm_todos(all, limit, force_json, llm_model);
-    }
-
     let mut all =
         collect_federated_todo_candidates(providers, scope, filters, metadata_keys, kinds);
 
-    // Newest matches first — most useful for "what's still hanging?".
-    all.sort_by(|a, b| {
-        b.candidate
-            .timestamp
-            .cmp(&a.candidate.timestamp)
-            .then_with(|| {
-                a.candidate
-                    .citation
-                    .session_id
-                    .0
-                    .cmp(&b.candidate.citation.session_id.0)
-            })
-            .then_with(|| a.candidate.citation.turn.cmp(&b.candidate.citation.turn))
-            .then_with(|| (a.candidate.kind as u8).cmp(&(b.candidate.kind as u8)))
-    });
+    sort_todo_rows(&mut all);
 
-    if limit > 0 && all.len() > limit {
+    if all.len() > limit {
         all.truncate(limit);
+    }
+
+    if use_llm {
+        return run_llm_todos(all, limit, force_json, llm_model);
     }
 
     if all.is_empty() {
@@ -90,6 +74,24 @@ pub(crate) fn todos_command(
     .map_err(|e| ErrorEnvelope::io("failed to write todos output", e))?;
 
     Ok(EXIT_OK)
+}
+
+fn sort_todo_rows(rows: &mut [TodoRow]) {
+    // Newest matches first - most useful for "what's still hanging?".
+    rows.sort_by(|a, b| {
+        b.candidate
+            .timestamp
+            .cmp(&a.candidate.timestamp)
+            .then_with(|| {
+                a.candidate
+                    .citation
+                    .session_id
+                    .0
+                    .cmp(&b.candidate.citation.session_id.0)
+            })
+            .then_with(|| a.candidate.citation.turn.cmp(&b.candidate.citation.turn))
+            .then_with(|| (a.candidate.kind as u8).cmp(&(b.candidate.kind as u8)))
+    });
 }
 
 /// LLM-mode todo row with full metadata for rendering.
