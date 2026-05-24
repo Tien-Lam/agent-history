@@ -30,7 +30,7 @@ pub(crate) struct Cli {
 
     /// Maximum number of sessions to return when paired with `--list`.
     /// JSON output includes `meta.next_cursor` if more results remain.
-    #[arg(long, default_value_t = LIST_LIMIT_DEFAULT, requires = "list")]
+    #[arg(long, default_value_t = LIST_LIMIT_DEFAULT, requires = "list", value_parser = parse_list_limit)]
     pub(crate) limit: usize,
 
     /// Opaque pagination cursor (from a prior `meta.next_cursor`) for `--list`.
@@ -56,4 +56,15 @@ pub(crate) struct Cli {
 
     #[command(subcommand)]
     pub(crate) command: Option<Command>,
+}
+
+fn parse_list_limit(raw: &str) -> Result<usize, String> {
+    let value = raw
+        .parse::<usize>()
+        .map_err(|e| format!("invalid list limit: {e}"))?;
+    if value == 0 {
+        Err("list limit must be at least 1".to_string())
+    } else {
+        Ok(value)
+    }
 }

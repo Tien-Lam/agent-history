@@ -163,6 +163,25 @@ fn list_invalid_cursor_returns_usage_envelope() {
 }
 
 #[test]
+fn list_rejects_zero_limit_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let assert = aghist()
+        .args(["--list", "--limit", "0"])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(2);
+    let envelope = cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("list limit must be at least 1"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
+#[test]
 fn list_cursor_requires_list_flag() {
     let dir = tempfile::tempdir().unwrap();
     let assert = aghist()
