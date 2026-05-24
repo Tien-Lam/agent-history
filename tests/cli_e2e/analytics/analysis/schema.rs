@@ -9,6 +9,10 @@ fn schema_subcommand_includes_todos_llm_shape() {
     let props = &parsed["params"]["properties"];
     assert_eq!(props["llm"]["type"], "boolean");
     assert!(props["llm_model"].is_object());
+    assert_eq!(
+        props["limit"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::ANALYSIS_LIMIT_MAX)
+    );
     let one_of = parsed["response"]["oneOf"].as_array().unwrap();
     assert_eq!(one_of.len(), 2);
     let llm_schema = one_of
@@ -33,7 +37,18 @@ fn schema_subcommand_includes_threads_llm_shape() {
     let props = &parsed["params"]["properties"];
     assert_eq!(props["llm"]["type"], "boolean");
     assert!(props["llm_model"].is_object());
-    assert_eq!(props["llm_max_sessions"]["default"], 200);
+    assert_eq!(
+        props["limit"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::ANALYSIS_LIMIT_MAX)
+    );
+    assert_eq!(
+        props["llm_max_sessions"]["default"],
+        serde_json::json!(aghist::schema_fragments::ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT)
+    );
+    assert_eq!(
+        props["llm_max_sessions"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX)
+    );
     let one_of = parsed["response"]["oneOf"].as_array().unwrap();
     assert_eq!(one_of.len(), 2);
     let llm_schema = one_of
@@ -63,6 +78,10 @@ fn schema_subcommand_includes_track() {
         serde_json::from_str(std::str::from_utf8(&track_schema.stdout).unwrap().trim()).unwrap();
     assert_eq!(parsed["command"], "track");
     assert_eq!(parsed["params"]["properties"]["topic"]["minLength"], 1);
+    assert_eq!(
+        parsed["params"]["properties"]["limit"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::ANALYSIS_LIMIT_MAX)
+    );
     let item_props = &parsed["response"]["properties"]["timeline"]["items"]["properties"];
     assert!(item_props["session_ref"].is_object());
     assert_eq!(item_props["direction"]["enum"].as_array().unwrap().len(), 4);
@@ -77,6 +96,10 @@ fn decisions_schema_documents_llm_params_and_response() {
     let props = &parsed["params"]["properties"];
     assert!(props["llm"].is_object(), "llm param should be in schema");
     assert_eq!(props["llm"]["type"], "boolean");
+    assert_eq!(
+        props["limit"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::ANALYSIS_LIMIT_MAX)
+    );
     assert!(
         props["llm_model"].is_object(),
         "llm_model param should be in schema"

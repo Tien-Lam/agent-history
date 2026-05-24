@@ -66,10 +66,10 @@ pub(super) fn run_llm_threads(
 }
 
 fn most_recent_sessions(mut sessions: Vec<Session>, llm_max_sessions: usize) -> Vec<Session> {
-    // 0 means "no cap"; mirrors the rest of the CLI.
     sessions.sort_by_key(|session| std::cmp::Reverse(session.started_at));
-    if llm_max_sessions > 0 && sessions.len() > llm_max_sessions {
-        sessions.truncate(llm_max_sessions);
+    let max_sessions = llm_max_sessions.max(1);
+    if sessions.len() > max_sessions {
+        sessions.truncate(max_sessions);
     }
     sessions
 }

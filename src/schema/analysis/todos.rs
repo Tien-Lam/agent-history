@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::{ANALYSIS_LIMIT_MAX, ANALYSIS_TODOS_LIMIT_DEFAULT};
+
 use super::super::common::{
     closed_object_schema, exit_codes, provider_slug_enum, schema_props_with_filters,
     source_qualified_citation_ref_pattern, todo_target_ref_pattern, SCHEMA_DRAFT,
@@ -23,9 +25,10 @@ pub(in crate::schema) fn todos_schema() -> Value {
                 "limit",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
-                    "default": 200,
-                    "description": "Maximum candidates to emit (0 = no limit). Newest matches kept first."
+                    "minimum": 1,
+                    "maximum": ANALYSIS_LIMIT_MAX,
+                    "default": ANALYSIS_TODOS_LIMIT_DEFAULT,
+                    "description": "Maximum candidates to emit. Newest matches kept first."
                 }),
             ),
             (

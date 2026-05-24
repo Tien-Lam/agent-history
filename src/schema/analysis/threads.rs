@@ -1,5 +1,10 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::{
+    ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LIMIT_DEFAULT, ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT,
+    ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX,
+};
+
 use super::super::common::{
     closed_object_schema, exit_codes, provider_slug_enum, schema_props_with_filters,
     source_qualified_session_only_ref_pattern, SCHEMA_DRAFT,
@@ -30,9 +35,10 @@ pub(in crate::schema) fn threads_schema() -> Value {
                 "limit",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
-                    "default": 50,
-                    "description": "Maximum threads to emit (0 = no limit). Most recent first."
+                    "minimum": 1,
+                    "maximum": ANALYSIS_LIMIT_MAX,
+                    "default": ANALYSIS_THREADS_LIMIT_DEFAULT,
+                    "description": "Maximum threads to emit. Most recent first."
                 }),
             ),
             (
@@ -58,9 +64,10 @@ pub(in crate::schema) fn threads_schema() -> Value {
                 "llm_max_sessions",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
-                    "default": 200,
-                    "description": "Cap on session digests sent to the LLM (0 = no cap). Only meaningful with --llm."
+                    "minimum": 1,
+                    "maximum": ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX,
+                    "default": ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT,
+                    "description": "Cap on session digests sent to the LLM. Only meaningful with --llm."
                 }),
             ),
         ]),

@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::{ANALYSIS_LIMIT_MAX, ANALYSIS_TRACK_LIMIT_DEFAULT};
+
 use super::super::common::{
     closed_object_schema, exit_codes, object_schema, schema_props, schema_props_with_filters,
     source_qualified_session_only_ref_pattern, with_description, SCHEMA_DRAFT,
@@ -20,9 +22,10 @@ pub(in crate::schema) fn track_schema() -> Value {
                 "limit",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
-                    "default": 50,
-                    "description": "Maximum matching sessions to send to the LLM after chronological sorting (0 = no cap)."
+                    "minimum": 1,
+                    "maximum": ANALYSIS_LIMIT_MAX,
+                    "default": ANALYSIS_TRACK_LIMIT_DEFAULT,
+                    "description": "Maximum matching sessions to send to the LLM after chronological sorting."
                 }),
             ),
             (

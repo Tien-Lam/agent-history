@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::{ANALYSIS_DECISIONS_LIMIT_DEFAULT, ANALYSIS_LIMIT_MAX};
+
 use super::super::common::{
     closed_object_schema, exit_codes, provider_slug_enum, schema_props_with_filters,
     source_qualified_citation_ref_pattern, SCHEMA_DRAFT,
@@ -29,7 +31,8 @@ pub(in crate::schema) fn decisions_schema() -> Value {
                 json!({
                     "type": "integer",
                     "minimum": 1,
-                    "default": 50,
+                    "maximum": ANALYSIS_LIMIT_MAX,
+                    "default": ANALYSIS_DECISIONS_LIMIT_DEFAULT,
                     "description": "Maximum number of candidates to return after sorting by score."
                 }),
             ),

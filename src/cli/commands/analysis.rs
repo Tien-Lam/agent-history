@@ -3,14 +3,20 @@ use clap::Args;
 
 use super::super::resolvers::parse_todo_kind;
 
+use aghist::schema_fragments::{
+    ANALYSIS_DECISIONS_LIMIT_DEFAULT, ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LIMIT_DEFAULT,
+    ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX,
+    ANALYSIS_TODOS_LIMIT_DEFAULT, ANALYSIS_TRACK_LIMIT_DEFAULT,
+};
+
 #[derive(Args)]
 pub(crate) struct TrackCommand {
     /// Free-text topic to track (e.g. "auth middleware", "BM25 scoring").
     #[arg(value_name = "TOPIC")]
     pub(crate) topic: String,
 
-    /// Maximum sessions to scan for the topic (0 = no limit, default 50).
-    #[arg(long, short = 'n', default_value_t = 50)]
+    /// Maximum matching sessions to send to the LLM.
+    #[arg(long, short = 'n', default_value_t = ANALYSIS_TRACK_LIMIT_DEFAULT, value_parser = parse_track_limit)]
     pub(crate) limit: usize,
 
     /// Force JSON output (default: table on TTY, JSON on pipe).
@@ -42,7 +48,7 @@ pub(crate) struct DecisionsCommand {
 
     /// Maximum number of candidates to return across all sessions,
     /// after sorting by score descending (heuristic) or by recency (--llm).
-    #[arg(long, short = 'n', default_value_t = 50, value_parser = parse_decisions_limit)]
+    #[arg(long, short = 'n', default_value_t = ANALYSIS_DECISIONS_LIMIT_DEFAULT, value_parser = parse_decisions_limit)]
     pub(crate) limit: usize,
 
     /// Force JSON output (default: JSON on pipe, table on TTY).
@@ -67,8 +73,8 @@ pub(crate) struct TodosCommand {
     #[arg(long, value_delimiter = ',', value_parser = parse_todo_kind, value_name = "KIND")]
     pub(crate) kind: Vec<TodoKind>,
 
-    /// Maximum number of candidates to emit (0 = no limit).
-    #[arg(long, short = 'n', default_value_t = 200)]
+    /// Maximum number of candidates to emit.
+    #[arg(long, short = 'n', default_value_t = ANALYSIS_TODOS_LIMIT_DEFAULT, value_parser = parse_todos_limit)]
     pub(crate) limit: usize,
 
     /// Force JSON output (default: JSON on pipe, table on TTY).
@@ -104,8 +110,8 @@ pub(crate) struct ThreadsCommand {
     #[arg(long, default_value_t = 1, value_name = "N", value_parser = parse_min_sessions)]
     pub(crate) min_sessions: usize,
 
-    /// Maximum number of threads to emit (0 = no limit).
-    #[arg(long, short = 'n', default_value_t = 50)]
+    /// Maximum number of threads to emit.
+    #[arg(long, short = 'n', default_value_t = ANALYSIS_THREADS_LIMIT_DEFAULT, value_parser = parse_threads_limit)]
     pub(crate) limit: usize,
 
     /// Force JSON output (default: JSON on pipe, table on TTY).
@@ -126,16 +132,42 @@ pub(crate) struct ThreadsCommand {
     /// Cap on session digests sent to the LLM (most recent kept). One
     /// digest is ~150 bytes, so 200 input is roughly 7.5K tokens per call. Only
     /// meaningful with `--llm`.
-    #[arg(long, default_value_t = 200, value_name = "N")]
+    #[arg(long, default_value_t = ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT, value_name = "N", value_parser = parse_threads_llm_max_sessions)]
     pub(crate) llm_max_sessions: usize,
 }
 
+fn parse_track_limit(raw: &str) -> Result<usize, String> {
+    parse_positive_bounded_limit(raw, "track limit", ANALYSIS_LIMIT_MAX)
+}
+
 fn parse_decisions_limit(raw: &str) -> Result<usize, String> {
+    parse_positive_bounded_limit(raw, "decisions limit", ANALYSIS_LIMIT_MAX)
+}
+
+fn parse_todos_limit(raw: &str) -> Result<usize, String> {
+    parse_positive_bounded_limit(raw, "todos limit", ANALYSIS_LIMIT_MAX)
+}
+
+fn parse_threads_limit(raw: &str) -> Result<usize, String> {
+    parse_positive_bounded_limit(raw, "threads limit", ANALYSIS_LIMIT_MAX)
+}
+
+fn parse_threads_llm_max_sessions(raw: &str) -> Result<usize, String> {
+    parse_positive_bounded_limit(
+        raw,
+        "threads LLM max sessions",
+        ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX,
+    )
+}
+
+fn parse_positive_bounded_limit(raw: &str, label: &str, max: usize) -> Result<usize, String> {
     let value = raw
         .parse::<usize>()
-        .map_err(|e| format!("invalid decisions limit: {e}"))?;
+        .map_err(|e| format!("invalid {label}: {e}"))?;
     if value == 0 {
-        Err("decisions limit must be at least 1".to_string())
+        Err(format!("{label} must be at least 1"))
+    } else if value > max {
+        Err(format!("{label} must be at most {max}"))
     } else {
         Ok(value)
     }
@@ -185,7 +217,11 @@ fn parse_llm_model(raw: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_llm_model;
+    use super::{
+        parse_decisions_limit, parse_llm_model, parse_threads_limit,
+        parse_threads_llm_max_sessions, parse_todos_limit, parse_track_limit,
+    };
+    use aghist::schema_fragments::{ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX};
 
     #[test]
     fn parse_llm_model_rejects_blank_values() {
@@ -196,5 +232,45 @@ mod tests {
     #[test]
     fn parse_llm_model_trims_valid_values() {
         assert_eq!(parse_llm_model(" claude-haiku ").unwrap(), "claude-haiku");
+    }
+
+    #[test]
+    fn analysis_limit_parsers_reject_zero() {
+        for (label, result) in [
+            ("track", parse_track_limit("0")),
+            ("decisions", parse_decisions_limit("0")),
+            ("todos", parse_todos_limit("0")),
+            ("threads", parse_threads_limit("0")),
+            (
+                "threads LLM max sessions",
+                parse_threads_llm_max_sessions("0"),
+            ),
+        ] {
+            assert!(
+                result.unwrap_err().contains("must be at least 1"),
+                "{label} parser should reject zero"
+            );
+        }
+    }
+
+    #[test]
+    fn analysis_limit_parsers_reject_values_above_max() {
+        let oversized = (ANALYSIS_LIMIT_MAX + 1).to_string();
+        for (label, result) in [
+            ("track", parse_track_limit(&oversized)),
+            ("decisions", parse_decisions_limit(&oversized)),
+            ("todos", parse_todos_limit(&oversized)),
+            ("threads", parse_threads_limit(&oversized)),
+        ] {
+            assert!(
+                result.unwrap_err().contains("must be at most"),
+                "{label} parser should reject oversized limits"
+            );
+        }
+
+        let oversized_llm = (ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX + 1).to_string();
+        assert!(parse_threads_llm_max_sessions(&oversized_llm)
+            .unwrap_err()
+            .contains("must be at most"));
     }
 }
