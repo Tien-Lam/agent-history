@@ -55,11 +55,19 @@ fn search_schema_describes_json_envelope() {
     assert_eq!(response["type"], "object");
     assert_eq!(string_array(&response["required"]), vec!["hits", "meta"]);
 
-    let hit = &response["properties"]["hits"]["items"];
-    assert_eq!(hit["type"], "object");
+    let variants = response["properties"]["hits"]["items"]["oneOf"]
+        .as_array()
+        .expect("search hit schema should distinguish message and note hits");
+    assert_eq!(variants.len(), 2);
+    let message_hit = &variants[0];
+    let note_hit = &variants[1];
     assert_eq!(
-        hit["properties"]["kind"]["enum"],
-        serde_json::json!(["message", "note"])
+        message_hit["properties"]["kind"]["enum"],
+        serde_json::json!(["message"])
+    );
+    assert_eq!(
+        note_hit["properties"]["kind"]["enum"],
+        serde_json::json!(["note"])
     );
     for field in [
         "kind",
@@ -73,13 +81,21 @@ fn search_schema_describes_json_envelope() {
         "source",
     ] {
         assert!(
-            string_array(&hit["required"]).contains(&field),
-            "search hit schema missing required field {field}"
+            string_array(&message_hit["required"]).contains(&field),
+            "search message hit schema missing required field {field}"
+        );
+        assert!(
+            string_array(&note_hit["required"]).contains(&field),
+            "search note hit schema missing required field {field}"
         );
     }
-    assert!(hit["properties"]["ref"]["pattern"].is_string());
-    assert!(hit["properties"]["turn"].is_object());
-    assert!(hit["properties"]["explanation"].is_object());
+    assert!(message_hit["properties"]["ref"]["pattern"].is_string());
+    assert!(message_hit["properties"]["turn"].is_object());
+    assert!(message_hit["properties"]["explanation"].is_object());
+    assert!(message_hit["properties"].get("note_id").is_none());
+    assert!(note_hit["properties"]["note_id"].is_object());
+    assert!(note_hit["properties"]["ref"]["pattern"].is_string());
+    assert!(note_hit["properties"].get("turn").is_none());
 
     let meta = &response["properties"]["meta"];
     assert_eq!(meta["type"], "object");

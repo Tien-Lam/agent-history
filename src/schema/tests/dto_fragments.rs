@@ -173,14 +173,25 @@ fn sample_message() -> Message {
 }
 
 fn assert_schema_covers_serialized_keys(schema: &Value, value: &Value) {
+    if let Some(variants) = schema.get("oneOf").and_then(Value::as_array) {
+        assert!(
+            variants
+                .iter()
+                .any(|variant| schema_covers_serialized_keys(variant, value)),
+            "no oneOf variant covers serialized DTO keys: {schema:#}\nvalue: {value:#}"
+        );
+        return;
+    }
+    assert!(
+        schema_covers_serialized_keys(schema, value),
+        "schema missing property for serialized DTO: {schema:#}\nvalue: {value:#}"
+    );
+}
+
+fn schema_covers_serialized_keys(schema: &Value, value: &Value) -> bool {
     let properties = schema["properties"]
         .as_object()
         .expect("schema has properties object");
     let object = value.as_object().expect("serialized DTO is an object");
-    for key in object.keys() {
-        assert!(
-            properties.contains_key(key),
-            "schema missing property for serialized key {key}: {schema:#}"
-        );
-    }
+    object.keys().all(|key| properties.contains_key(key))
 }

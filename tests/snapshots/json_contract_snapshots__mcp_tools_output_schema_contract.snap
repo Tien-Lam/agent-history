@@ -1,0 +1,1031 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "get_message": {
+    "additionalProperties": false,
+    "properties": {
+      "ref": {
+        "pattern": "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+#[1-9][0-9]*$",
+        "type": "string"
+      },
+      "session": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "message_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "enum": [
+              "claude-code",
+              "copilot-cli",
+              "gemini-cli",
+              "codex-cli",
+              "opencode",
+              "cursor",
+              "aider",
+              "zed-ai",
+              "cline",
+              "continue-dev"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "description": "`local` for this host, or a registered remote source name.",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uri": {
+            "description": "MCP resource URI for this session.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "provider",
+          "started_at",
+          "message_count"
+        ],
+        "type": "object"
+      },
+      "target_turn": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "turns": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {},
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "is_target": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ref": {
+              "pattern": "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+#[1-9][0-9]*$",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role": {
+              "enum": [
+                "user",
+                "assistant",
+                "system",
+                "tool"
+              ],
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "timestamp": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "turn": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "uri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref",
+            "uri",
+            "source",
+            "turn",
+            "id",
+            "role",
+            "timestamp",
+            "model",
+            "content"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "ref",
+      "session",
+      "target_turn",
+      "turns"
+    ],
+    "type": "object"
+  },
+  "get_session": {
+    "additionalProperties": false,
+    "properties": {
+      "session": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "message_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "enum": [
+              "claude-code",
+              "copilot-cli",
+              "gemini-cli",
+              "codex-cli",
+              "opencode",
+              "cursor",
+              "aider",
+              "zed-ai",
+              "cline",
+              "continue-dev"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "description": "`local` for this host, or a registered remote source name.",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uri": {
+            "description": "MCP resource URI for this session.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "provider",
+          "started_at",
+          "message_count"
+        ],
+        "type": "object"
+      },
+      "turns": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {},
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "is_target": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ref": {
+              "pattern": "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+#[1-9][0-9]*$",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role": {
+              "enum": [
+                "user",
+                "assistant",
+                "system",
+                "tool"
+              ],
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "timestamp": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "turn": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "uri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref",
+            "uri",
+            "source",
+            "turn",
+            "id",
+            "role",
+            "timestamp",
+            "model",
+            "content"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "session",
+      "turns"
+    ],
+    "type": "object"
+  },
+  "health": {
+    "additionalProperties": false,
+    "properties": {
+      "checks": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "hint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "ok",
+                "warn",
+                "fail"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "status",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider_fidelity": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "blocks": {
+              "additionalProperties": false,
+              "properties": {
+                "code_block": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "error": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "text": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "thinking": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tool_result": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tool_use": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "text",
+                "code_block",
+                "tool_use",
+                "tool_result",
+                "thinking",
+                "error",
+                "total"
+              ],
+              "type": "object"
+            },
+            "label": {
+              "type": "string"
+            },
+            "message_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "parse": {
+              "additionalProperties": false,
+              "properties": {
+                "empty_content": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "parse_errors": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "records_seen": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "skipped_records": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "records_seen",
+                "parse_errors",
+                "skipped_records",
+                "empty_content"
+              ],
+              "type": "object"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "session_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "tool_call_fidelity": {
+              "additionalProperties": false,
+              "properties": {
+                "empty_call_ids": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "empty_names": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "empty_result_ids": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "failure_results": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "invalid_json_args": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "orphan_results": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "paired": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "success_results": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tool_calls": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tool_results": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "unpaired_calls": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "tool_calls",
+                "tool_results",
+                "paired",
+                "unpaired_calls",
+                "orphan_results",
+                "empty_names",
+                "empty_call_ids",
+                "empty_result_ids",
+                "invalid_json_args",
+                "success_results",
+                "failure_results"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "label",
+            "provider",
+            "session_count",
+            "message_count",
+            "parse",
+            "blocks",
+            "tool_call_fidelity"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "summary": {
+        "additionalProperties": false,
+        "properties": {
+          "fail_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ok_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "warn_count": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok_count",
+          "warn_count",
+          "fail_count"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "ok",
+      "checks",
+      "summary",
+      "provider_fidelity"
+    ],
+    "type": "object"
+  },
+  "list_sessions": {
+    "additionalProperties": false,
+    "properties": {
+      "sessions": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ended_at": {
+              "format": "date-time",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "message_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "project": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "provider": {
+              "enum": [
+                "claude-code",
+                "copilot-cli",
+                "gemini-cli",
+                "codex-cli",
+                "opencode",
+                "cursor",
+                "aider",
+                "zed-ai",
+                "cline",
+                "continue-dev"
+              ],
+              "type": "string"
+            },
+            "source": {
+              "description": "`local` for this host, or a registered remote source name.",
+              "type": "string"
+            },
+            "started_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "summary": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "uri": {
+              "description": "MCP resource URI for this session.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "source",
+            "provider",
+            "started_at",
+            "message_count"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "source_errors": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "error"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "total",
+      "sessions",
+      "source_errors"
+    ],
+    "type": "object"
+  },
+  "reindex": {
+    "additionalProperties": false,
+    "properties": {
+      "added": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "duration_ms": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "errors": {
+        "items": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "type": "string"
+                },
+                "provider": {
+                  "enum": [
+                    "claude-code",
+                    "copilot-cli",
+                    "gemini-cli",
+                    "codex-cli",
+                    "opencode",
+                    "cursor",
+                    "aider",
+                    "zed-ai",
+                    "cline",
+                    "continue-dev"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "error"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      },
+      "force": {
+        "type": "boolean"
+      },
+      "index_dir": {
+        "type": "string"
+      },
+      "messages_indexed": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "providers": {
+        "items": {
+          "enum": [
+            "claude-code",
+            "copilot-cli",
+            "gemini-cli",
+            "codex-cli",
+            "opencode",
+            "cursor",
+            "aider",
+            "zed-ai",
+            "cline",
+            "continue-dev"
+          ],
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "removed": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "sessions_total": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "partial"
+        ],
+        "type": "string"
+      },
+      "unchanged": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "updated": {
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "status",
+      "providers",
+      "sessions_total",
+      "added",
+      "updated",
+      "unchanged",
+      "removed",
+      "messages_indexed",
+      "force",
+      "index_dir",
+      "duration_ms",
+      "errors"
+    ],
+    "type": "object"
+  },
+  "search_sessions": {
+    "additionalProperties": false,
+    "properties": {
+      "hits": {
+        "items": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "explanation": {
+                  "description": "Present only with --debug-search; Tantivy score explanation tree.",
+                  "type": "object"
+                },
+                "kind": {
+                  "description": "Whether the hit points at a session message or a metadata note.",
+                  "enum": [
+                    "message"
+                  ],
+                  "type": "string"
+                },
+                "message_id": {
+                  "type": "string"
+                },
+                "project": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "provider": {
+                  "enum": [
+                    "claude-code",
+                    "copilot-cli",
+                    "gemini-cli",
+                    "codex-cli",
+                    "opencode",
+                    "cursor",
+                    "aider",
+                    "zed-ai",
+                    "cline",
+                    "continue-dev",
+                    null
+                  ],
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ref": {
+                  "description": "Citation ref for message hits.",
+                  "pattern": "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+#[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "session_id": {
+                  "type": "string"
+                },
+                "snippet": {
+                  "type": "string"
+                },
+                "source": {
+                  "description": "`local` for this host, or a registered remote source name.",
+                  "type": "string"
+                },
+                "started_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "turn": {
+                  "description": "Present when the hit has been resolved to a 1-based turn number.",
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "session_id",
+                "message_id",
+                "score",
+                "snippet",
+                "provider",
+                "project",
+                "started_at",
+                "source"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "explanation": {
+                  "description": "Present only with --debug-search; Tantivy score explanation tree.",
+                  "type": "object"
+                },
+                "kind": {
+                  "description": "Whether the hit points at a session message or a metadata note.",
+                  "enum": [
+                    "note"
+                  ],
+                  "type": "string"
+                },
+                "message_id": {
+                  "type": "string"
+                },
+                "note_id": {
+                  "description": "Metadata note row id.",
+                  "type": "integer"
+                },
+                "project": {
+                  "type": "null"
+                },
+                "provider": {
+                  "type": "null"
+                },
+                "ref": {
+                  "description": "The note's stored session ref.",
+                  "pattern": "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+(#[1-9][0-9]*)?$",
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "session_id": {
+                  "type": "string"
+                },
+                "snippet": {
+                  "type": "string"
+                },
+                "source": {
+                  "description": "`local` for this host, or a registered remote source name.",
+                  "type": "string"
+                },
+                "started_at": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "kind",
+                "session_id",
+                "message_id",
+                "score",
+                "snippet",
+                "provider",
+                "project",
+                "started_at",
+                "source",
+                "note_id",
+                "ref"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      },
+      "limit": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "query": {
+        "type": "string"
+      },
+      "source_errors": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "error"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "query",
+      "limit",
+      "total",
+      "hits",
+      "source_errors"
+    ],
+    "type": "object"
+  }
+}
