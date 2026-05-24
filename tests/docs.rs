@@ -81,13 +81,8 @@ fn readme_supported_providers_match_registered_providers() {
 
 #[test]
 fn markdown_local_links_resolve() {
-    for path in [
-        "README.md",
-        "CLAUDE.md",
-        "CHANGELOG.md",
-        "docs/ARCHITECTURE.md",
-    ] {
-        let markdown = repo_file(path);
+    for path in markdown_files() {
+        let markdown = repo_file(&path);
         for (line_idx, line) in markdown.lines().enumerate() {
             for target in markdown_link_targets(line) {
                 if is_external_link(&target) {
@@ -96,10 +91,10 @@ fn markdown_local_links_resolve() {
 
                 let (path_part, anchor) = split_link_target(&target);
                 let linked_path = if path_part.is_empty() {
-                    Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
+                    Path::new(env!("CARGO_MANIFEST_DIR")).join(&path)
                 } else {
                     Path::new(env!("CARGO_MANIFEST_DIR"))
-                        .join(path)
+                        .join(&path)
                         .parent()
                         .expect("markdown path has a parent")
                         .join(path_part)
@@ -132,6 +127,43 @@ fn markdown_local_links_resolve() {
             }
         }
     }
+}
+
+fn markdown_files() -> Vec<String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", dir.display()));
+        for entry in entries {
+            let entry = entry.unwrap_or_else(|err| {
+                panic!("failed to read directory entry in {}: {err}", dir.display())
+            });
+            let path = entry.path();
+            let name = entry.file_name();
+            if path.is_dir() {
+                if name != ".git" && name != "target" {
+                    stack.push(path);
+                }
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                continue;
+            }
+            if path.file_name().and_then(|n| n.to_str()) == Some("SEARCH_BENCH.md") {
+                continue;
+            }
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            files.push(rel);
+        }
+    }
+    files.sort();
+    files
 }
 
 fn changelog_versions(changelog: &str) -> Vec<String> {
