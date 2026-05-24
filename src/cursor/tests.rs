@@ -24,7 +24,7 @@ fn search_cursor_roundtrip() {
         kind: HitKind::Message,
         note_id: None,
     };
-    let token = c.encode();
+    let token = c.encode().unwrap();
     let back = SearchCursor::decode(&token).unwrap();
     assert_eq!(back, c);
 }
@@ -36,7 +36,7 @@ fn list_cursor_roundtrip() {
         session_id: "xyz".to_string(),
         session_key: "claude-code\x1fxyz\x1f/tmp/session.jsonl".to_string(),
     };
-    let token = c.encode();
+    let token = c.encode().unwrap();
     let back = ListCursor::decode(&token).unwrap();
     assert_eq!(back, c);
 }
@@ -53,7 +53,7 @@ fn cursor_token_is_url_safe() {
         kind: HitKind::Message,
         note_id: None,
     };
-    let token = c.encode();
+    let token = c.encode().unwrap();
     assert!(!token.contains('+'));
     assert!(!token.contains('/'));
     assert!(!token.contains('='));
@@ -82,7 +82,8 @@ fn search_cursor_rejects_unknown_hit_kind() {
         "message_id": "msg-1",
         "kind": "bogus",
         "note_id": null
-    }));
+    }))
+    .unwrap();
 
     assert!(matches!(
         SearchCursor::decode(&token),
@@ -104,7 +105,8 @@ proptest! {
             session_key,
         };
 
-        let decoded = ListCursor::decode(&cursor.encode()).unwrap();
+        let token = cursor.encode().unwrap();
+        let decoded = ListCursor::decode(&token).unwrap();
 
         prop_assert_eq!(decoded, cursor);
     }
@@ -131,7 +133,8 @@ proptest! {
             note_id,
         };
 
-        let decoded = SearchCursor::decode(&cursor.encode()).unwrap();
+        let token = cursor.encode().unwrap();
+        let decoded = SearchCursor::decode(&token).unwrap();
 
         prop_assert_eq!(decoded, cursor);
     }

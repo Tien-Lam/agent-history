@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::action::Action;
+use crate::cursor::CursorError;
 use crate::metadata;
 use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
@@ -28,6 +29,8 @@ pub enum SearchServiceError {
     BuildIndex(#[source] super::SearchError),
     #[error("failed to inspect index: {0}")]
     InspectIndex(#[source] super::SearchError),
+    #[error("failed to encode search cursor: {0}")]
+    Cursor(#[source] CursorError),
     #[error("search failed: {0}")]
     Search(#[source] super::SearchError),
 }

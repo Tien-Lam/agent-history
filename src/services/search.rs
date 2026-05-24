@@ -69,7 +69,8 @@ pub fn search_sessions<'a>(
         .min(output.hits.len());
     let hits = output.hits[page_start..page_end].to_vec();
     let next_cursor =
-        search::next_search_cursor(&hits, page_end < output.hits.len(), &output.session_meta);
+        search::next_search_cursor(&hits, page_end < output.hits.len(), &output.session_meta)
+            .map_err(SearchServiceError::Cursor)?;
     let citation_resolution = search::resolve_search_hit_citations(
         &hits,
         &output.session_meta,

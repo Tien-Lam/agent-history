@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::super::common::{closed_object_schema, provider_slug_enum, schema_props};
+use super::super::common::{
+    closed_object_schema, provider_slug_enum, schema_props, SchemaProperties,
+};
 
 fn index_error_schema() -> Value {
     json!({
@@ -72,8 +74,8 @@ fn embeddings_status_schema() -> Value {
     })
 }
 
-fn indexing_summary_response_schema() -> Value {
-    closed_object_schema(
+fn indexing_summary_schema_parts() -> (SchemaProperties, Vec<&'static str>) {
+    (
         schema_props([
             (
                 "status",
@@ -100,7 +102,7 @@ fn indexing_summary_response_schema() -> Value {
                 json!({ "type": "array", "items": index_error_schema() }),
             ),
         ]),
-        &[
+        vec![
             "status",
             "providers",
             "sessions_total",
@@ -117,12 +119,13 @@ fn indexing_summary_response_schema() -> Value {
     )
 }
 
+fn indexing_summary_response_schema() -> Value {
+    let (properties, required) = indexing_summary_schema_parts();
+    closed_object_schema(properties, &required)
+}
+
 pub(crate) fn index_response_schema() -> Value {
-    let mut schema = indexing_summary_response_schema();
-    let properties = schema
-        .get_mut("properties")
-        .and_then(Value::as_object_mut)
-        .expect("indexing summary schema has properties");
+    let (mut properties, mut required) = indexing_summary_schema_parts();
     properties.insert(
         "embeddings".to_string(),
         with_description(
@@ -130,12 +133,8 @@ pub(crate) fn index_response_schema() -> Value {
             "Status of the optional semantic-embedding pass. Shape varies by status.",
         ),
     );
-    let required = schema
-        .get_mut("required")
-        .and_then(Value::as_array_mut)
-        .expect("indexing summary schema has required fields");
-    required.push(json!("embeddings"));
-    schema
+    required.push("embeddings");
+    closed_object_schema(properties, &required)
 }
 
 pub(crate) fn mcp_reindex_response_schema() -> Value {

@@ -142,8 +142,7 @@ fn direct_string_or_object_field(value: &Value, fields: &[&str]) -> Option<Strin
 }
 
 pub(crate) fn pretty_json(value: &Value) -> String {
-    serde_json::to_string_pretty(value)
-        .expect("serde_json::Value pretty serialization should be infallible")
+    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
 #[cfg(test)]

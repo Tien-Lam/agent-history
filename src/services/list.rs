@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use thiserror::Error;
 
-use crate::cursor::ListCursor;
+use crate::cursor::{CursorError, ListCursor};
 use crate::federated::FederatedDiscovery;
 use crate::model::Session;
 use crate::provider::HistoryProvider;
@@ -46,6 +46,8 @@ pub struct ListedSession {
 pub enum ListSessionsError {
     #[error("invalid --cursor token")]
     InvalidCursor,
+    #[error("failed to encode list cursor: {0}")]
+    CursorEncode(#[source] CursorError),
 }
 
 pub fn list_sessions_page(
@@ -102,14 +104,17 @@ pub fn list_sessions_page(
     let page_end = page_start.saturating_add(request.limit).min(sessions.len());
     let page = sessions[page_start..page_end].to_vec();
     let next_cursor = if page_end < sessions.len() {
-        page.last().map(|listed| {
-            ListCursor {
-                started_at: listed.session.started_at,
-                session_id: listed.session.id.0.clone(),
-                session_key: listed.session.identity_key(),
-            }
-            .encode()
-        })
+        page.last()
+            .map(|listed| {
+                ListCursor {
+                    started_at: listed.session.started_at,
+                    session_id: listed.session.id.0.clone(),
+                    session_key: listed.session.identity_key(),
+                }
+                .encode()
+            })
+            .transpose()
+            .map_err(ListSessionsError::CursorEncode)?
     } else {
         None
     };

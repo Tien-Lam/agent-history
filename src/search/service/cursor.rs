@@ -5,29 +5,32 @@ use std::hash::BuildHasher;
 use crate::model::Session;
 
 use super::SearchServiceHit;
+use crate::cursor::CursorError;
 use crate::search::SearchHit;
 
 pub fn next_search_cursor<S: BuildHasher>(
     page: &[SearchServiceHit],
     has_more: bool,
     session_meta: &HashMap<String, &Session, S>,
-) -> Option<String> {
+) -> Result<Option<String>, CursorError> {
     if !has_more {
-        return None;
+        return Ok(None);
     }
-    page.last().map(|(h, _)| {
-        crate::cursor::SearchCursor {
-            score: h.score,
-            started_at: session_meta.get(h.session_key()).map(|s| s.started_at),
-            session_key: h.session_key().to_string(),
-            session_id: h.session_id().to_string(),
-            message_key: h.message_key().to_string(),
-            message_id: h.message_id().to_string(),
-            kind: h.kind(),
-            note_id: h.note_id(),
-        }
-        .encode()
-    })
+    page.last()
+        .map(|(h, _)| {
+            crate::cursor::SearchCursor {
+                score: h.score,
+                started_at: session_meta.get(h.session_key()).map(|s| s.started_at),
+                session_key: h.session_key().to_string(),
+                session_id: h.session_id().to_string(),
+                message_key: h.message_key().to_string(),
+                message_id: h.message_id().to_string(),
+                kind: h.kind(),
+                note_id: h.note_id(),
+            }
+            .encode()
+        })
+        .transpose()
 }
 
 pub fn search_hit_is_after_cursor<S: BuildHasher>(

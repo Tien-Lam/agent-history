@@ -20,6 +20,8 @@ use crate::search::HitKind;
 
 #[derive(Debug, Error)]
 pub enum CursorError {
+    #[error("failed to encode cursor payload")]
+    Encode(#[source] serde_json::Error),
     #[error("invalid cursor: not valid base64")]
     Base64,
     #[error("invalid cursor: malformed payload")]
@@ -54,7 +56,7 @@ pub struct ListCursor {
 }
 
 impl SearchCursor {
-    pub fn encode(&self) -> String {
+    pub fn encode(&self) -> Result<String, CursorError> {
         encode(self)
     }
 
@@ -64,7 +66,7 @@ impl SearchCursor {
 }
 
 impl ListCursor {
-    pub fn encode(&self) -> String {
+    pub fn encode(&self) -> Result<String, CursorError> {
         encode(self)
     }
 
@@ -73,9 +75,9 @@ impl ListCursor {
     }
 }
 
-fn encode<T: Serialize>(value: &T) -> String {
-    let json = serde_json::to_vec(value).expect("cursor serialization should be infallible");
-    URL_SAFE_NO_PAD.encode(json)
+fn encode<T: Serialize>(value: &T) -> Result<String, CursorError> {
+    let json = serde_json::to_vec(value).map_err(CursorError::Encode)?;
+    Ok(URL_SAFE_NO_PAD.encode(json))
 }
 
 fn decode<T: for<'de> Deserialize<'de>>(token: &str) -> Result<T, CursorError> {

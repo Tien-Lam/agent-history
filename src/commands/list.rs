@@ -39,6 +39,12 @@ pub(crate) fn list_sessions(
                 ),
             );
         }
+        Err(list_service::ListSessionsError::CursorEncode(e)) => {
+            return Err(ErrorEnvelope::new(
+                "internal-error",
+                format!("failed to encode next cursor: {e}"),
+            ));
+        }
     };
     for warning in &page.warnings {
         eprintln!("{}", warning.warning_line());
