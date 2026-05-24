@@ -5,7 +5,6 @@ use aghist::config;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum RemovalTarget {
     DefaultConfig { file: PathBuf, dir: PathBuf },
-    File(PathBuf),
 }
 
 pub(super) fn config_removal_target(config_path: Option<&Path>) -> Option<RemovalTarget> {
@@ -28,17 +27,13 @@ fn config_removal_target_for(
         }
         return None;
     }
-    if path.exists() {
-        Some(RemovalTarget::File(path.to_path_buf()))
-    } else {
-        None
-    }
+    None
 }
 
 impl RemovalTarget {
     pub(super) fn display_path(&self) -> &Path {
         match self {
-            Self::DefaultConfig { file, .. } | Self::File(file) => file,
+            Self::DefaultConfig { file, .. } => file,
         }
     }
 
@@ -48,7 +43,6 @@ impl RemovalTarget {
                 remove_file_if_exists(file)?;
                 remove_dir_if_empty(dir)
             }
-            Self::File(path) => std::fs::remove_file(path),
         }
     }
 }
@@ -123,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn override_config_target_removes_only_config_file() {
+    fn override_config_target_is_preserved() {
         let root = tempfile::tempdir().unwrap();
         let shared_dir = root.path().join("shared");
         let config_path = shared_dir.join("aghist.toml");
@@ -133,12 +127,10 @@ mod tests {
         std::fs::write(&config_path, "cache_size = 20\n").unwrap();
         std::fs::write(&keep_path, "keep\n").unwrap();
 
-        let target = config_removal_target_for(Some(&config_path), Some(&default_config_path))
-            .expect("existing override config file should be targeted");
+        let target = config_removal_target_for(Some(&config_path), Some(&default_config_path));
 
-        assert_eq!(target, RemovalTarget::File(config_path.clone()));
-        target.remove().unwrap();
-        assert!(!config_path.exists());
+        assert_eq!(target, None);
+        assert!(config_path.exists());
         assert!(shared_dir.exists());
         assert!(keep_path.exists());
     }
