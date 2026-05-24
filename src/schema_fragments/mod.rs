@@ -6,6 +6,7 @@ pub const LIST_LIMIT_DEFAULT: usize = 20;
 pub const LIST_LIMIT_MAX: usize = 10_000;
 pub const SEARCH_LIMIT_DEFAULT: usize = 20;
 pub const SEARCH_LIMIT_MAX: usize = 10_000;
+pub const SEARCH_QUERY_MAX_BYTES: usize = 64 * 1024;
 pub const SEARCH_WATCH_INTERVAL_MS_DEFAULT: u64 = 2_000;
 pub const SEARCH_WATCH_ITERATIONS_DEFAULT: u32 = 0;
 pub const SEARCH_HYBRID_WEIGHT_DEFAULT: f32 = 0.0;

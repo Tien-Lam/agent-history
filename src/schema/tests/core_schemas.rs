@@ -5,6 +5,10 @@ fn search_schema_describes_query_param() {
     let schema = schema_for("search").unwrap();
     let params = &schema["params"]["properties"];
     assert!(params["query"].is_object());
+    assert_eq!(
+        params["query"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::SEARCH_QUERY_MAX_BYTES)
+    );
     assert!(params["limit"].is_object());
     assert!(params["debug_search"].is_object());
     assert_eq!(

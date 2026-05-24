@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::schema_fragments::{
-    SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX,
+    SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, SEARCH_QUERY_MAX_BYTES,
     SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_ITERATIONS_DEFAULT,
 };
 
@@ -14,7 +14,7 @@ fn search_params_properties() -> SchemaProperties {
     let mut props = schema_props([
         (
             "query",
-            json!({ "type": "string", "description": "Tantivy query string. Mutually exclusive with query_file/stdin." }),
+            json!({ "type": "string", "maxLength": SEARCH_QUERY_MAX_BYTES, "description": "Tantivy query string. Mutually exclusive with query_file/stdin." }),
         ),
         (
             "query_file",

@@ -1,10 +1,9 @@
 use std::path::Path;
 
 use aghist::cli_error::ErrorEnvelope;
+use aghist::schema_fragments::SEARCH_QUERY_MAX_BYTES;
 
 use crate::commands::input::{read_text_input_with_limit, TextInput, TextInputMessages};
-
-const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
 
 pub(super) fn resolve_search_query(
     query: Option<&str>,
@@ -25,7 +24,7 @@ pub(super) fn resolve_search_query(
             usage_hint: Some("Run `aghist search --help` for usage."),
         },
         true,
-        MAX_SEARCH_QUERY_BYTES,
+        SEARCH_QUERY_MAX_BYTES,
         "search query",
     )
 }
