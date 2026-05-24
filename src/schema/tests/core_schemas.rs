@@ -186,6 +186,14 @@ fn sources_schema_describes_remote_registry_subcommands() {
         string_array(&subcommands["remove"]["params"]["required"]),
         vec!["name"]
     );
+    assert_eq!(
+        subcommands["add"]["params"]["properties"]["name"]["pattern"],
+        "^(?!local$)[A-Za-z0-9][A-Za-z0-9_-]*$"
+    );
+    assert_eq!(
+        subcommands["remove"]["params"]["properties"]["name"]["pattern"],
+        "^(?!local$)[A-Za-z0-9][A-Za-z0-9_-]*$"
+    );
     assert!(subcommands["pull"]["params"]["properties"]["dry_run"].is_object());
     assert!(subcommands["pull"]["response"]["oneOf"].is_array());
 }

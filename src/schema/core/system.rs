@@ -38,10 +38,19 @@ fn source_row_schema() -> Value {
     )
 }
 
+fn source_name_schema() -> Value {
+    json!({
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!local$)[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "description": "Remote source name. Must start with an ASCII letter or digit, may contain ASCII letters, digits, '-' and '_', and must not be `local`."
+    })
+}
+
 fn remote_source_schema() -> Value {
     closed_object_schema(
         schema_props([
-            ("name", json!({ "type": "string" })),
+            ("name", source_name_schema()),
             ("host", json!({ "type": "string" })),
             ("path", json!({ "type": "string" })),
             (
@@ -140,7 +149,7 @@ fn sources_subcommands_schema() -> Value {
             "description": "Register a new remote source and persist it to config.toml.",
             "params": closed_object_schema(
                 schema_props([
-                    ("name", json!({ "type": "string" })),
+                    ("name", source_name_schema()),
                     ("host", json!({ "type": "string" })),
                     ("path", json!({ "type": "string" })),
                     ("transport", json!({ "type": "string", "enum": ["ssh", "rsync"], "default": "ssh" })),
@@ -168,7 +177,7 @@ fn sources_subcommands_schema() -> Value {
             "description": "Remove a registered remote source by name.",
             "params": closed_object_schema(
                 schema_props([
-                    ("name", json!({ "type": "string" })),
+                    ("name", source_name_schema()),
                     ("json", json!({ "type": "boolean" })),
                     ("ndjson", json!({ "type": "boolean" })),
                 ]),
@@ -180,7 +189,11 @@ fn sources_subcommands_schema() -> Value {
             "description": "Pull one registered source, or all registered sources, into the local source cache.",
             "params": closed_object_schema(
                 schema_props([
-                    ("name", json!({ "type": "string", "description": "Source name. Mutually exclusive with all." })),
+                    ("name", {
+                        let mut schema = source_name_schema();
+                        schema["description"] = json!("Source name. Mutually exclusive with all.");
+                        schema
+                    }),
                     ("all", json!({ "type": "boolean", "description": "Pull every registered source." })),
                     ("dry_run", json!({ "type": "boolean", "default": false })),
                     ("json", json!({ "type": "boolean" })),
