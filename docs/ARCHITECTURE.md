@@ -189,7 +189,7 @@ Full-text search uses Tantivy. The index is persisted to disk (platform cache di
 
 ### Filters and pagination
 
-Global filter flags (`--provider`, `--since`, `--until`, `--project`, `--role`, `--has-tool-call`) are applied as Tantivy query terms or post-filter passes depending on the field. `--list` and `search` paginate via opaque base64 cursors (`{last_score, last_session_id}` or `{started_at, session_id}`), never offset-based — agents always know whether more results remain via `meta.next_cursor`.
+Global filter flags (`--provider`, `--since`, `--until`, `--project`, `--role`, `--has-tool-call`) are applied as Tantivy query terms or post-filter passes depending on the field. `--list` and `search` paginate via opaque base64 keyset cursors, never offset-based — agents always know whether more results remain via `meta.next_cursor`.
 
 ### Hybrid (lexical + semantic)
 
@@ -215,7 +215,8 @@ read-only constraints as the CLI.
 
 Output schemas for tools are registered through the same MCP contract registry.
 Large row schemas live under `src/schema_fragments/`, and the tool-list
-snapshot records compact schema refs.
+contract tests snapshot both the compact tool list and the full output schema
+bodies.
 
 Resources are exposed as `aghist://session/<provider>/<session-id>` and `aghist://session/<provider>/<session-id>/turn/<n>` for local sessions, plus `aghist://source/<source>/session/<provider>/<session-id>` forms for remote-source sessions — agents can attach an entire session or a single turn as context.
 

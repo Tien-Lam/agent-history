@@ -76,6 +76,7 @@ expression: pretty
           },
           "uri": {
             "description": "MCP resource URI for this session.",
+            "pattern": "^aghist://(session|source/[A-Za-z0-9][A-Za-z0-9_-]*/session)/(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/.+$",
             "type": "string"
           }
         },
@@ -152,6 +153,7 @@ expression: pretty
               "type": "integer"
             },
             "uri": {
+              "pattern": "^aghist://(session|source/[A-Za-z0-9][A-Za-z0-9_-]*/session)/(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/.+/turn/[1-9][0-9]*$",
               "type": "string"
             }
           },
@@ -248,6 +250,7 @@ expression: pretty
           },
           "uri": {
             "description": "MCP resource URI for this session.",
+            "pattern": "^aghist://(session|source/[A-Za-z0-9][A-Za-z0-9_-]*/session)/(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/.+$",
             "type": "string"
           }
         },
@@ -320,6 +323,7 @@ expression: pretty
               "type": "integer"
             },
             "uri": {
+              "pattern": "^aghist://(session|source/[A-Za-z0-9][A-Za-z0-9_-]*/session)/(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/.+/turn/[1-9][0-9]*$",
               "type": "string"
             }
           },
@@ -653,6 +657,7 @@ expression: pretty
             },
             "uri": {
               "description": "MCP resource URI for this session.",
+              "pattern": "^aghist://(session|source/[A-Za-z0-9][A-Za-z0-9_-]*/session)/(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/.+$",
               "type": "string"
             }
           },

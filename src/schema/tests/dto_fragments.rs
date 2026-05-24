@@ -26,7 +26,7 @@ fn assert_list_dto_schema_fragments(session: &Session) {
         &serde_json::to_value(SessionRow::from_session(session, "local")).unwrap(),
     );
     let mcp_session =
-        McpSessionRow::from_session(session, "local", "aghist://local/claude-code/session-1");
+        McpSessionRow::from_session(session, "local", "aghist://session/claude-code/session-1");
     assert_schema_covers_serialized_keys(
         &crate::schema_fragments::mcp_session_row_schema(),
         &serde_json::to_value(mcp_session.clone()).unwrap(),
@@ -60,7 +60,7 @@ fn assert_message_dto_schema_fragments() {
                 "local",
                 1,
                 Some("claude-code/session-1#1".to_string()),
-                "aghist://local/claude-code/session-1/turns/1",
+                "aghist://session/claude-code/session-1/turn/1",
             )
             .with_target(true),
         )
@@ -180,11 +180,27 @@ fn assert_schema_covers_serialized_keys(schema: &Value, value: &Value) {
                 .any(|variant| schema_covers_serialized_keys(variant, value)),
             "no oneOf variant covers serialized DTO keys: {schema:#}\nvalue: {value:#}"
         );
+        assert_schema_accepts_value(schema, value);
         return;
     }
     assert!(
         schema_covers_serialized_keys(schema, value),
         "schema missing property for serialized DTO: {schema:#}\nvalue: {value:#}"
+    );
+    assert_schema_accepts_value(schema, value);
+}
+
+fn assert_schema_accepts_value(schema: &Value, value: &Value) {
+    let validator =
+        jsonschema::validator_for(schema).expect("schema fragment should compile as JSON Schema");
+    let errors = validator
+        .iter_errors(value)
+        .map(|err| format!("{}: {err}", err.instance_path()))
+        .collect::<Vec<_>>();
+    assert!(
+        errors.is_empty(),
+        "serialized DTO failed schema validation:\n{}\nvalue: {value:#}\nschema: {schema:#}",
+        errors.join("\n")
     );
 }
 

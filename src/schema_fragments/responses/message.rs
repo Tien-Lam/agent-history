@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 
 use super::super::common::{
-    array_schema, closed_object_schema, schema_props, source_qualified_citation_ref_pattern,
+    array_schema, closed_object_schema, mcp_turn_uri_pattern, schema_props,
+    source_qualified_citation_ref_pattern,
 };
 use super::list::mcp_session_row_schema;
 
@@ -15,7 +16,13 @@ pub(crate) fn message_row_schema() -> Value {
                     "pattern": source_qualified_citation_ref_pattern()
                 }),
             ),
-            ("uri", json!({ "type": "string" })),
+            (
+                "uri",
+                json!({
+                    "type": "string",
+                    "pattern": mcp_turn_uri_pattern()
+                }),
+            ),
             ("source", json!({ "type": "string" })),
             ("turn", json!({ "type": "integer", "minimum": 1 })),
             ("id", json!({ "type": "string" })),

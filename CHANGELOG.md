@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.3.0] - 2026-05-09
 
-The y3o roadmap: aghist grows an agent-friendly CLI surface, semantic search, an MCP server, and cross-machine federated history. 27 commits since 0.2.1.
+The y3o roadmap: aghist grows an agent-friendly CLI surface, semantic search, an MCP server, and cross-machine federated history.
 
 ### Added
 

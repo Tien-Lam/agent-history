@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::super::common::{array_schema, closed_object_schema, provider_slug_enum, schema_props};
+use super::super::common::{
+    array_schema, closed_object_schema, mcp_session_uri_pattern, provider_slug_enum, schema_props,
+};
 
 pub(crate) fn cursor_meta_schema() -> Value {
     closed_object_schema(
@@ -51,7 +53,11 @@ pub(crate) fn mcp_session_row_schema() -> Value {
     {
         properties.insert(
             "uri".to_string(),
-            json!({ "type": "string", "description": "MCP resource URI for this session." }),
+            json!({
+                "type": "string",
+                "pattern": mcp_session_uri_pattern(),
+                "description": "MCP resource URI for this session."
+            }),
         );
         properties.insert("model".to_string(), json!({ "type": ["string", "null"] }));
         properties.insert(

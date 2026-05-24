@@ -40,6 +40,20 @@ pub(crate) fn source_qualified_citation_ref_pattern() -> String {
     )
 }
 
+pub(crate) fn mcp_session_uri_pattern() -> String {
+    format!(
+        "^aghist://(session|source/[A-Za-z0-9][A-Za-z0-9_-]*/session)/({})/.+$",
+        provider_slug_pattern()
+    )
+}
+
+pub(crate) fn mcp_turn_uri_pattern() -> String {
+    format!(
+        "^aghist://(session|source/[A-Za-z0-9][A-Za-z0-9_-]*/session)/({})/.+/turn/[1-9][0-9]*$",
+        provider_slug_pattern()
+    )
+}
+
 pub(crate) fn provider_slug_enum() -> Value {
     json!(Provider::all().iter().map(|p| p.slug()).collect::<Vec<_>>())
 }
