@@ -1,5 +1,7 @@
 use super::super::support::*;
 
+const INDEX_SENTINEL: &str = ".aghist-search-index";
+
 #[test]
 fn search_index_rebuilds_when_schema_changes() {
     use tantivy::schema::{Schema, STORED, STRING};
@@ -12,6 +14,11 @@ fn search_index_rebuilds_when_schema_changes() {
         let schema = builder.build();
         Index::create_in_dir(index_dir.path(), schema).unwrap();
     }
+    fs::write(
+        index_dir.path().join(INDEX_SENTINEL),
+        "aghist search index\n",
+    )
+    .unwrap();
 
     let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
 
@@ -28,6 +35,29 @@ fn search_index_rebuilds_when_schema_changes() {
 }
 
 #[test]
+fn search_index_schema_reset_refuses_missing_sentinel() {
+    use tantivy::schema::{Schema, STORED, STRING};
+    use tantivy::Index;
+
+    let index_dir = tempfile::tempdir().unwrap();
+    {
+        let mut builder = Schema::builder();
+        builder.add_text_field("session_id", STRING | STORED);
+        let schema = builder.build();
+        Index::create_in_dir(index_dir.path(), schema).unwrap();
+    }
+
+    let Err(err) = SearchIndex::open_or_create(index_dir.path()) else {
+        panic!("schema reset should reject dirs without aghist sentinel");
+    };
+    assert!(
+        err.to_string().contains("missing .aghist-search-index"),
+        "unexpected error: {err}"
+    );
+    assert!(index_dir.path().join("meta.json").exists());
+}
+
+#[test]
 fn search_index_schema_reset_refuses_unknown_files() {
     use tantivy::schema::{Schema, STORED, STRING};
     use tantivy::Index;
@@ -39,6 +69,11 @@ fn search_index_schema_reset_refuses_unknown_files() {
         let schema = builder.build();
         Index::create_in_dir(index_dir.path(), schema).unwrap();
     }
+    fs::write(
+        index_dir.path().join(INDEX_SENTINEL),
+        "aghist search index\n",
+    )
+    .unwrap();
     let keep = index_dir.path().join("keep.txt");
     fs::write(&keep, "do not delete").unwrap();
 
@@ -67,6 +102,11 @@ fn search_index_schema_reset_refuses_symlink_entries() {
         let schema = builder.build();
         Index::create_in_dir(index_dir.path(), schema).unwrap();
     }
+    fs::write(
+        index_dir.path().join(INDEX_SENTINEL),
+        "aghist search index\n",
+    )
+    .unwrap();
     let outside = tempfile::tempdir().unwrap();
     let target = outside.path().join("target.txt");
     fs::write(&target, "do not touch").unwrap();

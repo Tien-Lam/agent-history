@@ -13,6 +13,7 @@ pub(super) fn write_index_sentinel(index_dir: &Path) -> Result<(), SearchError> 
 }
 
 pub(super) fn reset_index_dir(index_dir: &Path) -> Result<(), SearchError> {
+    require_index_sentinel(index_dir)?;
     let unsafe_entries = unsafe_index_entries(index_dir)?;
     if !unsafe_entries.is_empty() {
         return Err(SearchError::UnsafeIndexDir {
@@ -45,12 +46,7 @@ pub fn remove_managed_index_dir(index_dir: &Path) -> Result<bool, SearchError> {
         });
     }
 
-    if !index_dir.join(INDEX_SENTINEL).is_file() {
-        return Err(SearchError::UnsafeIndexDir {
-            path: index_dir.to_path_buf(),
-            entries: format!("missing {INDEX_SENTINEL} sentinel"),
-        });
-    }
+    require_index_sentinel(index_dir)?;
 
     let unsafe_entries = unsafe_index_entries(index_dir)?;
     if !unsafe_entries.is_empty() {
@@ -62,6 +58,22 @@ pub fn remove_managed_index_dir(index_dir: &Path) -> Result<bool, SearchError> {
 
     fs::remove_dir_all(index_dir)?;
     Ok(true)
+}
+
+fn require_index_sentinel(index_dir: &Path) -> Result<(), SearchError> {
+    let sentinel = index_dir.join(INDEX_SENTINEL);
+    match fs::symlink_metadata(&sentinel) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(()),
+        Ok(_) => Err(SearchError::UnsafeIndexDir {
+            path: index_dir.to_path_buf(),
+            entries: format!("invalid {INDEX_SENTINEL} sentinel"),
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(SearchError::UnsafeIndexDir {
+            path: index_dir.to_path_buf(),
+            entries: format!("missing {INDEX_SENTINEL} sentinel"),
+        }),
+        Err(e) => Err(e.into()),
+    }
 }
 
 fn unsafe_index_entries(index_dir: &Path) -> Result<Vec<String>, SearchError> {
@@ -157,6 +169,38 @@ mod tests {
                 "{name} should not be resettable"
             );
         }
+    }
+
+    #[test]
+    fn index_reset_requires_sentinel() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_dir = dir.path().join("index");
+        fs::create_dir(&index_dir).unwrap();
+        fs::write(index_dir.join("manifest.json"), "{}").unwrap();
+
+        let err = reset_index_dir(&index_dir).unwrap_err();
+
+        assert!(matches!(err, SearchError::UnsafeIndexDir { .. }));
+        assert!(index_dir.join("manifest.json").exists());
+    }
+
+    #[test]
+    fn index_reset_removes_known_files_when_sentinel_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_dir = dir.path().join("index");
+        fs::create_dir(&index_dir).unwrap();
+        fs::write(index_dir.join(INDEX_SENTINEL), "aghist search index\n").unwrap();
+        fs::write(index_dir.join("manifest.json"), "{}").unwrap();
+        fs::write(index_dir.join("meta.json"), "{}").unwrap();
+        fs::write(index_dir.join("segment.idx"), "index").unwrap();
+
+        reset_index_dir(&index_dir).unwrap();
+
+        assert!(index_dir.exists());
+        assert!(!index_dir.join(INDEX_SENTINEL).exists());
+        assert!(!index_dir.join("manifest.json").exists());
+        assert!(!index_dir.join("meta.json").exists());
+        assert!(!index_dir.join("segment.idx").exists());
     }
 
     #[test]
