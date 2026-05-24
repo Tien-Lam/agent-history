@@ -18,7 +18,7 @@ pub(crate) struct TrackCommand {
     pub(crate) json: bool,
 
     /// Override the LLM model id (default: from `AGHIST_LLM_MODEL` or claude-haiku-4-5-20251001).
-    #[arg(long, value_name = "MODEL")]
+    #[arg(long, value_name = "MODEL", value_parser = parse_llm_model)]
     pub(crate) llm_model: Option<String>,
 }
 
@@ -56,7 +56,7 @@ pub(crate) struct DecisionsCommand {
 
     /// Override the LLM model id (default: claude-haiku-4-5-20251001
     /// or `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
-    #[arg(long, value_name = "MODEL")]
+    #[arg(long, value_name = "MODEL", value_parser = parse_llm_model)]
     pub(crate) llm_model: Option<String>,
 }
 
@@ -83,7 +83,7 @@ pub(crate) struct TodosCommand {
 
     /// Override the LLM model id (default: claude-haiku-4-5-20251001 or
     /// `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
-    #[arg(long, value_name = "MODEL")]
+    #[arg(long, value_name = "MODEL", value_parser = parse_llm_model)]
     pub(crate) llm_model: Option<String>,
 }
 
@@ -120,7 +120,7 @@ pub(crate) struct ThreadsCommand {
 
     /// Override the LLM model id (default: claude-haiku-4-5-20251001 or
     /// `AGHIST_LLM_MODEL`). Only meaningful with `--llm`.
-    #[arg(long, value_name = "MODEL")]
+    #[arg(long, value_name = "MODEL", value_parser = parse_llm_model)]
     pub(crate) llm_model: Option<String>,
 
     /// Cap on session digests sent to the LLM (most recent kept). One
@@ -171,5 +171,30 @@ fn parse_min_sessions(raw: &str) -> Result<usize, String> {
         Err("min sessions must be at least 1".to_string())
     } else {
         Ok(value)
+    }
+}
+
+fn parse_llm_model(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        Err("LLM model must not be blank".to_string())
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_llm_model;
+
+    #[test]
+    fn parse_llm_model_rejects_blank_values() {
+        assert!(parse_llm_model("").is_err());
+        assert!(parse_llm_model(" \t ").is_err());
+    }
+
+    #[test]
+    fn parse_llm_model_trims_valid_values() {
+        assert_eq!(parse_llm_model(" claude-haiku ").unwrap(), "claude-haiku");
     }
 }
