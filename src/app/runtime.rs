@@ -24,11 +24,7 @@ impl App {
         terminal: &mut Terminal<B>,
         mut events: impl EventSource,
     ) -> anyhow::Result<()> {
-        self.index_dir = SearchIndex::default_index_dir();
-        self.search_index = SearchIndex::open_or_create(&self.index_dir)
-            .map(Arc::new)
-            .ok();
-        self.hybrid.available = embed::hybrid_ready(&self.index_dir);
+        self.open_search_index(SearchIndex::default_index_dir());
         // Default ON when the embedding pipeline is wired up — hybrid is
         // strictly an improvement over lexical when the store is populated.
         // Users can still hit the toggle to compare modes side-by-side.
@@ -62,5 +58,49 @@ impl App {
         }
 
         Ok(())
+    }
+
+    pub(super) fn open_search_index(&mut self, index_dir: std::path::PathBuf) {
+        self.index_dir = index_dir;
+        match SearchIndex::open_or_create(&self.index_dir) {
+            Ok(index) => {
+                self.search_index = Some(Arc::new(index));
+                self.hybrid.available = embed::hybrid_ready(&self.index_dir);
+            }
+            Err(error) => {
+                self.search_index = None;
+                self.index_ready = false;
+                self.index_progress = None;
+                self.hybrid.available = false;
+                self.hybrid.enabled = false;
+                self.warnings
+                    .push(format!("Search index unavailable: {error}"));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Config;
+
+    use super::*;
+
+    #[test]
+    fn open_search_index_records_warning_when_path_is_not_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_path = dir.path().join("index-file");
+        std::fs::write(&index_path, b"not a directory").unwrap();
+        let mut app = App::new(Vec::new(), Config::default());
+
+        app.open_search_index(index_path);
+
+        assert!(app.search_index.is_none());
+        assert_eq!(app.warnings.len(), 1);
+        assert!(
+            app.warnings[0].contains("Search index unavailable"),
+            "unexpected warning: {:?}",
+            app.warnings
+        );
     }
 }
