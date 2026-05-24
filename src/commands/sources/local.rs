@@ -5,7 +5,7 @@ use aghist::model::Provider;
 use aghist::output::{write_json_line, OutputMode};
 use aghist::{provider, search};
 
-use super::{dir_size_bytes, format_bytes};
+use super::{dir_accounting::dir_size_bytes, format_bytes};
 
 pub(crate) fn sources_command(
     providers: &[Box<dyn provider::HistoryProvider>],

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use aghist::cli_error::ErrorEnvelope;
 use aghist::config;
 
+use super::super::super::dir_accounting;
+
 pub(super) fn resolve_sources_cache_root() -> Result<PathBuf, ErrorEnvelope> {
     config::sources_cache_root().ok_or_else(|| {
         ErrorEnvelope::new(
@@ -52,60 +54,18 @@ fn ensure_existing_cache_dir_safe(path: &Path, label: &str) -> Result<(), ErrorE
 
 /// Recursive `(file_count, total_bytes)`. Symlinks are skipped.
 pub(super) fn count_dir(dir: &Path) -> Result<(u64, u64), ErrorEnvelope> {
-    let mut files: u64 = 0;
-    let mut bytes: u64 = 0;
-    let entries = std::fs::read_dir(dir).map_err(|e| {
-        ErrorEnvelope::new(
-            "io-error",
-            format!("failed to read source data dir {}: {e}", dir.display()),
-        )
-    })?;
-    for entry in entries {
-        let entry = entry.map_err(|e| {
+    dir_accounting::dir_stats(dir)
+        .map(|stats| (stats.files, stats.bytes))
+        .map_err(|e| {
             ErrorEnvelope::new(
                 "io-error",
-                format!(
-                    "failed to read source data dir entry in {}: {e}",
-                    dir.display()
-                ),
+                format!("failed to account source data dir {}: {e}", dir.display()),
             )
-        })?;
-        let file_type = entry.file_type().map_err(|e| {
-            ErrorEnvelope::new(
-                "io-error",
-                format!(
-                    "failed to inspect source data path {}: {e}",
-                    entry.path().display()
-                ),
-            )
-        })?;
-        if file_type.is_symlink() {
-            continue;
-        }
-        if file_type.is_file() {
-            let meta = entry.metadata().map_err(|e| {
-                ErrorEnvelope::new(
-                    "io-error",
-                    format!(
-                        "failed to inspect source data file {}: {e}",
-                        entry.path().display()
-                    ),
-                )
-            })?;
-            files = files.saturating_add(1);
-            bytes = bytes.saturating_add(meta.len());
-        } else if file_type.is_dir() {
-            let (f, b) = count_dir(&entry.path())?;
-            files = files.saturating_add(f);
-            bytes = bytes.saturating_add(b);
-        }
-    }
-    Ok((files, bytes))
+        })
 }
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::super::super::super::dir_size_bytes;
     use super::count_dir;
     use std::os::unix::fs::symlink;
 
@@ -117,7 +77,6 @@ mod tests {
         symlink(root, root.join("loop")).unwrap();
         symlink(root.join("real.txt"), root.join("file-link")).unwrap();
 
-        assert_eq!(dir_size_bytes(root).unwrap(), 5);
         assert_eq!(count_dir(root).unwrap(), (1, 5));
     }
 
@@ -130,7 +89,7 @@ mod tests {
 
         assert_eq!(err.kind, "io-error");
         assert!(
-            err.message.contains("failed to read source data dir"),
+            err.message.contains("failed to account source data dir"),
             "unexpected error: {err:?}"
         );
     }
