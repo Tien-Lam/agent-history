@@ -262,6 +262,10 @@ fn show_schema_includes_reference_pattern() {
         !pattern.as_str().unwrap().ends_with(")?$"),
         "show ref pattern should require a turn suffix"
     );
+    assert_eq!(
+        schema["params"]["properties"]["include_context"]["maximum"],
+        serde_json::json!(crate::schema_fragments::SHOW_INCLUDE_CONTEXT_MAX)
+    );
 }
 
 #[test]

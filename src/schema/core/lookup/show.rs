@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::SHOW_INCLUDE_CONTEXT_DEFAULT;
+use crate::schema_fragments::{SHOW_INCLUDE_CONTEXT_DEFAULT, SHOW_INCLUDE_CONTEXT_MAX};
 
 use super::super::super::common::{
     closed_object_schema, exit_codes, provider_slug_enum, schema_props,
@@ -37,6 +37,7 @@ pub(in crate::schema) fn show_schema() -> Value {
                     json!({
                         "type": "integer",
                         "minimum": 0,
+                        "maximum": SHOW_INCLUDE_CONTEXT_MAX,
                         "default": SHOW_INCLUDE_CONTEXT_DEFAULT,
                         "description": "Number of turns before and after the target to include."
                     }),

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::model::Provider;
-use aghist::schema_fragments::SEARCH_LIMIT_MAX;
+use aghist::schema_fragments::{SEARCH_LIMIT_MAX, SHOW_INCLUDE_CONTEXT_MAX};
 use aghist::todos::TodoKind;
 use aghist::{config, export};
 
@@ -163,15 +163,31 @@ pub(crate) fn resolve_show_args(
     include_context: u32,
     params: Option<String>,
 ) -> Result<(String, ShowFormat, u32), ErrorEnvelope> {
-    if let Some(json) = params {
-        params::resolve_show_params(&json)
+    let args = if let Some(json) = params {
+        params::resolve_show_params(&json)?
     } else {
-        Ok((
+        (
             reference.ok_or_else(|| missing_required_arg("REF", "show"))?,
             format,
             include_context,
-        ))
+        )
+    };
+    validate_show_args(args)
+}
+
+fn validate_show_args(
+    args: (String, ShowFormat, u32),
+) -> Result<(String, ShowFormat, u32), ErrorEnvelope> {
+    if args.2 > SHOW_INCLUDE_CONTEXT_MAX {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("include_context must be at most {SHOW_INCLUDE_CONTEXT_MAX}"),
+        )
+        .with_hint(format!(
+            "Use `--include-context N` or `--params {{\"include_context\":N}}` with N <= {SHOW_INCLUDE_CONTEXT_MAX}."
+        )));
     }
+    Ok(args)
 }
 
 #[cfg(test)]
@@ -195,6 +211,20 @@ mod tests {
 
         assert_eq!(err.kind, "usage");
         assert!(err.message.contains("REF"));
+    }
+
+    #[test]
+    fn resolve_show_args_rejects_values_above_max_context() {
+        let err = resolve_show_args(
+            Some("claude-code/session#1".to_string()),
+            ShowFormat::Md,
+            SHOW_INCLUDE_CONTEXT_MAX + 1,
+            None,
+        )
+        .expect_err("oversized context should be rejected");
+
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains(&SHOW_INCLUDE_CONTEXT_MAX.to_string()));
     }
 
     #[test]

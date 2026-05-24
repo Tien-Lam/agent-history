@@ -23,7 +23,10 @@ pub(super) fn citation_window(
 
     let target_idx = turn - 1;
     let start_idx = target_idx.saturating_sub(include_context);
-    let end_idx = (target_idx + include_context + 1).min(total);
+    let end_idx = target_idx
+        .saturating_add(include_context)
+        .saturating_add(1)
+        .min(total);
     let messages = messages
         .into_iter()
         .skip(start_idx)
