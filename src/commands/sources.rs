@@ -47,7 +47,22 @@ fn format_bytes(b: u64) -> String {
 }
 
 fn format_fixed_unit(bytes: u64, unit: u64, suffix: &str) -> String {
-    let whole = bytes / unit;
-    let tenths = bytes % unit * 10 / unit;
+    let tenths_total = ((u128::from(bytes) * 10) + (u128::from(unit) / 2)) / u128::from(unit);
+    let whole = tenths_total / 10;
+    let tenths = tenths_total % 10;
     format!("{whole}.{tenths}{suffix}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_bytes;
+
+    #[test]
+    fn format_bytes_keeps_one_decimal_rounding() {
+        assert_eq!(format_bytes(1023), "1023B");
+        assert_eq!(format_bytes(1024), "1.0K");
+        assert_eq!(format_bytes(1536), "1.5K");
+        assert_eq!(format_bytes(2047), "2.0K");
+        assert_eq!(format_bytes(10 * 1024 * 1024 + 512 * 1024), "10.5M");
+    }
 }
