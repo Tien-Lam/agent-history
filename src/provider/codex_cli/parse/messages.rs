@@ -24,6 +24,7 @@ pub(crate) fn parse_rollout_messages_with_stats(
         path,
         |record| {
             let line_number = record.line_number;
+            let fallback_idx = line_number.saturating_sub(1);
             let entry = record.value;
             let entry_type = stringish(entry.entry_type.as_ref(), &["type"]).unwrap_or_default();
             let role = match entry_type.as_str() {
@@ -32,16 +33,19 @@ pub(crate) fn parse_rollout_messages_with_stats(
                 "tool_use" => Role::Tool,
                 "error" => {
                     if let Some(error_msg) = entry.error.as_ref().map(entry_text) {
-                        messages.push(error_message(entry_timestamp(&entry), error_msg));
+                        messages.push(error_message(
+                            entry_timestamp(&entry, fallback_idx),
+                            error_msg,
+                        ));
                     }
                     return;
                 }
                 "event_msg" => {
-                    push_event_msg(&mut messages, &entry);
+                    push_event_msg(&mut messages, &entry, fallback_idx);
                     return;
                 }
                 "response_item" => {
-                    push_response_item(&mut messages, &entry);
+                    push_response_item(&mut messages, &entry, fallback_idx);
                     return;
                 }
                 _ => {
@@ -54,7 +58,7 @@ pub(crate) fn parse_rollout_messages_with_stats(
                 }
             };
 
-            let timestamp = entry_timestamp(&entry);
+            let timestamp = entry_timestamp(&entry, fallback_idx);
             let content = legacy_content(&entry, role);
 
             if content.is_empty() {

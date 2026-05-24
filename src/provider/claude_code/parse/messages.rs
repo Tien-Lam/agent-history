@@ -1,13 +1,13 @@
 use std::path::Path;
 
-use chrono::Utc;
-
 use self::content::parse_message_content;
 use super::record::{claude_timestamp, RawSessionEntry};
 use super::ProviderError;
 use crate::model::{Message, MessageId, Role};
 use crate::provider::json_text::{stringish, value_u64};
-use crate::provider::parse_common::{token_usage_from_options, visit_jsonl_records};
+use crate::provider::parse_common::{
+    epoch_timestamp_for_index, token_usage_from_options, visit_jsonl_records,
+};
 use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 mod content;
@@ -50,7 +50,8 @@ pub(crate) fn parse_session_messages_with_stats(
                 return;
             };
 
-            let timestamp = claude_timestamp(entry.timestamp.as_ref()).unwrap_or_else(Utc::now);
+            let timestamp = claude_timestamp(entry.timestamp.as_ref())
+                .unwrap_or_else(|| epoch_timestamp_for_index(line_number.saturating_sub(1)));
 
             let id = stringish(entry.uuid.as_ref(), &["uuid", "id"]).unwrap_or_default();
 

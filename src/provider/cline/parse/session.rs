@@ -6,7 +6,9 @@ use serde_json::Value;
 
 use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
-use crate::provider::parse_common::{file_modified_utc, millis_to_utc, timestamp_value_to_utc};
+use crate::provider::parse_common::{
+    file_modified_utc, millis_to_utc, timestamp_value_to_utc, unix_epoch_utc,
+};
 
 use super::messages::{parse_api_history, API_HISTORY_FILE};
 
@@ -75,7 +77,7 @@ fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
         }
     }
 
-    file_modified_utc(path).unwrap_or_else(Utc::now)
+    file_modified_utc(path).unwrap_or_else(unix_epoch_utc)
 }
 
 /// Extract a human-readable summary from `ui_messages.json` first entry's text.

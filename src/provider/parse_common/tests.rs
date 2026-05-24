@@ -113,6 +113,15 @@ fn timestamp_with_index_millis_preserves_order_without_panicking_on_huge_idx() {
 }
 
 #[test]
+fn epoch_timestamp_for_index_is_deterministic_for_huge_idx() {
+    assert_eq!(
+        epoch_timestamp_for_index(7),
+        parse_utc("1970-01-01T00:00:07Z").unwrap()
+    );
+    assert_eq!(epoch_timestamp_for_index(usize::MAX), unix_epoch_utc());
+}
+
+#[test]
 fn timestamp_value_to_utc_accepts_rfc3339_millis_and_nested_fields() {
     let timestamp = timestamp_value_to_utc(
         Some(&serde_json::json!("2026-01-01T00:00:00Z")),

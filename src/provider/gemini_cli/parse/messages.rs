@@ -6,7 +6,7 @@ use serde_json::Value;
 use self::content::message_content;
 use crate::model::{ContentBlock, Message, MessageId, Role};
 use crate::provider::json_text::{stringish, value_u64};
-use crate::provider::parse_common::token_usage_from_options;
+use crate::provider::parse_common::{epoch_timestamp_for_index, token_usage_from_options};
 use crate::provider::{ProviderError, ProviderMessageLoad, ProviderParseStats};
 
 use super::{gemini_timestamp, raw_role, RawMessage};
@@ -44,7 +44,7 @@ fn convert_message_values(raw_messages: Vec<Value>) -> (Vec<Message>, ProviderPa
     let mut messages = Vec::with_capacity(raw_messages.len());
     let mut parse_stats = ProviderParseStats::default();
 
-    for raw in raw_messages {
+    for (idx, raw) in raw_messages.into_iter().enumerate() {
         parse_stats.record_seen();
         let Ok(msg) = serde_json::from_value::<RawMessage>(raw) else {
             parse_stats.record_parse_error();
@@ -62,17 +62,22 @@ fn convert_message_values(raw_messages: Vec<Value>) -> (Vec<Message>, ProviderPa
             continue;
         }
 
-        messages.push(message_from_content(&msg, role, content));
+        messages.push(message_from_content(&msg, role, content, idx));
     }
 
     (messages, parse_stats)
 }
 
-fn message_from_content(msg: &RawMessage, role: Role, content: Vec<ContentBlock>) -> Message {
+fn message_from_content(
+    msg: &RawMessage,
+    role: Role,
+    content: Vec<ContentBlock>,
+    fallback_idx: usize,
+) -> Message {
     Message {
         id: MessageId(stringish(msg.id.as_ref(), &["id"]).unwrap_or_default()),
         role,
-        timestamp: message_timestamp(msg.timestamp.as_ref()),
+        timestamp: message_timestamp(msg.timestamp.as_ref(), fallback_idx),
         content,
         model: stringish(msg.model.as_ref(), &["model", "id", "name"]),
         token_usage: msg.tokens.as_ref().map(|tokens| {
@@ -86,6 +91,6 @@ fn message_from_content(msg: &RawMessage, role: Role, content: Vec<ContentBlock>
     }
 }
 
-fn message_timestamp(raw: Option<&Value>) -> DateTime<Utc> {
-    gemini_timestamp(raw).unwrap_or_else(Utc::now)
+fn message_timestamp(raw: Option<&Value>, fallback_idx: usize) -> DateTime<Utc> {
+    gemini_timestamp(raw).unwrap_or_else(|| epoch_timestamp_for_index(fallback_idx))
 }

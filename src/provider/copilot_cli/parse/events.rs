@@ -7,7 +7,8 @@ use super::super::ProviderError;
 use crate::model::{ContentBlock, Message, MessageId, Role};
 use crate::provider::json_text::{string_or_object_field_or_pretty, stringish, value_u64};
 use crate::provider::parse_common::{
-    timestamp_value_to_utc, token_usage_from_options, visit_jsonl_records,
+    epoch_timestamp_for_index, timestamp_value_to_utc, token_usage_from_options,
+    visit_jsonl_records,
 };
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 use crate::provider::{ProviderMessageLoad, ProviderParseStats};
@@ -35,6 +36,7 @@ pub(crate) fn parse_events_jsonl_with_stats(
     let stats = visit_jsonl_records::<RawEvent, _, _>(
         path,
         |record| {
+            let fallback_idx = record.line_number.saturating_sub(1);
             let event = record.value;
             let event_type =
                 stringish(event.event_type.as_ref(), &["type", "event"]).unwrap_or_default();
@@ -44,11 +46,11 @@ pub(crate) fn parse_events_jsonl_with_stats(
                 t if t.contains("user") => Role::User,
                 t if t.contains("assistant.message") => Role::Assistant,
                 "tool.execution_start" => {
-                    push_tool_execution_start(&mut messages, &event);
+                    push_tool_execution_start(&mut messages, &event, fallback_idx);
                     return;
                 }
                 "tool.execution_complete" | "tool.result" => {
-                    push_tool_result(&mut messages, &event);
+                    push_tool_result(&mut messages, &event, fallback_idx);
                     return;
                 }
                 t if t.contains("tool") => Role::Tool,
@@ -59,7 +61,7 @@ pub(crate) fn parse_events_jsonl_with_stats(
                 }
             };
 
-            let timestamp = event_timestamp(&event);
+            let timestamp = event_timestamp(&event, fallback_idx);
             let content = event_content(&event);
 
             if content.is_empty() {
@@ -101,8 +103,9 @@ pub(crate) fn parse_events_jsonl_with_stats(
     })
 }
 
-fn event_timestamp(event: &RawEvent) -> DateTime<Utc> {
-    copilot_timestamp(event.timestamp.as_ref()).unwrap_or_else(Utc::now)
+fn event_timestamp(event: &RawEvent, fallback_idx: usize) -> DateTime<Utc> {
+    copilot_timestamp(event.timestamp.as_ref())
+        .unwrap_or_else(|| epoch_timestamp_for_index(fallback_idx))
 }
 
 fn copilot_timestamp(value: Option<&Value>) -> Option<DateTime<Utc>> {

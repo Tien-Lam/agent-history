@@ -5,7 +5,11 @@ use crate::provider::parse_common::{pretty_json_opt, tool_result_block, tool_use
 use super::event_timestamp;
 use super::raw::{RawEvent, RawEventData};
 
-pub(super) fn push_tool_execution_start(messages: &mut Vec<Message>, event: &RawEvent) {
+pub(super) fn push_tool_execution_start(
+    messages: &mut Vec<Message>,
+    event: &RawEvent,
+    fallback_idx: usize,
+) {
     let Some(data) = event.data.as_ref() else {
         return;
     };
@@ -19,10 +23,11 @@ pub(super) fn push_tool_execution_start(messages: &mut Vec<Message>, event: &Raw
                 .unwrap_or_else(|| "unknown".to_string()),
             pretty_json_opt(data.arguments.as_ref()),
         )],
+        fallback_idx,
     ));
 }
 
-pub(super) fn push_tool_result(messages: &mut Vec<Message>, event: &RawEvent) {
+pub(super) fn push_tool_result(messages: &mut Vec<Message>, event: &RawEvent, fallback_idx: usize) {
     let Some(data) = event.data.as_ref() else {
         return;
     };
@@ -41,6 +46,7 @@ pub(super) fn push_tool_result(messages: &mut Vec<Message>, event: &RawEvent) {
             value_bool(data.success.as_ref(), &["success", "ok", "value"]).unwrap_or(true),
             output,
         )],
+        fallback_idx,
     ));
 }
 
@@ -75,11 +81,11 @@ pub(super) fn push_nested_tool_requests(
     }
 }
 
-fn tool_message(event: &RawEvent, content: Vec<ContentBlock>) -> Message {
+fn tool_message(event: &RawEvent, content: Vec<ContentBlock>, fallback_idx: usize) -> Message {
     Message {
         id: MessageId(stringish(event.id.as_ref(), &["id"]).unwrap_or_default()),
         role: Role::Tool,
-        timestamp: event_timestamp(event),
+        timestamp: event_timestamp(event, fallback_idx),
         content,
         model: None,
         token_usage: None,

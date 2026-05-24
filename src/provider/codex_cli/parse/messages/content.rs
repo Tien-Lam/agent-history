@@ -19,12 +19,12 @@ fn push_text_message(
     }
 }
 
-pub(super) fn push_event_msg(messages: &mut Vec<Message>, entry: &RawEntry) {
+pub(super) fn push_event_msg(messages: &mut Vec<Message>, entry: &RawEntry, fallback_idx: usize) {
     let Some(payload) = entry.payload.as_ref() else {
         return;
     };
     let payload_type = stringish(payload.entry_type.as_ref(), &["type"]).unwrap_or_default();
-    let timestamp = entry_timestamp(entry);
+    let timestamp = entry_timestamp(entry, fallback_idx);
     match payload_type.as_str() {
         "user_message" => {
             if let Some(msg_text) = payload.message.as_ref().map(entry_text) {
@@ -40,12 +40,16 @@ pub(super) fn push_event_msg(messages: &mut Vec<Message>, entry: &RawEntry) {
     }
 }
 
-pub(super) fn push_response_item(messages: &mut Vec<Message>, entry: &RawEntry) {
+pub(super) fn push_response_item(
+    messages: &mut Vec<Message>,
+    entry: &RawEntry,
+    fallback_idx: usize,
+) {
     let Some(payload) = entry.payload.as_ref() else {
         return;
     };
     let payload_type = stringish(payload.entry_type.as_ref(), &["type"]).unwrap_or_default();
-    let timestamp = entry_timestamp(entry);
+    let timestamp = entry_timestamp(entry, fallback_idx);
     match payload_type.as_str() {
         "function_call" => messages.push(message(
             Role::Tool,

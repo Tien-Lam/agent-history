@@ -56,10 +56,16 @@ pub(crate) fn timestamp_with_index_millis(base: DateTime<Utc>, idx: usize) -> Da
         .unwrap_or(base)
 }
 
+pub(crate) fn unix_epoch_utc() -> DateTime<Utc> {
+    Utc.timestamp_opt(0, 0)
+        .single()
+        .expect("unix epoch timestamp is valid")
+}
+
 pub(crate) fn epoch_timestamp_for_index(idx: usize) -> DateTime<Utc> {
     Utc.timestamp_opt(i64::try_from(idx).unwrap_or(i64::MAX), 0)
         .single()
-        .unwrap_or_else(Utc::now)
+        .unwrap_or_else(unix_epoch_utc)
 }
 
 pub(crate) fn token_usage(

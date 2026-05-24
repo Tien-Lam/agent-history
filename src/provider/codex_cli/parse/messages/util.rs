@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 
 use crate::model::{ContentBlock, Message, MessageId, Role};
-use crate::provider::parse_common::timestamp_value_to_utc;
+use crate::provider::parse_common::{epoch_timestamp_for_index, timestamp_value_to_utc};
 
 use super::super::RawEntry;
 
-pub(super) fn entry_timestamp(entry: &RawEntry) -> DateTime<Utc> {
+pub(super) fn entry_timestamp(entry: &RawEntry, fallback_idx: usize) -> DateTime<Utc> {
     timestamp_value_to_utc(entry.timestamp.as_ref(), &["timestamp", "time", "value"])
-        .unwrap_or_else(Utc::now)
+        .unwrap_or_else(|| epoch_timestamp_for_index(fallback_idx))
 }
 
 pub(super) fn message(role: Role, timestamp: DateTime<Utc>, content: Vec<ContentBlock>) -> Message {

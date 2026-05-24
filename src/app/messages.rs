@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::Utc;
+use chrono::{DateTime, TimeZone, Utc};
 
 use crate::action::Action;
 use crate::model::{Provider, Session, SessionId};
@@ -32,7 +32,7 @@ impl App {
             project_path: None,
             project_name: None,
             git_branch: None,
-            started_at: Utc::now(),
+            started_at: temp_session_started_at(source_path),
             ended_at: None,
             summary: None,
             model: None,
@@ -101,4 +101,18 @@ impl App {
             self.message_view.reset_scroll();
         }
     }
+}
+
+fn temp_session_started_at(source_path: &Path) -> DateTime<Utc> {
+    source_path
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .map_or_else(
+            |_| {
+                Utc.timestamp_opt(0, 0)
+                    .single()
+                    .expect("unix epoch timestamp is valid")
+            },
+            DateTime::<Utc>::from,
+        )
 }

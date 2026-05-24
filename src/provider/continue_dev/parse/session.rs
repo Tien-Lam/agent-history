@@ -1,12 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
-use crate::provider::parse_common::{file_modified_utc, parse_utc_opt};
+use crate::provider::parse_common::{file_modified_utc, parse_utc_opt, unix_epoch_utc};
 
 use super::messages::parse_jsonl;
 
@@ -55,7 +54,7 @@ pub(crate) fn build_session_from_file(
             .and_then(|raw| parse_utc_opt(Some(raw.as_str())))
         })
         .or_else(|| file_modified_utc(&path))
-        .unwrap_or_else(Utc::now);
+        .unwrap_or_else(unix_epoch_utc);
 
     let summary = meta.and_then(|m| stringish(m.title.as_ref(), &["title", "text", "content"]));
     let message_count = parse_jsonl(&path, &started_at).map_or(0, |m| m.len());

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::model::{ContentBlock, Message, MessageId, Role};
 use crate::provider::json_text::{stringish, value_u64};
-use crate::provider::parse_common::token_usage_from_options;
+use crate::provider::parse_common::{file_modified_utc, token_usage_from_options, unix_epoch_utc};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 use crate::provider::ProviderParseStats;
 
@@ -61,7 +61,8 @@ fn parse_message_file_outcome(path: &Path, part_dir: &Path) -> MessageFileOutcom
         raw.time.as_ref().and_then(|t| t.created.as_ref()),
         raw.timestamp.as_ref(),
     )
-    .unwrap_or_else(chrono::Utc::now);
+    .or_else(|| file_modified_utc(path))
+    .unwrap_or_else(unix_epoch_utc);
 
     let msg_id = stringish(raw.id.as_ref(), &["id"]).unwrap_or_default();
     let mut content = Vec::new();
