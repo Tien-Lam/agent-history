@@ -6,7 +6,7 @@ use super::super::resolvers::parse_todo_kind;
 use aghist::schema_fragments::{
     ANALYSIS_DECISIONS_LIMIT_DEFAULT, ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LIMIT_DEFAULT,
     ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX,
-    ANALYSIS_TODOS_LIMIT_DEFAULT, ANALYSIS_TRACK_LIMIT_DEFAULT,
+    ANALYSIS_TODOS_LIMIT_DEFAULT, ANALYSIS_TRACK_LIMIT_DEFAULT, LLM_MODEL_MAX_BYTES,
 };
 
 #[derive(Args)]
@@ -210,6 +210,10 @@ fn parse_llm_model(raw: &str) -> Result<String, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         Err("LLM model must not be blank".to_string())
+    } else if trimmed.len() > LLM_MODEL_MAX_BYTES {
+        Err(format!(
+            "LLM model must be at most {LLM_MODEL_MAX_BYTES} bytes"
+        ))
     } else {
         Ok(trimmed.to_string())
     }
@@ -221,7 +225,9 @@ mod tests {
         parse_decisions_limit, parse_llm_model, parse_threads_limit,
         parse_threads_llm_max_sessions, parse_todos_limit, parse_track_limit,
     };
-    use aghist::schema_fragments::{ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX};
+    use aghist::schema_fragments::{
+        ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX, LLM_MODEL_MAX_BYTES,
+    };
 
     #[test]
     fn parse_llm_model_rejects_blank_values() {
@@ -232,6 +238,14 @@ mod tests {
     #[test]
     fn parse_llm_model_trims_valid_values() {
         assert_eq!(parse_llm_model(" claude-haiku ").unwrap(), "claude-haiku");
+    }
+
+    #[test]
+    fn parse_llm_model_rejects_values_above_max() {
+        let oversized = "x".repeat(LLM_MODEL_MAX_BYTES + 1);
+        assert!(parse_llm_model(&oversized)
+            .unwrap_err()
+            .contains("must be at most"));
     }
 
     #[test]

@@ -1,6 +1,9 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::{ANALYSIS_LIMIT_MAX, ANALYSIS_TRACK_LIMIT_DEFAULT};
+use crate::schema_fragments::{
+    ANALYSIS_LIMIT_MAX, ANALYSIS_TRACK_LIMIT_DEFAULT, ANALYSIS_TRACK_TOPIC_MAX_BYTES,
+    LLM_MODEL_MAX_BYTES,
+};
 
 use super::super::common::{
     closed_object_schema, exit_codes, object_schema, schema_props, schema_props_with_filters,
@@ -15,6 +18,7 @@ pub(in crate::schema) fn track_schema() -> Value {
                 json!({
                     "type": "string",
                     "minLength": 1,
+                    "maxLength": ANALYSIS_TRACK_TOPIC_MAX_BYTES,
                     "description": "Free-text topic to track across sessions."
                 }),
             ),
@@ -36,6 +40,8 @@ pub(in crate::schema) fn track_schema() -> Value {
                 "llm_model",
                 json!({
                     "type": "string",
+                    "minLength": 1,
+                    "maxLength": LLM_MODEL_MAX_BYTES,
                     "description": "Override the LLM model id (default: claude-haiku-4-5-20251001 or AGHIST_LLM_MODEL)."
                 }),
             ),

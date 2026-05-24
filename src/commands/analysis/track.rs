@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
+use aghist::schema_fragments::ANALYSIS_TRACK_TOPIC_MAX_BYTES;
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
@@ -43,6 +44,12 @@ pub(crate) fn track_command(
             "track <topic> must not be empty",
         ));
     }
+    if topic.len() > ANALYSIS_TRACK_TOPIC_MAX_BYTES {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("track <topic> must be at most {ANALYSIS_TRACK_TOPIC_MAX_BYTES} bytes"),
+        ));
+    }
 
     let matched = scan_topic_sessions(providers, scope, filters, metadata_keys, topic, limit);
 
@@ -52,7 +59,9 @@ pub(crate) fn track_command(
 
     let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
     if let Some(model) = llm_model {
-        config = config.with_model(model.to_string());
+        config = config
+            .with_model(model.to_string())
+            .map_err(|e| map_llm_error(&e))?;
     }
     let transport = aghist::llm::UreqTransport::new(config.timeout);
 

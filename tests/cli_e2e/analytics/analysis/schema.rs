@@ -10,6 +10,10 @@ fn schema_subcommand_includes_todos_llm_shape() {
     assert_eq!(props["llm"]["type"], "boolean");
     assert!(props["llm_model"].is_object());
     assert_eq!(
+        props["llm_model"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::LLM_MODEL_MAX_BYTES)
+    );
+    assert_eq!(
         props["limit"]["maximum"],
         serde_json::json!(aghist::schema_fragments::ANALYSIS_LIMIT_MAX)
     );
@@ -37,6 +41,10 @@ fn schema_subcommand_includes_threads_llm_shape() {
     let props = &parsed["params"]["properties"];
     assert_eq!(props["llm"]["type"], "boolean");
     assert!(props["llm_model"].is_object());
+    assert_eq!(
+        props["llm_model"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::LLM_MODEL_MAX_BYTES)
+    );
     assert_eq!(
         props["limit"]["maximum"],
         serde_json::json!(aghist::schema_fragments::ANALYSIS_LIMIT_MAX)
@@ -79,6 +87,14 @@ fn schema_subcommand_includes_track() {
     assert_eq!(parsed["command"], "track");
     assert_eq!(parsed["params"]["properties"]["topic"]["minLength"], 1);
     assert_eq!(
+        parsed["params"]["properties"]["topic"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::ANALYSIS_TRACK_TOPIC_MAX_BYTES)
+    );
+    assert_eq!(
+        parsed["params"]["properties"]["llm_model"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::LLM_MODEL_MAX_BYTES)
+    );
+    assert_eq!(
         parsed["params"]["properties"]["limit"]["maximum"],
         serde_json::json!(aghist::schema_fragments::ANALYSIS_LIMIT_MAX)
     );
@@ -103,6 +119,10 @@ fn decisions_schema_documents_llm_params_and_response() {
     assert!(
         props["llm_model"].is_object(),
         "llm_model param should be in schema"
+    );
+    assert_eq!(
+        props["llm_model"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::LLM_MODEL_MAX_BYTES)
     );
     let one_of = parsed["response"]["oneOf"].as_array().unwrap();
     assert_eq!(one_of.len(), 2, "response should oneOf {{heuristic, llm}}");
@@ -199,6 +219,42 @@ fn track_rejects_empty_topic() {
             .as_str()
             .unwrap()
             .contains("track <topic> must not be empty"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
+#[test]
+fn track_rejects_oversized_topic() {
+    let oversized = "x".repeat(aghist::schema_fragments::ANALYSIS_TRACK_TOPIC_MAX_BYTES + 1);
+    let assert = aghist()
+        .args(["track", oversized.as_str(), "--json"])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("track <topic> must be at most"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
+#[test]
+fn llm_model_rejects_oversized_flag() {
+    let oversized = "x".repeat(aghist::schema_fragments::LLM_MODEL_MAX_BYTES + 1);
+    let assert = aghist()
+        .args(["decisions", "--llm", "--llm-model", oversized.as_str()])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("LLM model must be at most"),
         "unexpected error envelope: {envelope:#}"
     );
 }

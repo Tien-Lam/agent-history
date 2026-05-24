@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use crate::schema_fragments::{
     ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LIMIT_DEFAULT, ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT,
-    ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX,
+    ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX, LLM_MODEL_MAX_BYTES,
 };
 
 use super::super::common::{
@@ -57,6 +57,8 @@ pub(in crate::schema) fn threads_schema() -> Value {
                 "llm_model",
                 json!({
                     "type": "string",
+                    "minLength": 1,
+                    "maxLength": LLM_MODEL_MAX_BYTES,
                     "description": "Override the LLM model id (default: claude-haiku-4-5-20251001 or AGHIST_LLM_MODEL). Only meaningful with --llm."
                 }),
             ),

@@ -6,6 +6,12 @@ use thiserror::Error;
 pub enum LlmError {
     #[error("missing API key: set ANTHROPIC_API_KEY (or AGHIST_LLM_API_KEY) before running --llm")]
     MissingApiKey,
+    #[error("{name} exceeds {max_bytes} byte limit ({bytes} bytes)")]
+    ConfigValueTooLarge {
+        name: &'static str,
+        bytes: usize,
+        max_bytes: usize,
+    },
     #[error("HTTP request to {url} failed: {source}")]
     Http {
         url: String,

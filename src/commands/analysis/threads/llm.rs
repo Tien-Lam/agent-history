@@ -31,7 +31,9 @@ pub(super) fn run_llm_threads(
 
     let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
     if let Some(model) = llm_model {
-        config = config.with_model(model.to_string());
+        config = config
+            .with_model(model.to_string())
+            .map_err(|e| map_llm_error(&e))?;
     }
     let transport = aghist::llm::UreqTransport::new(config.timeout);
 

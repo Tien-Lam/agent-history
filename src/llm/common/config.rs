@@ -1,6 +1,10 @@
 use std::env;
 use std::time::Duration;
 
+use crate::schema_fragments::{
+    LLM_API_KEY_MAX_BYTES, LLM_ENDPOINT_MAX_BYTES, LLM_MODEL_MAX_BYTES, LLM_VERSION_MAX_BYTES,
+};
+
 use super::LlmError;
 
 /// Runtime configuration for the LLM extractor. Constructed via
@@ -29,19 +33,27 @@ impl LlmConfig {
         let api_key = llm_api_key_from_env_values(
             env::var("AGHIST_LLM_API_KEY").ok(),
             env::var("ANTHROPIC_API_KEY").ok(),
-        )
+        )?
         .ok_or(LlmError::MissingApiKey)?;
         let endpoint = env::var("AGHIST_LLM_ENDPOINT")
             .ok()
-            .and_then(non_blank_env_string)
+            .map(|value| non_blank_env_string("AGHIST_LLM_ENDPOINT", value, LLM_ENDPOINT_MAX_BYTES))
+            .transpose()?
+            .flatten()
             .unwrap_or_else(|| Self::DEFAULT_ENDPOINT.to_string());
         let model = env::var("AGHIST_LLM_MODEL")
             .ok()
-            .and_then(non_blank_env_string)
+            .map(|value| non_blank_env_string("AGHIST_LLM_MODEL", value, LLM_MODEL_MAX_BYTES))
+            .transpose()?
+            .flatten()
             .unwrap_or_else(|| Self::DEFAULT_MODEL.to_string());
         let anthropic_version = env::var("AGHIST_LLM_ANTHROPIC_VERSION")
             .ok()
-            .and_then(non_blank_env_string)
+            .map(|value| {
+                non_blank_env_string("AGHIST_LLM_ANTHROPIC_VERSION", value, LLM_VERSION_MAX_BYTES)
+            })
+            .transpose()?
+            .flatten()
             .unwrap_or_else(|| Self::DEFAULT_VERSION.to_string());
         Ok(Self {
             endpoint,
@@ -54,40 +66,78 @@ impl LlmConfig {
     }
 
     /// Override the model (e.g. from the CLI flag).
-    #[must_use]
-    pub fn with_model(mut self, model: String) -> Self {
+    pub fn with_model(mut self, model: String) -> Result<Self, LlmError> {
+        enforce_env_string_limit("llm_model", &model, LLM_MODEL_MAX_BYTES)?;
         self.model = model;
-        self
+        Ok(self)
     }
 }
 
-fn non_blank_env_string(value: String) -> Option<String> {
+fn non_blank_env_string(
+    name: &'static str,
+    value: String,
+    max_bytes: usize,
+) -> Result<Option<String>, LlmError> {
     if value.trim().is_empty() {
-        None
+        Ok(None)
     } else {
-        Some(value)
+        enforce_env_string_limit(name, &value, max_bytes)?;
+        Ok(Some(value))
     }
 }
 
 fn llm_api_key_from_env_values(
     primary: Option<String>,
     fallback: Option<String>,
-) -> Option<String> {
-    primary
-        .and_then(non_blank_env_string)
-        .or_else(|| fallback.and_then(non_blank_env_string))
+) -> Result<Option<String>, LlmError> {
+    if let Some(value) = primary {
+        if let Some(value) =
+            non_blank_env_string("AGHIST_LLM_API_KEY", value, LLM_API_KEY_MAX_BYTES)?
+        {
+            return Ok(Some(value));
+        }
+    }
+    if let Some(value) = fallback {
+        return non_blank_env_string("ANTHROPIC_API_KEY", value, LLM_API_KEY_MAX_BYTES);
+    }
+    Ok(None)
+}
+
+fn enforce_env_string_limit(
+    name: &'static str,
+    value: &str,
+    max_bytes: usize,
+) -> Result<(), LlmError> {
+    let bytes = value.len();
+    if bytes > max_bytes {
+        Err(LlmError::ConfigValueTooLarge {
+            name,
+            bytes,
+            max_bytes,
+        })
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{llm_api_key_from_env_values, non_blank_env_string};
+    use crate::{llm::LlmError, schema_fragments::LLM_MODEL_MAX_BYTES};
 
     #[test]
     fn non_blank_env_string_ignores_blank_values() {
-        assert_eq!(non_blank_env_string(String::new()), None);
-        assert_eq!(non_blank_env_string(" \t ".to_string()), None);
         assert_eq!(
-            non_blank_env_string("value with spaces".to_string()),
+            non_blank_env_string("TEST", String::new(), LLM_MODEL_MAX_BYTES).unwrap(),
+            None
+        );
+        assert_eq!(
+            non_blank_env_string("TEST", " \t ".to_string(), LLM_MODEL_MAX_BYTES).unwrap(),
+            None
+        );
+        assert_eq!(
+            non_blank_env_string("TEST", "value with spaces".to_string(), LLM_MODEL_MAX_BYTES)
+                .unwrap(),
             Some("value with spaces".to_string())
         );
     }
@@ -95,8 +145,24 @@ mod tests {
     #[test]
     fn blank_primary_api_key_falls_back_to_anthropic_key() {
         assert_eq!(
-            llm_api_key_from_env_values(Some(" \t ".to_string()), Some("fallback".to_string())),
+            llm_api_key_from_env_values(Some(" \t ".to_string()), Some("fallback".to_string()))
+                .unwrap(),
             Some("fallback".to_string())
         );
+    }
+
+    #[test]
+    fn env_string_limits_reject_oversized_values() {
+        let oversized = "x".repeat(LLM_MODEL_MAX_BYTES + 1);
+        let err =
+            non_blank_env_string("AGHIST_LLM_MODEL", oversized, LLM_MODEL_MAX_BYTES).unwrap_err();
+
+        assert!(matches!(
+            err,
+            LlmError::ConfigValueTooLarge {
+                name: "AGHIST_LLM_MODEL",
+                ..
+            }
+        ));
     }
 }

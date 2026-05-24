@@ -20,6 +20,11 @@ pub const ANALYSIS_TODOS_LIMIT_DEFAULT: usize = 200;
 pub const ANALYSIS_THREADS_LIMIT_DEFAULT: usize = 50;
 pub const ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT: usize = 200;
 pub const ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX: usize = 1_000;
+pub const ANALYSIS_TRACK_TOPIC_MAX_BYTES: usize = 1_024;
+pub const LLM_API_KEY_MAX_BYTES: usize = 4_096;
+pub const LLM_ENDPOINT_MAX_BYTES: usize = 2_048;
+pub const LLM_MODEL_MAX_BYTES: usize = 256;
+pub const LLM_VERSION_MAX_BYTES: usize = 128;
 
 pub const USAGE_LIMIT_DEFAULT: usize = 100;
 pub const USAGE_LIMIT_MAX: usize = 10_000;
