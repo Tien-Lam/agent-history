@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, Write as _};
 use std::path::Path;
 
@@ -66,6 +67,8 @@ pub(crate) fn sources_pull_remote(
         }
     };
 
+    validate_pull_targets(&targets)?;
+
     let cache_root = resolve_sources_cache_root()?;
     ensure_cache_root_safe(&cache_root)?;
     let mut results = Vec::with_capacity(targets.len());
@@ -81,6 +84,32 @@ pub(crate) fn sources_pull_remote(
     out.flush()
         .map_err(|e| ErrorEnvelope::io("failed to flush pull output", e))?;
     Ok(EXIT_OK)
+}
+
+fn validate_pull_targets(targets: &[config::RemoteSource]) -> Result<(), ErrorEnvelope> {
+    let mut names = HashSet::new();
+    for src in targets {
+        if !names.insert(src.name.as_str()) {
+            return Err(invalid_registry_error(format!(
+                "duplicate source name '{}'",
+                src.name
+            )));
+        }
+        src.validate()
+            .map_err(|message| invalid_registry_error(format!("{}: {message}", src.name)))?;
+    }
+    Ok(())
+}
+
+fn invalid_registry_error(message: impl Into<String>) -> ErrorEnvelope {
+    let message = message.into();
+    ErrorEnvelope::new(
+        "config-error",
+        format!("invalid remote source registry: {message}"),
+    )
+    .with_hint(
+        "Fix the [[sources]] entries in config.toml, or re-create them with `aghist sources add`.",
+    )
 }
 
 fn pull_one_source(
