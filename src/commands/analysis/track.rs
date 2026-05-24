@@ -36,6 +36,14 @@ pub(crate) fn track_command(
         force_json,
         llm_model,
     } = request;
+    let topic = topic.trim();
+    if topic.is_empty() {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            "track <topic> must not be empty",
+        ));
+    }
+
     let matched = scan_topic_sessions(providers, scope, filters, metadata_keys, topic, limit);
 
     if matched.is_empty() {

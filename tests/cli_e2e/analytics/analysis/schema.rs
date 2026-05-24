@@ -129,3 +129,17 @@ fn threads_rejects_zero_min_sessions_flag() {
         "unexpected error envelope: {envelope:#}"
     );
 }
+
+#[test]
+fn track_rejects_empty_topic() {
+    let assert = aghist().args(["track", ""]).assert().code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("track <topic> must not be empty"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
