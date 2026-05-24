@@ -52,3 +52,26 @@ fn sources_empty_home_exits_three() {
         .unwrap();
     assert_eq!(output.status.code(), Some(3));
 }
+
+#[test]
+fn sources_reports_size_errors_for_non_directory_paths() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(home.path().join(".claude"), "not a directory").unwrap();
+
+    let assert = aghist()
+        .args(["sources"])
+        .env("AGHIST_HOME", home.path())
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let sources = parsed["sources"].as_array().expect("sources array");
+    let claude_row = sources
+        .iter()
+        .find(|r| r["provider"] == "claude-code")
+        .expect("claude-code source row");
+    let path = claude_row["paths"][0].as_object().expect("source path");
+
+    assert_eq!(path["bytes"], 0);
+    assert!(!path["size_error"].as_str().expect("size_error").is_empty());
+}

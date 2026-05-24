@@ -117,7 +117,7 @@ mod tests {
         symlink(root, root.join("loop")).unwrap();
         symlink(root.join("real.txt"), root.join("file-link")).unwrap();
 
-        assert_eq!(dir_size_bytes(root), 5);
+        assert_eq!(dir_size_bytes(root).unwrap(), 5);
         assert_eq!(count_dir(root).unwrap(), (1, 5));
     }
 

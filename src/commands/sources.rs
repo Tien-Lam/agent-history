@@ -6,29 +6,23 @@ pub(crate) use remote::{
     sources_add_remote, sources_list_remote, sources_pull_remote, sources_remove_remote,
 };
 
-/// Recursive directory size in bytes. Symlinks and IO errors are skipped.
-fn dir_size_bytes(dir: &std::path::Path) -> u64 {
+/// Recursive directory size in bytes. Symlinked children are skipped.
+fn dir_size_bytes(dir: &std::path::Path) -> std::io::Result<u64> {
     let mut total: u64 = 0;
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return 0;
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
         if file_type.is_symlink() {
             continue;
         }
         if file_type.is_file() {
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
+            let meta = entry.metadata()?;
             total = total.saturating_add(meta.len());
         } else if file_type.is_dir() {
-            total = total.saturating_add(dir_size_bytes(&entry.path()));
+            total = total.saturating_add(dir_size_bytes(&entry.path())?);
         }
     }
-    total
+    Ok(total)
 }
 
 fn format_bytes(b: u64) -> String {
@@ -55,7 +49,7 @@ fn format_fixed_unit(bytes: u64, unit: u64, suffix: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_bytes;
+    use super::{dir_size_bytes, format_bytes};
 
     #[test]
     fn format_bytes_keeps_one_decimal_rounding() {
@@ -64,5 +58,15 @@ mod tests {
         assert_eq!(format_bytes(1536), "1.5K");
         assert_eq!(format_bytes(2047), "2.0K");
         assert_eq!(format_bytes(10 * 1024 * 1024 + 512 * 1024), "10.5M");
+    }
+
+    #[test]
+    fn dir_size_reports_non_directory_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, "content").unwrap();
+
+        let err = dir_size_bytes(&file).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotADirectory);
     }
 }

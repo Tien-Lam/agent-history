@@ -18,7 +18,8 @@ fn source_row_schema() -> Value {
                     "properties": {
                         "path": { "type": "string" },
                         "exists": { "type": "boolean" },
-                        "bytes": { "type": "integer", "minimum": 0 }
+                        "bytes": { "type": "integer", "minimum": 0 },
+                        "size_error": { "type": "string", "description": "Present when aghist could not scan the path size." }
                     },
                     "required": ["path", "exists", "bytes"],
                     "additionalProperties": false

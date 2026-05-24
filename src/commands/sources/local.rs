@@ -53,6 +53,8 @@ struct SourcePath {
     path: String,
     exists: bool,
     bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    size_error: Option<String>,
 }
 
 fn collect_source_row(p: &dyn provider::HistoryProvider) -> SourceRow {
@@ -60,12 +62,20 @@ fn collect_source_row(p: &dyn provider::HistoryProvider) -> SourceRow {
     let mut total_bytes: u64 = 0;
     for dir in p.base_dirs() {
         let exists = dir.exists();
-        let bytes = if exists { dir_size_bytes(dir) } else { 0 };
+        let (bytes, size_error) = if exists {
+            match dir_size_bytes(dir) {
+                Ok(bytes) => (bytes, None),
+                Err(err) => (0, Some(err.to_string())),
+            }
+        } else {
+            (0, None)
+        };
         total_bytes = total_bytes.saturating_add(bytes);
         paths.push(SourcePath {
             path: dir.display().to_string(),
             exists,
             bytes,
+            size_error,
         });
     }
 
@@ -106,10 +116,12 @@ fn render_sources_human<W: io::Write>(
             .paths
             .iter()
             .map(|p| {
-                if p.exists {
-                    p.path.clone()
-                } else {
+                if let Some(err) = &p.size_error {
+                    format!("{} (size unavailable: {err})", p.path)
+                } else if !p.exists {
                     format!("{} (missing)", p.path)
+                } else {
+                    p.path.clone()
                 }
             })
             .collect::<Vec<_>>()
