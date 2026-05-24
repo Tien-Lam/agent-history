@@ -81,8 +81,10 @@ fn io_with_path(action: &str, path: &Path, error: &io::Error) -> io::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{dir_size_bytes, dir_stats, dir_stats_limited, DirStats};
+    use super::{dir_size_bytes, dir_stats_limited};
 
+    #[cfg(unix)]
+    use super::{dir_stats, DirStats};
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
