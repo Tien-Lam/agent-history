@@ -8,8 +8,11 @@ use crate::cursor::CursorError;
 use crate::metadata;
 use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
+use crate::session_resolver::source_for_session;
+use crate::session_warnings::SessionLoadWarning;
 
 use super::{Explanation, SearchFilters, SearchHit, SearchIndex};
+use crate::search::types::IndexLoadError;
 
 pub(super) mod citation;
 pub(super) mod cursor;
@@ -55,6 +58,7 @@ pub struct SearchServiceOutput<'a> {
     pub hits: Vec<SearchServiceHit>,
     pub session_meta: HashMap<String, &'a Session>,
     pub engine: &'static str,
+    pub warnings: Vec<SessionLoadWarning>,
 }
 
 impl<'a> SearchService<'a> {
@@ -85,15 +89,15 @@ impl<'a> SearchService<'a> {
             SearchIndex::open_or_create(&self.index_dir).map_err(SearchServiceError::OpenIndex)?;
 
         let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
-        if let Some(scope) = request.provider_scope {
+        let stats = if let Some(scope) = request.provider_scope {
             index
                 .build_index_for_providers(sessions, self.providers, &tx, scope)
-                .map_err(SearchServiceError::BuildIndex)?;
+                .map_err(SearchServiceError::BuildIndex)?
         } else {
             index
                 .build_index(sessions, self.providers, &tx)
-                .map_err(SearchServiceError::BuildIndex)?;
-        }
+                .map_err(SearchServiceError::BuildIndex)?
+        };
 
         index_notes_best_effort(&index);
 
@@ -115,6 +119,7 @@ impl<'a> SearchService<'a> {
 
         let session_meta: HashMap<String, &Session> =
             sessions.iter().map(|s| (s.identity_key(), s)).collect();
+        let warnings = index_load_warnings(&stats.load_errors, &session_meta, source_by_session);
         let mut hits = filter_hits_to_current_sessions(raw_hits, &session_meta, source_by_session);
         hits = filter_hits_by_metadata(
             hits,
@@ -128,8 +133,24 @@ impl<'a> SearchService<'a> {
             hits,
             session_meta,
             engine,
+            warnings,
         })
     }
+}
+
+fn index_load_warnings(
+    errors: &[IndexLoadError],
+    session_meta: &HashMap<String, &Session>,
+    source_by_session: &HashMap<String, String>,
+) -> Vec<SessionLoadWarning> {
+    errors
+        .iter()
+        .filter_map(|error| {
+            let session = session_meta.get(&error.session_key).copied()?;
+            let source = source_for_session(source_by_session, session);
+            Some(SessionLoadWarning::new(source, session, &error.error))
+        })
+        .collect()
 }
 
 pub fn index_notes_best_effort(index: &SearchIndex) {

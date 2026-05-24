@@ -99,6 +99,7 @@ fn build_index_reports_session_load_errors() {
     bad.source_path = dir.path().join("bad.jsonl");
     std::fs::write(&bad.source_path, "bad").unwrap();
     stub.fail(bad.clone(), "fixture parse exploded");
+    let bad_key = bad.identity_key();
 
     let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
     let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
@@ -109,6 +110,7 @@ fn build_index_reports_session_load_errors() {
     assert_eq!(stats.load_errors.len(), 1);
     assert_eq!(stats.load_errors[0].provider, Provider::ClaudeCode);
     assert_eq!(stats.load_errors[0].session_id, "bad-session");
+    assert_eq!(stats.load_errors[0].session_key, bad_key);
     assert!(stats.load_errors[0]
         .error
         .contains("fixture parse exploded"));
@@ -126,6 +128,7 @@ fn build_index_reports_source_fingerprint_errors() {
         missing.clone(),
         vec![make_message("msg", "should never be indexed")],
     );
+    let missing_key = missing.identity_key();
 
     let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
     let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
@@ -136,12 +139,13 @@ fn build_index_reports_source_fingerprint_errors() {
     assert_eq!(stats.load_errors.len(), 1);
     assert_eq!(stats.load_errors[0].provider, Provider::ClaudeCode);
     assert_eq!(stats.load_errors[0].session_id, "missing-source");
+    assert_eq!(stats.load_errors[0].session_key, missing_key);
     assert!(stats.load_errors[0].error.contains("missing.jsonl"));
     assert!(index.search("should", 10).unwrap().is_empty());
 }
 
 #[test]
-fn load_error_preserves_existing_indexed_docs() {
+fn load_error_removes_existing_indexed_docs() {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();
     let stub = StubProvider::new(Provider::ClaudeCode);
@@ -176,8 +180,8 @@ fn load_error_preserves_existing_indexed_docs() {
     assert_eq!(stats.load_errors.len(), 1);
     assert_eq!(
         index.search("durable", 10).unwrap().len(),
-        1,
-        "last good docs should remain searchable when reload fails"
+        0,
+        "stale docs must not remain searchable when reload fails"
     );
 }
 

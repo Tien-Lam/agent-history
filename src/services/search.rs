@@ -77,6 +77,8 @@ pub fn search_sessions<'a>(
         &discovery.source_by_session,
         providers,
     );
+    let mut warnings = output.warnings;
+    warnings.extend(citation_resolution.warnings);
 
     Ok(SearchSessionsPage {
         hits,
@@ -85,7 +87,7 @@ pub fn search_sessions<'a>(
         next_cursor,
         engine: output.engine,
         citations: citation_resolution.refs,
-        warnings: citation_resolution.warnings,
+        warnings,
     })
 }
 

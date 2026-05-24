@@ -22,6 +22,7 @@ pub struct IndexStats {
 pub struct IndexLoadError {
     pub provider: Provider,
     pub session_id: String,
+    pub session_key: String,
     pub error: String,
 }
 

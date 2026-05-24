@@ -8,6 +8,7 @@ use aghist::metadata;
 use aghist::model::Session;
 use aghist::search::{self, SearchFilters};
 use aghist::session_resolver::qualified_session_metadata_key;
+use aghist::session_warnings::SessionLoadWarning;
 use aghist::{provider, query_scope};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
@@ -53,18 +54,26 @@ pub(crate) fn search_watch_command(
         let sessions: Vec<Session> = federation.sessions;
 
         let (tx, _rx) = crossbeam_channel::unbounded::<aghist::action::Action>();
-        index.build_index(&sessions, providers, &tx).map_err(|e| {
+        let stats = index.build_index(&sessions, providers, &tx).map_err(|e| {
             ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
         })?;
+        let session_meta: HashMap<String, &Session> =
+            sessions.iter().map(|s| (s.identity_key(), s)).collect();
+        for load_error in &stats.load_errors {
+            if let Some(session) = session_meta.get(&load_error.session_key).copied() {
+                let source = source_for_session(&federation.source_by_session, session);
+                eprintln!(
+                    "{}",
+                    SessionLoadWarning::new(source, session, &load_error.error).warning_line()
+                );
+            }
+        }
 
         search::index_notes_best_effort(&index);
 
         let hits = index
             .search_with_filters(query, limit, filters)
             .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?;
-
-        let session_meta: HashMap<String, &Session> =
-            sessions.iter().map(|s| (s.identity_key(), s)).collect();
 
         let mut handle = stdout.lock();
         for h in &hits {
