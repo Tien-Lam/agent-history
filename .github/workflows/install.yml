@@ -43,7 +43,7 @@ jobs:
         run: shellcheck install.sh scripts/package-release.sh scripts/smoke-release-install.sh
 
       - name: Build release binary
-        run: cargo build --release --features self-update
+        run: cargo build --locked --release --features self-update
 
       - name: Smoke local archive install and uninstall
         run: bash scripts/smoke-release-install.sh --tag v0.0.0-install-ci

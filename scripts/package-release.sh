@@ -63,7 +63,7 @@ if [ -z "$TARGET" ]; then
     TARGET="$(rustc -vV | awk '/^host:/ { print $2 }')"
 fi
 if [ -z "$TAG" ]; then
-    version="$(cargo metadata --no-deps --format-version 1 | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+    version="$(cargo metadata --locked --no-deps --format-version 1 | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
     TAG="v$version"
 fi
 if [ -z "$REPO" ]; then

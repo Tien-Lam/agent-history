@@ -9,13 +9,59 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_DENY_VERSION: "0.19.6"
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
 
 jobs:
+  preflight:
+    name: ubuntu-24.04 / release preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_TARGET_DIR: target/release-preflight
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release-preflight
+          key: ${{ runner.os }}-cargo-release-preflight-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-preflight-
+            ${{ runner.os }}-cargo-
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny --version "${CARGO_DENY_VERSION}"
+
+      - name: Check advisories licenses bans and sources
+        run: |
+          mkdir -p target/deny
+          cargo metadata --locked --format-version 1 > target/deny/default.json
+          cargo deny check --metadata-path target/deny/default.json --hide-inclusion-graph -A advisory-not-detected -A unmatched-skip
+          cargo metadata --locked --format-version 1 --all-features > target/deny/all-features.json
+          cargo deny check --metadata-path target/deny/all-features.json --hide-inclusion-graph
+
   build:
     name: ${{ matrix.target }}
+    needs: preflight
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -35,19 +81,27 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - uses: actions/cache@v5
+      - name: Cache cargo downloads
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target/${{ matrix.target }}
-          key: ${{ runner.os }}-cargo-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-release-downloads-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-release-${{ matrix.target }}-
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-release-downloads-
+
+      - name: Cache non-Windows release build outputs
+        if: matrix.os != 'windows-2025-vs2026'
+        uses: actions/cache@v5
+        with:
+          path: target/${{ matrix.target }}
+          key: ${{ runner.os }}-cargo-release-target-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-target-${{ matrix.target }}-
 
       - name: Build
-        run: cargo build --release --features self-update --target ${{ matrix.target }}
+        run: cargo build --locked --release --features self-update --target ${{ matrix.target }}
 
       - name: Package
         shell: bash

@@ -94,13 +94,13 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test --locked
 
       - name: Build release
-        run: cargo build --release
+        run: cargo build --locked --release
 
   all-features:
     name: ubuntu-24.04 / stable / all-features
@@ -128,15 +128,15 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Clippy all-features
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Test all-features lib
-        run: cargo test --all-features --lib
+        run: cargo test --locked --all-features --lib
 
       - name: Smoke all-features embeddings contract
         env:
           CARGO_BUILD_JOBS: 1
-        run: cargo test --all-features --test json_contract_snapshots index_embeddings_feature_awaits_consent_without_download -- --nocapture
+        run: cargo test --locked --all-features --test json_contract_snapshots index_embeddings_feature_awaits_consent_without_download -- --nocapture
 
   supply-chain:
     name: ubuntu-24.04 / supply-chain
@@ -179,40 +179,53 @@ jobs:
       - name: Check advisories licenses bans and sources
         run: |
           mkdir -p target/deny
-          cargo metadata --format-version 1 > target/deny/default.json
+          cargo metadata --locked --format-version 1 > target/deny/default.json
           cargo deny check --metadata-path target/deny/default.json --hide-inclusion-graph -A advisory-not-detected -A unmatched-skip
-          cargo metadata --format-version 1 --all-features > target/deny/all-features.json
+          cargo metadata --locked --format-version 1 --all-features > target/deny/all-features.json
           cargo deny check --metadata-path target/deny/all-features.json --hide-inclusion-graph
 
       - name: Check unused dependencies
-        run: cargo machete
+        run: cargo machete --with-metadata
 
       - name: Lint GitHub Actions workflows
         run: actionlint
 
   release-dry-run:
-    name: ubuntu-24.04 / release dry-run
-    runs-on: ubuntu-24.04
+    name: ${{ matrix.os }} / release dry-run
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025-vs2026]
 
     steps:
       - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: actions/cache@v5
+      - name: Cache cargo downloads
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-release-dry-run-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-release-downloads-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-release-dry-run-
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-release-downloads-
+
+      - name: Cache Linux release build outputs
+        if: matrix.os == 'ubuntu-24.04'
+        uses: actions/cache@v5
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-release-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-target-
 
       - name: Build self-updating release binary
-        run: cargo build --release --features self-update
+        run: cargo build --locked --release --features self-update
 
       - name: Smoke local archive install and uninstall
+        shell: bash
         run: bash scripts/smoke-release-install.sh --tag v0.0.0-ci
