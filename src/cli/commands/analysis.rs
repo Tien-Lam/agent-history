@@ -36,7 +36,7 @@ pub(crate) struct DecisionsCommand {
 
     /// Maximum number of candidates to return across all sessions,
     /// after sorting by score descending (heuristic) or by recency (--llm).
-    #[arg(long, short = 'n', default_value_t = 50)]
+    #[arg(long, short = 'n', default_value_t = 50, value_parser = parse_decisions_limit)]
     pub(crate) limit: usize,
 
     /// Force JSON output (default: JSON on pipe, table on TTY).
@@ -89,7 +89,7 @@ pub(crate) struct ThreadsCommand {
     pub(crate) gap_hours: i64,
 
     /// Drop threads with fewer than this many sessions. Ignored with `--llm`.
-    #[arg(long, default_value_t = 1, value_name = "N")]
+    #[arg(long, default_value_t = 1, value_name = "N", value_parser = parse_min_sessions)]
     pub(crate) min_sessions: usize,
 
     /// Maximum number of threads to emit (0 = no limit).
@@ -116,4 +116,26 @@ pub(crate) struct ThreadsCommand {
     /// meaningful with `--llm`.
     #[arg(long, default_value_t = 200, value_name = "N")]
     pub(crate) llm_max_sessions: usize,
+}
+
+fn parse_decisions_limit(raw: &str) -> Result<usize, String> {
+    let value = raw
+        .parse::<usize>()
+        .map_err(|e| format!("invalid decisions limit: {e}"))?;
+    if value == 0 {
+        Err("decisions limit must be at least 1".to_string())
+    } else {
+        Ok(value)
+    }
+}
+
+fn parse_min_sessions(raw: &str) -> Result<usize, String> {
+    let value = raw
+        .parse::<usize>()
+        .map_err(|e| format!("invalid min sessions: {e}"))?;
+    if value == 0 {
+        Err("min sessions must be at least 1".to_string())
+    } else {
+        Ok(value)
+    }
 }

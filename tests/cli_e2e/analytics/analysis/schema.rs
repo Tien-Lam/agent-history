@@ -95,3 +95,37 @@ fn decisions_schema_documents_llm_params_and_response() {
         );
     }
 }
+
+#[test]
+fn decisions_rejects_zero_limit_flag() {
+    let assert = aghist()
+        .args(["decisions", "--limit", "0"])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("decisions limit must be at least 1"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
+#[test]
+fn threads_rejects_zero_min_sessions_flag() {
+    let assert = aghist()
+        .args(["threads", "--min-sessions", "0"])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("min sessions must be at least 1"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
