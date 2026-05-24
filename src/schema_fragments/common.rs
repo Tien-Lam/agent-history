@@ -104,3 +104,10 @@ pub(crate) fn array_schema(items: Value) -> Value {
     schema.insert("items".to_string(), items);
     Value::Object(schema)
 }
+
+pub(crate) fn with_description(mut schema: Value, description: &str) -> Value {
+    if let Value::Object(properties) = &mut schema {
+        properties.insert("description".to_string(), json!(description));
+    }
+    schema
+}

@@ -2,7 +2,8 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     array_schema, closed_object_schema, provider_slug_enum_nullable, schema_props,
-    source_qualified_citation_ref_pattern, source_qualified_session_ref_pattern, SchemaProperties,
+    source_qualified_citation_ref_pattern, source_qualified_session_ref_pattern, with_description,
+    SchemaProperties,
 };
 use super::list::source_error_schema;
 
@@ -158,7 +159,7 @@ fn search_note_hit_schema() -> Value {
 }
 
 pub(crate) fn search_response_schema() -> Value {
-    let mut schema = closed_object_schema(
+    let schema = closed_object_schema(
         schema_props([
             (
                 "hits",
@@ -172,9 +173,10 @@ pub(crate) fn search_response_schema() -> Value {
         ]),
         &["hits", "meta"],
     );
-    schema["description"] =
-        json!("JSON envelope emitted by `aghist search --json`; watch mode emits one hit object per NDJSON line.");
-    schema
+    with_description(
+        schema,
+        "JSON envelope emitted by `aghist search --json`; watch mode emits one hit object per NDJSON line.",
+    )
 }
 
 pub(crate) fn mcp_search_response_schema() -> Value {

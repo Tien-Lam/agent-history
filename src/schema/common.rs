@@ -6,7 +6,7 @@ pub(super) const SCHEMA_DRAFT: &str = "https://json-schema.org/draft/2020-12/sch
 
 pub(super) use schema_fragments::{
     array_schema, closed_empty_object_schema, closed_object_schema, object_schema, schema_props,
-    SchemaProperties,
+    with_description, SchemaProperties,
 };
 
 pub(super) fn schema_props_with_filters(

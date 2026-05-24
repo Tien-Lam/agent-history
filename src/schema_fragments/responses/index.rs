@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
 use super::super::common::{
-    closed_object_schema, provider_slug_enum, schema_props, SchemaProperties,
+    closed_object_schema, provider_slug_enum, schema_props, with_description, SchemaProperties,
 };
 
 fn index_error_schema() -> Value {
@@ -139,9 +139,4 @@ pub(crate) fn index_response_schema() -> Value {
 
 pub(crate) fn mcp_reindex_response_schema() -> Value {
     indexing_summary_response_schema()
-}
-
-fn with_description(mut schema: Value, description: &str) -> Value {
-    schema["description"] = json!(description);
-    schema
 }

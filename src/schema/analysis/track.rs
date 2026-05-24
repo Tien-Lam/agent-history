@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     closed_object_schema, exit_codes, object_schema, schema_props, schema_props_with_filters,
-    source_qualified_session_only_ref_pattern, SCHEMA_DRAFT,
+    source_qualified_session_only_ref_pattern, with_description, SCHEMA_DRAFT,
 };
 
 pub(in crate::schema) fn track_schema() -> Value {
@@ -53,7 +53,7 @@ pub(in crate::schema) fn track_schema() -> Value {
 }
 
 fn track_response_schema() -> Value {
-    let mut schema = object_schema(
+    let schema = object_schema(
         schema_props([
             ("topic", json!({ "type": "string" })),
             (
@@ -97,6 +97,5 @@ fn track_response_schema() -> Value {
         ]),
         &["topic", "sessions_scanned", "timeline"],
     );
-    schema["description"] = json!("JSON output (when --json or stdout is not a TTY).");
-    schema
+    with_description(schema, "JSON output (when --json or stdout is not a TTY).")
 }

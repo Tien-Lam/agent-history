@@ -3,7 +3,8 @@ use serde_json::{json, Value};
 use crate::schema_fragments::health_response_schema;
 
 use super::super::common::{
-    closed_empty_object_schema, closed_object_schema, exit_codes, schema_props, SCHEMA_DRAFT,
+    closed_empty_object_schema, closed_object_schema, exit_codes, schema_props, with_description,
+    SCHEMA_DRAFT,
 };
 use super::super::subcommands;
 
@@ -191,9 +192,10 @@ fn sources_subcommands_schema() -> Value {
             "params": closed_object_schema(
                 schema_props([
                     ("name", {
-                        let mut schema = source_name_schema();
-                        schema["description"] = json!("Source name. Mutually exclusive with all.");
-                        schema
+                        with_description(
+                            source_name_schema(),
+                            "Source name. Mutually exclusive with all.",
+                        )
                     }),
                     ("all", json!({ "type": "boolean", "description": "Pull every registered source." })),
                     ("dry_run", json!({ "type": "boolean", "default": false })),

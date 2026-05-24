@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     closed_object_schema, count_array_response, exit_codes, object_schema, schema_props,
-    schema_ref, source_qualified_session_ref_pattern, SCHEMA_DRAFT,
+    schema_ref, source_qualified_session_ref_pattern, with_description, SCHEMA_DRAFT,
 };
 
 fn session_ref_param_schema() -> Value {
@@ -91,14 +91,15 @@ pub(in crate::schema) fn tag_schema() -> Value {
 }
 
 fn top_level_tag_params_schema() -> Value {
-    let mut schema = closed_object_schema(
+    let schema = closed_object_schema(
         schema_props([(
             "subcommand",
             json!({ "type": "string", "enum": ["add", "list", "remove"] }),
         )]),
         &["subcommand"],
     );
-    schema["description"] =
-        json!("Top-level dispatch: see `subcommands` for the per-subcommand schemas.");
-    schema
+    with_description(
+        schema,
+        "Top-level dispatch: see `subcommands` for the per-subcommand schemas.",
+    )
 }

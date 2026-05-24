@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::common::{
     array_schema, closed_object_schema, mcp_session_uri_pattern, provider_slug_enum, schema_props,
+    with_description,
 };
 
 pub(crate) fn cursor_meta_schema() -> Value {
@@ -69,15 +70,14 @@ pub(crate) fn mcp_session_row_schema() -> Value {
 }
 
 pub(crate) fn list_response_schema() -> Value {
-    let mut schema = closed_object_schema(
+    let schema = closed_object_schema(
         schema_props([
             ("sessions", array_schema(session_row_schema())),
             ("meta", cursor_meta_schema()),
         ]),
         &["sessions", "meta"],
     );
-    schema["description"] = json!("JSON output (when --json or stdout is not a TTY).");
-    schema
+    with_description(schema, "JSON output (when --json or stdout is not a TTY).")
 }
 
 pub(crate) fn source_error_schema() -> Value {
