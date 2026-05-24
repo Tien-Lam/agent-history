@@ -72,6 +72,27 @@ fn malformed_token_is_rejected() {
 }
 
 #[test]
+fn oversized_cursor_token_is_rejected_before_decode() {
+    let token = "A".repeat(MAX_CURSOR_TOKEN_BYTES + 1);
+
+    assert!(matches!(
+        SearchCursor::decode(&token),
+        Err(CursorError::TooLarge)
+    ));
+}
+
+#[test]
+fn oversized_encoded_cursor_is_rejected() {
+    let c = ListCursor {
+        started_at: Utc.with_ymd_and_hms(2026, 5, 7, 1, 14, 0).unwrap(),
+        session_id: "xyz".to_string(),
+        session_key: "x".repeat(MAX_CURSOR_TOKEN_BYTES),
+    };
+
+    assert!(matches!(c.encode(), Err(CursorError::TooLarge)));
+}
+
+#[test]
 fn search_cursor_rejects_unknown_hit_kind() {
     let token = encode(&serde_json::json!({
         "score": 1.0,

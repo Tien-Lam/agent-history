@@ -18,10 +18,14 @@ use thiserror::Error;
 
 use crate::search::HitKind;
 
+const MAX_CURSOR_TOKEN_BYTES: usize = 16 * 1024;
+
 #[derive(Debug, Error)]
 pub enum CursorError {
     #[error("failed to encode cursor payload")]
     Encode(#[source] serde_json::Error),
+    #[error("invalid cursor: token exceeds size limit")]
+    TooLarge,
     #[error("invalid cursor: not valid base64")]
     Base64,
     #[error("invalid cursor: malformed payload")]
@@ -77,12 +81,20 @@ impl ListCursor {
 
 fn encode<T: Serialize>(value: &T) -> Result<String, CursorError> {
     let json = serde_json::to_vec(value).map_err(CursorError::Encode)?;
-    Ok(URL_SAFE_NO_PAD.encode(json))
+    let token = URL_SAFE_NO_PAD.encode(json);
+    if token.len() > MAX_CURSOR_TOKEN_BYTES {
+        return Err(CursorError::TooLarge);
+    }
+    Ok(token)
 }
 
 fn decode<T: for<'de> Deserialize<'de>>(token: &str) -> Result<T, CursorError> {
+    let token = token.trim();
+    if token.len() > MAX_CURSOR_TOKEN_BYTES {
+        return Err(CursorError::TooLarge);
+    }
     let bytes = URL_SAFE_NO_PAD
-        .decode(token.trim())
+        .decode(token)
         .map_err(|_| CursorError::Base64)?;
     serde_json::from_slice(&bytes).map_err(|_| CursorError::Payload)
 }
