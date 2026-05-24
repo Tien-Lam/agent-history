@@ -47,11 +47,7 @@ impl SearchIndex {
     }
 
     pub(crate) fn project_filter_needle(filters: &SearchFilters) -> Option<String> {
-        filters
-            .project
-            .as_deref()
-            .map(str::to_lowercase)
-            .filter(|s| !s.is_empty())
+        filters.project_needle()
     }
 
     pub(crate) fn matches_project_filter(

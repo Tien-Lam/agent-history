@@ -7,8 +7,8 @@ mod types;
 
 pub use error::ResolutionError;
 pub use refs::{
-    qualified_citation_ref, qualified_session_metadata_key, qualified_session_ref,
-    session_metadata_key, source_for_session,
+    metadata_filter_matches_source, qualified_citation_ref, qualified_session_metadata_key,
+    qualified_session_ref, session_metadata_key, source_for_session,
 };
 pub use resolver::SessionResolver;
 pub use source::LookupSource;

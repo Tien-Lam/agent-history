@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::hash::BuildHasher;
 
 use crate::federated::LOCAL_SOURCE;
@@ -41,6 +42,17 @@ pub fn qualified_session_metadata_key(session: &Session, source: &str) -> String
     } else {
         format!("{source}:{raw}")
     }
+}
+
+pub fn metadata_filter_matches_source<S: BuildHasher>(
+    session: &Session,
+    source: &str,
+    metadata_keys: Option<&HashSet<String, S>>,
+) -> bool {
+    let Some(keys) = metadata_keys else {
+        return true;
+    };
+    keys.contains(&qualified_session_metadata_key(session, source))
 }
 
 pub fn qualified_citation_ref<S: BuildHasher>(

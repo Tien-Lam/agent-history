@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::metadata;
-use aghist::model::{ContentBlock, Message, Session};
-use aghist::session_resolver::qualified_session_metadata_key;
+use aghist::model::{Message, Session};
+use aghist::session_resolver;
 
 use super::super::cli::FilterArgs;
 use super::metadata::{metadata_error, open_metadata_db};
@@ -17,32 +17,9 @@ pub(crate) fn session_matches(
     filters: &FilterArgs,
     project_needle: Option<&str>,
 ) -> bool {
-    if let Some(want) = filters.provider {
-        if session.provider != want {
-            return false;
-        }
-    }
-    if let Some(since) = filters.since {
-        if session.started_at < since {
-            return false;
-        }
-    }
-    if let Some(until) = filters.until {
-        if session.started_at > until {
-            return false;
-        }
-    }
-    if let Some(needle) = project_needle {
-        let project = session
-            .project_name
-            .as_deref()
-            .map(str::to_lowercase)
-            .unwrap_or_default();
-        if !project.contains(needle) {
-            return false;
-        }
-    }
-    true
+    filters
+        .to_search_filters()
+        .matches_session_with_project_needle(session, project_needle)
 }
 
 /// Resolve `--note`/`--tag`/`--starred` into a set of
@@ -66,7 +43,7 @@ pub(crate) fn resolve_metadata_filter(
 }
 
 /// Drop a `#<turn>` suffix, preserving any source prefix and leaving the same
-/// session-level key shape as [`qualified_session_metadata_key`] so note refs
+/// session-level key shape as the canonical session metadata key so note refs
 /// and session refs can be compared against the same allow-set.
 pub(crate) fn strip_turn_suffix(session_ref: &str) -> &str {
     session_ref
@@ -81,25 +58,9 @@ pub(crate) fn metadata_filter_matches_source(
     source: &str,
     metadata_keys: Option<&HashSet<String>>,
 ) -> bool {
-    let Some(keys) = metadata_keys else {
-        return true;
-    };
-    keys.contains(&qualified_session_metadata_key(session, source))
+    session_resolver::metadata_filter_matches_source(session, source, metadata_keys)
 }
 
 pub(crate) fn message_matches(message: &Message, filters: &FilterArgs) -> bool {
-    if let Some(role) = filters.role {
-        if message.role != role {
-            return false;
-        }
-    }
-    if filters.has_tool_call
-        && !message
-            .content
-            .iter()
-            .any(|b| matches!(b, ContentBlock::ToolUse(_)))
-    {
-        return false;
-    }
-    true
+    filters.to_search_filters().matches_message(message)
 }

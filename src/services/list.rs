@@ -7,7 +7,7 @@ use crate::federated::FederatedDiscovery;
 use crate::model::Session;
 use crate::provider::HistoryProvider;
 use crate::search::SearchFilters;
-use crate::session_resolver::source_for_session;
+use crate::session_resolver::{metadata_filter_matches_source, source_for_session};
 use crate::session_warnings::SessionLoadWarning;
 
 mod filters;
@@ -16,7 +16,7 @@ mod paging;
 #[cfg(test)]
 mod tests;
 
-use filters::{metadata_filter_matches_source, session_has_matching_message, session_matches};
+use filters::session_has_matching_message;
 pub use labels::{source_provider_counts, source_provider_label};
 use paging::{compare_listed_sessions, listed_session_is_after_cursor};
 
@@ -59,19 +59,17 @@ pub fn list_sessions_page(
         .transpose()
         .map_err(|_| ListSessionsError::InvalidCursor)?;
 
-    let project_needle = request
-        .filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
-    let needs_messages = request.filters.role.is_some() || request.filters.has_tool_call;
+    let project_needle = request.filters.project_needle();
+    let needs_messages = request.filters.needs_message_scan();
     let source_by_session = discovery.source_by_session;
     let mut sessions = Vec::new();
     let mut warnings = Vec::new();
 
     for session in discovery.sessions {
-        if !session_matches(&session, request.filters, project_needle.as_deref()) {
+        if !request
+            .filters
+            .matches_session_with_project_needle(&session, project_needle.as_deref())
+        {
             continue;
         }
         let source = source_for_session(&source_by_session, &session).to_string();
