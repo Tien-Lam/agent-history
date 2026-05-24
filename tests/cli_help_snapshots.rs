@@ -57,4 +57,5 @@ const HELP_COMMANDS: &[(&str, &[&str])] = &[
 
 fn normalize_help(text: &str) -> String {
     text.replace("\r\n", "\n")
+        .replace("Usage: aghist.exe", "Usage: aghist")
 }
