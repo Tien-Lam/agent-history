@@ -31,18 +31,23 @@ fn dir_size_bytes(dir: &std::path::Path) -> u64 {
     total
 }
 
-#[allow(clippy::cast_precision_loss)]
 fn format_bytes(b: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
     const GB: u64 = 1024 * MB;
     if b >= GB {
-        format!("{:.1}G", b as f64 / GB as f64)
+        format_fixed_unit(b, GB, "G")
     } else if b >= MB {
-        format!("{:.1}M", b as f64 / MB as f64)
+        format_fixed_unit(b, MB, "M")
     } else if b >= KB {
-        format!("{:.1}K", b as f64 / KB as f64)
+        format_fixed_unit(b, KB, "K")
     } else {
         format!("{b}B")
     }
+}
+
+fn format_fixed_unit(bytes: u64, unit: u64, suffix: &str) -> String {
+    let whole = bytes / unit;
+    let tenths = bytes % unit * 10 / unit;
+    format!("{whole}.{tenths}{suffix}")
 }

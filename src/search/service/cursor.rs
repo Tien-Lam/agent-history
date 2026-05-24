@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
@@ -34,9 +35,10 @@ pub fn search_hit_is_after_cursor<S: BuildHasher>(
     sessions: &HashMap<String, &Session, S>,
     cursor: &crate::cursor::SearchCursor,
 ) -> bool {
-    #[allow(clippy::float_cmp)]
-    if hit.score != cursor.score {
-        return hit.score < cursor.score;
+    match hit.score.total_cmp(&cursor.score) {
+        Ordering::Less => return true,
+        Ordering::Greater => return false,
+        Ordering::Equal => {}
     }
 
     let hit_started = sessions.get(hit.session_key()).map(|s| s.started_at);
