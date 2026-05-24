@@ -91,7 +91,7 @@ pub(super) fn filter_params_fragment() -> Vec<(&'static str, Value)> {
             "role",
             json!({
                 "type": "string",
-                "enum": ["user", "assistant", "tool"],
+                "enum": ["user", "assistant", "system", "tool"],
                 "description": "Restrict to messages with this role."
             }),
         ),

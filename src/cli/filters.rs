@@ -80,7 +80,7 @@ impl FilterArgs {
 
 fn parse_role_slug(raw: &str) -> Result<Role, String> {
     Role::from_slug(raw)
-        .ok_or_else(|| format!("unknown role '{raw}'. Valid: user, assistant, tool"))
+        .ok_or_else(|| format!("unknown role '{raw}'. Valid: user, assistant, system, tool"))
 }
 
 fn parse_rfc3339(raw: &str) -> Result<DateTime<Utc>, String> {

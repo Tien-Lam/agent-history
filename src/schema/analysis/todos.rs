@@ -97,7 +97,7 @@ fn todos_response_heuristic() -> Value {
                                 "type": "string",
                                 "description": "Trimmed matched line; truncated to ~240 chars with a trailing ellipsis."
                             },
-                            "role": { "type": "string", "enum": ["user", "assistant", "tool"] },
+                        "role": { "type": "string", "enum": ["user", "assistant", "system", "tool"] },
                             "timestamp": { "type": "string", "format": "date-time" },
                             "bd_id": {
                                 "type": ["string", "null"],

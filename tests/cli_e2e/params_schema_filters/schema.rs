@@ -72,7 +72,7 @@ fn schema_for_search_documents_filter_flags() {
     assert_eq!(props["since"]["format"], "date-time");
     assert_eq!(
         props["role"]["enum"],
-        serde_json::json!(["user", "assistant", "tool"])
+        serde_json::json!(["user", "assistant", "system", "tool"])
     );
     assert_eq!(props["has_tool_call"]["type"], "boolean");
 }

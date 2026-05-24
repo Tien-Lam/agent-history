@@ -48,6 +48,22 @@ fn filter_role_rejects_unknown_value() {
 }
 
 #[test]
+fn filter_role_accepts_system_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["--list", "--role", "system"])
+        .env("AGHIST_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        !stderr.contains("unknown role"),
+        "system role should be accepted, got: {stderr}"
+    );
+}
+
+#[test]
 fn filter_since_rejects_non_rfc3339() {
     let dir = tempfile::tempdir().unwrap();
     let output = aghist()
