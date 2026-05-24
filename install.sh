@@ -262,10 +262,14 @@ if [ -L "$MARKER_DEST" ]; then
     echo "Error: refusing to overwrite symlinked install marker destination: $MARKER_DEST" >&2
     exit 1
 fi
-cp -f "$EXTRACT_DIR/$BIN_FILE" "$BIN_DEST"
-chmod 0755 "$BIN_DEST"
-cp -f "$MARKER_TMP" "$MARKER_DEST"
-chmod 0644 "$MARKER_DEST"
+if ! chmod 0755 "$EXTRACT_DIR/$BIN_FILE" || ! mv -f "$EXTRACT_DIR/$BIN_FILE" "$BIN_DEST"; then
+    echo "Error: failed to install binary to $BIN_DEST" >&2
+    exit 1
+fi
+if ! chmod 0644 "$MARKER_TMP" || ! mv -f "$MARKER_TMP" "$MARKER_DEST"; then
+    echo "Error: failed to install marker to $MARKER_DEST" >&2
+    exit 1
+fi
 
 echo "Installed $BINARY $TAG to $BIN_DEST"
 
