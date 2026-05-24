@@ -3,17 +3,15 @@
 pub(super) fn contains_todo_keyword(line: &str) -> bool {
     let bytes = line.as_bytes();
     let needle = b"TODO";
-    let mut i = 0;
-    while i + needle.len() <= bytes.len() {
-        if &bytes[i..i + needle.len()] == needle {
-            let before_ok = i == 0 || !is_ident_char(bytes[i - 1]);
+    for (i, window) in bytes.windows(needle.len()).enumerate() {
+        if window == needle {
+            let before_ok = i == 0 || bytes.get(i - 1).is_none_or(|byte| !is_ident_char(*byte));
             let after = i + needle.len();
-            let after_ok = after == bytes.len() || !is_ident_char(bytes[after]);
+            let after_ok = bytes.get(after).is_none_or(|byte| !is_ident_char(*byte));
             if before_ok && after_ok {
                 return true;
             }
         }
-        i += 1;
     }
     false
 }
