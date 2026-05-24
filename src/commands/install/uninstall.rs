@@ -8,6 +8,12 @@ use super::current_exe;
 use super::guard::{ensure_self_managed_install, InstallOperation};
 use super::source::install_marker_path;
 
+#[cfg(any(windows, test))]
+const WINDOWS_REMOVE_TARGET_ENV: &str = "AGHIST_REMOVE_TARGET";
+#[cfg(any(windows, test))]
+const WINDOWS_DELAYED_DELETE_SCRIPT: &str =
+    "timeout /t 2 /nobreak >nul & del /f /q \"%AGHIST_REMOVE_TARGET%\"";
+
 pub(crate) fn uninstall() -> Result<i32, ErrorEnvelope> {
     let exe = current_exe()?;
     ensure_self_managed_install(&exe, InstallOperation::Uninstall)?;
@@ -93,8 +99,8 @@ fn remove_current_exe(exe: &std::path::Path) -> Result<(), ErrorEnvelope> {
         )
     })?;
     if let Err(e) = std::process::Command::new("cmd")
-        .args(["/C", "timeout", "/t", "2", "/nobreak", ">nul", "&", "del"])
-        .arg(&tmp)
+        .args(["/C", WINDOWS_DELAYED_DELETE_SCRIPT])
+        .env(WINDOWS_REMOVE_TARGET_ENV, &tmp)
         .spawn()
     {
         eprintln!(
@@ -113,4 +119,18 @@ fn remove_current_exe(exe: &std::path::Path) -> Result<(), ErrorEnvelope> {
             format!("failed to remove {}: {e}", exe.display()),
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_delayed_delete_uses_env_var_for_target_path() {
+        assert_eq!(
+            WINDOWS_DELAYED_DELETE_SCRIPT,
+            "timeout /t 2 /nobreak >nul & del /f /q \"%AGHIST_REMOVE_TARGET%\""
+        );
+        assert_eq!(WINDOWS_REMOVE_TARGET_ENV, "AGHIST_REMOVE_TARGET");
+    }
 }
