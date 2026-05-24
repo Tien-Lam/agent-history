@@ -98,6 +98,7 @@ fn parse_provider_session_tail(source: Option<String>, rest: &str) -> Result<Par
         if session_id.is_empty() {
             return Err("missing session id".to_string());
         }
+        validate_session_id(session_id)?;
         if turn_str.is_empty() {
             return Err("missing turn number".to_string());
         }
@@ -118,8 +119,15 @@ fn parse_provider_session_tail(source: Option<String>, rest: &str) -> Result<Par
     Ok(ParsedUri::Session {
         source,
         provider,
-        session_id: after_provider.to_string(),
+        session_id: validate_session_id(after_provider)?.to_string(),
     })
+}
+
+fn validate_session_id(session_id: &str) -> Result<&str, String> {
+    if session_id.chars().any(char::is_control) {
+        return Err("session id must not contain control characters".to_string());
+    }
+    Ok(session_id)
 }
 
 #[cfg(test)]

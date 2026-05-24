@@ -72,3 +72,21 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn rejects_control_characters_in_session_resource_id() {
+    let Err(err) = parse_aghist_uri("aghist://session/codex-cli/abc\n123") else {
+        panic!("session uri with control character should be rejected");
+    };
+
+    assert!(err.contains("control characters"));
+}
+
+#[test]
+fn rejects_control_characters_in_turn_resource_id() {
+    let Err(err) = parse_aghist_uri("aghist://session/codex-cli/abc\t123/turn/1") else {
+        panic!("turn uri with control character should be rejected");
+    };
+
+    assert!(err.contains("control characters"));
+}
