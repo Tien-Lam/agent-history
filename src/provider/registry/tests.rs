@@ -4,7 +4,7 @@ use super::*;
 fn runtime_specs_track_provider_registry_order() {
     let runtime: Vec<Provider> = RUNTIME_PROVIDER_SPECS
         .iter()
-        .map(|spec| spec.provider)
+        .map(RuntimeProviderSpec::provider)
         .collect();
     assert_eq!(runtime, Provider::all());
 }
@@ -32,7 +32,7 @@ fn remote_candidate_dirs_cover_every_provider() {
 #[test]
 fn runtime_specs_construct_matching_stateless_providers() {
     for spec in RUNTIME_PROVIDER_SPECS {
-        assert_eq!(spec.stateless().provider(), spec.provider);
-        assert_eq!(spec.from_dirs(Vec::new()).provider(), spec.provider);
+        assert_eq!(spec.stateless().provider(), spec.provider());
+        assert_eq!(spec.from_dirs(Vec::new()).provider(), spec.provider());
     }
 }

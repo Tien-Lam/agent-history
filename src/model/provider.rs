@@ -16,7 +16,10 @@ mod resume;
 mod spec;
 
 use spec::ALL_PROVIDERS;
-pub use spec::{ProviderSpec, PROVIDER_SPECS};
+pub use spec::{
+    ProviderSpec, AIDER_SPEC, CLAUDE_CODE_SPEC, CLINE_SPEC, CODEX_CLI_SPEC, CONTINUE_DEV_SPEC,
+    COPILOT_CLI_SPEC, CURSOR_SPEC, GEMINI_CLI_SPEC, OPENCODE_SPEC, PROVIDER_SPECS, ZED_AI_SPEC,
+};
 
 /// Serializes as the kebab-case [`Provider::slug`]. This matches the
 /// CLI input contract (`--provider claude-code`) and citation refs, so
