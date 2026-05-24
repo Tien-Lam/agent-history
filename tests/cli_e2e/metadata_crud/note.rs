@@ -157,6 +157,31 @@ fn note_remove_deletes_row_and_returns_envelope_on_missing_id() {
     let env: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(env["error"]["kind"], "note-not-found");
 }
+
+#[test]
+fn note_edit_and_remove_reject_non_positive_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("metadata.db");
+
+    for args in [
+        &["note", "edit", "0", "--body", "x"][..],
+        &["note", "remove", "-1"][..],
+    ] {
+        let assert = note_env(&db).args(args).assert().code(2);
+        let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+        let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+        let env: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert_eq!(env["error"]["kind"], "usage");
+        assert!(
+            env["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("note id must be at least 1"),
+            "unexpected error envelope: {env:#}"
+        );
+    }
+}
+
 #[test]
 fn note_add_rejects_invalid_ref_with_envelope() {
     let dir = tempfile::tempdir().unwrap();

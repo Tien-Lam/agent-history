@@ -99,7 +99,7 @@ pub(crate) enum NoteCommand {
     /// Replace the body of an existing note.
     Edit {
         /// Numeric note id (from `aghist note add` or `aghist note list`).
-        #[arg(value_name = "ID")]
+        #[arg(value_name = "ID", value_parser = parse_note_id, allow_hyphen_values = true)]
         id: i64,
 
         /// New body as a literal string. Mutually exclusive with `--body-file`/`--stdin`.
@@ -118,7 +118,7 @@ pub(crate) enum NoteCommand {
     #[command(alias = "rm")]
     Remove {
         /// Numeric note id.
-        #[arg(value_name = "ID")]
+        #[arg(value_name = "ID", value_parser = parse_note_id, allow_hyphen_values = true)]
         id: i64,
     },
 }
@@ -168,4 +168,15 @@ pub(crate) enum TagCommand {
         #[arg(value_name = "TAG")]
         tag: String,
     },
+}
+
+fn parse_note_id(raw: &str) -> Result<i64, String> {
+    let value = raw
+        .parse::<i64>()
+        .map_err(|e| format!("invalid note id: {e}"))?;
+    if value < 1 {
+        Err("note id must be at least 1".to_string())
+    } else {
+        Ok(value)
+    }
 }
