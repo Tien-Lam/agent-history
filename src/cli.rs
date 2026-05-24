@@ -4,7 +4,7 @@ mod resolvers;
 
 use clap::Parser;
 
-use aghist::schema_fragments::LIST_LIMIT_DEFAULT;
+use aghist::schema_fragments::{LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX};
 
 pub(crate) use commands::{
     AnalysisCommand, Command, CommandTarget, ContextCommand, ContextFreeCommand, LookupCommand,
@@ -62,9 +62,32 @@ fn parse_list_limit(raw: &str) -> Result<usize, String> {
     let value = raw
         .parse::<usize>()
         .map_err(|e| format!("invalid list limit: {e}"))?;
-    if value == 0 {
-        Err("list limit must be at least 1".to_string())
-    } else {
-        Ok(value)
+    match value {
+        0 => Err("list limit must be at least 1".to_string()),
+        value if value > LIST_LIMIT_MAX => {
+            Err(format!("list limit must be at most {LIST_LIMIT_MAX}"))
+        }
+        value => Ok(value),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_list_limit_rejects_zero() {
+        assert_eq!(
+            parse_list_limit("0").unwrap_err(),
+            "list limit must be at least 1"
+        );
+    }
+
+    #[test]
+    fn parse_list_limit_rejects_values_above_max() {
+        assert_eq!(
+            parse_list_limit(&(LIST_LIMIT_MAX + 1).to_string()).unwrap_err(),
+            format!("list limit must be at most {LIST_LIMIT_MAX}")
+        );
     }
 }

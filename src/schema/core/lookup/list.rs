@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::LIST_LIMIT_DEFAULT;
+use crate::schema_fragments::{LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX};
 
 use super::super::super::common::{
     closed_object_schema, exit_codes, filter_params_fragment, list_response_schema, schema_props,
@@ -19,7 +19,7 @@ fn list_params_properties() -> SchemaProperties {
         ),
         (
             "limit",
-            json!({ "type": "integer", "minimum": 1, "default": LIST_LIMIT_DEFAULT }),
+            json!({ "type": "integer", "minimum": 1, "maximum": LIST_LIMIT_MAX, "default": LIST_LIMIT_DEFAULT }),
         ),
         (
             "cursor",

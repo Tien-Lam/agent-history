@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::model::Provider;
+use aghist::schema_fragments::SEARCH_LIMIT_MAX;
 use aghist::todos::TodoKind;
 use aghist::{config, export};
 
@@ -137,6 +138,15 @@ fn validate_search_args(args: SearchArgs) -> Result<SearchArgs, ErrorEnvelope> {
                 .with_hint("Use `--limit N` or `--params {\"limit\":N}` with N >= 1."),
         );
     }
+    if args.limit > SEARCH_LIMIT_MAX {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("search limit must be at most {SEARCH_LIMIT_MAX}"),
+        )
+        .with_hint(format!(
+            "Use `--limit N` or `--params {{\"limit\":N}}` with N <= {SEARCH_LIMIT_MAX}."
+        )));
+    }
     if !args.hybrid_weight.is_finite() || !(0.0..=1.0).contains(&args.hybrid_weight) {
         return Err(ErrorEnvelope::new(
             "usage",
@@ -185,5 +195,28 @@ mod tests {
 
         assert_eq!(err.kind, "usage");
         assert!(err.message.contains("REF"));
+    }
+
+    #[test]
+    fn resolve_search_args_rejects_values_above_max_limit() {
+        let result = resolve_search_args(
+            SearchArgs {
+                query: Some("needle".to_string()),
+                query_file: None,
+                stdin: false,
+                limit: SEARCH_LIMIT_MAX + 1,
+                cursor: None,
+                json: false,
+                debug_search: false,
+                hybrid_weight: 0.0,
+            },
+            None,
+        );
+        let Err(err) = result else {
+            panic!("oversized search limit should be rejected");
+        };
+
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains(&SEARCH_LIMIT_MAX.to_string()));
     }
 }

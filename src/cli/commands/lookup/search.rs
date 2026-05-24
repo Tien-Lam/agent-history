@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use aghist::schema_fragments::{
-    SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_WATCH_INTERVAL_MS_DEFAULT,
-    SEARCH_WATCH_ITERATIONS_DEFAULT,
+    SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX,
+    SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_ITERATIONS_DEFAULT,
 };
 use clap::Args;
 
@@ -110,10 +110,12 @@ fn parse_search_limit(raw: &str) -> Result<usize, String> {
     let value = raw
         .parse::<usize>()
         .map_err(|e| format!("invalid search limit: {e}"))?;
-    if value == 0 {
-        Err("search limit must be at least 1".to_string())
-    } else {
-        Ok(value)
+    match value {
+        0 => Err("search limit must be at least 1".to_string()),
+        value if value > SEARCH_LIMIT_MAX => {
+            Err(format!("search limit must be at most {SEARCH_LIMIT_MAX}"))
+        }
+        value => Ok(value),
     }
 }
 
@@ -136,5 +138,26 @@ fn parse_hybrid_weight(raw: &str) -> Result<f32, String> {
         Ok(value)
     } else {
         Err("hybrid weight must be a finite number between 0.0 and 1.0".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_search_limit_rejects_zero() {
+        assert_eq!(
+            parse_search_limit("0").unwrap_err(),
+            "search limit must be at least 1"
+        );
+    }
+
+    #[test]
+    fn parse_search_limit_rejects_values_above_max() {
+        assert_eq!(
+            parse_search_limit(&(SEARCH_LIMIT_MAX + 1).to_string()).unwrap_err(),
+            format!("search limit must be at most {SEARCH_LIMIT_MAX}")
+        );
     }
 }

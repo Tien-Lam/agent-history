@@ -11,6 +11,10 @@ fn search_schema_describes_query_param() {
         params["limit"]["default"],
         serde_json::json!(crate::schema_fragments::SEARCH_LIMIT_DEFAULT)
     );
+    assert_eq!(
+        params["limit"]["maximum"],
+        serde_json::json!(crate::schema_fragments::SEARCH_LIMIT_MAX)
+    );
     assert!(params["cursor"].is_object());
     assert_eq!(
         params["watch_interval_ms"]["default"],
@@ -34,6 +38,10 @@ fn list_schema_describes_pagination_params() {
     assert_eq!(
         params["limit"]["default"],
         serde_json::json!(crate::schema_fragments::LIST_LIMIT_DEFAULT)
+    );
+    assert_eq!(
+        params["limit"]["maximum"],
+        serde_json::json!(crate::schema_fragments::LIST_LIMIT_MAX)
     );
     assert!(params["cursor"].is_object());
 
