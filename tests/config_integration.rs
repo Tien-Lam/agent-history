@@ -5,6 +5,7 @@ use std::fs;
 use aghist::config::Config;
 use aghist::config::{
     validate_rsync_endpoint, validate_rsync_host, validate_rsync_path, validate_source_name,
+    MAX_SOURCE_NAME_BYTES,
 };
 use aghist::model::Provider;
 
@@ -229,6 +230,7 @@ fn remote_source_name_validation_rejects_path_components() {
     assert!(validate_source_name("a/b").is_err());
     assert!(validate_source_name("-option").is_err());
     assert!(validate_source_name("local").is_err());
+    assert!(validate_source_name(&"a".repeat(MAX_SOURCE_NAME_BYTES + 1)).is_err());
 }
 
 #[test]

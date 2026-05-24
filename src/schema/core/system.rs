@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+use crate::config::{MAX_REMOTE_SOURCES, MAX_SOURCE_NAME_BYTES};
 use crate::schema_fragments::health_response_schema;
 
 use super::super::common::{
@@ -44,6 +45,7 @@ fn source_name_schema() -> Value {
     json!({
         "type": "string",
         "minLength": 1,
+        "maxLength": MAX_SOURCE_NAME_BYTES,
         "pattern": "^(?!local$)[A-Za-z0-9][A-Za-z0-9_-]*$",
         "description": "Remote source name. Must start with an ASCII letter or digit, may contain ASCII letters, digits, '-' and '_', and must not be `local`."
     })
@@ -69,7 +71,7 @@ fn remote_sources_payload_schema() -> Value {
         schema_props([
             (
                 "sources",
-                json!({ "type": "array", "items": remote_source_schema() }),
+                json!({ "type": "array", "maxItems": MAX_REMOTE_SOURCES, "items": remote_source_schema() }),
             ),
             ("config_path", json!({ "type": "string" })),
         ]),

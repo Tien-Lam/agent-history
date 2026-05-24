@@ -10,6 +10,7 @@ pub const MAX_REMOTE_SOURCES: usize = 256;
 pub use manifest::{SourceCacheManifest, SourceCacheManifestLoadError};
 pub use validation::{
     validate_rsync_endpoint, validate_rsync_host, validate_rsync_path, validate_source_name,
+    MAX_SOURCE_NAME_BYTES,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

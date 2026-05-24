@@ -1,3 +1,5 @@
+pub const MAX_SOURCE_NAME_BYTES: usize = 64;
+
 pub fn validate_source_name(name: &str) -> Result<(), String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -11,6 +13,11 @@ pub fn validate_source_name(name: &str) -> Result<(), String> {
     }
     if trimmed == crate::federated::LOCAL_SOURCE {
         return Err("source name 'local' is reserved".to_string());
+    }
+    if trimmed.len() > MAX_SOURCE_NAME_BYTES {
+        return Err(format!(
+            "source name must be at most {MAX_SOURCE_NAME_BYTES} bytes"
+        ));
     }
     let mut chars = trimmed.chars();
     let Some(first) = chars.next() else {
@@ -113,6 +120,7 @@ mod tests {
 
     use super::{
         validate_rsync_endpoint, validate_rsync_host, validate_rsync_path, validate_source_name,
+        MAX_SOURCE_NAME_BYTES,
     };
 
     fn valid_source_name_strategy() -> impl Strategy<Value = String> {
@@ -190,5 +198,14 @@ mod tests {
                 "{path} should be accepted"
             );
         }
+    }
+
+    #[test]
+    fn source_name_rejects_values_above_max_length() {
+        let valid = "a".repeat(MAX_SOURCE_NAME_BYTES);
+        let too_long = "a".repeat(MAX_SOURCE_NAME_BYTES + 1);
+
+        assert!(validate_source_name(&valid).is_ok());
+        assert!(validate_source_name(&too_long).is_err());
     }
 }
