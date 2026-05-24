@@ -37,6 +37,10 @@ fn validate_rejects_bad_refs() {
         Err(MetadataError::InvalidSessionRef(_, _))
     ));
     assert!(matches!(
+        validate_session_ref("claude-code/abc\n123"),
+        Err(MetadataError::InvalidSessionRef(_, _))
+    ));
+    assert!(matches!(
         validate_session_ref("-bad:claude-code/abc"),
         Err(MetadataError::InvalidSessionRef(_, _))
     ));

@@ -177,6 +177,18 @@ fn parse_rejects_missing_session_id() {
 }
 
 #[test]
+fn parse_rejects_control_characters_in_session_id() {
+    assert_eq!(
+        "claude-code/abc\n123#5".parse::<CitationRef>(),
+        Err(CitationParseError::InvalidSessionId("abc\n123".into()))
+    );
+    assert_eq!(
+        "claude-code/abc\t123".parse::<SessionRef>(),
+        Err(CitationParseError::InvalidSessionId("abc\t123".into()))
+    );
+}
+
+#[test]
 fn parse_rejects_missing_provider() {
     assert_eq!(
         "/abc#5".parse::<CitationRef>(),
@@ -221,4 +233,6 @@ fn new_validates_inputs() {
     assert!(CitationRef::new(Provider::ClaudeCode, sid("abc"), 1).is_some());
     assert!(CitationRef::new(Provider::ClaudeCode, sid("abc"), 0).is_none());
     assert!(CitationRef::new(Provider::ClaudeCode, sid(""), 1).is_none());
+    assert!(CitationRef::new(Provider::ClaudeCode, sid("abc\n123"), 1).is_none());
+    assert!(SessionRef::new(Provider::ClaudeCode, sid("abc\n123")).is_none());
 }

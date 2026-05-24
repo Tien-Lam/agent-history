@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
+use super::base::session_id_is_valid;
 use super::{CitationRef, SessionOrTurnRef, SessionRef};
 use crate::model::provider::Provider;
 use crate::model::session::SessionId;
@@ -14,6 +15,8 @@ pub enum CitationParseError {
     MissingProvider,
     #[error("citation ref missing session id (expected '<provider>/<session-id>#<turn>')")]
     MissingSessionId,
+    #[error("invalid session id '{0}' (must not contain control characters)")]
+    InvalidSessionId(String),
     #[error("citation ref missing turn (expected '<provider>/<session-id>#<turn>')")]
     MissingTurn,
     #[error("unknown provider slug '{0}'")]
@@ -34,6 +37,11 @@ fn parse_session_head(s: &str) -> Result<(Provider, SessionId), CitationParseErr
     }
     if session_str.is_empty() {
         return Err(CitationParseError::MissingSessionId);
+    }
+    if !session_id_is_valid(session_str) {
+        return Err(CitationParseError::InvalidSessionId(
+            session_str.to_string(),
+        ));
     }
 
     let provider = Provider::from_slug(provider_slug)

@@ -5,6 +5,10 @@ use serde::Serialize;
 use crate::model::provider::Provider;
 use crate::model::session::SessionId;
 
+pub(super) fn session_id_is_valid(session_id: &str) -> bool {
+    !session_id.is_empty() && !session_id.chars().any(char::is_control)
+}
+
 /// A stable reference to a session: `<provider-slug>/<session-id>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct SessionRef {
@@ -14,7 +18,7 @@ pub struct SessionRef {
 
 impl SessionRef {
     pub fn new(provider: Provider, session_id: SessionId) -> Option<Self> {
-        if session_id.0.is_empty() {
+        if !session_id_is_valid(&session_id.0) {
             return None;
         }
         Some(Self {
@@ -47,7 +51,7 @@ impl CitationRef {
     /// Constructs a new citation ref. Returns `None` if `turn == 0` or the
     /// session id is empty, so callers cannot build refs that fail to parse.
     pub fn new(provider: Provider, session_id: SessionId, turn: u32) -> Option<Self> {
-        if turn == 0 || session_id.0.is_empty() {
+        if turn == 0 || !session_id_is_valid(&session_id.0) {
             return None;
         }
         Some(Self {

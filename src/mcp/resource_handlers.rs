@@ -109,7 +109,7 @@ impl McpServer {
         let source = source.unwrap_or(LOCAL_SOURCE);
         let source = LookupSource::explicit(source).map_err(|e| e.to_string())?;
         let citation = CitationRef::new(provider_want, SessionId(session_id.to_string()), turn)
-            .ok_or_else(|| "turn must be >= 1".to_string())?;
+            .ok_or_else(|| "invalid session id or turn".to_string())?;
         let discovery = self.collect_discovery();
         let provider_scope = self.provider_scope();
         let loaded = lookup_service::load_exact_citation_window(

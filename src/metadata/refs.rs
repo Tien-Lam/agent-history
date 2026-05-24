@@ -23,6 +23,9 @@ pub fn validate_session_ref(raw: &str) -> std::result::Result<&str, MetadataErro
             CitationParseError::MissingProvider
             | CitationParseError::MissingSessionId
             | CitationParseError::MissingTurn => "expected '<provider>/<session-id>[#<turn>]'",
+            CitationParseError::InvalidSessionId(_) => {
+                "session id must not contain control characters"
+            }
             CitationParseError::UnknownProvider(_) => "unknown provider slug",
             CitationParseError::InvalidTurn(_) => "turn must be a positive integer",
         };
