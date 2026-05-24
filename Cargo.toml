@@ -62,10 +62,12 @@ predicates = "3"
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.tar.gz"
 pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.zip"
 pkg-fmt = "zip"
 
 [lints.rust]

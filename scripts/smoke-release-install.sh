@@ -57,12 +57,16 @@ ARCHIVE="$(cd "$ROOT" && scripts/package-release.sh --target "$TARGET" --tag "$T
 case "$ARCHIVE" in
     *.tar.gz)
         tar tzf "$ARCHIVE" | sort > "$TMPDIR/archive-files"
+        mkdir -p "$TMPDIR/archive-marker"
+        tar xzf "$ARCHIVE" -C "$TMPDIR/archive-marker" aghist.install
         ;;
     *.zip)
         if command -v unzip >/dev/null 2>&1; then
             unzip -Z1 "$ARCHIVE" | sort > "$TMPDIR/archive-files"
+            unzip -p "$ARCHIVE" aghist.install > "$TMPDIR/aghist.install"
         elif command -v 7z >/dev/null 2>&1; then
             7z l -ba "$ARCHIVE" | awk '{ print $NF }' | sort > "$TMPDIR/archive-files"
+            7z x -so "$ARCHIVE" aghist.install > "$TMPDIR/aghist.install"
         else
             echo "Error: inspecting zip archives requires unzip or 7z" >&2
             exit 1
@@ -82,14 +86,26 @@ esac
 printf '%s\n%s\n' "$BIN_NAME" aghist.install | sort > "$TMPDIR/expected-files"
 diff -u "$TMPDIR/expected-files" "$TMPDIR/archive-files"
 
+if [ -f "$TMPDIR/archive-marker/aghist.install" ]; then
+    ARCHIVE_MARKER="$TMPDIR/archive-marker/aghist.install"
+else
+    ARCHIVE_MARKER="$TMPDIR/aghist.install"
+fi
+check_marker() {
+    local marker="$1"
+    grep -qx 'method=github-release' "$marker"
+    grep -qx "repo=Tien-Lam/agent-history" "$marker"
+    grep -qx "target=$TARGET" "$marker"
+    grep -qx "tag=$TAG" "$marker"
+}
+
+check_marker "$ARCHIVE_MARKER"
+
 INSTALL_DIR="$TMPDIR/bin"
 bash "$ROOT/install.sh" --to "$INSTALL_DIR" --tag "$TAG" --archive "$ARCHIVE"
 "$INSTALL_DIR/$BIN_NAME" --version
 
-grep -qx 'method=github-release' "$INSTALL_DIR/aghist.install"
-grep -qx "repo=Tien-Lam/agent-history" "$INSTALL_DIR/aghist.install"
-grep -qx "target=$TARGET" "$INSTALL_DIR/aghist.install"
-grep -qx "tag=$TAG" "$INSTALL_DIR/aghist.install"
+check_marker "$INSTALL_DIR/aghist.install"
 
 printf 'y\n' | AGHIST_INDEX_DIR="$TMPDIR/index" AGHIST_CONFIG="$TMPDIR/config/config.toml" "$INSTALL_DIR/$BIN_NAME" uninstall
 test ! -e "$INSTALL_DIR/$BIN_NAME"
