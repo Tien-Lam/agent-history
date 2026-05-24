@@ -30,7 +30,13 @@ pub(crate) struct SearchCommand {
     pub(crate) stdin: bool,
 
     /// Maximum number of hits to return
-    #[arg(long, short = 'n', default_value_t = SEARCH_LIMIT_DEFAULT, conflicts_with = "params")]
+    #[arg(
+        long,
+        short = 'n',
+        default_value_t = SEARCH_LIMIT_DEFAULT,
+        value_parser = parse_search_limit,
+        conflicts_with = "params"
+    )]
     pub(crate) limit: usize,
 
     /// Opaque pagination cursor from a prior `meta.next_cursor`.
@@ -85,6 +91,7 @@ pub(crate) struct SearchCommand {
         long,
         default_value_t = SEARCH_HYBRID_WEIGHT_DEFAULT,
         value_name = "FLOAT",
+        value_parser = parse_hybrid_weight,
         conflicts_with = "params"
     )]
     pub(crate) hybrid_weight: f32,
@@ -96,4 +103,26 @@ pub(crate) struct SearchCommand {
     /// / `--stdin` for file/stdin input.
     #[arg(long, value_name = "JSON")]
     pub(crate) params: Option<String>,
+}
+
+fn parse_search_limit(raw: &str) -> Result<usize, String> {
+    let value = raw
+        .parse::<usize>()
+        .map_err(|e| format!("invalid search limit: {e}"))?;
+    if value == 0 {
+        Err("search limit must be at least 1".to_string())
+    } else {
+        Ok(value)
+    }
+}
+
+fn parse_hybrid_weight(raw: &str) -> Result<f32, String> {
+    let value = raw
+        .parse::<f32>()
+        .map_err(|e| format!("invalid hybrid weight: {e}"))?;
+    if value.is_finite() && (0.0..=1.0).contains(&value) {
+        Ok(value)
+    } else {
+        Err("hybrid weight must be a finite number between 0.0 and 1.0".to_string())
+    }
 }

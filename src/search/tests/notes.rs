@@ -101,3 +101,36 @@ fn index_notes_prunes_removed_rows() {
         "pruned note must not match: {hits:?}"
     );
 }
+
+#[test]
+fn note_sync_prunes_stale_docs_when_metadata_db_is_missing() {
+    let (dir, index, _s1, _s2) = build_tiny_index();
+    let notes = vec![make_note(
+        11,
+        "claude-code/sess-1",
+        "stale sidecar note marker11",
+        "2026-01-01T00:00:00Z",
+    )];
+    index.index_notes(&notes).unwrap();
+    assert!(
+        index
+            .search_with_filters("marker11", 10, &SearchFilters::default())
+            .unwrap()
+            .iter()
+            .any(|h| h.kind() == HitKind::Note),
+        "test setup should index note before pruning"
+    );
+
+    crate::search::service::index_notes_best_effort_for_path(
+        &index,
+        Some(dir.path().join("missing-metadata.db")),
+    );
+
+    let hits = index
+        .search_with_filters("marker11", 10, &SearchFilters::default())
+        .unwrap();
+    assert!(
+        hits.iter().all(|h| h.kind() != HitKind::Note),
+        "missing metadata sidecar should prune stale note docs: {hits:?}"
+    );
+}

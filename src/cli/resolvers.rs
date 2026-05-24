@@ -122,11 +122,29 @@ pub(crate) fn resolve_search_args(
     args: SearchArgs,
     params: Option<String>,
 ) -> Result<SearchArgs, ErrorEnvelope> {
-    if let Some(raw) = params {
-        params::resolve_search_params(&raw)
+    let args = if let Some(raw) = params {
+        params::resolve_search_params(&raw)?
     } else {
-        Ok(args)
+        args
+    };
+    validate_search_args(args)
+}
+
+fn validate_search_args(args: SearchArgs) -> Result<SearchArgs, ErrorEnvelope> {
+    if args.limit == 0 {
+        return Err(
+            ErrorEnvelope::new("usage", "search limit must be at least 1")
+                .with_hint("Use `--limit N` or `--params {\"limit\":N}` with N >= 1."),
+        );
     }
+    if !args.hybrid_weight.is_finite() || !(0.0..=1.0).contains(&args.hybrid_weight) {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            "hybrid_weight must be a finite number between 0.0 and 1.0",
+        )
+        .with_hint("Use a value in the schema range: 0.0 <= hybrid_weight <= 1.0."));
+    }
+    Ok(args)
 }
 
 pub(crate) fn resolve_show_args(

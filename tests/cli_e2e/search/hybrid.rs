@@ -82,3 +82,18 @@ fn search_hybrid_weight_zero_behaves_like_lexical() {
         "hybrid_weight=0 must not engage hybrid path"
     );
 }
+
+#[test]
+fn search_rejects_out_of_range_hybrid_weight_flag() {
+    let output = aghist()
+        .args(["search", "User", "--hybrid-weight", "1.5"])
+        .output()
+        .unwrap();
+
+    cli::assert_exit_code(&output, 2);
+    assert!(
+        cli::output_stderr(&output).contains("hybrid weight must be a finite number"),
+        "stderr: {}",
+        cli::output_stderr(&output)
+    );
+}

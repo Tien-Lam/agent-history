@@ -154,17 +154,20 @@ fn index_load_warnings(
 }
 
 pub fn index_notes_best_effort(index: &SearchIndex) {
-    let Some(path) = metadata::default_path() else {
+    index_notes_best_effort_for_path(index, metadata::default_path());
+}
+
+pub(crate) fn index_notes_best_effort_for_path(index: &SearchIndex, path: Option<PathBuf>) {
+    let Some(path) = path else {
+        let _ = index.index_notes(&[]);
         return;
     };
-    if !path.exists() {
-        return;
-    }
-    let Ok(conn) = metadata::open(&path) else {
-        return;
-    };
-    let Ok(notes) = metadata::note_list(&conn, None) else {
-        return;
+    let notes = if path.exists() {
+        metadata::open(&path)
+            .and_then(|conn| metadata::note_list(&conn, None))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
     };
     let _ = index.index_notes(&notes);
 }

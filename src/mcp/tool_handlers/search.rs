@@ -47,7 +47,7 @@ impl McpServer {
         let response = McpSearchResponse {
             query: query.clone(),
             limit,
-            total: hits_json.len(),
+            total: page.total,
             hits: hits_json,
             source_errors,
         };

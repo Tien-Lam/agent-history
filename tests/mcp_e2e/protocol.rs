@@ -66,6 +66,29 @@ fn mcp_list_sessions_with_no_data_returns_empty_envelope() {
 }
 
 #[test]
+fn mcp_search_total_counts_matches_beyond_limit() {
+    let fixture = common::fixtures::claude::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+    let responses = run_session(
+        home,
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "search_sessions",
+                "arguments": { "query": "User", "limit": 1 }
+            }
+        })],
+    );
+
+    assert_eq!(responses.len(), 1);
+    let structured = &responses[0]["result"]["structuredContent"];
+    assert_eq!(structured["hits"].as_array().unwrap().len(), 1);
+    assert_eq!(structured["total"], 2);
+}
+
+#[test]
 fn mcp_health_returns_structured_checks() {
     let dir = tempfile::tempdir().unwrap();
     let responses = run_session(
