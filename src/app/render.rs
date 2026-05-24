@@ -48,7 +48,7 @@ impl App {
         let selected_idx = self.session_list.selected_index();
         let selected_session = selected_idx.and_then(|i| display.get(i).copied());
         let messages = selected_session
-            .and_then(|s| self.message_cache.get(&s.id.0))
+            .and_then(|s| self.message_cache.get(&s.identity_key()))
             .map(|m: &Vec<Message>| m.as_slice());
 
         let view_focused = self.mode == AppMode::ViewSession;

@@ -26,8 +26,10 @@ impl App {
                 if self.search_pending_at.take().is_some() {
                     self.execute_search();
                 }
-                if let Some((session_id, source_path, provider)) = self.resolve_selected_session() {
-                    self.load_messages_cached(&session_id, &source_path, provider);
+                if let Some((cache_key, session_id, source_path, provider)) =
+                    self.resolve_selected_session()
+                {
+                    self.load_messages_cached(&cache_key, &session_id, &source_path, provider);
                     self.message_view.reset_scroll();
                     self.mode = AppMode::ViewSession;
                 }

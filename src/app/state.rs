@@ -55,12 +55,17 @@ impl App {
 
     pub(super) fn resolve_selected_session(
         &self,
-    ) -> Option<(String, std::path::PathBuf, Provider)> {
+    ) -> Option<(String, String, std::path::PathBuf, Provider)> {
         let idx = self.session_list.selected_index()?;
         let display = self.display_sessions();
-        display
-            .get(idx)
-            .map(|s| (s.id.0.clone(), s.source_path.clone(), s.provider))
+        display.get(idx).map(|s| {
+            (
+                s.identity_key(),
+                s.id.0.clone(),
+                s.source_path.clone(),
+                s.provider,
+            )
+        })
     }
 
     /// Ensure the selection index sits within the displayed-session range.

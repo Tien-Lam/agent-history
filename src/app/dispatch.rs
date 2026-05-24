@@ -49,7 +49,7 @@ impl App {
 
             // Stars / bookmarks
             Action::ToggleStar => {
-                if let Some((session_id, _, provider)) = self.resolve_selected_session() {
+                if let Some((_, session_id, _, provider)) = self.resolve_selected_session() {
                     match self.stars.toggle(provider, &session_id) {
                         Ok(true) => {
                             self.status_message = Some("Starred".to_string());
@@ -69,7 +69,7 @@ impl App {
 
             // Resume
             Action::CopyResumeCommand => {
-                if let Some((session_id, _, provider)) = self.resolve_selected_session() {
+                if let Some((_, session_id, _, provider)) = self.resolve_selected_session() {
                     let cmd = provider.resume_command(&session_id);
                     match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(&cmd)) {
                         Ok(()) => {
@@ -151,8 +151,8 @@ impl App {
                     self.preload_focused_session();
                 }
             }
-            Action::MessagesLoaded(session_id, messages) => {
-                self.message_cache.put(session_id.0, messages);
+            Action::MessagesLoaded(cache_key, messages) => {
+                self.message_cache.put(cache_key, messages);
             }
             Action::LoadError(msg) => {
                 self.warnings.push(msg);

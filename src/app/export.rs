@@ -15,7 +15,7 @@ impl App {
             }
         };
 
-        let messages = match self.message_cache.get(&session.id.0) {
+        let messages = match self.message_cache.get(&session.identity_key()) {
             Some(m) => m.clone(),
             None => return,
         };

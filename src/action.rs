@@ -1,4 +1,4 @@
-use crate::model::{Message, Session, SessionId};
+use crate::model::{Message, Session};
 
 #[derive(Debug, Clone)]
 pub enum Action {
@@ -28,7 +28,7 @@ pub enum Action {
     IndexReady,
     // Data (from background threads)
     SessionsLoaded(Vec<Session>),
-    MessagesLoaded(SessionId, Vec<Message>),
+    MessagesLoaded(String, Vec<Message>),
     LoadError(String),
     // Filter
     ToggleFilter,
