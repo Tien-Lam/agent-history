@@ -114,6 +114,25 @@ fn decisions_rejects_zero_limit_flag() {
 }
 
 #[test]
+fn decisions_rejects_invalid_threshold_flags() {
+    for value in ["-1", "NaN"] {
+        let assert = aghist()
+            .args(["decisions", "--threshold", value])
+            .assert()
+            .code(2);
+        let envelope = common::cli::assert_stderr_error(&assert);
+        assert_eq!(envelope["error"]["kind"], "usage");
+        assert!(
+            envelope["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("decision threshold must be a finite number at least 0"),
+            "unexpected error envelope for {value}: {envelope:#}"
+        );
+    }
+}
+
+#[test]
 fn threads_rejects_zero_min_sessions_flag() {
     let assert = aghist()
         .args(["threads", "--min-sessions", "0"])
@@ -126,6 +145,23 @@ fn threads_rejects_zero_min_sessions_flag() {
             .as_str()
             .unwrap()
             .contains("min sessions must be at least 1"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
+#[test]
+fn threads_rejects_negative_gap_hours_flag() {
+    let assert = aghist()
+        .args(["threads", "--gap-hours", "-1"])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("gap hours must be at least 0"),
         "unexpected error envelope: {envelope:#}"
     );
 }

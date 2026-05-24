@@ -31,7 +31,13 @@ pub(crate) struct DecisionsCommand {
 
     /// Drop sentences whose score is below this threshold.
     /// Default 3.0 keeps explicit decisions and pairs of soft markers.
-    #[arg(long, default_value_t = aghist::decisions::DEFAULT_THRESHOLD, value_name = "FLOAT")]
+    #[arg(
+        long,
+        default_value_t = aghist::decisions::DEFAULT_THRESHOLD,
+        value_name = "FLOAT",
+        value_parser = parse_decision_threshold,
+        allow_hyphen_values = true
+    )]
     pub(crate) threshold: f32,
 
     /// Maximum number of candidates to return across all sessions,
@@ -85,7 +91,13 @@ pub(crate) struct TodosCommand {
 pub(crate) struct ThreadsCommand {
     /// Cluster gap in hours. Sessions in the same project within this gap
     /// merge into one thread; longer gaps split. Ignored with `--llm`.
-    #[arg(long, default_value_t = aghist::threads::DEFAULT_GAP_HOURS, value_name = "HOURS")]
+    #[arg(
+        long,
+        default_value_t = aghist::threads::DEFAULT_GAP_HOURS,
+        value_name = "HOURS",
+        value_parser = parse_gap_hours,
+        allow_hyphen_values = true
+    )]
     pub(crate) gap_hours: i64,
 
     /// Drop threads with fewer than this many sessions. Ignored with `--llm`.
@@ -124,6 +136,28 @@ fn parse_decisions_limit(raw: &str) -> Result<usize, String> {
         .map_err(|e| format!("invalid decisions limit: {e}"))?;
     if value == 0 {
         Err("decisions limit must be at least 1".to_string())
+    } else {
+        Ok(value)
+    }
+}
+
+fn parse_decision_threshold(raw: &str) -> Result<f32, String> {
+    let value = raw
+        .parse::<f32>()
+        .map_err(|e| format!("invalid decision threshold: {e}"))?;
+    if value.is_finite() && value >= 0.0 {
+        Ok(value)
+    } else {
+        Err("decision threshold must be a finite number at least 0".to_string())
+    }
+}
+
+fn parse_gap_hours(raw: &str) -> Result<i64, String> {
+    let value = raw
+        .parse::<i64>()
+        .map_err(|e| format!("invalid gap hours: {e}"))?;
+    if value < 0 {
+        Err("gap hours must be at least 0".to_string())
     } else {
         Ok(value)
     }
