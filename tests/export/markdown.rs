@@ -34,6 +34,28 @@ fn markdown_preserves_code_blocks() {
 }
 
 #[test]
+fn markdown_code_fence_outlasts_embedded_backticks() {
+    use aghist::model::ContentBlock;
+
+    let (session, mut messages) = super::sample_session();
+    messages[0].content = vec![ContentBlock::CodeBlock {
+        language: Some("rust\n```oops".to_string()),
+        code: "before\n```\nafter".to_string(),
+    }];
+
+    let md = export::to_markdown(&session, &messages);
+
+    assert!(
+        md.contains("````rustoops\nbefore\n```\nafter\n````"),
+        "embedded fence should force a longer outer fence: {md}"
+    );
+    assert!(
+        !md.contains("```oops"),
+        "language info should not inject a fence: {md}"
+    );
+}
+
+#[test]
 fn markdown_has_tool_call_sections() {
     let (session, messages) = load_fixture_session();
     let md = export::to_markdown(&session, &messages);

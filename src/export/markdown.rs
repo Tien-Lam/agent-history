@@ -80,12 +80,11 @@ fn render_content_md(out: &mut String, blocks: &[ContentBlock]) {
                 out.push_str("\n\n");
             }
             ContentBlock::CodeBlock { language, code } => {
-                let lang = language.as_deref().unwrap_or("");
-                let _ = writeln!(out, "```{lang}\n{code}\n```\n");
+                render_fenced_code(out, language.as_deref(), code);
             }
             ContentBlock::ToolUse(tool) => {
                 let _ = writeln!(out, "<details>\n<summary>Tool: {}</summary>\n", tool.name);
-                let _ = writeln!(out, "```json\n{}\n```\n", tool.arguments);
+                render_fenced_code(out, Some("json"), &tool.arguments);
                 out.push_str("</details>\n\n");
             }
             ContentBlock::ToolResult(result) => {
@@ -94,7 +93,7 @@ fn render_content_md(out: &mut String, blocks: &[ContentBlock]) {
                     out,
                     "<details>\n<summary>Tool Result ({status})</summary>\n"
                 );
-                let _ = writeln!(out, "```\n{}\n```\n", result.output);
+                render_fenced_code(out, None, &result.output);
                 out.push_str("</details>\n\n");
             }
             ContentBlock::Thinking(text) => {
@@ -107,4 +106,37 @@ fn render_content_md(out: &mut String, blocks: &[ContentBlock]) {
             }
         }
     }
+}
+
+fn render_fenced_code(out: &mut String, language: Option<&str>, code: &str) {
+    let fence = markdown_fence_for(code);
+    let info = language.map_or_else(String::new, sanitize_fence_info);
+    if info.is_empty() {
+        let _ = writeln!(out, "{fence}\n{code}\n{fence}\n");
+    } else {
+        let _ = writeln!(out, "{fence}{info}\n{code}\n{fence}\n");
+    }
+}
+
+fn markdown_fence_for(code: &str) -> String {
+    let mut longest = 0usize;
+    let mut current = 0usize;
+    for ch in code.chars() {
+        if ch == '`' {
+            current += 1;
+            longest = longest.max(current);
+        } else {
+            current = 0;
+        }
+    }
+    "`".repeat(longest.max(2) + 1)
+}
+
+fn sanitize_fence_info(language: &str) -> String {
+    language
+        .chars()
+        .filter(|ch| *ch != '`' && !ch.is_control())
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
