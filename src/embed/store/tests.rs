@@ -90,6 +90,36 @@ fn retain_keys_prunes_stale_vectors() {
 }
 
 #[test]
+fn retain_scoped_keys_preserves_entries_outside_scope() {
+    let dir = tempdir().unwrap();
+    let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);
+    let hash = content_hash("same");
+    store
+        .upsert("claude-code\u{1f}keep", hash, vec![1.0, 2.0, 3.0, 4.0])
+        .unwrap();
+    store
+        .upsert("claude-code\u{1f}drop", hash, vec![5.0, 6.0, 7.0, 8.0])
+        .unwrap();
+    store
+        .upsert(
+            "copilot-cli\u{1f}outside",
+            hash,
+            vec![9.0, 10.0, 11.0, 12.0],
+        )
+        .unwrap();
+
+    let live = HashSet::from(["claude-code\u{1f}keep".to_string()]);
+
+    assert_eq!(
+        store.retain_scoped_keys(&live, |key| key.starts_with("claude-code\u{1f}")),
+        1
+    );
+    assert!(store.get("claude-code\u{1f}keep").is_some());
+    assert!(store.get("claude-code\u{1f}drop").is_none());
+    assert!(store.get("copilot-cli\u{1f}outside").is_some());
+}
+
+#[test]
 fn upsert_rejects_dimension_mismatch() {
     let dir = tempdir().unwrap();
     let mut store = EmbeddingStore::create(dir.path(), DEFAULT_MODEL, 4);

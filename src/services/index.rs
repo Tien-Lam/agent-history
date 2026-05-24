@@ -38,12 +38,17 @@ pub fn build_index_summary(
     )?;
 
     #[cfg(feature = "embeddings")]
-    let embed_summary = embeddings::run_embeddings(
-        &outcome.index_dir,
-        &outcome.sessions,
-        providers,
-        accept_download,
-    )?;
+    let embed_summary = {
+        let embedding_prune_providers =
+            filter.map(|provider| std::collections::HashSet::from([provider]));
+        embeddings::run_embeddings(
+            &outcome.index_dir,
+            &outcome.sessions,
+            providers,
+            embedding_prune_providers.as_ref(),
+            accept_download,
+        )?
+    };
     #[cfg(not(feature = "embeddings"))]
     let embed_summary = embeddings::disabled_embeddings_summary(accept_download);
 

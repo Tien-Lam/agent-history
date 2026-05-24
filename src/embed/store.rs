@@ -162,6 +162,20 @@ impl EmbeddingStore {
         before - self.entries.len()
     }
 
+    /// Drop stale entries whose keys belong to the caller-selected scope.
+    /// Entries outside the scope are left untouched so provider-scoped index
+    /// runs do not erase embeddings for providers that were not scanned.
+    pub fn retain_scoped_keys(
+        &mut self,
+        live_keys: &HashSet<String>,
+        mut is_in_prune_scope: impl FnMut(&str) -> bool,
+    ) -> usize {
+        let before = self.entries.len();
+        self.entries
+            .retain(|key, _| !is_in_prune_scope(key) || live_keys.contains(key));
+        before - self.entries.len()
+    }
+
     /// Atomically rewrite the sidecar through a sibling temp file so a crash
     /// mid-write can't corrupt an existing store.
     pub fn flush(&self) -> Result<(), EmbedError> {
