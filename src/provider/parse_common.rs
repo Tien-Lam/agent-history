@@ -57,9 +57,7 @@ pub(crate) fn timestamp_with_index_millis(base: DateTime<Utc>, idx: usize) -> Da
 }
 
 pub(crate) fn unix_epoch_utc() -> DateTime<Utc> {
-    Utc.timestamp_opt(0, 0)
-        .single()
-        .expect("unix epoch timestamp is valid")
+    DateTime::<Utc>::from(std::time::UNIX_EPOCH)
 }
 
 pub(crate) fn epoch_timestamp_for_index(idx: usize) -> DateTime<Utc> {

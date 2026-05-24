@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 
 use crate::action::Action;
 use crate::model::{Provider, Session, SessionId};
@@ -112,11 +112,7 @@ fn temp_session_started_at(source_path: &Path) -> DateTime<Utc> {
         .metadata()
         .and_then(|metadata| metadata.modified())
         .map_or_else(
-            |_| {
-                Utc.timestamp_opt(0, 0)
-                    .single()
-                    .expect("unix epoch timestamp is valid")
-            },
+            |_| DateTime::<Utc>::from(std::time::UNIX_EPOCH),
             DateTime::<Utc>::from,
         )
 }
