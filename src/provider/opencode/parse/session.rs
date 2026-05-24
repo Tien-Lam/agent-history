@@ -3,8 +3,10 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::fs_read;
 use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
+use crate::provider::parse_common::MAX_PROVIDER_METADATA_FILE_BYTES;
 use crate::provider::project_name_from_path;
 
 use super::{timestamp_from_values, RawModel, RawTime};
@@ -29,7 +31,7 @@ struct RawSession {
 }
 
 pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> {
-    let data = std::fs::read_to_string(path).ok()?;
+    let data = fs_read::read_to_string_limited(path, MAX_PROVIDER_METADATA_FILE_BYTES).ok()?;
     let raw: RawSession = serde_json::from_str(&data).ok()?;
     let id = stringish(raw.id.as_ref(), &["id"]).or_else(|| {
         path.file_stem()

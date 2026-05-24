@@ -1,16 +1,21 @@
 use std::path::Path;
 
+use crate::fs_read;
 use crate::model::{ContentBlock, Message, Provider, Role, Session, SessionId};
+use crate::provider::parse_common::MAX_PROVIDER_SESSION_FILE_BYTES;
 
 use super::blocks::split_sessions;
 use super::messages::parse_messages;
 use super::ProviderError;
 
 pub(crate) fn parse_sessions_in_file(path: &Path) -> Result<Vec<Session>, ProviderError> {
-    let content = std::fs::read_to_string(path).map_err(|e| ProviderError::Parse {
-        path: path.to_path_buf(),
-        reason: e.to_string(),
-    })?;
+    let content =
+        fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).map_err(|e| {
+            ProviderError::Parse {
+                path: path.to_path_buf(),
+                reason: e.to_string(),
+            }
+        })?;
 
     let project_dir = path.parent().map(Path::to_path_buf);
     let project_name = project_dir

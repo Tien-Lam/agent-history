@@ -1,8 +1,11 @@
 use std::path::Path;
 
+use crate::fs_read;
 use crate::model::{ContentBlock, Message, MessageId, Role};
 use crate::provider::json_text::{stringish, value_u64};
-use crate::provider::parse_common::{file_modified_utc, token_usage_from_options, unix_epoch_utc};
+use crate::provider::parse_common::{
+    file_modified_utc, token_usage_from_options, unix_epoch_utc, MAX_PROVIDER_SESSION_FILE_BYTES,
+};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 use crate::provider::ProviderParseStats;
 
@@ -43,7 +46,7 @@ enum MessageFileOutcome {
 }
 
 fn parse_message_file_outcome(path: &Path, part_dir: &Path) -> MessageFileOutcome {
-    let Ok(data) = std::fs::read_to_string(path) else {
+    let Ok(data) = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES) else {
         return MessageFileOutcome::ParseError;
     };
     let Ok(raw) = serde_json::from_str::<RawMessage>(&data) else {

@@ -6,6 +6,9 @@ use serde_json::Value;
 use crate::model::{ContentBlock, TokenUsage, ToolCall, ToolResult};
 use crate::provider::json_text::{pretty_json, value_i64};
 
+pub(crate) const MAX_PROVIDER_SESSION_FILE_BYTES: usize = 128 * 1024 * 1024;
+pub(crate) const MAX_PROVIDER_METADATA_FILE_BYTES: usize = 4 * 1024 * 1024;
+
 mod jsonl;
 mod tolerant;
 

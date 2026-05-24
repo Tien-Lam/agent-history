@@ -4,9 +4,12 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use self::content::message_content;
+use crate::fs_read;
 use crate::model::{ContentBlock, Message, MessageId, Role};
 use crate::provider::json_text::{stringish, value_u64};
-use crate::provider::parse_common::{epoch_timestamp_for_index, token_usage_from_options};
+use crate::provider::parse_common::{
+    epoch_timestamp_for_index, token_usage_from_options, MAX_PROVIDER_SESSION_FILE_BYTES,
+};
 use crate::provider::{ProviderError, ProviderMessageLoad, ProviderParseStats};
 
 use super::{gemini_timestamp, raw_role, RawMessage};
@@ -17,7 +20,7 @@ pub(crate) fn load_messages_from_path_with_stats(
     path: &Path,
 ) -> Result<ProviderMessageLoad, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Gemini CLI messages");
-    let data = std::fs::read_to_string(path)?;
+    let data = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)?;
     let raw: Value = serde_json::from_str(&data)?;
     let raw_messages = raw
         .get("messages")

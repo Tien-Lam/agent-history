@@ -1,8 +1,11 @@
 use std::path::Path;
 
+use crate::fs_read;
 use crate::model::ContentBlock;
 use crate::provider::json_text::stringish;
-use crate::provider::parse_common::{pretty_json_opt, tool_result_block, tool_use_block};
+use crate::provider::parse_common::{
+    pretty_json_opt, tool_result_block, tool_use_block, MAX_PROVIDER_SESSION_FILE_BYTES,
+};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 use super::super::{message_text, tool_output_text, RawPart};
@@ -28,7 +31,8 @@ pub(super) fn load_parts_into_content(part_dir: &Path, content: &mut Vec<Content
             continue;
         }
 
-        let Ok(data) = std::fs::read_to_string(&path) else {
+        let Ok(data) = fs_read::read_to_string_limited(&path, MAX_PROVIDER_SESSION_FILE_BYTES)
+        else {
             continue;
         };
         let Ok(part) = serde_json::from_str::<RawPart>(&data) else {

@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 
 use super::blocks::{split_sessions, SessionBlock};
 use super::ProviderError;
+use crate::fs_read;
 use crate::model::{ContentBlock, Message, MessageId, Role};
+use crate::provider::parse_common::MAX_PROVIDER_SESSION_FILE_BYTES;
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 const USER_MARKER: &str = "####";
@@ -14,10 +16,13 @@ pub(crate) fn load_messages_from_file(
     target_started_at: DateTime<Utc>,
     session_id: &str,
 ) -> Result<Vec<Message>, ProviderError> {
-    let bytes = std::fs::read_to_string(path).map_err(|e| ProviderError::Parse {
-        path: path.to_path_buf(),
-        reason: e.to_string(),
-    })?;
+    let bytes =
+        fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).map_err(|e| {
+            ProviderError::Parse {
+                path: path.to_path_buf(),
+                reason: e.to_string(),
+            }
+        })?;
     for block in split_sessions(&bytes) {
         if block.started_at == target_started_at {
             return Ok(parse_messages(&block, session_id));

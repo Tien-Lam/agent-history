@@ -1,12 +1,14 @@
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::fs_read;
 use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
-use crate::provider::parse_common::timestamp_value_to_utc;
+use crate::provider::parse_common::{
+    timestamp_value_to_utc, visit_jsonl_records, MAX_PROVIDER_METADATA_FILE_BYTES,
+};
 use crate::provider::project_name_from_path;
 
 #[derive(Deserialize)]
@@ -18,7 +20,8 @@ struct WorkspaceYaml {
 }
 
 pub(crate) fn build_session(session_dir: &Path, workspace_path: &Path) -> Option<Session> {
-    let yaml_content = std::fs::read_to_string(workspace_path).ok()?;
+    let yaml_content =
+        fs_read::read_to_string_limited(workspace_path, MAX_PROVIDER_METADATA_FILE_BYTES).ok()?;
     let workspace: WorkspaceYaml = serde_yaml_ng::from_str(&yaml_content).ok()?;
 
     let session_id = stringish(workspace.id.as_ref(), &["id"]).or_else(|| {
@@ -75,29 +78,28 @@ fn copilot_workspace_timestamp(value: Option<&Value>) -> Option<chrono::DateTime
 }
 
 fn count_message_events(path: &Path) -> usize {
-    let Ok(file) = std::fs::File::open(path) else {
-        return 0;
-    };
-    let reader = BufReader::new(file);
-    reader
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| {
-            let Ok(value) = serde_json::from_str::<Value>(line) else {
-                return false;
-            };
-            let Some(event_type) = value
+    let mut count = 0;
+    let _ = visit_jsonl_records::<Value, _, _>(
+        path,
+        |record| {
+            let Some(event_type) = record
+                .value
                 .get("type")
                 .and_then(|value| stringish(Some(value), &["type", "event"]))
             else {
-                return false;
+                return;
             };
-            event_type.contains("user.message")
+            if event_type.contains("user.message")
                 || event_type.contains("assistant.message")
                 || event_type == "tool.execution_start"
                 || event_type == "tool.execution_complete"
                 || event_type == "tool.invoke"
                 || event_type == "tool.result"
-        })
-        .count()
+            {
+                count += 1;
+            }
+        },
+        |_| {},
+    );
+    count
 }

@@ -1,12 +1,15 @@
 use std::path::Path;
 
 use super::super::ProviderError;
+use crate::fs_read;
 use crate::model::{Message, MessageId, Role};
-use crate::provider::parse_common::{file_modified_utc, unix_epoch_utc};
+use crate::provider::parse_common::{
+    file_modified_utc, unix_epoch_utc, MAX_PROVIDER_SESSION_FILE_BYTES,
+};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub(crate) fn parse_checkpoint_md(path: &Path) -> Result<Vec<Message>, ProviderError> {
-    let content = std::fs::read_to_string(path)?;
+    let content = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)?;
     if content.trim().is_empty()
         || content
             .lines()

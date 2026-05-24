@@ -3,9 +3,12 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::fs_read;
 use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
-use crate::provider::parse_common::{file_modified_utc, parse_utc_opt, unix_epoch_utc};
+use crate::provider::parse_common::{
+    file_modified_utc, parse_utc_opt, unix_epoch_utc, MAX_PROVIDER_METADATA_FILE_BYTES,
+};
 
 use super::messages::parse_jsonl;
 
@@ -23,7 +26,11 @@ pub(crate) struct IndexEntry {
 }
 
 pub(crate) fn load_index(sessions_dir: &Path) -> Option<Vec<IndexEntry>> {
-    let bytes = std::fs::read(sessions_dir.join(INDEX_FILE)).ok()?;
+    let bytes = fs_read::read_limited(
+        &sessions_dir.join(INDEX_FILE),
+        MAX_PROVIDER_METADATA_FILE_BYTES,
+    )
+    .ok()?;
     let entries: Vec<Value> = serde_json::from_slice(&bytes).ok()?;
     Some(
         entries

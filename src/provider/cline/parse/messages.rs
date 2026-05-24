@@ -4,10 +4,11 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::fs_read;
 use crate::model::{Message, MessageId, Role};
 use crate::provider::anthropic_content::{content_to_blocks, AnthropicContent};
 use crate::provider::json_text::stringish;
-use crate::provider::parse_common::timestamp_with_index_millis;
+use crate::provider::parse_common::{timestamp_with_index_millis, MAX_PROVIDER_SESSION_FILE_BYTES};
 use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 pub(crate) const API_HISTORY_FILE: &str = "api_conversation_history.json";
@@ -30,7 +31,8 @@ pub(crate) fn parse_api_history_with_stats(
     path: &Path,
     base_ts: &DateTime<Utc>,
 ) -> Result<ProviderMessageLoad, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("read: {e}"))?;
+    let bytes = fs_read::read_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)
+        .map_err(|e| format!("read: {e}"))?;
     let raw: Vec<Value> = serde_json::from_slice(&bytes).map_err(|e| format!("parse: {e}"))?;
 
     let mut messages = Vec::with_capacity(raw.len());

@@ -2,18 +2,21 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 
+use crate::fs_read;
 use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
-use crate::provider::parse_common::file_modified_utc;
+use crate::provider::parse_common::{file_modified_utc, MAX_PROVIDER_SESSION_FILE_BYTES};
 use crate::provider::project_name_from_path;
 use crate::provider::ProviderError;
 
 use super::{zed_timestamp, ZedConversation, ZedMessage};
 
 pub(crate) fn read_session(path: &Path) -> Result<Option<Session>, ProviderError> {
-    let bytes = std::fs::read(path).map_err(|e| ProviderError::Parse {
-        path: path.to_path_buf(),
-        reason: e.to_string(),
+    let bytes = fs_read::read_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).map_err(|e| {
+        ProviderError::Parse {
+            path: path.to_path_buf(),
+            reason: e.to_string(),
+        }
     })?;
 
     let raw: ZedConversation = match serde_json::from_slice(&bytes) {

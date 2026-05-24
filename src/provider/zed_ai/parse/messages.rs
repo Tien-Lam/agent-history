@@ -2,9 +2,10 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::fs_read;
 use crate::model::{Message, MessageId, Role};
 use crate::provider::json_text::{string_or_object_field_or_pretty, stringish};
-use crate::provider::parse_common::epoch_timestamp_for_index;
+use crate::provider::parse_common::{epoch_timestamp_for_index, MAX_PROVIDER_SESSION_FILE_BYTES};
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 use crate::provider::{ProviderError, ProviderMessageLoad, ProviderParseStats};
 
@@ -13,9 +14,11 @@ use super::{zed_timestamp, ZedConversation, ZedMessage};
 pub(crate) fn load_messages_from_path_with_stats(
     path: &Path,
 ) -> Result<ProviderMessageLoad, ProviderError> {
-    let bytes = std::fs::read(path).map_err(|e| ProviderError::Parse {
-        path: path.to_path_buf(),
-        reason: e.to_string(),
+    let bytes = fs_read::read_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).map_err(|e| {
+        ProviderError::Parse {
+            path: path.to_path_buf(),
+            reason: e.to_string(),
+        }
     })?;
     let raw: ZedConversation =
         serde_json::from_slice(&bytes).map_err(|e| ProviderError::Parse {
