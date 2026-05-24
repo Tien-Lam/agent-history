@@ -229,3 +229,23 @@ fn aider_root_env_var_extends_search_paths() {
     let sessions = provider.discover_sessions().unwrap();
     assert_eq!(sessions.len(), 1);
 }
+
+#[test]
+fn aider_root_env_parser_ignores_blank_entries() {
+    let raw = std::env::join_paths([
+        std::ffi::OsString::from(" "),
+        std::ffi::OsString::from("/tmp/aider one"),
+        std::ffi::OsString::from("\t"),
+        std::ffi::OsString::from("/tmp/aider-two"),
+    ])
+    .unwrap();
+    let roots: Vec<PathBuf> = discovery::aider_roots_from_env_value(&raw).collect();
+
+    assert_eq!(
+        roots,
+        vec![
+            PathBuf::from("/tmp/aider one"),
+            PathBuf::from("/tmp/aider-two")
+        ]
+    );
+}

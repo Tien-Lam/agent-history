@@ -73,10 +73,37 @@ impl RemoteSource {
 /// `AGHIST_SOURCES_CACHE_DIR` for tests. Returns `None` when no home/XDG dirs
 /// exist and the env var is unset.
 pub fn sources_cache_root() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("AGHIST_SOURCES_CACHE_DIR") {
-        if !p.is_empty() {
-            return Some(PathBuf::from(p));
-        }
+    if let Some(path) =
+        sources_cache_root_from_env_value(std::env::var("AGHIST_SOURCES_CACHE_DIR").ok())
+    {
+        return Some(path);
     }
     directories::ProjectDirs::from("", "", "aghist").map(|dirs| dirs.cache_dir().join("sources"))
+}
+
+fn sources_cache_root_from_env_value(value: Option<String>) -> Option<PathBuf> {
+    value
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::sources_cache_root_from_env_value;
+
+    #[test]
+    fn sources_cache_root_from_env_value_ignores_blank_values() {
+        assert_eq!(sources_cache_root_from_env_value(None), None);
+        assert_eq!(sources_cache_root_from_env_value(Some(String::new())), None);
+        assert_eq!(
+            sources_cache_root_from_env_value(Some(" \t ".to_string())),
+            None
+        );
+        assert_eq!(
+            sources_cache_root_from_env_value(Some("/tmp/aghist-sources".to_string())),
+            Some(PathBuf::from("/tmp/aghist-sources"))
+        );
+    }
 }

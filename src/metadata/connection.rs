@@ -14,11 +14,15 @@ pub fn default_path() -> Option<PathBuf> {
 
 pub(super) fn default_path_from_env_value(override_path: Option<OsString>) -> Option<PathBuf> {
     if let Some(p) = override_path {
-        if !p.is_empty() {
+        if !os_string_is_blank(&p) {
             return Some(PathBuf::from(p));
         }
     }
     directories::ProjectDirs::from("", "", "aghist").map(|dirs| dirs.data_dir().join("metadata.db"))
+}
+
+fn os_string_is_blank(value: &OsString) -> bool {
+    value.is_empty() || value.to_string_lossy().trim().is_empty()
 }
 
 /// Schema migrations. Append new migrations; never edit or reorder existing

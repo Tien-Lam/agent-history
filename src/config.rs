@@ -100,10 +100,8 @@ impl Config {
     /// otherwise falls back to `config_path()`. Tests use the env var to
     /// avoid touching the user's real config.
     pub fn resolved_path() -> Option<PathBuf> {
-        if let Ok(p) = std::env::var("AGHIST_CONFIG") {
-            if !p.is_empty() {
-                return Some(PathBuf::from(p));
-            }
+        if let Some(path) = config_path_from_env_value(std::env::var("AGHIST_CONFIG").ok()) {
+            return Some(path);
         }
         Self::config_path()
     }
@@ -229,4 +227,28 @@ fn expected_provider_slugs() -> String {
         .map(|provider| provider.slug())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn config_path_from_env_value(value: Option<String>) -> Option<PathBuf> {
+    value
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::config_path_from_env_value;
+
+    #[test]
+    fn config_path_from_env_value_ignores_blank_values() {
+        assert_eq!(config_path_from_env_value(None), None);
+        assert_eq!(config_path_from_env_value(Some(String::new())), None);
+        assert_eq!(config_path_from_env_value(Some(" \t ".to_string())), None);
+        assert_eq!(
+            config_path_from_env_value(Some("/tmp/aghist.toml".to_string())),
+            Some(PathBuf::from("/tmp/aghist.toml"))
+        );
+    }
 }

@@ -53,7 +53,7 @@ pub(super) fn run_rsync_pull(
 
 fn rsync_bin_from_env(value: Option<String>) -> String {
     value
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "rsync".to_string())
 }
 
@@ -105,6 +105,7 @@ mod tests {
     fn rsync_bin_from_env_ignores_empty_override() {
         assert_eq!(rsync_bin_from_env(None), "rsync");
         assert_eq!(rsync_bin_from_env(Some(String::new())), "rsync");
+        assert_eq!(rsync_bin_from_env(Some(" \t ".to_string())), "rsync");
         assert_eq!(
             rsync_bin_from_env(Some("custom-rsync".to_string())),
             "custom-rsync"

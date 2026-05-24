@@ -45,12 +45,16 @@ fn home_dir_from_env_value(
 
 fn path_from_env_value(override_path: Option<OsString>) -> Option<PathBuf> {
     override_path
-        .filter(|path| !path.is_empty())
+        .filter(|path| !os_string_is_blank(path))
         .map(PathBuf::from)
 }
 
 fn env_value_is_non_empty(value: Option<OsString>) -> bool {
-    value.is_some_and(|value| !value.is_empty())
+    value.is_some_and(|value| !os_string_is_blank(&value))
+}
+
+fn os_string_is_blank(value: &OsString) -> bool {
+    value.is_empty() || value.to_string_lossy().trim().is_empty()
 }
 
 #[cfg(test)]
@@ -83,6 +87,11 @@ mod tests {
     }
 
     #[test]
+    fn path_from_env_value_ignores_blank_override() {
+        assert_eq!(path_from_env_value(Some(OsString::from(" \t "))), None);
+    }
+
+    #[test]
     fn path_from_env_value_uses_non_empty_override() {
         assert_eq!(
             path_from_env_value(Some(OsString::from("/override/path"))),
@@ -94,6 +103,7 @@ mod tests {
     fn env_value_is_non_empty_treats_empty_as_unset() {
         assert!(!env_value_is_non_empty(None));
         assert!(!env_value_is_non_empty(Some(OsString::new())));
+        assert!(!env_value_is_non_empty(Some(OsString::from(" \t "))));
         assert!(env_value_is_non_empty(Some(OsString::from("/override"))));
     }
 }

@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use super::super::discovery_error;
@@ -9,10 +10,8 @@ const MAX_WALK_DEPTH: usize = 4;
 pub(super) fn base_dirs() -> Vec<PathBuf> {
     let mut result = Vec::new();
 
-    if let Ok(roots) = std::env::var("AIDER_ROOT") {
-        for r in roots.split(':').filter(|s| !s.is_empty()) {
-            result.push(PathBuf::from(r));
-        }
+    if let Some(roots) = std::env::var_os("AIDER_ROOT") {
+        result.extend(aider_roots_from_env_value(&roots));
     }
 
     if let Some(home) = super::super::home_dir() {
@@ -25,6 +24,14 @@ pub(super) fn base_dirs() -> Vec<PathBuf> {
     }
 
     result
+}
+
+pub(super) fn aider_roots_from_env_value(roots: &OsStr) -> impl Iterator<Item = PathBuf> + '_ {
+    std::env::split_paths(roots).filter(|root| !path_is_blank(root))
+}
+
+fn path_is_blank(path: &Path) -> bool {
+    path.as_os_str().is_empty() || path.as_os_str().to_string_lossy().trim().is_empty()
 }
 
 /// Recursively scans `dir` for `.aider.chat.history.md` files. Bounded by

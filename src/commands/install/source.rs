@@ -19,7 +19,13 @@ pub(super) fn detect_install_source(exe: &Path) -> InstallSource {
 }
 
 fn path_from_env_value(value: Option<OsString>) -> Option<PathBuf> {
-    value.filter(|value| !value.is_empty()).map(PathBuf::from)
+    value
+        .filter(|value| !os_string_is_blank(value))
+        .map(PathBuf::from)
+}
+
+fn os_string_is_blank(value: &OsString) -> bool {
+    value.is_empty() || value.to_string_lossy().trim().is_empty()
 }
 
 fn detect_install_source_with(

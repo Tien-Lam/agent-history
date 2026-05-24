@@ -19,6 +19,13 @@ fn env_value_overrides_default_path_without_global_mutation() {
 }
 
 #[test]
+fn blank_env_value_does_not_override_default_path() {
+    let resolved = super::super::connection::default_path_from_env_value(Some(" \t ".into()));
+
+    assert_ne!(resolved, Some(std::path::PathBuf::from(" \t ")));
+}
+
+#[test]
 fn open_creates_db_and_parent_dir() {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("nested/dir/metadata.db");

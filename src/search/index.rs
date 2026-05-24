@@ -84,11 +84,15 @@ impl SearchIndex {
 
 fn default_index_dir_from_env_value(override_dir: Option<OsString>) -> PathBuf {
     if let Some(dir) = override_dir {
-        if !dir.is_empty() {
+        if !os_string_is_blank(&dir) {
             return PathBuf::from(dir);
         }
     }
     default_platform_index_dir()
+}
+
+fn os_string_is_blank(value: &OsString) -> bool {
+    value.is_empty() || value.to_string_lossy().trim().is_empty()
 }
 
 fn default_platform_index_dir() -> PathBuf {
@@ -106,6 +110,14 @@ mod path_tests {
     fn default_index_dir_ignores_empty_env_override() {
         assert_eq!(
             default_index_dir_from_env_value(Some(OsString::new())),
+            default_platform_index_dir()
+        );
+    }
+
+    #[test]
+    fn default_index_dir_ignores_blank_env_override() {
+        assert_eq!(
+            default_index_dir_from_env_value(Some(OsString::from(" \t "))),
             default_platform_index_dir()
         );
     }
