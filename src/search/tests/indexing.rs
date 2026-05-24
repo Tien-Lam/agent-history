@@ -120,6 +120,51 @@ fn bounded_search_counts_matches_without_returning_every_hit() {
 }
 
 #[test]
+fn provider_scoped_index_build_preserves_other_provider_docs() {
+    let dir = tempdir().unwrap();
+    let index = SearchIndex::open_or_create(dir.path()).unwrap();
+
+    let claude_stub = StubProvider::new(Provider::ClaudeCode);
+    let mut claude = make_session("claude-keep", "alpha");
+    claude.source_path = dir.path().join("claude.jsonl");
+    std::fs::write(&claude.source_path, "claude").unwrap();
+    claude_stub.add(
+        claude.clone(),
+        vec![make_message("msg", "claude-only-token")],
+    );
+
+    let codex_stub = StubProvider::new(Provider::CodexCli);
+    let mut codex = make_session("codex-preserved", "beta");
+    codex.provider = Provider::CodexCli;
+    codex.source_path = dir.path().join("codex.jsonl");
+    std::fs::write(&codex.source_path, "codex").unwrap();
+    codex_stub.add(codex.clone(), vec![make_message("msg", "codex-only-token")]);
+
+    let providers: Vec<Box<dyn crate::provider::HistoryProvider>> =
+        vec![Box::new(claude_stub), Box::new(codex_stub)];
+    let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+    index
+        .build_index(&[claude.clone(), codex], &providers, &tx)
+        .unwrap();
+    assert_eq!(index.search("codex-only-token", 10).unwrap().len(), 1);
+
+    index
+        .build_index_for_providers(
+            &[claude],
+            &providers,
+            &tx,
+            &std::collections::HashSet::from([Provider::ClaudeCode]),
+        )
+        .unwrap();
+
+    assert_eq!(
+        index.search("codex-only-token", 10).unwrap().len(),
+        1,
+        "provider-scoped rebuild must not prune cached docs for providers outside the scope"
+    );
+}
+
+#[test]
 fn build_index_reports_session_load_errors() {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();

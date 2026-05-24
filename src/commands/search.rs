@@ -66,7 +66,7 @@ pub(crate) fn search_command(
             debug_search,
             hybrid_weight,
             metadata_keys,
-            provider_scope: None,
+            provider_scope: Some(scope.providers()),
         },
     )
     .map_err(|e| ErrorEnvelope::new("index-error", e.to_string()))?;
