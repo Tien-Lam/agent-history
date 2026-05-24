@@ -185,7 +185,7 @@ Full-text search uses Tantivy. The index is persisted to disk (platform cache di
 - `build_index()` skips sessions whose hash matches the manifest.
 - `aghist index --force` clears the index and manifest, forcing a full rebuild.
 - The index schema stores: session key, session ID, message key, message ID, provider, project, role, content text, tool-call output text (separate field, indexed for `--has-tool-call`), timestamp, and metadata-note fields. Source labels are kept outside Tantivy in the federated discovery map so local and remote sessions with the same raw ID can coexist.
-- `tests/recall_bench.rs` builds a mixed-provider synthetic corpus and enforces conservative recall/MRR and latency gates. `scripts/bench-search.sh` runs that bench and the broader performance smoke tests; pass `--write-report` when you need a local markdown report. Measured reports are ignored so stale timing snapshots do not become source documentation.
+- `tests/recall_bench.rs` builds a mixed-provider synthetic corpus and enforces conservative recall/MRR and latency gates. `scripts/bench-search.sh` runs that bench and the broader performance smoke tests; pass `--optimized` for representative timing and `--write-report` when you need a local markdown report. Measured reports are ignored so stale timing snapshots do not become source documentation.
 
 ### Filters and pagination
 
