@@ -48,6 +48,37 @@ fn visit_jsonl_records_skips_blank_lines_and_tracks_malformed_lines() {
     assert_eq!(errors[0].line_number, 3);
 }
 
+#[test]
+fn visit_jsonl_records_rejects_oversized_lines_and_continues() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("data.jsonl");
+    std::fs::write(
+        &path,
+        "{\"value\":\"one\"}\n{\"value\":\"this line is too long\"}\n{\"value\":\"two\"}\n",
+    )
+    .unwrap();
+
+    let mut records = Vec::new();
+    let mut errors = Vec::new();
+    let stats = jsonl::visit_jsonl_records_with_max_line_bytes::<Row, _, _>(
+        &path,
+        16,
+        |record| records.push(record),
+        |error| errors.push(error),
+    )
+    .unwrap();
+
+    assert_eq!(stats.line_count, 3);
+    assert_eq!(stats.parse_errors, 1);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].value.value, "one");
+    assert_eq!(records[1].value.value, "two");
+    assert_eq!(records[1].line_number, 3);
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].line_number, 2);
+    assert!(errors[0].error.contains("byte limit"));
+}
+
 proptest::proptest! {
     #[test]
     fn visit_jsonl_records_never_panics_on_arbitrary_lines(lines in proptest::collection::vec(any::<String>(), 0..40)) {
