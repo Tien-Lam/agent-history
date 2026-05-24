@@ -43,6 +43,29 @@ fn ephemeral_does_not_write() {
 }
 
 #[test]
+fn toggle_conflict_keeps_existing_persisted_timestamp() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("metadata.db");
+    let conn = metadata::open(&path).unwrap();
+    let star = metadata::star_add(&conn, "claude-code/abc").unwrap();
+    let expected = parse_starred_at(&star.starred_at).unwrap();
+
+    let mut store = StarStore {
+        path: Some(path),
+        starred: std::collections::HashMap::new(),
+    };
+
+    assert!(store.toggle(Provider::ClaudeCode, "abc").unwrap());
+    assert_eq!(
+        store
+            .starred
+            .get(&(Provider::ClaudeCode, "abc".to_string()))
+            .copied(),
+        Some(expected)
+    );
+}
+
+#[test]
 fn turn_level_stars_are_ignored_by_tui_cache() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("metadata.db");

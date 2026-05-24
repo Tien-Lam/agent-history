@@ -100,8 +100,17 @@ impl StarStore {
         };
         let conn = metadata::open(path).map_err(metadata_io_error)?;
         match metadata::star_add(&conn, session_ref) {
-            Ok(star) => Ok(parse_starred_at(&star.starred_at).unwrap_or_else(Utc::now)),
-            Err(metadata::MetadataError::StarAlreadyExists { .. }) => Ok(Utc::now()),
+            Ok(star) => persisted_starred_at(&star),
+            Err(metadata::MetadataError::StarAlreadyExists { .. }) => {
+                let star = metadata::star_get(&conn, session_ref)
+                    .map_err(metadata_io_error)?
+                    .ok_or_else(|| {
+                        metadata_io_error(metadata::MetadataError::StarNotFound {
+                            session_ref: session_ref.to_string(),
+                        })
+                    })?;
+                persisted_starred_at(&star)
+            }
             Err(e) => Err(metadata_io_error(e)),
         }
     }
@@ -135,6 +144,18 @@ fn parse_starred_at(raw: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(raw)
         .ok()
         .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn persisted_starred_at(star: &metadata::Star) -> std::io::Result<DateTime<Utc>> {
+    parse_starred_at(&star.starred_at).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "invalid starred_at for {}: {}",
+                star.session_ref, star.starred_at
+            ),
+        )
+    })
 }
 
 fn metadata_io_error(error: metadata::MetadataError) -> std::io::Error {
