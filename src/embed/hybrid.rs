@@ -55,8 +55,7 @@ pub fn try_hybrid_search(
         .iter()
         .map(|(id, vec)| (id.to_string(), search::cosine_similarity(&q_vec, vec)))
         .collect();
-    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    ranked.truncate(pool_size);
+    truncate_to_top_k(&mut ranked, pool_size);
     let candidates: Vec<search::SemanticCandidate> = ranked
         .into_iter()
         .map(|(message_key, similarity)| search::SemanticCandidate {
@@ -76,6 +75,52 @@ pub fn try_hybrid_search(
             pool_size,
         )
         .ok()
+}
+
+#[cfg(feature = "embeddings")]
+fn truncate_to_top_k(ranked: &mut Vec<(String, f32)>, k: usize) {
+    if k == 0 {
+        ranked.clear();
+        return;
+    }
+    if ranked.len() > k {
+        ranked.select_nth_unstable_by(k - 1, semantic_rank_cmp);
+        ranked.truncate(k);
+    }
+    ranked.sort_by(semantic_rank_cmp);
+}
+
+#[cfg(feature = "embeddings")]
+fn semantic_rank_cmp(a: &(String, f32), b: &(String, f32)) -> std::cmp::Ordering {
+    b.1.partial_cmp(&a.1)
+        .unwrap_or(std::cmp::Ordering::Equal)
+        .then_with(|| a.0.cmp(&b.0))
+}
+
+#[cfg(all(test, feature = "embeddings"))]
+mod tests {
+    use super::truncate_to_top_k;
+
+    #[test]
+    fn truncate_to_top_k_keeps_best_scores_in_stable_order() {
+        let mut ranked = vec![
+            ("b".to_string(), 0.4),
+            ("d".to_string(), 0.9),
+            ("c".to_string(), 0.4),
+            ("a".to_string(), 0.7),
+        ];
+
+        truncate_to_top_k(&mut ranked, 3);
+
+        assert_eq!(
+            ranked,
+            vec![
+                ("d".to_string(), 0.9),
+                ("a".to_string(), 0.7),
+                ("b".to_string(), 0.4),
+            ]
+        );
+    }
 }
 
 #[cfg(not(feature = "embeddings"))]
