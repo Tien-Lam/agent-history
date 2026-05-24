@@ -99,7 +99,14 @@ fn read_bounded_line<R: BufRead>(input: &mut R, out: &mut Vec<u8>) -> io::Result
         let newline = available.iter().position(|&b| b == b'\n');
         let consume = newline.map_or(available.len(), |idx| idx + 1);
         let remaining = (MAX_REQUEST_LINE_BYTES + 1).saturating_sub(out.len());
-        out.extend_from_slice(&available[..consume.min(remaining)]);
+        let copy_len = consume.min(remaining);
+        let copy = available.get(..copy_len).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "request buffer slice out of range",
+            )
+        })?;
+        out.extend_from_slice(copy);
         input.consume(consume);
         total = total.saturating_add(consume);
 
