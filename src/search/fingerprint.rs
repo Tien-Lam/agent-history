@@ -9,6 +9,8 @@ use super::types::{FileFingerprint, Manifest};
 
 const MAX_FINGERPRINT_FILE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_FINGERPRINT_TREE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_FINGERPRINT_TREE_FILES: usize = 100_000;
+const MAX_FINGERPRINT_TREE_DIRS: usize = 100_000;
 
 pub(super) fn file_fingerprint(path: &Path) -> io::Result<FileFingerprint> {
     if path.is_dir() {
@@ -70,25 +72,66 @@ fn collect_fingerprint_files(
     dir: &Path,
     out: &mut Vec<(String, PathBuf)>,
 ) -> io::Result<()> {
-    let entries = fs::read_dir(dir).map_err(|error| io_with_path("read directory", dir, &error))?;
-    for entry in entries {
-        let entry = entry.map_err(|error| io_with_path("read directory entry in", dir, &error))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|error| io_with_path("read file type for", &entry.path(), &error))?;
-        if file_type.is_symlink() {
-            continue;
+    collect_fingerprint_files_limited(
+        root,
+        dir,
+        out,
+        MAX_FINGERPRINT_TREE_FILES,
+        MAX_FINGERPRINT_TREE_DIRS,
+    )
+}
+
+fn collect_fingerprint_files_limited(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<(String, PathBuf)>,
+    max_files: usize,
+    max_dirs: usize,
+) -> io::Result<()> {
+    let mut dirs = vec![dir.to_path_buf()];
+    let mut visited_dirs = 0usize;
+    while let Some(dir) = dirs.pop() {
+        visited_dirs = visited_dirs.saturating_add(1);
+        if visited_dirs > max_dirs {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "{} has too many directories to fingerprint (>{max_dirs})",
+                    root.display()
+                ),
+            ));
         }
-        let path = entry.path();
-        if file_type.is_dir() {
-            collect_fingerprint_files(root, &path, out)?;
-        } else if file_type.is_file() {
-            let relative = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .into_owned();
-            out.push((relative, path));
+        let entries =
+            fs::read_dir(&dir).map_err(|error| io_with_path("read directory", &dir, &error))?;
+        for entry in entries {
+            let entry =
+                entry.map_err(|error| io_with_path("read directory entry in", &dir, &error))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|error| io_with_path("read file type for", &entry.path(), &error))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            if file_type.is_dir() {
+                dirs.push(path);
+            } else if file_type.is_file() {
+                if out.len() >= max_files {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "{} has too many files to fingerprint (>{max_files})",
+                            root.display()
+                        ),
+                    ));
+                }
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .into_owned();
+                out.push((relative, path));
+            }
         }
     }
     Ok(())
@@ -170,4 +213,36 @@ fn to_hex(bytes: &[u8]) -> String {
 
 fn hex_char(nibble: u8) -> char {
     char::from_digit(u32::from(nibble), 16).unwrap_or('0')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn directory_fingerprint_collection_rejects_file_count_above_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("one"), "").unwrap();
+        std::fs::write(dir.path().join("two"), "").unwrap();
+        let mut files = Vec::new();
+
+        let err = collect_fingerprint_files_limited(dir.path(), dir.path(), &mut files, 1, 10)
+            .unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("too many files"));
+    }
+
+    #[test]
+    fn directory_fingerprint_collection_rejects_directory_count_above_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("nested")).unwrap();
+        let mut files = Vec::new();
+
+        let err = collect_fingerprint_files_limited(dir.path(), dir.path(), &mut files, 10, 1)
+            .unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("too many directories"));
+    }
 }
