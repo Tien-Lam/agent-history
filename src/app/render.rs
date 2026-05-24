@@ -29,7 +29,7 @@ impl App {
         let display_indices = self.display_session_indices();
         let display: Vec<&Session> = display_indices
             .into_iter()
-            .map(|idx| &self.sessions[idx])
+            .filter_map(|idx| self.sessions.get(idx))
             .collect();
 
         // Session list

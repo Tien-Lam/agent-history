@@ -29,8 +29,7 @@ impl App {
             }
             Action::FilterToggle => {
                 let providers = Provider::all();
-                if self.filter.cursor < providers.len() {
-                    let p = providers[self.filter.cursor];
+                if let Some(&p) = providers.get(self.filter.cursor) {
                     let enabled = self.filter.provider_enabled.entry(p).or_insert(true);
                     *enabled = !*enabled;
                 } else if self.filter.cursor == FilterState::role_idx() {

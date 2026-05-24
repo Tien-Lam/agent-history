@@ -31,10 +31,12 @@ impl App {
         if self.filter.is_active() {
             base.into_iter()
                 .filter(|&idx| {
-                    let session = &self.sessions[idx];
-                    self.filter.matches(session)
-                        && (!starred_only || self.stars.is_starred(session.provider, &session.id.0))
-                        && msg_ids.is_none_or(|ids| ids.contains(&session.identity_key()))
+                    self.sessions.get(idx).is_some_and(|session| {
+                        self.filter.matches(session)
+                            && (!starred_only
+                                || self.stars.is_starred(session.provider, &session.id.0))
+                            && msg_ids.is_none_or(|ids| ids.contains(&session.identity_key()))
+                    })
                 })
                 .collect()
         } else {
@@ -45,7 +47,7 @@ impl App {
     pub(super) fn display_sessions(&self) -> Vec<&Session> {
         self.display_session_indices()
             .into_iter()
-            .map(|idx| &self.sessions[idx])
+            .filter_map(|idx| self.sessions.get(idx))
             .collect()
     }
 

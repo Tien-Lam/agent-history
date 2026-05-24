@@ -128,8 +128,9 @@ impl App {
                 self.export_cursor -= 1;
             }
             Action::ExportConfirm => {
-                let format = ExportFormat::all()[self.export_cursor];
-                self.perform_export(format);
+                if let Some(&format) = ExportFormat::all().get(self.export_cursor) {
+                    self.perform_export(format);
+                }
                 self.mode = AppMode::ViewSession;
             }
             Action::ExportCancel => {
