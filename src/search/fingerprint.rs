@@ -109,11 +109,14 @@ fn io_with_path(action: &str, path: &Path, error: &io::Error) -> io::Error {
 }
 
 fn to_hex(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
     for &b in bytes {
-        out.push(char::from(HEX[usize::from(b >> 4)]));
-        out.push(char::from(HEX[usize::from(b & 0x0f)]));
+        out.push(hex_char(b >> 4));
+        out.push(hex_char(b & 0x0f));
     }
     out
+}
+
+fn hex_char(nibble: u8) -> char {
+    char::from_digit(u32::from(nibble), 16).unwrap_or('0')
 }
