@@ -134,15 +134,23 @@ impl<'a> Cursor<'a> {
     }
 
     fn take(&mut self, n: usize) -> Result<&'a [u8], EmbedError> {
-        if self.offset + n > self.bytes.len() {
+        let Some(end) = self.offset.checked_add(n) else {
+            return Err(self.corrupt(&format!(
+                "field length {n} at offset {} exceeds addressable memory",
+                self.offset
+            )));
+        };
+        if end > self.bytes.len() {
             return Err(self.corrupt(&format!(
                 "expected {n} bytes at offset {} but only {} remain",
                 self.offset,
                 self.bytes.len() - self.offset
             )));
         }
-        let slice = &self.bytes[self.offset..self.offset + n];
-        self.offset += n;
+        let Some(slice) = self.bytes.get(self.offset..end) else {
+            return Err(self.corrupt("field range outside embedding store"));
+        };
+        self.offset = end;
         Ok(slice)
     }
 

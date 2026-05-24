@@ -20,8 +20,8 @@ pub(super) fn time_of_day_histogram(sessions: &[(Session, Vec<Message>)]) -> [u6
     for (_, msgs) in sessions {
         for msg in msgs {
             let hour = msg.timestamp.hour() as usize;
-            if hour < 24 {
-                hist[hour] = hist[hour].saturating_add(1);
+            if let Some(bucket) = hist.get_mut(hour) {
+                *bucket = bucket.saturating_add(1);
             }
         }
     }

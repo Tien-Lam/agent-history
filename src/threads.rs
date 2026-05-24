@@ -102,14 +102,18 @@ pub fn cluster_with_session_refs(
                 cur_end = Some(cur_end.map_or(s_end, |e| e.max(s_end)));
             } else {
                 if cur.len() >= opts.min_sessions {
-                    threads.push(make_thread(project.as_deref(), &cur, &ref_for_session));
+                    if let Some(thread) = make_thread(project.as_deref(), &cur, &ref_for_session) {
+                        threads.push(thread);
+                    }
                 }
                 cur = vec![s];
                 cur_end = Some(s.ended_at.unwrap_or(s.started_at));
             }
         }
         if cur.len() >= opts.min_sessions {
-            threads.push(make_thread(project.as_deref(), &cur, &ref_for_session));
+            if let Some(thread) = make_thread(project.as_deref(), &cur, &ref_for_session) {
+                threads.push(thread);
+            }
         }
     }
 
@@ -125,14 +129,10 @@ fn make_thread(
     project: Option<&str>,
     sessions: &[&Session],
     ref_for_session: &impl Fn(&Session) -> String,
-) -> Thread {
-    debug_assert!(
-        !sessions.is_empty(),
-        "thread must have at least one session"
-    );
-
+) -> Option<Thread> {
     // Sessions are pre-sorted by started_at ascending in `cluster`.
-    let started_at = sessions[0].started_at;
+    let first_session = sessions.first()?;
+    let started_at = first_session.started_at;
     let ended_at = sessions
         .iter()
         .map(|s| s.ended_at.unwrap_or(s.started_at))
@@ -162,9 +162,9 @@ fn make_thread(
         .filter(|s| !s.is_empty());
 
     let message_count: usize = sessions.iter().map(|s| s.message_count).sum();
-    let id = thread_id(project, &session_refs[0]);
+    let id = thread_id(project, session_refs.first()?);
 
-    Thread {
+    Some(Thread {
         id,
         project: project.map(str::to_string),
         providers,
@@ -175,7 +175,7 @@ fn make_thread(
         branches,
         session_refs,
         summary_seed,
-    }
+    })
 }
 
 /// Deterministic short thread id. FNV-1a (64-bit) over

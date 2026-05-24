@@ -161,7 +161,9 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
         if matches.len() > 1 {
             return Err(self.target_ambiguous(selector, matches));
         }
-        let session = matches[0];
+        let Some(&session) = matches.first() else {
+            return Err(ResolutionError::NotFound(selector.to_string()));
+        };
         Ok(SelectedSession {
             session,
             source: self.source_for_session(session),

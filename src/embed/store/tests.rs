@@ -163,6 +163,27 @@ fn corrupt_magic_yields_corrupt_error() {
 }
 
 #[test]
+fn truncated_store_yields_corrupt_error() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join(STORE_FILENAME);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(STORE_MAGIC);
+    bytes.extend_from_slice(&STORE_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&4u32.to_le_bytes());
+    bytes.extend_from_slice(&10u32.to_le_bytes());
+    bytes.extend_from_slice(b"short");
+    fs::write(&path, &bytes).unwrap();
+
+    match EmbeddingStore::open(dir.path()) {
+        Err(EmbedError::Corrupt { reason, .. }) => {
+            assert!(reason.contains("expected 10 bytes"), "{reason}");
+        }
+        Ok(_) => panic!("expected corrupt error, got Ok"),
+        Err(e) => panic!("expected Corrupt, got {e}"),
+    }
+}
+
+#[test]
 fn old_schema_version_yields_schema_mismatch() {
     // Hand-roll a v1 file (magic + version=1 + minimal trailing bytes).
     // We don't bother filling out the full v1 record body because readers
