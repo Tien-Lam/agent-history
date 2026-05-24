@@ -53,6 +53,7 @@ fn toggle_conflict_keeps_existing_persisted_timestamp() {
     let mut store = StarStore {
         path: Some(path),
         starred: std::collections::HashMap::new(),
+        load_error: None,
     };
 
     assert!(store.toggle(Provider::ClaudeCode, "abc").unwrap());
@@ -75,4 +76,20 @@ fn turn_level_stars_are_ignored_by_tui_cache() {
     let store = StarStore::load_from(&path);
     assert_eq!(store.count(), 0);
     assert!(!store.is_starred(Provider::ClaudeCode, "abc"));
+}
+
+#[test]
+fn load_from_records_warning_when_metadata_db_is_unreadable() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("metadata.db");
+    std::fs::write(&path, b"not sqlite").unwrap();
+
+    let store = StarStore::load_from(&path);
+
+    assert_eq!(store.count(), 0);
+    let warning = store.load_warning().expect("expected load warning");
+    assert!(
+        warning.contains("failed to load stars"),
+        "unexpected warning: {warning}"
+    );
 }

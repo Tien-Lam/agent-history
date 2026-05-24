@@ -17,6 +17,7 @@ use crate::model::{Provider, SessionId, SessionRef};
 pub struct StarStore {
     path: Option<PathBuf>,
     starred: HashMap<(Provider, String), DateTime<Utc>>,
+    load_error: Option<String>,
 }
 
 impl StarStore {
@@ -27,6 +28,7 @@ impl StarStore {
         let mut store = Self {
             path: path.clone(),
             starred: HashMap::new(),
+            load_error: None,
         };
         if let Some(path) = path.as_ref() {
             store.reload_from(path);
@@ -40,6 +42,7 @@ impl StarStore {
         let mut store = Self {
             path: Some(path.to_path_buf()),
             starred: HashMap::new(),
+            load_error: None,
         };
         store.reload_from(path);
         store
@@ -50,23 +53,23 @@ impl StarStore {
         Self {
             path: None,
             starred: HashMap::new(),
+            load_error: None,
         }
     }
 
     fn reload_from(&mut self, path: &Path) {
-        let Ok(conn) = metadata::open(path) else {
-            return;
-        };
-        let Ok(stars) = metadata::star_list(&conn, None) else {
-            return;
-        };
-        self.starred = stars
-            .into_iter()
-            .filter_map(|star| parse_session_ref(&star.session_ref).map(|key| (key, star)))
-            .filter_map(|((provider, session_id), star)| {
-                parse_starred_at(&star.starred_at).map(|ts| ((provider, session_id), ts))
-            })
-            .collect();
+        match load_stars(path) {
+            Ok(starred) => {
+                self.starred = starred;
+                self.load_error = None;
+            }
+            Err(error) => {
+                self.load_error = Some(format!(
+                    "failed to load stars from {}: {error}",
+                    path.display()
+                ));
+            }
+        }
     }
 
     pub fn is_starred(&self, provider: Provider, session_id: &str) -> bool {
@@ -76,6 +79,10 @@ impl StarStore {
 
     pub fn count(&self) -> usize {
         self.starred.len()
+    }
+
+    pub fn load_warning(&self) -> Option<&str> {
+        self.load_error.as_deref()
     }
 
     /// Toggle the star for `(provider, session_id)` and persist. Returns the
@@ -144,6 +151,18 @@ fn parse_starred_at(raw: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(raw)
         .ok()
         .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn load_stars(path: &Path) -> std::io::Result<HashMap<(Provider, String), DateTime<Utc>>> {
+    let conn = metadata::open(path).map_err(metadata_io_error)?;
+    let stars = metadata::star_list(&conn, None).map_err(metadata_io_error)?;
+    Ok(stars
+        .into_iter()
+        .filter_map(|star| parse_session_ref(&star.session_ref).map(|key| (key, star)))
+        .filter_map(|((provider, session_id), star)| {
+            parse_starred_at(&star.starred_at).map(|ts| ((provider, session_id), ts))
+        })
+        .collect())
 }
 
 fn persisted_starred_at(star: &metadata::Star) -> std::io::Result<DateTime<Utc>> {

@@ -111,6 +111,10 @@ impl App {
 
         let mut message_view = MessageViewComponent::new();
         message_view.show_tool_calls = config.show_tool_calls;
+        let warnings = stars
+            .load_warning()
+            .map(|warning| vec![warning.to_string()])
+            .unwrap_or_default();
 
         Self {
             config,
@@ -118,7 +122,7 @@ impl App {
             message_cache: LruCache::new(cache_size),
             mode: AppMode::Browse,
             lifecycle: LifecycleState::default(),
-            warnings: Vec::new(),
+            warnings,
 
             session_list: SessionListComponent::new(),
             message_view,
