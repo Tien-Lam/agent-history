@@ -62,3 +62,25 @@ fn filter_since_rejects_non_rfc3339() {
         "expected RFC 3339 validation error, got: {stderr}"
     );
 }
+
+#[test]
+fn filters_reject_inverted_time_range() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args([
+            "--list",
+            "--since",
+            "2026-01-02T00:00:00Z",
+            "--until",
+            "2026-01-01T00:00:00Z",
+        ])
+        .env("AGHIST_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("--since must be less than or equal to --until"),
+        "expected inverted time range validation error, got: {stderr}"
+    );
+}

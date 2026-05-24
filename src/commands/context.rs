@@ -33,6 +33,7 @@ impl CommandContext {
         json: bool,
         ndjson: bool,
     ) -> Result<Self, ErrorEnvelope> {
+        validate_filter_args(&filters)?;
         let config = load_config()?;
         let scope = query_scope::QueryScope::enabled(&config);
         let providers = query_scope::detect_enabled_providers(&config);
@@ -83,4 +84,17 @@ fn load_config() -> Result<config::Config, ErrorEnvelope> {
         ErrorEnvelope::new("config-error", format!("{e}"))
             .with_hint("Fix the TOML or set AGHIST_CONFIG to a known-good config file.")
     })
+}
+
+fn validate_filter_args(filters: &FilterArgs) -> Result<(), ErrorEnvelope> {
+    if let (Some(since), Some(until)) = (filters.since, filters.until) {
+        if since > until {
+            return Err(ErrorEnvelope::new(
+                "usage",
+                "--since must be less than or equal to --until",
+            )
+            .with_hint("Pass timestamps in chronological order."));
+        }
+    }
+    Ok(())
 }
