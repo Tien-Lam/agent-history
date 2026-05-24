@@ -121,13 +121,84 @@ else
     fi
 fi
 
+case "$TARGET" in
+    *-windows-*) BIN_FILE="$BINARY.exe" ;;
+    *)           BIN_FILE="$BINARY" ;;
+esac
+
+validate_archive_member() {
+    local member="$1"
+    local normalized="${member#./}"
+
+    case "$normalized" in
+        "$BIN_FILE"|"$BINARY.install") return 0 ;;
+        ""|"."|".."|/*|*"/"*|*\\*)
+            echo "Error: archive contains unsafe member: $member" >&2
+            return 1
+            ;;
+        *)
+            echo "Error: archive contains unexpected member: $member" >&2
+            return 1
+            ;;
+    esac
+}
+
+validate_archive_members() {
+    local seen_binary=0
+    local seen_marker=0
+    local member
+
+    while IFS= read -r member; do
+        [ -n "$member" ] || continue
+        if ! validate_archive_member "$member"; then
+            return 1
+        fi
+        case "${member#./}" in
+            "$BIN_FILE") seen_binary=1 ;;
+            "$BINARY.install") seen_marker=1 ;;
+        esac
+    done
+
+    if [ "$seen_binary" -ne 1 ]; then
+        echo "Error: archive does not contain $BIN_FILE" >&2
+        return 1
+    fi
+    if [ "$seen_marker" -ne 1 ]; then
+        echo "Error: archive does not contain $BINARY.install" >&2
+        return 1
+    fi
+}
+
+list_archive_members() {
+    case "$EXT" in
+        tar.gz) tar tzf "$TMPDIR/archive" ;;
+        zip)
+            if command -v unzip >/dev/null 2>&1; then
+                unzip -Z1 "$TMPDIR/archive"
+            elif command -v 7z >/dev/null 2>&1; then
+                7z l -ba "$TMPDIR/archive" | awk '{ print $NF }'
+            else
+                echo "Error: inspecting Windows archives requires unzip or 7z" >&2
+                return 1
+            fi
+            ;;
+    esac
+}
+
+EXTRACT_DIR="$TMPDIR/extract"
+mkdir -p "$EXTRACT_DIR"
+
+if ! list_archive_members | validate_archive_members; then
+    exit 1
+fi
+
 case "$EXT" in
-    tar.gz) tar xzf "$TMPDIR/archive" -C "$TMPDIR" ;;
+    tar.gz) tar xzf "$TMPDIR/archive" -C "$EXTRACT_DIR" ;;
     zip)
         if command -v unzip >/dev/null 2>&1; then
-            unzip -qo "$TMPDIR/archive" -d "$TMPDIR"
+            unzip -qo "$TMPDIR/archive" -d "$EXTRACT_DIR"
         elif command -v 7z >/dev/null 2>&1; then
-            7z x -y "-o$TMPDIR" "$TMPDIR/archive" >/dev/null
+            7z x -y "-o$EXTRACT_DIR" "$TMPDIR/archive" >/dev/null
         else
             echo "Error: extracting Windows archives requires unzip or 7z" >&2
             exit 1
@@ -135,11 +206,14 @@ case "$EXT" in
         ;;
 esac
 
-# Install
-case "$TARGET" in
-    *-windows-*) BIN_FILE="$BINARY.exe" ;;
-    *)           BIN_FILE="$BINARY" ;;
-esac
+if [ ! -f "$EXTRACT_DIR/$BIN_FILE" ] || [ -L "$EXTRACT_DIR/$BIN_FILE" ]; then
+    echo "Error: archive binary is missing or not a regular file: $BIN_FILE" >&2
+    exit 1
+fi
+if [ ! -f "$EXTRACT_DIR/$BINARY.install" ] || [ -L "$EXTRACT_DIR/$BINARY.install" ]; then
+    echo "Error: archive install marker is missing or not a regular file: $BINARY.install" >&2
+    exit 1
+fi
 
 MARKER_TMP="$TMPDIR/$BINARY.install"
 cat > "$MARKER_TMP" <<EOF
@@ -159,7 +233,7 @@ if [ ! -w "$INSTALL_DIR" ]; then
     echo "Choose a user-writable directory with --to DIR, or run the installer with the permissions you intend to own the binary."
     exit 1
 fi
-cp -f "$TMPDIR/$BIN_FILE" "$INSTALL_DIR/$BIN_FILE"
+cp -f "$EXTRACT_DIR/$BIN_FILE" "$INSTALL_DIR/$BIN_FILE"
 chmod 0755 "$INSTALL_DIR/$BIN_FILE"
 cp -f "$MARKER_TMP" "$INSTALL_DIR/$BINARY.install"
 chmod 0644 "$INSTALL_DIR/$BINARY.install"

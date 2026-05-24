@@ -63,6 +63,31 @@ jobs:
           fi
           grep -q "Error: --tag requires a non-empty TAG" err.txt
 
+      - name: Check install archive validation
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          printf '#!/usr/bin/env sh\nprintf "fake aghist\\n"\n' > "$tmp/aghist"
+          chmod +x "$tmp/aghist"
+          printf 'method=github-release\n' > "$tmp/aghist.install"
+
+          (cd "$tmp" && tar czf "$tmp/valid.tar.gz" aghist aghist.install)
+          bash install.sh --to "$tmp/bin" --tag v0.0.0-validation --archive "$tmp/valid.tar.gz" >/dev/null
+          test -x "$tmp/bin/aghist"
+
+          printf 'unexpected\n' > "$tmp/extra"
+          (cd "$tmp" && tar czf "$tmp/invalid.tar.gz" aghist aghist.install extra)
+          if bash install.sh --to "$tmp/invalid-bin" --tag v0.0.0-validation --archive "$tmp/invalid.tar.gz" >"$tmp/out" 2>"$tmp/err"; then
+            echo "install.sh accepted an archive with unexpected members" >&2
+            exit 1
+          fi
+          grep -q "archive contains unexpected member: extra" "$tmp/err"
+          test ! -e "$tmp/invalid-bin/aghist"
+
       - name: Build release binary
         run: cargo build --locked --release --features self-update
 
