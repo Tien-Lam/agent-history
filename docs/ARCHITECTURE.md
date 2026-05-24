@@ -109,7 +109,7 @@ not grow divergent copies of provider lookup or pagination logic.
 
 - **`lookup.rs`** — resolves session/citation selectors, applies MCP provider visibility checks, loads messages, and returns owned session/message windows.
 - **`list.rs`** — applies list filters, metadata filters, cursor pagination, provider/source counts, and skipped-session warnings for message-level filters.
-- **`search.rs`** — wraps `SearchService`, applies cursor pagination, resolves message hit citations, and carries skipped-session warnings.
+- **`search.rs`** — wraps `SearchService`, applies cursor pagination, resolves message hit citations, and carries skipped-session plus metadata-sidecar warnings.
 - **`index/`** — indexing orchestration shared by CLI and CI feature checks.
 - **`source_registry.rs`** — validates, loads, and mutates remote-source registry entries.
 
@@ -220,7 +220,7 @@ bodies.
 
 Resources are exposed as `aghist://session/<provider>/<session-id>` and `aghist://session/<provider>/<session-id>/turn/<n>` for local sessions, plus `aghist://source/<source>/session/<provider>/<session-id>` forms for remote-source sessions — agents can attach an entire session or a single turn as context.
 
-The server is implicitly read-only (no tools mutate session content; `reindex` only refreshes the search index). The `provider.mcp_exposed` config narrows which providers are visible to MCP clients independently of the CLI's `enabled` list — useful for hiding personal accounts from work agents on the same machine. MCP search returns skipped-session load warnings through `source_errors` so clients can distinguish "no hits" from partially unreadable history.
+The server is implicitly read-only (no tools mutate session content; `reindex` only refreshes the search index). The `provider.mcp_exposed` config narrows which providers are visible to MCP clients independently of the CLI's `enabled` list — useful for hiding personal accounts from work agents on the same machine. MCP search returns skipped-session load warnings and metadata-sidecar warnings through `source_errors` so clients can distinguish "no hits" from partially unreadable history or annotations.
 
 ## UI components
 
@@ -249,7 +249,7 @@ Three output formats, all producing a complete standalone document:
 - `thiserror` for library error types (`ProviderError`, `SearchError`).
 - `anyhow` only at the binary boundary (`main.rs`).
 - `color_eyre` installed for panic reports.
-- Corrupt or missing session files are skipped with warnings in read paths, never crash the app. CLI warnings go to stderr; MCP search surfaces them in `source_errors`.
+- Corrupt or missing session files are skipped with warnings in read paths, never crash the app. CLI warnings go to stderr; MCP search surfaces skipped-session and metadata-sidecar warnings in `source_errors`.
 - `unsafe` code is forbidden via `#![forbid(unsafe_code)]` lint.
 
 ## Release and install safety
