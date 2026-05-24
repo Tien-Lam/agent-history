@@ -24,7 +24,10 @@ impl App {
                 Constraint::Percentage(30), // session list
                 Constraint::Percentage(70), // conversation detail
             ])
-            .split(main_layout[0]);
+            .split(main_layout.first().copied().unwrap_or(size));
+        let list_area = content_layout.first().copied().unwrap_or(size);
+        let detail_area = content_layout.get(1).copied().unwrap_or(list_area);
+        let status_area = main_layout.get(1).copied().unwrap_or(size);
 
         let display_indices = self.display_session_indices();
         let display: Vec<&Session> = display_indices
@@ -36,13 +39,8 @@ impl App {
         let list_focused = self.mode == AppMode::Browse || self.mode == AppMode::Search;
         let stars = &self.stars;
         let is_starred = |s: &Session| stars.is_starred(s.provider, &s.id.0);
-        self.session_list.render(
-            &display,
-            list_focused,
-            &is_starred,
-            frame,
-            content_layout[0],
-        );
+        self.session_list
+            .render(&display, list_focused, &is_starred, frame, list_area);
 
         // Message view
         let selected_idx = self.session_list.selected_index();
@@ -52,13 +50,8 @@ impl App {
             .map(|m: &Vec<Message>| m.as_slice());
 
         let view_focused = self.mode == AppMode::ViewSession;
-        self.message_view.render(
-            selected_session,
-            messages,
-            view_focused,
-            frame,
-            content_layout[1],
-        );
+        self.message_view
+            .render(selected_session, messages, view_focused, frame, detail_area);
 
         // Status bar
         let warning_count = self.warnings.len();
@@ -82,7 +75,7 @@ impl App {
                 engine: engine_label,
             },
             frame,
-            main_layout[1],
+            status_area,
         );
 
         // Help overlay
