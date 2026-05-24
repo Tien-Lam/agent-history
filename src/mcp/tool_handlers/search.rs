@@ -43,6 +43,14 @@ impl McpServer {
                 .iter()
                 .map(crate::session_warnings::SessionLoadWarning::source_error),
         );
+        source_errors.extend(
+            page.metadata_warnings
+                .iter()
+                .map(|error| federated::SourceError {
+                    source: "metadata".to_string(),
+                    error: error.clone(),
+                }),
+        );
 
         let response = McpSearchResponse {
             query: query.clone(),

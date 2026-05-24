@@ -73,6 +73,9 @@ pub(crate) fn search_command(
     for warning in &page.warnings {
         eprintln!("{}", warning.warning_line());
     }
+    for warning in &page.metadata_warnings {
+        eprintln!("warning: metadata: {warning}");
+    }
 
     if page.hits.is_empty() {
         return Ok(EXIT_EMPTY);

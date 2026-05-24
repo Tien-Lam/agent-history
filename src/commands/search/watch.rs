@@ -62,6 +62,9 @@ pub(crate) fn search_watch_command(
         for warning in &page.warnings {
             eprintln!("{}", warning.warning_line());
         }
+        for warning in &page.metadata_warnings {
+            eprintln!("warning: metadata: {warning}");
+        }
 
         let mut emitted_this_poll = 0;
         let mut handle = stdout.lock();

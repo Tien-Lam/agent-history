@@ -1,5 +1,6 @@
 use super::super::aghist;
 use super::three_session_fixture;
+use std::fs;
 
 #[test]
 fn search_returns_note_hits_with_kind_note_and_ref() {
@@ -129,4 +130,38 @@ fn search_works_when_metadata_db_is_absent() {
     for h in hits {
         assert_eq!(h["kind"], "message");
     }
+}
+
+#[test]
+fn search_warns_but_keeps_message_results_when_metadata_db_is_unreadable() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+    let index_dir = tempfile::tempdir().unwrap();
+    fs::write(&db, b"not sqlite").unwrap();
+
+    let out = aghist()
+        .args(["search", "alpha body", "--json"])
+        .env("AGHIST_HOME", &home)
+        .env("AGHIST_METADATA_DB", &db)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("warning: metadata: failed to read metadata notes"),
+        "expected metadata warning, got {stderr:?}"
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
+    assert!(
+        !doc["hits"].as_array().unwrap().is_empty(),
+        "metadata warning should not suppress message hits"
+    );
 }

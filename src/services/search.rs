@@ -32,6 +32,7 @@ pub struct SearchSessionsPage<'a> {
     pub engine: &'static str,
     pub citations: HashMap<String, SearchHitCitation>,
     pub warnings: Vec<SessionLoadWarning>,
+    pub metadata_warnings: Vec<String>,
 }
 
 pub fn search_sessions<'a>(
@@ -88,6 +89,7 @@ pub fn search_sessions<'a>(
         engine: output.engine,
         citations: citation_resolution.refs,
         warnings,
+        metadata_warnings: output.metadata_warnings,
     })
 }
 

@@ -66,6 +66,7 @@ pub struct SearchServiceOutput<'a> {
     pub total: usize,
     pub engine: &'static str,
     pub warnings: Vec<SessionLoadWarning>,
+    pub metadata_warnings: Vec<String>,
 }
 
 impl<'a> SearchService<'a> {
@@ -108,11 +109,15 @@ impl<'a> SearchService<'a> {
 
         let session_meta: HashMap<String, &Session> =
             sessions.iter().map(|s| (s.identity_key(), s)).collect();
-        index_notes_best_effort_for_session_refs(
+        let metadata_warnings = index_notes_best_effort_for_session_refs(
             &index,
             metadata::default_path(),
             &current_session_refs(&session_meta, source_by_session),
-        );
+        )
+        .err()
+        .map(|error| error.to_string())
+        .into_iter()
+        .collect();
 
         let raw_output = raw_search_hits(
             self.index_dir.as_path(),
@@ -147,6 +152,7 @@ impl<'a> SearchService<'a> {
             total,
             engine: raw_output.engine,
             warnings,
+            metadata_warnings,
         })
     }
 }
@@ -192,35 +198,54 @@ fn index_load_warnings(
         .collect()
 }
 
-pub fn index_notes_best_effort(index: &SearchIndex) {
-    index_notes_best_effort_for_path(index, metadata::default_path());
+#[derive(Debug, Error)]
+pub(crate) enum NoteIndexError {
+    #[error("failed to read metadata notes from {}: {source}", path.display())]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: Box<metadata::MetadataError>,
+    },
+    #[error("failed to update note search index: {0}")]
+    Index(#[from] super::SearchError),
 }
 
-pub(crate) fn index_notes_best_effort_for_path(index: &SearchIndex, path: Option<PathBuf>) {
-    index_notes_best_effort_for_path_and_refs(index, path, None);
+pub fn index_notes_best_effort(index: &SearchIndex) {
+    let _ = index_notes_best_effort_for_path(index, metadata::default_path());
+}
+
+pub(crate) fn index_notes_best_effort_for_path(
+    index: &SearchIndex,
+    path: Option<PathBuf>,
+) -> Result<super::NotesIndexStats, NoteIndexError> {
+    index_notes_best_effort_for_path_and_refs(index, path, None)
 }
 
 pub(crate) fn index_notes_best_effort_for_session_refs(
     index: &SearchIndex,
     path: Option<PathBuf>,
     session_refs: &HashSet<String>,
-) {
-    index_notes_best_effort_for_path_and_refs(index, path, Some(session_refs));
+) -> Result<super::NotesIndexStats, NoteIndexError> {
+    index_notes_best_effort_for_path_and_refs(index, path, Some(session_refs))
 }
 
 fn index_notes_best_effort_for_path_and_refs(
     index: &SearchIndex,
     path: Option<PathBuf>,
     session_refs: Option<&HashSet<String>>,
-) {
+) -> Result<super::NotesIndexStats, NoteIndexError> {
     let Some(path) = path else {
-        let _ = index.index_notes(&[]);
-        return;
+        return index.index_notes(&[]).map_err(NoteIndexError::Index);
     };
     let notes = if path.exists() {
-        metadata::open(&path)
-            .and_then(|conn| metadata::note_list(&conn, None))
-            .unwrap_or_default()
+        let conn = metadata::open(&path).map_err(|source| NoteIndexError::Read {
+            path: path.clone(),
+            source: Box::new(source),
+        })?;
+        metadata::note_list(&conn, None).map_err(|source| NoteIndexError::Read {
+            path: path.clone(),
+            source: Box::new(source),
+        })?
     } else {
         Vec::new()
     };
@@ -236,5 +261,5 @@ fn index_notes_best_effort_for_path_and_refs(
     } else {
         notes
     };
-    let _ = index.index_notes(&notes);
+    index.index_notes(&notes).map_err(NoteIndexError::Index)
 }

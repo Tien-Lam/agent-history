@@ -125,7 +125,8 @@ fn note_sync_prunes_stale_docs_when_metadata_db_is_missing() {
     crate::search::service::index_notes_best_effort_for_path(
         &index,
         Some(dir.path().join("missing-metadata.db")),
-    );
+    )
+    .unwrap();
 
     let hits = index
         .search_with_filters("marker11", 10, &SearchFilters::default())
@@ -148,7 +149,8 @@ fn note_sync_prunes_notes_outside_current_session_refs() {
         &index,
         Some(db_path),
         &HashSet::from(["claude-code/sess-1".to_string()]),
-    );
+    )
+    .unwrap();
 
     let visible = index
         .search_with_filters("visiblem13", 10, &SearchFilters::default())
@@ -164,5 +166,34 @@ fn note_sync_prunes_notes_outside_current_session_refs() {
     assert!(
         hidden.iter().all(|h| h.kind() != HitKind::Note),
         "note outside current session refs should be pruned: {hidden:?}"
+    );
+}
+
+#[test]
+fn note_sync_preserves_current_note_docs_when_metadata_db_is_unreadable() {
+    let (dir, index, _s1, _s2) = build_tiny_index();
+    let notes = vec![make_note(
+        17,
+        "claude-code/sess-1",
+        "preserved unreadable sidecar marker17",
+        "2026-01-01T00:00:00Z",
+    )];
+    index.index_notes(&notes).unwrap();
+    let db_path = dir.path().join("corrupt-metadata.db");
+    std::fs::write(&db_path, b"not sqlite").unwrap();
+
+    let err = crate::search::service::index_notes_best_effort_for_path(&index, Some(db_path))
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("failed to read metadata notes"),
+        "unexpected note sync error: {err}"
+    );
+
+    let hits = index
+        .search_with_filters("marker17", 10, &SearchFilters::default())
+        .unwrap();
+    assert!(
+        hits.iter().any(|h| h.kind() == HitKind::Note),
+        "unreadable metadata should preserve existing note docs: {hits:?}"
     );
 }
