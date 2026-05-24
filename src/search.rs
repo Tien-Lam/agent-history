@@ -19,7 +19,7 @@ pub use service::citation::{
 };
 pub use service::cursor::{next_search_cursor, search_hit_is_after_cursor};
 pub use service::{
-    index_notes_best_effort, SearchService, SearchServiceError, SearchServiceHit,
+    index_notes_best_effort, SearchCollection, SearchService, SearchServiceError, SearchServiceHit,
     SearchServiceOutput, SearchServiceRequest,
 };
 pub use types::{

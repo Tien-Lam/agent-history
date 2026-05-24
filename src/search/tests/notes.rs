@@ -1,5 +1,6 @@
 use super::*;
 use crate::metadata::Note;
+use std::collections::HashSet;
 
 fn make_note(id: i64, session_ref: &str, body: &str, updated_at: &str) -> Note {
     Note {
@@ -132,5 +133,36 @@ fn note_sync_prunes_stale_docs_when_metadata_db_is_missing() {
     assert!(
         hits.iter().all(|h| h.kind() != HitKind::Note),
         "missing metadata sidecar should prune stale note docs: {hits:?}"
+    );
+}
+
+#[test]
+fn note_sync_prunes_notes_outside_current_session_refs() {
+    let (dir, index, _s1, _s2) = build_tiny_index();
+    let db_path = dir.path().join("metadata.db");
+    let conn = crate::metadata::open(&db_path).unwrap();
+    crate::metadata::note_add(&conn, "claude-code/sess-1#3", "visiblem13").unwrap();
+    crate::metadata::note_add(&conn, "claude-code/missing", "hiddenm13").unwrap();
+
+    crate::search::service::index_notes_best_effort_for_session_refs(
+        &index,
+        Some(db_path),
+        &HashSet::from(["claude-code/sess-1".to_string()]),
+    );
+
+    let visible = index
+        .search_with_filters("visiblem13", 10, &SearchFilters::default())
+        .unwrap();
+    assert!(
+        visible.iter().any(|h| h.kind() == HitKind::Note),
+        "current-session note should remain searchable: {visible:?}"
+    );
+
+    let hidden = index
+        .search_with_filters("hiddenm13", 10, &SearchFilters::default())
+        .unwrap();
+    assert!(
+        hidden.iter().all(|h| h.kind() != HitKind::Note),
+        "note outside current session refs should be pruned: {hidden:?}"
     );
 }

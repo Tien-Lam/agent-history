@@ -7,8 +7,8 @@ use crate::federated::FederatedDiscovery;
 use crate::model::{Provider, Session};
 use crate::provider::HistoryProvider;
 use crate::search::{
-    self, SearchFilters, SearchHitCitation, SearchService, SearchServiceError, SearchServiceHit,
-    SearchServiceRequest,
+    self, SearchCollection, SearchFilters, SearchHitCitation, SearchService, SearchServiceError,
+    SearchServiceHit, SearchServiceRequest,
 };
 use crate::session_warnings::SessionLoadWarning;
 
@@ -44,16 +44,16 @@ pub fn search_sessions<'a>(
         &discovery.source_by_session,
         SearchServiceRequest {
             query: request.query,
-            limit: request.limit,
             filters: request.filters,
             debug_search: request.debug_search,
             hybrid_weight: request.hybrid_weight,
             metadata_keys: request.metadata_keys,
             provider_scope: request.provider_scope,
+            collection: search_collection(request),
         },
     )?;
 
-    let total = output.hits.len();
+    let total = output.total;
     let page_start = match request.cursor {
         Some(cursor) => output
             .hits
@@ -89,6 +89,17 @@ pub fn search_sessions<'a>(
         citations: citation_resolution.refs,
         warnings,
     })
+}
+
+fn search_collection(request: SearchSessionsRequest<'_>) -> SearchCollection {
+    if request.cursor.is_none()
+        && request.metadata_keys.is_none()
+        && request.filters.project_needle().is_none()
+        && request.hybrid_weight <= 0.0
+    {
+        return SearchCollection::Top(request.limit.saturating_add(1).max(1));
+    }
+    SearchCollection::Full
 }
 
 pub fn search_hit_json<S: BuildHasher>(

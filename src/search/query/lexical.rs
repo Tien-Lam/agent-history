@@ -1,4 +1,4 @@
-use tantivy::collector::TopDocs;
+use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{Occur, Query, QueryParser};
 use tantivy::TantivyDocument;
 
@@ -6,6 +6,11 @@ use super::combined_query;
 use crate::search::index::SearchIndex;
 use crate::search::types::{SearchError, SearchFilters, SearchHit};
 use crate::search::Explanation;
+
+pub(crate) struct SearchInnerOutput {
+    pub(crate) hits: Vec<(SearchHit, Option<Explanation>)>,
+    pub(crate) total: usize,
+}
 
 impl SearchIndex {
     pub fn search(&self, query_str: &str, limit: usize) -> Result<Vec<SearchHit>, SearchError> {
@@ -62,42 +67,48 @@ impl SearchIndex {
         filters: &SearchFilters,
         explain: bool,
     ) -> Result<Vec<(SearchHit, Option<Explanation>)>, SearchError> {
+        Ok(self
+            .search_inner_with_total(query_str, limit, filters, explain)?
+            .hits)
+    }
+
+    pub(crate) fn search_inner_with_total(
+        &self,
+        query_str: &str,
+        limit: usize,
+        filters: &SearchFilters,
+        explain: bool,
+    ) -> Result<SearchInnerOutput, SearchError> {
         if query_str.trim().is_empty() {
-            return Ok(Vec::new());
+            return Ok(SearchInnerOutput {
+                hits: Vec::new(),
+                total: 0,
+            });
         }
 
         self.reader.reload()?;
         let searcher = self.reader.searcher();
+        let combined = self.combined_search_query(query_str, filters)?;
 
-        let parser = QueryParser::for_index(
-            &self.index,
-            vec![
-                self.fields.content,
-                self.fields.project,
-                self.fields.tool_output,
-            ],
-        );
-        let user_query = parser.parse_query(query_str)?;
-
-        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(6);
-        clauses.push((Occur::Must, user_query));
-        self.add_filter_clauses(&mut clauses, filters);
-
-        let combined = combined_query(clauses);
-
-        // Project is post-filtered; over-fetch to keep results stable when a
-        // restrictive project filter would otherwise prune the limit-N window.
         let project_needle = Self::project_filter_needle(filters);
-        let fetch_limit = if project_needle.is_some() {
-            limit.saturating_mul(8).max(limit)
+        let (top_docs, total) = if project_needle.is_some() {
+            // Project is post-filtered; over-fetch to keep results stable when
+            // a restrictive project filter would otherwise prune the limit-N
+            // window. Exact totals for this mode require materializing the
+            // post-filtered hit set, so callers keep using the full collection
+            // strategy when a project filter is present.
+            let fetch_limit = limit.saturating_mul(8).max(limit);
+            let top_docs = searcher.search(
+                &combined,
+                &TopDocs::with_limit(fetch_limit).order_by_score(),
+            )?;
+            (top_docs, 0)
         } else {
-            limit
+            searcher.search(
+                &combined,
+                &(TopDocs::with_limit(limit).order_by_score(), Count),
+            )?
         };
-
-        let top_docs = searcher.search(
-            &combined,
-            &TopDocs::with_limit(fetch_limit).order_by_score(),
-        )?;
 
         let mut hits = Vec::with_capacity(top_docs.len().min(limit));
         for (score, addr) in top_docs {
@@ -117,6 +128,35 @@ impl SearchIndex {
             hits.push((hit, explanation));
         }
 
-        Ok(hits)
+        let total = if project_needle.is_some() {
+            hits.len()
+        } else {
+            total
+        };
+
+        Ok(SearchInnerOutput { hits, total })
+    }
+
+    fn combined_search_query(
+        &self,
+        query_str: &str,
+        filters: &SearchFilters,
+    ) -> Result<Box<dyn Query>, SearchError> {
+        let parser = QueryParser::for_index(
+            &self.index,
+            vec![
+                self.fields.content,
+                self.fields.project,
+                self.fields.tool_output,
+            ],
+        );
+        let user_query = parser.parse_query(query_str)?;
+
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(6);
+        clauses.push((Occur::Must, user_query));
+        self.add_filter_clauses(&mut clauses, filters);
+
+        let combined = combined_query(clauses);
+        Ok(combined)
     }
 }

@@ -90,6 +90,36 @@ fn sessions_sharing_one_source_path_are_all_indexed() {
 }
 
 #[test]
+fn bounded_search_counts_matches_without_returning_every_hit() {
+    let dir = tempdir().unwrap();
+    let index = SearchIndex::open_or_create(dir.path()).unwrap();
+    let stub = StubProvider::new(Provider::ClaudeCode);
+
+    let mut session = make_session("bounded-search", "alpha");
+    session.source_path = dir.path().join("bounded-search.jsonl");
+    std::fs::write(&session.source_path, "bounded").unwrap();
+    stub.add(
+        session.clone(),
+        vec![
+            make_message("msg-a", "shared-needle first"),
+            make_message("msg-b", "shared-needle second"),
+            make_message("msg-c", "shared-needle third"),
+        ],
+    );
+
+    let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+    let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+    index.build_index(&[session], &providers, &tx).unwrap();
+
+    let output = index
+        .search_inner_with_total("shared-needle", 1, &SearchFilters::default(), false)
+        .unwrap();
+
+    assert_eq!(output.hits.len(), 1);
+    assert_eq!(output.total, 3);
+}
+
+#[test]
 fn build_index_reports_session_load_errors() {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();
