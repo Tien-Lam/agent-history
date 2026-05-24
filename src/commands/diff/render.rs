@@ -83,23 +83,26 @@ pub(super) fn render_diff_text(
     }
 
     for (hunk_start, hunk_end) in hunks {
-        let a_start = flat[hunk_start].side_a.unwrap_or(0) + 1;
-        let b_start = flat[hunk_start].side_b.unwrap_or(0) + 1;
-        let a_count = flat[hunk_start..hunk_end]
-            .iter()
-            .filter(|f| f.side_a.is_some())
-            .count();
-        let b_count = flat[hunk_start..hunk_end]
-            .iter()
-            .filter(|f| f.side_b.is_some())
-            .count();
+        let Some(hunk) = flat.get(hunk_start..hunk_end) else {
+            continue;
+        };
+        let Some(first) = hunk.first() else {
+            continue;
+        };
+        let a_start = first.side_a.unwrap_or(0) + 1;
+        let b_start = first.side_b.unwrap_or(0) + 1;
+        let a_count = hunk.iter().filter(|f| f.side_a.is_some()).count();
+        let b_count = hunk.iter().filter(|f| f.side_b.is_some()).count();
         writeln!(out, "@@ -{a_start},{a_count} +{b_start},{b_count} @@")
             .map_err(|e| ErrorEnvelope::io("failed to write diff output", e))?;
-        for f in &flat[hunk_start..hunk_end] {
+        for f in hunk {
             let line = match (f.side_a, f.side_b) {
-                (Some(a), _) => &render.lines1[a],
-                (None, Some(b)) => &render.lines2[b],
+                (Some(a), _) => render.lines1.get(a),
+                (None, Some(b)) => render.lines2.get(b),
                 _ => continue,
+            };
+            let Some(line) = line else {
+                continue;
             };
             writeln!(out, "{}{}: {}", f.marker, line.role, line.snippet)
                 .map_err(|e| ErrorEnvelope::io("failed to write diff output", e))?;
@@ -112,25 +115,37 @@ pub(super) fn render_diff_json(render: &DiffRenderInput<'_>) -> Result<(), Error
     let entries: Vec<serde_json::Value> = render
         .ops
         .iter()
-        .map(|op| match op {
-            DiffOp::Same(a, b) => serde_json::json!({
-                "op": "same",
-                "role": render.lines1[*a].role,
-                "snippet": render.lines1[*a].snippet,
-                "turn_a": a + 1,
-                "turn_b": b + 1,
+        .filter_map(|op| match op {
+            DiffOp::Same(a, b) => {
+                render
+                    .lines1
+                    .get(*a)
+                    .zip(render.lines2.get(*b))
+                    .map(|(line, _)| {
+                        serde_json::json!({
+                            "op": "same",
+                            "role": line.role,
+                            "snippet": line.snippet,
+                            "turn_a": a + 1,
+                            "turn_b": b + 1,
+                        })
+                    })
+            }
+            DiffOp::Delete(a) => render.lines1.get(*a).map(|line| {
+                serde_json::json!({
+                    "op": "delete",
+                    "role": line.role,
+                    "snippet": line.snippet,
+                    "turn_a": a + 1,
+                })
             }),
-            DiffOp::Delete(a) => serde_json::json!({
-                "op": "delete",
-                "role": render.lines1[*a].role,
-                "snippet": render.lines1[*a].snippet,
-                "turn_a": a + 1,
-            }),
-            DiffOp::Insert(b) => serde_json::json!({
-                "op": "insert",
-                "role": render.lines2[*b].role,
-                "snippet": render.lines2[*b].snippet,
-                "turn_b": b + 1,
+            DiffOp::Insert(b) => render.lines2.get(*b).map(|line| {
+                serde_json::json!({
+                    "op": "insert",
+                    "role": line.role,
+                    "snippet": line.snippet,
+                    "turn_b": b + 1,
+                })
             }),
         })
         .collect();

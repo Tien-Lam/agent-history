@@ -61,21 +61,26 @@ fn lcs_diff(left: &[DiffLine], right: &[DiffLine]) -> Vec<DiffOp> {
     let mut dp = vec![vec![0usize; cols + 1]; rows + 1];
     for row in (0..rows).rev() {
         for col in (0..cols).rev() {
-            dp[row][col] = if left[row].key == right[col].key {
-                dp[row + 1][col + 1] + 1
+            let value = if lines_match(left, right, row, col) {
+                dp_value(&dp, row + 1, col + 1).saturating_add(1)
             } else {
-                dp[row + 1][col].max(dp[row][col + 1])
+                dp_value(&dp, row + 1, col).max(dp_value(&dp, row, col + 1))
             };
+            if let Some(cell) = dp.get_mut(row).and_then(|line| line.get_mut(col)) {
+                *cell = value;
+            }
         }
     }
     let mut ops = Vec::new();
     let (mut row, mut col) = (0, 0);
     while row < rows || col < cols {
-        if row < rows && col < cols && left[row].key == right[col].key {
+        if row < rows && col < cols && lines_match(left, right, row, col) {
             ops.push(DiffOp::Same(row, col));
             row += 1;
             col += 1;
-        } else if row < rows && (col >= cols || dp[row + 1][col] >= dp[row][col + 1]) {
+        } else if row < rows
+            && (col >= cols || dp_value(&dp, row + 1, col) >= dp_value(&dp, row, col + 1))
+        {
             ops.push(DiffOp::Delete(row));
             row += 1;
         } else {
@@ -84,6 +89,19 @@ fn lcs_diff(left: &[DiffLine], right: &[DiffLine]) -> Vec<DiffOp> {
         }
     }
     ops
+}
+
+fn lines_match(left: &[DiffLine], right: &[DiffLine], row: usize, col: usize) -> bool {
+    left.get(row)
+        .zip(right.get(col))
+        .is_some_and(|(left, right)| left.key == right.key)
+}
+
+fn dp_value(dp: &[Vec<usize>], row: usize, col: usize) -> usize {
+    dp.get(row)
+        .and_then(|line| line.get(col))
+        .copied()
+        .unwrap_or(0)
 }
 
 pub(crate) fn diff_command(
