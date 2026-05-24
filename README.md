@@ -44,16 +44,10 @@ Installs to `~/.local/bin` by default. Override with
 `| bash -s -- --to /path/to/bin`; the directory must be writable by the
 installing user.
 
-### cargo-binstall
-
-```sh
-cargo binstall aghist
-```
-
 ### From source
 
 ```sh
-cargo install --git https://github.com/Tien-Lam/agent-history.git
+cargo install --locked --git https://github.com/Tien-Lam/agent-history.git
 ```
 
 ### Manual download
@@ -78,9 +72,8 @@ aghist update
 
 `aghist update` is for GitHub release binaries installed by the shell script or
 extracted from official release archives with the adjacent `aghist.install`
-marker intact. If you installed with `cargo-binstall`, run
-`cargo binstall aghist --force`; if you installed from source, run
-`cargo install --git https://github.com/Tien-Lam/agent-history.git --force`.
+marker intact. If you installed from source, run
+`cargo install --locked --git https://github.com/Tien-Lam/agent-history.git --force`.
 Package-manager binaries and manually copied binaries without the marker should
 be updated with the tool or process that installed them.
 
