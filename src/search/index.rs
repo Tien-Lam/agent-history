@@ -7,10 +7,13 @@ use tantivy::{Index, IndexReader, ReloadPolicy};
 mod write;
 
 use crate::fs_atomic;
+use crate::fs_read;
 
 use super::fields::SearchFields;
 use super::storage::{reset_index_dir, write_index_sentinel};
 use super::types::{Manifest, SearchError};
+
+const MAX_SEARCH_MANIFEST_BYTES: usize = 64 * 1024 * 1024;
 
 pub struct SearchIndex {
     pub(super) index: Index,
@@ -67,7 +70,7 @@ impl SearchIndex {
 
     fn load_manifest(&self) -> Result<Manifest, SearchError> {
         let path = self.index_dir.join("manifest.json");
-        let contents = match fs::read_to_string(path) {
+        let contents = match fs_read::read_to_string_limited(&path, MAX_SEARCH_MANIFEST_BYTES) {
             Ok(contents) => contents,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Manifest::default()),
             Err(e) => return Err(e.into()),

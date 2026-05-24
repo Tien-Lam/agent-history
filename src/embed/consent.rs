@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use super::EmbedError;
 use crate::fs_atomic;
+use crate::fs_read;
 
 const CONSENT_FILENAME: &str = "embeddings-consent.json";
+const MAX_CONSENT_BYTES: usize = 64 * 1024;
 
 /// Records that a user has acknowledged the one-off model download for
 /// `model`. Stored as JSON next to the index so re-runs don't re-prompt.
@@ -22,7 +24,7 @@ impl Consent {
 
     pub fn read(index_dir: &Path) -> Result<Option<Self>, EmbedError> {
         let path = Self::path(index_dir);
-        let raw = match std::fs::read_to_string(path) {
+        let raw = match fs_read::read_to_string_limited(&path, MAX_CONSENT_BYTES) {
             Ok(raw) => raw,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),

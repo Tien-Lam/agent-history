@@ -5,9 +5,12 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::fs_atomic;
+use crate::fs_read;
 use crate::model::Provider;
 
 mod sources;
+
+const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 
 pub use sources::{
     sources_cache_root, validate_rsync_endpoint, validate_rsync_host, validate_rsync_path,
@@ -121,7 +124,7 @@ impl Config {
     }
 
     pub fn try_load_from(path: &Path) -> Result<Self, ConfigLoadError> {
-        let contents = match std::fs::read_to_string(path) {
+        let contents = match fs_read::read_to_string_limited(path, MAX_CONFIG_BYTES) {
             Ok(contents) => contents,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
             Err(source) => {

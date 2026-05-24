@@ -6,6 +6,9 @@ use thiserror::Error;
 
 use super::Transport;
 use crate::fs_atomic;
+use crate::fs_read;
+
+const MAX_SOURCE_CACHE_MANIFEST_BYTES: usize = 1024 * 1024;
 
 /// Manifest written under `<cache>/<name>/.aghist-source.json` after each
 /// `aghist sources pull`. Captures a snapshot of the source config at pull
@@ -42,11 +45,12 @@ pub enum SourceCacheManifestLoadError {
 
 impl SourceCacheManifest {
     pub fn try_load(path: &Path) -> Result<Self, SourceCacheManifestLoadError> {
-        let text =
-            std::fs::read_to_string(path).map_err(|source| SourceCacheManifestLoadError::Read {
+        let text = fs_read::read_to_string_limited(path, MAX_SOURCE_CACHE_MANIFEST_BYTES).map_err(
+            |source| SourceCacheManifestLoadError::Read {
                 path: path.to_path_buf(),
                 source,
-            })?;
+            },
+        )?;
         serde_json::from_str(&text).map_err(|source| SourceCacheManifestLoadError::Parse {
             path: path.to_path_buf(),
             source,

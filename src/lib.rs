@@ -13,6 +13,7 @@ pub mod event;
 pub mod export;
 pub mod federated;
 pub(crate) mod fs_atomic;
+pub(crate) mod fs_read;
 pub mod health;
 pub mod indexing;
 pub mod llm;
