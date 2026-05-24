@@ -220,6 +220,36 @@ fn build_index_reports_source_fingerprint_errors() {
 }
 
 #[test]
+fn build_index_skips_oversized_source_before_loading_provider() {
+    let dir = tempdir().unwrap();
+    let index = SearchIndex::open_or_create(dir.path()).unwrap();
+    let stub = StubProvider::new(Provider::ClaudeCode);
+
+    let mut oversized = make_session("oversized-source", "broken");
+    oversized.source_path = dir.path().join("oversized.jsonl");
+    std::fs::File::create(&oversized.source_path)
+        .unwrap()
+        .set_len(128 * 1024 * 1024 + 1)
+        .unwrap();
+    stub.add(
+        oversized.clone(),
+        vec![make_message("msg", "should never be loaded")],
+    );
+
+    let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+    let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+    let stats = index.build_index(&[oversized], &providers, &tx).unwrap();
+
+    assert_eq!(stats.sessions_indexed, 0);
+    assert_eq!(stats.messages_indexed, 0);
+    assert_eq!(stats.load_errors.len(), 1);
+    assert!(stats.load_errors[0]
+        .error
+        .contains("too large to fingerprint"));
+    assert!(index.search("loaded", 10).unwrap().is_empty());
+}
+
+#[test]
 fn load_error_removes_existing_indexed_docs() {
     let dir = tempdir().unwrap();
     let index = SearchIndex::open_or_create(dir.path()).unwrap();
@@ -298,4 +328,19 @@ fn file_fingerprint_includes_content_hash() {
     let second = file_fingerprint(&path).unwrap();
 
     assert_ne!(first.sha256, second.sha256);
+}
+
+#[test]
+fn file_fingerprint_rejects_oversized_file_from_metadata() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("session.jsonl");
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(128 * 1024 * 1024 + 1)
+        .unwrap();
+
+    let err = file_fingerprint(&path).unwrap_err();
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("too large to fingerprint"));
 }

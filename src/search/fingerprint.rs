@@ -1,10 +1,14 @@
+use std::fs;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::{fs, io};
 
 use sha2::{Digest, Sha256};
 
 use super::types::{FileFingerprint, Manifest};
+
+const MAX_FINGERPRINT_FILE_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_FINGERPRINT_TREE_BYTES: u64 = 512 * 1024 * 1024;
 
 pub(super) fn file_fingerprint(path: &Path) -> io::Result<FileFingerprint> {
     if path.is_dir() {
@@ -15,6 +19,7 @@ pub(super) fn file_fingerprint(path: &Path) -> io::Result<FileFingerprint> {
         .metadata()
         .map_err(|error| io_with_path("read metadata for", path, &error))?;
     let len = metadata.len();
+    checked_file_len(len, path)?;
     let modified_nanos = metadata
         .modified()
         .ok()
@@ -41,15 +46,15 @@ fn dir_fingerprint(path: &Path) -> io::Result<FileFingerprint> {
         let metadata = file
             .metadata()
             .map_err(|error| io_with_path("read metadata for", &file, &error))?;
-        len = len.saturating_add(metadata.len());
+        checked_file_len(metadata.len(), &file)?;
+        len = checked_tree_len(len, metadata.len(), path)?;
         if let Ok(modified) = metadata.modified() {
             if let Ok(duration) = modified.duration_since(SystemTime::UNIX_EPOCH) {
                 let nanos = u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX);
                 modified_nanos = modified_nanos.max(nanos);
             }
         }
-        let bytes = fs::read(&file).map_err(|error| io_with_path("read", &file, &error))?;
-        hasher.update(bytes);
+        hash_file_into(&mut hasher, &file, MAX_FINGERPRINT_FILE_BYTES)?;
     }
 
     let digest = hasher.finalize();
@@ -94,11 +99,57 @@ pub(super) fn manifest_has_legacy_path_keys(manifest: &Manifest) -> bool {
 }
 
 fn file_sha256(path: &Path) -> std::io::Result<String> {
-    let bytes = fs::read(path).map_err(|error| io_with_path("read", path, &error))?;
     let mut hasher = Sha256::new();
-    hasher.update(bytes);
+    hash_file_into(&mut hasher, path, MAX_FINGERPRINT_FILE_BYTES)?;
     let digest = hasher.finalize();
     Ok(to_hex(&digest))
+}
+
+fn hash_file_into(hasher: &mut Sha256, path: &Path, max_bytes: u64) -> io::Result<()> {
+    let file = fs::File::open(path).map_err(|error| io_with_path("open", path, &error))?;
+    let mut limited = file.take(max_bytes.saturating_add(1));
+    let written =
+        io::copy(&mut limited, hasher).map_err(|error| io_with_path("read", path, &error))?;
+    if written > max_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} is too large to fingerprint (>{} bytes)",
+                path.display(),
+                max_bytes
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn checked_file_len(len: u64, path: &Path) -> io::Result<()> {
+    if len > MAX_FINGERPRINT_FILE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} is too large to fingerprint (>{} bytes)",
+                path.display(),
+                MAX_FINGERPRINT_FILE_BYTES
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn checked_tree_len(current: u64, next: u64, path: &Path) -> io::Result<u64> {
+    let total = current.saturating_add(next);
+    if total > MAX_FINGERPRINT_TREE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} is too large to fingerprint (>{} bytes total)",
+                path.display(),
+                MAX_FINGERPRINT_TREE_BYTES
+            ),
+        ));
+    }
+    Ok(total)
 }
 
 fn io_with_path(action: &str, path: &Path, error: &io::Error) -> io::Error {
