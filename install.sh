@@ -233,12 +233,22 @@ if [ ! -w "$INSTALL_DIR" ]; then
     echo "Choose a user-writable directory with --to DIR, or run the installer with the permissions you intend to own the binary."
     exit 1
 fi
-cp -f "$EXTRACT_DIR/$BIN_FILE" "$INSTALL_DIR/$BIN_FILE"
-chmod 0755 "$INSTALL_DIR/$BIN_FILE"
-cp -f "$MARKER_TMP" "$INSTALL_DIR/$BINARY.install"
-chmod 0644 "$INSTALL_DIR/$BINARY.install"
+BIN_DEST="$INSTALL_DIR/$BIN_FILE"
+MARKER_DEST="$INSTALL_DIR/$BINARY.install"
+if [ -L "$BIN_DEST" ]; then
+    echo "Error: refusing to overwrite symlinked binary destination: $BIN_DEST" >&2
+    exit 1
+fi
+if [ -L "$MARKER_DEST" ]; then
+    echo "Error: refusing to overwrite symlinked install marker destination: $MARKER_DEST" >&2
+    exit 1
+fi
+cp -f "$EXTRACT_DIR/$BIN_FILE" "$BIN_DEST"
+chmod 0755 "$BIN_DEST"
+cp -f "$MARKER_TMP" "$MARKER_DEST"
+chmod 0644 "$MARKER_DEST"
 
-echo "Installed $BINARY $TAG to $INSTALL_DIR/$BIN_FILE"
+echo "Installed $BINARY $TAG to $BIN_DEST"
 
 # Check PATH
 case ":${PATH}:" in

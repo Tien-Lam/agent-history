@@ -88,6 +88,16 @@ jobs:
           grep -q "archive contains unexpected member: extra" "$tmp/err"
           test ! -e "$tmp/invalid-bin/aghist"
 
+          mkdir -p "$tmp/symlink-bin"
+          printf 'do not overwrite\n' > "$tmp/target"
+          ln -s "$tmp/target" "$tmp/symlink-bin/aghist"
+          if bash install.sh --to "$tmp/symlink-bin" --tag v0.0.0-validation --archive "$tmp/valid.tar.gz" >"$tmp/out" 2>"$tmp/err"; then
+            echo "install.sh overwrote a symlinked binary destination" >&2
+            exit 1
+          fi
+          grep -q "refusing to overwrite symlinked binary destination" "$tmp/err"
+          grep -qx "do not overwrite" "$tmp/target"
+
       - name: Build release binary
         run: cargo build --locked --release --features self-update
 
