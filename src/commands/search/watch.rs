@@ -1,17 +1,14 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::{self, Write};
 use std::path::Path;
 use std::time::Duration;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
-use aghist::metadata;
-use aghist::model::Session;
-use aghist::search::{self, SearchFilters};
-use aghist::session_resolver::qualified_session_metadata_key;
-use aghist::session_warnings::SessionLoadWarning;
+use aghist::search::SearchFilters;
+use aghist::services::search as search_service;
 use aghist::{provider, query_scope};
 
-use super::super::discovery::{federated_discovery_for_commands, source_for_session};
+use super::super::discovery::federated_discovery_for_commands;
 use super::input::resolve_search_query;
 use super::output::write_watch_hit;
 
@@ -37,11 +34,7 @@ pub(crate) fn search_watch_command(
             .with_hint("Run `aghist search --help` for usage."));
     }
 
-    let index_dir = search::SearchIndex::default_index_dir();
-    let index = search::SearchIndex::open_or_create(&index_dir).map_err(|e| {
-        ErrorEnvelope::new("index-error", format!("failed to open search index: {e}"))
-    })?;
-
+    let emit_limit = limit.max(1);
     let interval = Duration::from_millis(interval_ms);
     let mut seen: HashSet<String> = HashSet::new();
     let mut iteration: u32 = 0;
@@ -51,59 +44,44 @@ pub(crate) fn search_watch_command(
         iteration += 1;
 
         let federation = federated_discovery_for_commands(providers, scope);
-        let sessions: Vec<Session> = federation.sessions;
-
-        let (tx, _rx) = crossbeam_channel::unbounded::<aghist::action::Action>();
-        let stats = index.build_index(&sessions, providers, &tx).map_err(|e| {
-            ErrorEnvelope::new("index-error", format!("failed to build search index: {e}"))
-        })?;
-        let session_meta: HashMap<String, &Session> =
-            sessions.iter().map(|s| (s.identity_key(), s)).collect();
-        for load_error in &stats.load_errors {
-            if let Some(session) = session_meta.get(&load_error.session_key).copied() {
-                let source = source_for_session(&federation.source_by_session, session);
-                eprintln!(
-                    "{}",
-                    SessionLoadWarning::new(source, session, &load_error.error).warning_line()
-                );
-            }
+        let page = search_service::search_sessions(
+            providers,
+            &federation,
+            search_service::SearchSessionsRequest {
+                query,
+                limit: watch_candidate_limit(emit_limit, seen.len()),
+                cursor: None,
+                filters,
+                debug_search: false,
+                hybrid_weight: 0.0,
+                metadata_keys,
+                provider_scope: Some(scope.providers()),
+            },
+        )
+        .map_err(|e| ErrorEnvelope::new("index-error", e.to_string()))?;
+        for warning in &page.warnings {
+            eprintln!("{}", warning.warning_line());
         }
 
-        search::index_notes_best_effort(&index);
-
-        let hits = index
-            .search_with_filters(query, limit, filters)
-            .map_err(|e| ErrorEnvelope::new("index-error", format!("search failed: {e}")))?;
-
+        let mut emitted_this_poll = 0;
         let mut handle = stdout.lock();
-        for h in &hits {
-            if let Some(keys) = metadata_keys {
-                let allowed = match h.kind() {
-                    search::HitKind::Message => session_meta
-                        .get(h.session_key())
-                        .map(|session| {
-                            qualified_session_metadata_key(
-                                session,
-                                source_for_session(&federation.source_by_session, session),
-                            )
-                        })
-                        .is_some_and(|k| keys.contains(&k)),
-                    search::HitKind::Note => h
-                        .note_session_ref()
-                        .and_then(|raw| metadata::session_key_from_ref(raw).ok())
-                        .is_some_and(|k| keys.contains(&k)),
-                };
-                if !allowed {
-                    continue;
-                }
-            }
+        for (h, _) in &page.hits {
             if !seen.insert(h.message_key().to_string()) {
                 continue;
             }
-            if write_watch_hit(&mut handle, h, &session_meta, &federation.source_by_session)
-                .is_err()
+            if write_watch_hit(
+                &mut handle,
+                h,
+                &page.session_meta,
+                &federation.source_by_session,
+            )
+            .is_err()
             {
                 return Ok(EXIT_OK);
+            }
+            emitted_this_poll += 1;
+            if emitted_this_poll >= emit_limit {
+                break;
             }
         }
         if handle.flush().is_err() {
@@ -117,6 +95,10 @@ pub(crate) fn search_watch_command(
 
         std::thread::sleep(interval);
     }
+}
+
+fn watch_candidate_limit(page_limit: usize, seen_count: usize) -> usize {
+    page_limit.saturating_add(seen_count).max(1)
 }
 
 #[derive(Clone, Copy)]

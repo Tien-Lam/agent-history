@@ -99,6 +99,51 @@ fn search_watch_dedups_hits_across_polls() {
 }
 
 #[test]
+fn search_watch_limit_does_not_starve_unseen_hits_after_dedupe() {
+    let fixture = common::fixtures::claude::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+    let index = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args([
+            "search",
+            "User",
+            "--watch",
+            "--limit",
+            "1",
+            "--watch-interval-ms",
+            "10",
+            "--watch-iterations",
+            "2",
+        ])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index.path())
+        .output()
+        .unwrap();
+
+    cli::assert_success(&output);
+    let stdout = cli::output_stdout(&output);
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "watch should emit one fresh hit per poll when more matching hits exist; got: {stdout:?}"
+    );
+
+    let keys: std::collections::HashSet<(String, String)> = lines
+        .iter()
+        .map(|l| {
+            let row: serde_json::Value = serde_json::from_str(l).unwrap();
+            (
+                cli::json_str(&row, "session_id").to_string(),
+                cli::json_str(&row, "message_id").to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(keys.len(), 2, "watch emitted duplicate hits: {stdout:?}");
+}
+
+#[test]
 fn search_watch_requires_query() {
     let dir = tempfile::tempdir().unwrap();
     let output = aghist()
