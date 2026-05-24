@@ -15,11 +15,43 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  MSRV: "1.88.0"
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
 
 jobs:
+  msrv:
+    name: ubuntu-24.04 / msrv
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_TARGET_DIR: target/msrv
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.MSRV }}
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/msrv
+          key: ${{ runner.os }}-cargo-msrv-${{ env.MSRV }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-msrv-${{ env.MSRV }}-
+            ${{ runner.os }}-cargo-msrv-
+
+      - name: Check default feature graph
+        run: cargo check --locked --all-targets
+
+      - name: Check all-features lib graph
+        run: cargo check --locked --all-features --lib
+
   check:
     name: ${{ matrix.os }} / ${{ matrix.toolchain }}
     runs-on: ${{ matrix.os }}
