@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use super::{LlmConfig, LlmError};
 
+const MAX_LLM_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
+
 /// HTTP transport boundary. Production uses [`UreqTransport`]; tests inject
 /// a mock so the extractor can be exercised without a network.
 pub trait LlmTransport: Send + Sync {
@@ -55,6 +57,8 @@ impl LlmTransport for UreqTransport {
                 let status = resp.status().as_u16();
                 let text = resp
                     .body_mut()
+                    .with_config()
+                    .limit(MAX_LLM_RESPONSE_BYTES)
                     .read_to_string()
                     .map_err(|e| LlmError::Http {
                         url: url.to_string(),

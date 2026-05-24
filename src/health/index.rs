@@ -1,6 +1,9 @@
 use std::path::Path;
 
 use super::{fs::check_dir_writable, HealthCheck, HealthStatus};
+use crate::fs_read;
+
+const MAX_HEALTH_MANIFEST_BYTES: usize = 64 * 1024 * 1024;
 
 pub(super) fn index_health_checks(index_dir: &Path) -> Vec<HealthCheck> {
     vec![
@@ -38,7 +41,7 @@ fn manifest_sane_check(index_dir: &Path) -> HealthCheck {
         };
     }
 
-    match std::fs::read_to_string(&manifest_path)
+    match fs_read::read_to_string_limited(&manifest_path, MAX_HEALTH_MANIFEST_BYTES)
         .map_err(|e| e.to_string())
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()))
     {

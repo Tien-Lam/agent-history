@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{self, Read};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::fs_atomic;
+use crate::fs_read;
 
 use super::{EmbedError, HASH_LEN};
 
@@ -15,6 +16,7 @@ mod tests;
 use codec::{decode, encode};
 
 const STORE_FILENAME: &str = "embeddings.bin";
+const MAX_EMBEDDING_STORE_BYTES: usize = 512 * 1024 * 1024;
 
 /// One stored entry: the content hash that produced this vector, plus the
 /// vector itself. Splitting these out makes freshness checks a hash compare
@@ -58,9 +60,7 @@ impl EmbeddingStore {
         if !path.exists() {
             return Ok(None);
         }
-        let mut file = fs::File::open(&path)?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
+        let bytes = fs_read::read_limited(&path, MAX_EMBEDDING_STORE_BYTES)?;
         let decoded = decode(&path, &bytes)?;
         Ok(Some(Self {
             path,

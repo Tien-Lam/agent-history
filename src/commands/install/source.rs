@@ -1,7 +1,9 @@
 use std::ffi::OsString;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const INSTALL_MARKER_METHOD: &str = "method=github-release";
+const MAX_INSTALL_MARKER_BYTES: usize = 4 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InstallSource {
@@ -54,12 +56,26 @@ fn detect_install_source_with(
 
 fn has_github_release_marker(exe: &Path) -> bool {
     install_marker_path(exe)
-        .and_then(|marker| std::fs::read_to_string(marker).ok())
+        .and_then(|marker| read_install_marker(&marker).ok())
         .is_some_and(|contents| {
             contents
                 .lines()
                 .any(|line| line.trim() == INSTALL_MARKER_METHOD)
         })
+}
+
+fn read_install_marker(path: &Path) -> std::io::Result<String> {
+    let file = std::fs::File::open(path)?;
+    let mut bytes = Vec::new();
+    file.take(MAX_INSTALL_MARKER_BYTES.saturating_add(1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_INSTALL_MARKER_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "install marker exceeds size limit",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
 pub(super) fn install_marker_path(exe: &Path) -> Option<PathBuf> {

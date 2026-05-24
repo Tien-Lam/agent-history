@@ -82,6 +82,23 @@ fn release_marker_does_not_override_system_package_path() {
 }
 
 #[test]
+fn oversized_release_marker_is_ignored() {
+    let root = tempfile::tempdir().unwrap();
+    let exe = exe_path(root.path());
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(
+        install_marker_path(&exe).unwrap(),
+        "x".repeat(MAX_INSTALL_MARKER_BYTES + 1),
+    )
+    .unwrap();
+
+    assert_eq!(
+        detect_install_source_with(&exe, None, Some(root.path())),
+        InstallSource::Unknown
+    );
+}
+
+#[test]
 fn path_from_env_value_ignores_empty_override() {
     assert_eq!(path_from_env_value(None), None);
     assert_eq!(path_from_env_value(Some(OsString::new())), None);
