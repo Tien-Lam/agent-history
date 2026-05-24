@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Stdio;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::config;
@@ -24,6 +25,7 @@ pub(super) fn run_rsync_pull(
         cmd.arg("-e").arg("ssh -o BatchMode=yes");
     }
     cmd.arg("--").arg(&remote).arg(&local);
+    cmd.stdout(Stdio::null());
 
     let output = cmd.output().map_err(|e| {
         ErrorEnvelope::new(
