@@ -176,7 +176,7 @@ list_archive_members() {
             if command -v unzip >/dev/null 2>&1; then
                 unzip -Z1 "$TMPDIR/archive"
             elif command -v 7z >/dev/null 2>&1; then
-                7z l -ba "$TMPDIR/archive" | awk '{ print $NF }'
+                7z l -slt "$TMPDIR/archive" | sed -n 's/^Path = //p'
             else
                 echo "Error: inspecting Windows archives requires unzip or 7z" >&2
                 return 1

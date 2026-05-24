@@ -78,7 +78,7 @@ case "$ARCHIVE" in
             unzip -Z1 "$ARCHIVE" | sort > "$TMPDIR/archive-files"
             unzip -p "$ARCHIVE" aghist.install > "$TMPDIR/aghist.install"
         elif command -v 7z >/dev/null 2>&1; then
-            7z l -ba "$ARCHIVE" | awk '{ print $NF }' | sort > "$TMPDIR/archive-files"
+            7z l -slt "$ARCHIVE" | sed -n 's/^Path = //p' | sort > "$TMPDIR/archive-files"
             7z x -so "$ARCHIVE" aghist.install > "$TMPDIR/aghist.install"
         else
             echo "Error: inspecting zip archives requires unzip or 7z" >&2
