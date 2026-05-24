@@ -50,33 +50,57 @@ fn ensure_existing_cache_dir_safe(path: &Path, label: &str) -> Result<(), ErrorE
     }
 }
 
-/// Recursive `(file_count, total_bytes)`. Symlinks and IO errors are skipped.
-pub(super) fn count_dir(dir: &Path) -> (u64, u64) {
+/// Recursive `(file_count, total_bytes)`. Symlinks are skipped.
+pub(super) fn count_dir(dir: &Path) -> Result<(u64, u64), ErrorEnvelope> {
     let mut files: u64 = 0;
     let mut bytes: u64 = 0;
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return (0, 0);
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        ErrorEnvelope::new(
+            "io-error",
+            format!("failed to read source data dir {}: {e}", dir.display()),
+        )
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|e| {
+            ErrorEnvelope::new(
+                "io-error",
+                format!(
+                    "failed to read source data dir entry in {}: {e}",
+                    dir.display()
+                ),
+            )
+        })?;
+        let file_type = entry.file_type().map_err(|e| {
+            ErrorEnvelope::new(
+                "io-error",
+                format!(
+                    "failed to inspect source data path {}: {e}",
+                    entry.path().display()
+                ),
+            )
+        })?;
         if file_type.is_symlink() {
             continue;
         }
         if file_type.is_file() {
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
+            let meta = entry.metadata().map_err(|e| {
+                ErrorEnvelope::new(
+                    "io-error",
+                    format!(
+                        "failed to inspect source data file {}: {e}",
+                        entry.path().display()
+                    ),
+                )
+            })?;
             files = files.saturating_add(1);
             bytes = bytes.saturating_add(meta.len());
         } else if file_type.is_dir() {
-            let (f, b) = count_dir(&entry.path());
+            let (f, b) = count_dir(&entry.path())?;
             files = files.saturating_add(f);
             bytes = bytes.saturating_add(b);
         }
     }
-    (files, bytes)
+    Ok((files, bytes))
 }
 
 #[cfg(all(test, unix))]
@@ -94,6 +118,20 @@ mod tests {
         symlink(root.join("real.txt"), root.join("file-link")).unwrap();
 
         assert_eq!(dir_size_bytes(root), 5);
-        assert_eq!(count_dir(root), (1, 5));
+        assert_eq!(count_dir(root).unwrap(), (1, 5));
+    }
+
+    #[test]
+    fn recursive_dir_accounting_reports_missing_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+
+        let err = count_dir(&missing).unwrap_err();
+
+        assert_eq!(err.kind, "io-error");
+        assert!(
+            err.message.contains("failed to read source data dir"),
+            "unexpected error: {err:?}"
+        );
     }
 }

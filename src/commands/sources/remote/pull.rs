@@ -126,7 +126,7 @@ fn pull_one_source(
         });
     }
 
-    let (file_count, byte_count) = count_dir(&data_dir);
+    let (file_count, byte_count) = count_dir(&data_dir)?;
     let manifest = config::SourceCacheManifest {
         name: src.name.clone(),
         host: src.host.clone(),
