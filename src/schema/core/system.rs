@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::config::{MAX_REMOTE_SOURCES, MAX_SOURCE_NAME_BYTES};
+use crate::config::{MAX_REMOTE_SOURCES, MAX_RSYNC_ENDPOINT_BYTES, MAX_SOURCE_NAME_BYTES};
 use crate::schema_fragments::health_response_schema;
 
 use super::super::common::{
@@ -55,8 +55,14 @@ fn remote_source_schema() -> Value {
     closed_object_schema(
         schema_props([
             ("name", source_name_schema()),
-            ("host", json!({ "type": "string" })),
-            ("path", json!({ "type": "string" })),
+            (
+                "host",
+                json!({ "type": "string", "maxLength": MAX_RSYNC_ENDPOINT_BYTES }),
+            ),
+            (
+                "path",
+                json!({ "type": "string", "maxLength": MAX_RSYNC_ENDPOINT_BYTES }),
+            ),
             (
                 "transport",
                 json!({ "type": "string", "enum": ["ssh", "rsync"] }),
@@ -93,8 +99,14 @@ fn pull_result_schema() -> Value {
     closed_object_schema(
         schema_props([
             ("name", json!({ "type": "string" })),
-            ("host", json!({ "type": "string" })),
-            ("path", json!({ "type": "string" })),
+            (
+                "host",
+                json!({ "type": "string", "maxLength": MAX_RSYNC_ENDPOINT_BYTES }),
+            ),
+            (
+                "path",
+                json!({ "type": "string", "maxLength": MAX_RSYNC_ENDPOINT_BYTES }),
+            ),
             (
                 "transport",
                 json!({ "type": "string", "enum": ["ssh", "rsync"] }),
@@ -154,8 +166,8 @@ fn sources_subcommands_schema() -> Value {
             "params": closed_object_schema(
                 schema_props([
                     ("name", source_name_schema()),
-                    ("host", json!({ "type": "string" })),
-                    ("path", json!({ "type": "string" })),
+                    ("host", json!({ "type": "string", "maxLength": MAX_RSYNC_ENDPOINT_BYTES })),
+                    ("path", json!({ "type": "string", "maxLength": MAX_RSYNC_ENDPOINT_BYTES })),
                     ("transport", json!({ "type": "string", "enum": ["ssh", "rsync"], "default": "ssh" })),
                     ("json", json!({ "type": "boolean" })),
                     ("ndjson", json!({ "type": "boolean" })),

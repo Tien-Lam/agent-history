@@ -1,4 +1,5 @@
 pub const MAX_SOURCE_NAME_BYTES: usize = 64;
+pub const MAX_RSYNC_ENDPOINT_BYTES: usize = 4 * 1024;
 
 pub fn validate_source_name(name: &str) -> Result<(), String> {
     let trimmed = name.trim();
@@ -70,6 +71,11 @@ fn validate_rsync_endpoint_base(value: &str, label: &str) -> Result<(), String> 
             "{label} must not contain leading or trailing whitespace"
         ));
     }
+    if trimmed.len() > MAX_RSYNC_ENDPOINT_BYTES {
+        return Err(format!(
+            "{label} must be at most {MAX_RSYNC_ENDPOINT_BYTES} bytes"
+        ));
+    }
     if trimmed.starts_with('-') {
         return Err(format!("{label} must not start with '-'"));
     }
@@ -120,7 +126,7 @@ mod tests {
 
     use super::{
         validate_rsync_endpoint, validate_rsync_host, validate_rsync_path, validate_source_name,
-        MAX_SOURCE_NAME_BYTES,
+        MAX_RSYNC_ENDPOINT_BYTES, MAX_SOURCE_NAME_BYTES,
     };
 
     fn valid_source_name_strategy() -> impl Strategy<Value = String> {
@@ -207,5 +213,14 @@ mod tests {
 
         assert!(validate_source_name(&valid).is_ok());
         assert!(validate_source_name(&too_long).is_err());
+    }
+
+    #[test]
+    fn rsync_endpoint_rejects_values_above_max_length() {
+        let valid = "a".repeat(MAX_RSYNC_ENDPOINT_BYTES);
+        let too_long = "a".repeat(MAX_RSYNC_ENDPOINT_BYTES + 1);
+
+        assert!(validate_rsync_endpoint(&valid, "--path").is_ok());
+        assert!(validate_rsync_endpoint(&too_long, "--path").is_err());
     }
 }

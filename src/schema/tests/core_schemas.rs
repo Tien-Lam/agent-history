@@ -203,6 +203,14 @@ fn sources_schema_describes_remote_registry_subcommands() {
         serde_json::json!(crate::config::MAX_SOURCE_NAME_BYTES)
     );
     assert_eq!(
+        subcommands["add"]["params"]["properties"]["host"]["maxLength"],
+        serde_json::json!(crate::config::MAX_RSYNC_ENDPOINT_BYTES)
+    );
+    assert_eq!(
+        subcommands["add"]["params"]["properties"]["path"]["maxLength"],
+        serde_json::json!(crate::config::MAX_RSYNC_ENDPOINT_BYTES)
+    );
+    assert_eq!(
         subcommands["remove"]["params"]["properties"]["name"]["pattern"],
         "^(?!local$)[A-Za-z0-9][A-Za-z0-9_-]*$"
     );

@@ -15,7 +15,7 @@ const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 pub use sources::{
     sources_cache_root, validate_rsync_endpoint, validate_rsync_host, validate_rsync_path,
     validate_source_name, RemoteSource, SourceCacheManifest, SourceCacheManifestLoadError,
-    Transport, MAX_REMOTE_SOURCES, MAX_SOURCE_NAME_BYTES,
+    Transport, MAX_REMOTE_SOURCES, MAX_RSYNC_ENDPOINT_BYTES, MAX_SOURCE_NAME_BYTES,
 };
 
 #[derive(Debug, Error)]

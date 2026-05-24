@@ -5,7 +5,7 @@ use std::fs;
 use aghist::config::Config;
 use aghist::config::{
     validate_rsync_endpoint, validate_rsync_host, validate_rsync_path, validate_source_name,
-    MAX_SOURCE_NAME_BYTES,
+    MAX_RSYNC_ENDPOINT_BYTES, MAX_SOURCE_NAME_BYTES,
 };
 use aghist::model::Provider;
 
@@ -241,6 +241,7 @@ fn remote_endpoint_validation_rejects_option_like_values() {
     assert!(validate_rsync_endpoint(" /tmp", "--path").is_err());
     assert!(validate_rsync_endpoint("/tmp/agent history", "--path").is_err());
     assert!(validate_rsync_endpoint("/tmp/agent;history", "--path").is_err());
+    assert!(validate_rsync_endpoint(&"a".repeat(MAX_RSYNC_ENDPOINT_BYTES + 1), "--path").is_err());
 }
 
 #[test]
