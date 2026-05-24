@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::super::args::{optional_provider, optional_str, optional_usize, required_str};
+use super::super::args::{
+    optional_provider, optional_str_with_limit, optional_usize, required_str_with_limit,
+};
 use super::super::payload::{message_row_with_source, session_row_with_source};
 use super::super::resources::session_uri_for_source;
 use super::super::server::McpServer;
@@ -9,8 +11,8 @@ use crate::dto::{McpListResponse, McpSessionRow};
 use crate::federated;
 use crate::model::QualifiedCitationRef;
 use crate::schema_fragments::{
-    MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX, MCP_LIST_LIMIT_DEFAULT,
-    MCP_LIST_LIMIT_MAX,
+    MCP_FILTER_STRING_MAX_BYTES, MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX,
+    MCP_LIST_LIMIT_DEFAULT, MCP_LIST_LIMIT_MAX, MCP_LOOKUP_STRING_MAX_BYTES,
 };
 use crate::search::SearchFilters;
 use crate::services::list as list_service;
@@ -20,7 +22,7 @@ use crate::session_resolver::LookupSource;
 impl McpServer {
     pub(super) fn tool_list_sessions(&self, args: &Value) -> Result<Value, String> {
         let provider_filter = optional_provider(args, "provider")?;
-        let project_filter = optional_str(args, "project")?;
+        let project_filter = optional_str_with_limit(args, "project", MCP_FILTER_STRING_MAX_BYTES)?;
         let limit = optional_usize(args, "limit", MCP_LIST_LIMIT_DEFAULT, 1, MCP_LIST_LIMIT_MAX)?;
 
         let discovery = self.collect_discovery();
@@ -68,9 +70,10 @@ impl McpServer {
     }
 
     pub(super) fn tool_get_session(&self, args: &Value) -> Result<Value, String> {
-        let session_id = required_str(args, "session_id")?;
+        let session_id = required_str_with_limit(args, "session_id", MCP_LOOKUP_STRING_MAX_BYTES)?;
         let provider_filter = optional_provider(args, "provider")?;
-        let source_filter = optional_str(args, "source")?;
+        let source_filter =
+            optional_str_with_limit(args, "source", crate::config::MAX_SOURCE_NAME_BYTES)?;
         let discovery = self.collect_discovery();
         let provider_scope = self.provider_scope();
         let loaded = lookup_service::load_session_by_prefix(
@@ -95,7 +98,7 @@ impl McpServer {
     }
 
     pub(super) fn tool_get_message(&self, args: &Value) -> Result<Value, String> {
-        let raw_ref = required_str(args, "ref")?;
+        let raw_ref = required_str_with_limit(args, "ref", MCP_LOOKUP_STRING_MAX_BYTES)?;
         let qualified: QualifiedCitationRef = raw_ref
             .parse()
             .map_err(|e| format!("invalid ref '{raw_ref}': {e}"))?;

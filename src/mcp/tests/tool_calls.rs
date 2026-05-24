@@ -62,3 +62,25 @@ fn list_sessions_rejects_out_of_range_limit() {
     );
     assert_eq!(resp["result"]["isError"], true);
 }
+
+#[test]
+fn search_sessions_rejects_oversized_query() {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "tools/call",
+        "params": {
+            "name": "search_sessions",
+            "arguments": {
+                "query": "x".repeat(schema_fragments::SEARCH_QUERY_MAX_BYTES + 1),
+            }
+        }
+    });
+
+    let resp = run_one(&server(), &request.to_string());
+
+    assert_eq!(resp["result"]["isError"], true);
+    let txt = resp["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(txt.contains("query"), "got: {txt}");
+    assert!(txt.contains("bytes"), "got: {txt}");
+}

@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::config::MAX_SOURCE_NAME_BYTES;
+
 use super::common::{
     closed_empty_object_schema, closed_object_schema, provider_slug_enum, schema_props,
     source_qualified_citation_ref_pattern,
@@ -9,8 +11,9 @@ use super::responses::{
     mcp_list_response_schema, mcp_reindex_response_schema, mcp_search_response_schema,
 };
 use super::{
-    MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX, MCP_LIST_LIMIT_DEFAULT,
-    MCP_LIST_LIMIT_MAX, MCP_SEARCH_LIMIT_MAX, SEARCH_LIMIT_DEFAULT,
+    MCP_FILTER_STRING_MAX_BYTES, MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX,
+    MCP_LIST_LIMIT_DEFAULT, MCP_LIST_LIMIT_MAX, MCP_LOOKUP_STRING_MAX_BYTES, MCP_SEARCH_LIMIT_MAX,
+    SEARCH_LIMIT_DEFAULT, SEARCH_QUERY_MAX_BYTES,
 };
 
 pub(crate) struct McpToolContract {
@@ -66,7 +69,7 @@ fn mcp_search_sessions_input_schema() -> Value {
         schema_props([
             (
                 "query",
-                json!({ "type": "string", "description": "Tantivy query string. Matches the `content` and `project` fields." }),
+                json!({ "type": "string", "maxLength": SEARCH_QUERY_MAX_BYTES, "description": "Tantivy query string. Matches the `content` and `project` fields." }),
             ),
             (
                 "limit",
@@ -86,7 +89,7 @@ fn mcp_list_sessions_input_schema() -> Value {
             ),
             (
                 "project",
-                json!({ "type": "string", "description": "Substring match on session project_name." }),
+                json!({ "type": "string", "maxLength": MCP_FILTER_STRING_MAX_BYTES, "description": "Substring match on session project_name." }),
             ),
             (
                 "limit",
@@ -100,14 +103,17 @@ fn mcp_list_sessions_input_schema() -> Value {
 fn mcp_get_session_input_schema() -> Value {
     closed_object_schema(
         schema_props([
-            ("session_id", json!({ "type": "string" })),
+            (
+                "session_id",
+                json!({ "type": "string", "maxLength": MCP_LOOKUP_STRING_MAX_BYTES }),
+            ),
             (
                 "provider",
                 json!({ "type": "string", "enum": provider_slug_enum() }),
             ),
             (
                 "source",
-                json!({ "type": "string", "description": "Source name from list_sessions. Omit for unique matches; use 'local' for local-only lookup." }),
+                json!({ "type": "string", "maxLength": MAX_SOURCE_NAME_BYTES, "description": "Source name from list_sessions. Omit for unique matches; use 'local' for local-only lookup." }),
             ),
         ]),
         &["session_id"],
@@ -121,6 +127,7 @@ fn mcp_get_message_input_schema() -> Value {
                 "ref",
                 json!({
                     "type": "string",
+                    "maxLength": MCP_LOOKUP_STRING_MAX_BYTES,
                     "pattern": source_qualified_citation_ref_pattern(),
                     "description": "Citation ref. Example: claude-code/abc-123#7"
                 }),

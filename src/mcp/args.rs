@@ -9,12 +9,43 @@ pub(super) fn required_str(args: &Value, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("missing required string argument: {key}"))
 }
 
+pub(super) fn required_str_with_limit(
+    args: &Value,
+    key: &str,
+    max_bytes: usize,
+) -> Result<String, String> {
+    let value = required_str(args, key)?;
+    enforce_string_limit(key, &value, max_bytes)?;
+    Ok(value)
+}
+
 pub(super) fn optional_str(args: &Value, key: &str) -> Result<Option<String>, String> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s.clone())),
         Some(other) => Err(format!("argument '{key}' must be a string, got: {other}")),
     }
+}
+
+pub(super) fn optional_str_with_limit(
+    args: &Value,
+    key: &str,
+    max_bytes: usize,
+) -> Result<Option<String>, String> {
+    let value = optional_str(args, key)?;
+    if let Some(value) = value.as_deref() {
+        enforce_string_limit(key, value, max_bytes)?;
+    }
+    Ok(value)
+}
+
+fn enforce_string_limit(key: &str, value: &str, max_bytes: usize) -> Result<(), String> {
+    if value.len() > max_bytes {
+        return Err(format!(
+            "argument '{key}' must be at most {max_bytes} bytes"
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn optional_usize(

@@ -31,6 +31,8 @@ pub const MCP_LIST_LIMIT_DEFAULT: usize = 50;
 pub const MCP_LIST_LIMIT_MAX: usize = 1_000;
 pub const MCP_INCLUDE_CONTEXT_DEFAULT: usize = 0;
 pub const MCP_INCLUDE_CONTEXT_MAX: usize = 100;
+pub const MCP_FILTER_STRING_MAX_BYTES: usize = 1_024;
+pub const MCP_LOOKUP_STRING_MAX_BYTES: usize = 1_024;
 
 pub(crate) use common::{
     array_schema, closed_empty_object_schema, closed_object_schema, object_schema,

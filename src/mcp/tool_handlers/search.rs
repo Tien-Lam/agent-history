@@ -1,17 +1,17 @@
 use serde_json::Value;
 
-use super::super::args::{optional_usize, required_str};
+use super::super::args::{optional_usize, required_str_with_limit};
 use super::super::server::McpServer;
 
 use crate::dto::McpSearchResponse;
 use crate::federated;
-use crate::schema_fragments::{MCP_SEARCH_LIMIT_MAX, SEARCH_LIMIT_DEFAULT};
+use crate::schema_fragments::{MCP_SEARCH_LIMIT_MAX, SEARCH_LIMIT_DEFAULT, SEARCH_QUERY_MAX_BYTES};
 use crate::search::SearchFilters;
 use crate::services::search as search_service;
 
 impl McpServer {
     pub(super) fn tool_search_sessions(&self, args: &Value) -> Result<Value, String> {
-        let query = required_str(args, "query")?;
+        let query = required_str_with_limit(args, "query", SEARCH_QUERY_MAX_BYTES)?;
         if query.trim().is_empty() {
             return Err("query is empty".to_string());
         }

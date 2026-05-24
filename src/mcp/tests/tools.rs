@@ -141,6 +141,40 @@ fn tool_limit_schemas_use_shared_contract_constants() {
 }
 
 #[test]
+fn tool_string_schemas_use_shared_contract_constants() {
+    let tools = tool_definitions();
+    let tools = tools.as_array().unwrap();
+
+    let search = tool_by_name(tools, "search_sessions");
+    assert_eq!(
+        search["inputSchema"]["properties"]["query"]["maxLength"],
+        serde_json::json!(schema_fragments::SEARCH_QUERY_MAX_BYTES)
+    );
+
+    let list = tool_by_name(tools, "list_sessions");
+    assert_eq!(
+        list["inputSchema"]["properties"]["project"]["maxLength"],
+        serde_json::json!(schema_fragments::MCP_FILTER_STRING_MAX_BYTES)
+    );
+
+    let get_session = tool_by_name(tools, "get_session");
+    assert_eq!(
+        get_session["inputSchema"]["properties"]["session_id"]["maxLength"],
+        serde_json::json!(schema_fragments::MCP_LOOKUP_STRING_MAX_BYTES)
+    );
+    assert_eq!(
+        get_session["inputSchema"]["properties"]["source"]["maxLength"],
+        serde_json::json!(crate::config::MAX_SOURCE_NAME_BYTES)
+    );
+
+    let get_message = tool_by_name(tools, "get_message");
+    assert_eq!(
+        get_message["inputSchema"]["properties"]["ref"]["maxLength"],
+        serde_json::json!(schema_fragments::MCP_LOOKUP_STRING_MAX_BYTES)
+    );
+}
+
+#[test]
 fn tool_output_schemas_use_shared_registry() {
     let tools = tool_definitions();
     let tools = tools.as_array().unwrap();
