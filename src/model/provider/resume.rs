@@ -54,14 +54,19 @@ fn shell_escape(s: &str) -> String {
 /// otherwise strip the `rollout-` prefix as a best-effort fallback.
 fn codex_resume_id(session_id: &str) -> &str {
     if let Some(tail) = session_id.get(session_id.len().saturating_sub(36)..) {
-        if tail.len() == 36 {
-            let b = tail.as_bytes();
-            if b[8] == b'-' && b[13] == b'-' && b[18] == b'-' && b[23] == b'-' {
-                return tail;
-            }
+        if is_uuid_like(tail) {
+            return tail;
         }
     }
     session_id.strip_prefix("rollout-").unwrap_or(session_id)
+}
+
+fn is_uuid_like(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(idx, byte)| match idx {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
 }
 
 #[cfg(test)]
@@ -98,6 +103,16 @@ mod tests {
         let stem = "rollout-2024-03-15T10-30-00-a1b2c3d4-e5f6-7890-abcd-ef1234567890";
         let cmd = Provider::CodexCli.resume_command(stem);
         assert_eq!(cmd, "codex resume a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    }
+
+    #[test]
+    fn resume_command_codex_ignores_non_hex_uuid_shape() {
+        let stem = "rollout-2024-03-15T10-30-00-z1b2c3d4-e5f6-7890-abcd-ef1234567890";
+        let cmd = Provider::CodexCli.resume_command(stem);
+        assert_eq!(
+            cmd,
+            "codex resume 2024-03-15T10-30-00-z1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        );
     }
 
     #[test]
