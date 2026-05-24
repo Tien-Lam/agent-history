@@ -100,6 +100,27 @@ fn sources_remove_unknown_name_fails() {
     let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(parsed["error"]["kind"], "source-not-found");
 }
+
+#[test]
+fn sources_remove_rejects_invalid_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+
+    let output = aghist()
+        .args(["sources", "remove", "../escape"])
+        .env("AGHIST_CONFIG", &config_path)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON error envelope");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+}
+
 #[test]
 fn sources_remove_existing_drops_it() {
     let dir = tempfile::tempdir().unwrap();

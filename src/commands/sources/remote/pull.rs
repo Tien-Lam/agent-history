@@ -26,6 +26,10 @@ pub(crate) fn sources_pull_remote(
 
     let targets: Vec<config::RemoteSource> = match (name, all) {
         (Some(n), false) => {
+            config::validate_source_name(n).map_err(|message| {
+                ErrorEnvelope::new("usage", message)
+                    .with_hint("Run `aghist sources list` to see registered sources.")
+            })?;
             let trimmed = n.trim();
             let Some(found) = config.sources.iter().find(|s| s.name == trimmed) else {
                 return Err(ErrorEnvelope::new(

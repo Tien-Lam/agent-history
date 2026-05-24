@@ -80,6 +80,8 @@ pub fn remove_remote_source(
     config_path: &Path,
     name: &str,
 ) -> Result<RemoteSource, SourceRegistryError> {
+    config::validate_source_name(name).map_err(SourceRegistryError::InvalidName)?;
+
     let mut config = load_config(config_path)?;
     let Some(index) = config.sources.iter().position(|s| s.name == name) else {
         return Err(SourceRegistryError::SourceNotFound(name.to_string()));

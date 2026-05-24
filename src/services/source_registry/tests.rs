@@ -88,6 +88,17 @@ fn remove_unknown_source_reports_name() {
 }
 
 #[test]
+fn remove_rejects_invalid_name_before_loading_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = config_path(&dir);
+
+    let err = remove_remote_source(&path, "../escape").unwrap_err();
+
+    assert!(matches!(err, SourceRegistryError::InvalidName(_)));
+    assert!(!path.exists());
+}
+
+#[test]
 fn load_config_surfaces_parse_errors() {
     let dir = tempfile::tempdir().unwrap();
     let path = config_path(&dir);
