@@ -7,12 +7,30 @@ pub(super) struct DirStats {
     pub(super) bytes: u64,
 }
 
+const MAX_ACCOUNTING_FILES: usize = 1_000_000;
+const MAX_ACCOUNTING_DIRS: usize = 1_000_000;
+
 /// Iterative directory accounting. Symlinked children are skipped.
 pub(super) fn dir_stats(root: &Path) -> io::Result<DirStats> {
+    dir_stats_limited(root, MAX_ACCOUNTING_FILES, MAX_ACCOUNTING_DIRS)
+}
+
+fn dir_stats_limited(root: &Path, max_files: usize, max_dirs: usize) -> io::Result<DirStats> {
     let mut stats = DirStats { files: 0, bytes: 0 };
     let mut pending = vec![root.to_path_buf()];
+    let mut visited_dirs = 0usize;
 
     while let Some(dir) = pending.pop() {
+        visited_dirs = visited_dirs.saturating_add(1);
+        if visited_dirs > max_dirs {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "{} has too many directories to account (>{max_dirs})",
+                    root.display()
+                ),
+            ));
+        }
         let entries = std::fs::read_dir(&dir)
             .map_err(|error| io_with_path("read directory", &dir, &error))?;
         for entry in entries {
@@ -26,10 +44,20 @@ pub(super) fn dir_stats(root: &Path) -> io::Result<DirStats> {
                 continue;
             }
             if file_type.is_file() {
+                let next_files = stats.files.saturating_add(1);
+                if next_files > max_files as u64 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "{} has too many files to account (>{max_files})",
+                            root.display()
+                        ),
+                    ));
+                }
                 let meta = entry
                     .metadata()
                     .map_err(|error| io_with_path("read metadata for", &path, &error))?;
-                stats.files = stats.files.saturating_add(1);
+                stats.files = next_files;
                 stats.bytes = stats.bytes.saturating_add(meta.len());
             } else if file_type.is_dir() {
                 pending.push(path);
@@ -53,7 +81,7 @@ fn io_with_path(action: &str, path: &Path, error: &io::Error) -> io::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{dir_size_bytes, dir_stats, DirStats};
+    use super::{dir_size_bytes, dir_stats, dir_stats_limited, DirStats};
 
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
@@ -81,5 +109,28 @@ mod tests {
 
         assert_eq!(dir_stats(root).unwrap(), DirStats { files: 1, bytes: 5 });
         assert_eq!(dir_size_bytes(root).unwrap(), 5);
+    }
+
+    #[test]
+    fn rejects_too_many_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b").unwrap();
+
+        let err = dir_stats_limited(dir.path(), 1, 10).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("too many files"));
+    }
+
+    #[test]
+    fn rejects_too_many_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("child")).unwrap();
+
+        let err = dir_stats_limited(dir.path(), 10, 1).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("too many directories"));
     }
 }

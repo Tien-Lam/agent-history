@@ -52,7 +52,7 @@ fn ensure_existing_cache_dir_safe(path: &Path, label: &str) -> Result<(), ErrorE
     }
 }
 
-/// Recursive `(file_count, total_bytes)`. Symlinks are skipped.
+/// Iterative `(file_count, total_bytes)`. Symlinks are skipped.
 pub(super) fn count_dir(dir: &Path) -> Result<(u64, u64), ErrorEnvelope> {
     dir_accounting::dir_stats(dir)
         .map(|stats| (stats.files, stats.bytes))
@@ -70,7 +70,7 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     #[test]
-    fn recursive_dir_accounting_skips_symlinks() {
+    fn dir_accounting_skips_symlinks() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::write(root.join("real.txt"), "12345").unwrap();
@@ -81,7 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn recursive_dir_accounting_reports_missing_root() {
+    fn dir_accounting_reports_missing_root() {
         let dir = tempfile::tempdir().unwrap();
         let missing = dir.path().join("missing");
 
