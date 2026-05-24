@@ -112,6 +112,14 @@ jobs:
           grep -q "archive contains unexpected member: extra" "$tmp/err"
           test ! -e "$tmp/invalid-bin/aghist"
 
+          (cd "$tmp" && tar czf "$tmp/duplicate.tar.gz" aghist aghist aghist.install)
+          if bash install.sh --to "$tmp/duplicate-bin" --tag v0.0.0-validation --archive "$tmp/duplicate.tar.gz" >"$tmp/out" 2>"$tmp/err"; then
+            echo "install.sh accepted an archive with duplicate binary entries" >&2
+            exit 1
+          fi
+          grep -q "archive must contain exactly one aghist" "$tmp/err"
+          test ! -e "$tmp/duplicate-bin/aghist"
+
           mkdir -p "$tmp/symlink-bin"
           printf 'do not overwrite\n' > "$tmp/target"
           ln -s "$tmp/target" "$tmp/symlink-bin/aghist"

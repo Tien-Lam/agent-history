@@ -166,17 +166,17 @@ validate_archive_members() {
             return 1
         fi
         case "${member#./}" in
-            "$BIN_FILE") seen_binary=1 ;;
-            "$BINARY.install") seen_marker=1 ;;
+            "$BIN_FILE") seen_binary=$((seen_binary + 1)) ;;
+            "$BINARY.install") seen_marker=$((seen_marker + 1)) ;;
         esac
     done
 
     if [ "$seen_binary" -ne 1 ]; then
-        echo "Error: archive does not contain $BIN_FILE" >&2
+        echo "Error: archive must contain exactly one $BIN_FILE" >&2
         return 1
     fi
     if [ "$seen_marker" -ne 1 ]; then
-        echo "Error: archive does not contain $BINARY.install" >&2
+        echo "Error: archive must contain exactly one $BINARY.install" >&2
         return 1
     fi
 }
