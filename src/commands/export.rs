@@ -40,7 +40,17 @@ pub(crate) fn export_session(
             // start..end are 1-based inclusive bounds; convert to 0-based half-open.
             // The slice's first message is turn `start` in the original session, so
             // we offset turn-keyed notes by `start - 1` to align them.
-            (&target.messages[(start - 1)..end], start - 1)
+            let start_idx = start - 1;
+            let Some(slice) = target.messages.get(start_idx..end) else {
+                return Err(ErrorEnvelope::new(
+                    "usage",
+                    format!(
+                        "turn range '{spec}' is outside session bounds ({} message(s))",
+                        target.messages.len()
+                    ),
+                ));
+            };
+            (slice, start_idx)
         }
         None => (&target.messages[..], 0usize),
     };
