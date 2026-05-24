@@ -239,3 +239,67 @@ fn sources_add_rejects_rsync_option_like_host() {
     let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(parsed["error"]["kind"], "usage");
 }
+
+#[test]
+fn sources_add_rejects_rsync_url_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+
+    let output = aghist()
+        .args([
+            "sources",
+            "add",
+            "box",
+            "--host",
+            "ssh://host.example",
+            "--path",
+            "/p",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON error envelope");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+    assert!(
+        !config_path.exists(),
+        "invalid source must not be persisted"
+    );
+}
+
+#[test]
+fn sources_add_rejects_remote_path_with_shell_metacharacters() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+
+    let output = aghist()
+        .args([
+            "sources",
+            "add",
+            "box",
+            "--host",
+            "host.example",
+            "--path",
+            "/tmp/agent;history",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .expect("expected JSON error envelope");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["error"]["kind"], "usage");
+    assert!(
+        !config_path.exists(),
+        "invalid source must not be persisted"
+    );
+}

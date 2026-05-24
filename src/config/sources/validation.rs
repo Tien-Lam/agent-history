@@ -26,6 +26,34 @@ pub fn validate_source_name(name: &str) -> Result<(), String> {
 }
 
 pub fn validate_rsync_endpoint(value: &str, label: &str) -> Result<(), String> {
+    validate_rsync_endpoint_base(value, label)?;
+    reject_rsync_shell_chars(value, label)
+}
+
+pub fn validate_rsync_host(value: &str, label: &str) -> Result<(), String> {
+    validate_rsync_endpoint(value, label)?;
+    if value.contains(['/', '\\']) {
+        return Err(format!("{label} must not contain path separators"));
+    }
+    if value.contains(':') {
+        return Err(format!(
+            "{label} must not contain ':'; configure SSH ports through your SSH config"
+        ));
+    }
+    let at_count = value.chars().filter(|c| *c == '@').count();
+    if at_count > 1 || value.starts_with('@') || value.ends_with('@') {
+        return Err(format!(
+            "{label} must be a host or user@host without empty segments"
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_rsync_path(value: &str, label: &str) -> Result<(), String> {
+    validate_rsync_endpoint(value, label)
+}
+
+fn validate_rsync_endpoint_base(value: &str, label: &str) -> Result<(), String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Err(format!("{label} must not be empty"));
@@ -44,11 +72,48 @@ pub fn validate_rsync_endpoint(value: &str, label: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn reject_rsync_shell_chars(value: &str, label: &str) -> Result<(), String> {
+    if value.chars().any(char::is_whitespace) {
+        return Err(format!("{label} must not contain whitespace"));
+    }
+    if value.chars().any(is_rsync_shell_metachar) {
+        return Err(format!("{label} must not contain shell metacharacters"));
+    }
+    Ok(())
+}
+
+fn is_rsync_shell_metachar(c: char) -> bool {
+    matches!(
+        c,
+        '\'' | '"'
+            | '`'
+            | '$'
+            | ';'
+            | '&'
+            | '|'
+            | '<'
+            | '>'
+            | '('
+            | ')'
+            | '{'
+            | '}'
+            | '['
+            | ']'
+            | '*'
+            | '?'
+            | '!'
+            | '\\'
+            | '#'
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
 
-    use super::{validate_rsync_endpoint, validate_source_name};
+    use super::{
+        validate_rsync_endpoint, validate_rsync_host, validate_rsync_path, validate_source_name,
+    };
 
     fn valid_source_name_strategy() -> impl Strategy<Value = String> {
         "[A-Za-z0-9][A-Za-z0-9_-]{0,40}"
@@ -79,6 +144,51 @@ mod tests {
         ) {
             let endpoint = format!("{prefix}{control}{suffix}");
             prop_assert!(validate_rsync_endpoint(&endpoint, "--host").is_err());
+        }
+    }
+
+    #[test]
+    fn rsync_endpoint_rejects_whitespace_and_shell_metacharacters() {
+        for endpoint in [
+            "host name",
+            "host\tname",
+            "/path with/spaces",
+            "/path;rm",
+            "/path`whoami`",
+            "/path$(whoami)",
+            "/path|cat",
+            "/path#fragment",
+        ] {
+            assert!(
+                validate_rsync_endpoint(endpoint, "--path").is_err(),
+                "{endpoint} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn rsync_host_rejects_url_and_path_shapes() {
+        for host in [
+            "example.test:2222",
+            "example.test/path",
+            "user@@example.test",
+            "@example.test",
+            "user@",
+        ] {
+            assert!(
+                validate_rsync_host(host, "--host").is_err(),
+                "{host} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn rsync_path_accepts_common_absolute_and_relative_paths() {
+        for path in ["/home/me/.claude", "module/path", "~/agent-history"] {
+            assert!(
+                validate_rsync_path(path, "--path").is_ok(),
+                "{path} should be accepted"
+            );
         }
     }
 }

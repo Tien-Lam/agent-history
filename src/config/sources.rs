@@ -6,7 +6,9 @@ mod manifest;
 mod validation;
 
 pub use manifest::{SourceCacheManifest, SourceCacheManifestLoadError};
-pub use validation::{validate_rsync_endpoint, validate_source_name};
+pub use validation::{
+    validate_rsync_endpoint, validate_rsync_host, validate_rsync_path, validate_source_name,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteSource {
@@ -45,8 +47,8 @@ impl Transport {
 impl RemoteSource {
     pub fn validate(&self) -> Result<(), String> {
         validate_source_name(&self.name)?;
-        validate_rsync_endpoint(&self.host, "--host")?;
-        validate_rsync_endpoint(&self.path, "--path")?;
+        validate_rsync_host(&self.host, "--host")?;
+        validate_rsync_path(&self.path, "--path")?;
         Ok(())
     }
 

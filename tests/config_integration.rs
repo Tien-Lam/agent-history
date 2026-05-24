@@ -3,7 +3,9 @@ mod common;
 use std::fs;
 
 use aghist::config::Config;
-use aghist::config::{validate_rsync_endpoint, validate_source_name};
+use aghist::config::{
+    validate_rsync_endpoint, validate_rsync_host, validate_rsync_path, validate_source_name,
+};
 use aghist::model::Provider;
 
 #[test]
@@ -235,4 +237,21 @@ fn remote_endpoint_validation_rejects_option_like_values() {
     assert!(validate_rsync_endpoint("/home/me/.claude", "--path").is_ok());
     assert!(validate_rsync_endpoint("-server", "--host").is_err());
     assert!(validate_rsync_endpoint(" /tmp", "--path").is_err());
+    assert!(validate_rsync_endpoint("/tmp/agent history", "--path").is_err());
+    assert!(validate_rsync_endpoint("/tmp/agent;history", "--path").is_err());
+}
+
+#[test]
+fn remote_source_host_validation_rejects_url_shapes() {
+    assert!(validate_rsync_host("user@host.example", "--host").is_ok());
+    assert!(validate_rsync_host("host.example:2222", "--host").is_err());
+    assert!(validate_rsync_host("ssh://host.example", "--host").is_err());
+    assert!(validate_rsync_host("host.example/path", "--host").is_err());
+}
+
+#[test]
+fn remote_source_path_validation_accepts_common_rsync_paths() {
+    assert!(validate_rsync_path("/home/me/.claude", "--path").is_ok());
+    assert!(validate_rsync_path("module/path", "--path").is_ok());
+    assert!(validate_rsync_path("~/agent-history", "--path").is_ok());
 }

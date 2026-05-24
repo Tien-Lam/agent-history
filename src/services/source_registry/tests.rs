@@ -63,6 +63,36 @@ fn add_rejects_option_like_host_without_creating_config() {
 }
 
 #[test]
+fn add_rejects_rsync_url_host_without_creating_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = config_path(&dir);
+
+    let err = add_remote_source(
+        &path,
+        "box",
+        "ssh://host.example",
+        "/history",
+        Transport::Ssh,
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, SourceRegistryError::InvalidHost(_)));
+    assert!(!path.exists());
+}
+
+#[test]
+fn add_rejects_remote_path_with_shell_metacharacters_without_creating_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = config_path(&dir);
+
+    let err =
+        add_remote_source(&path, "box", "host.example", "/history;rm", Transport::Ssh).unwrap_err();
+
+    assert!(matches!(err, SourceRegistryError::InvalidPath(_)));
+    assert!(!path.exists());
+}
+
+#[test]
 fn remove_deletes_existing_source() {
     let dir = tempfile::tempdir().unwrap();
     let path = config_path(&dir);

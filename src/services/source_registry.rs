@@ -49,8 +49,8 @@ pub fn add_remote_source(
     transport: Transport,
 ) -> Result<RemoteSource, SourceRegistryError> {
     config::validate_source_name(name).map_err(SourceRegistryError::InvalidName)?;
-    config::validate_rsync_endpoint(host, "--host").map_err(SourceRegistryError::InvalidHost)?;
-    config::validate_rsync_endpoint(path, "--path").map_err(SourceRegistryError::InvalidPath)?;
+    config::validate_rsync_host(host, "--host").map_err(SourceRegistryError::InvalidHost)?;
+    config::validate_rsync_path(path, "--path").map_err(SourceRegistryError::InvalidPath)?;
 
     let trimmed_name = name.trim();
     let mut config = load_config(config_path)?;
