@@ -3,7 +3,9 @@ use std::io::Cursor;
 use serde_json::Value;
 
 use super::payload::tool_definitions;
-use super::protocol::{ERR_INVALID_PARAMS, ERR_METHOD_NOT_FOUND, ERR_PARSE, PROTOCOL_VERSION};
+use super::protocol::{
+    ERR_INVALID_PARAMS, ERR_INVALID_REQUEST, ERR_METHOD_NOT_FOUND, ERR_PARSE, PROTOCOL_VERSION,
+};
 use super::resources::{
     parse_aghist_uri, session_uri, session_uri_for_source, turn_uri, turn_uri_for_source, ParsedUri,
 };

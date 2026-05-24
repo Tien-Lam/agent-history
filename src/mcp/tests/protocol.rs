@@ -43,6 +43,32 @@ fn malformed_json_returns_parse_error() {
 }
 
 #[test]
+fn oversized_request_line_returns_error_and_drains_line() {
+    let mut input = String::new();
+    input.push_str(r#"{"jsonrpc":"2.0","id":1,"method":"ping","padding":""#);
+    input.push_str(&"x".repeat(super::super::server::MAX_REQUEST_LINE_BYTES + 1));
+    input.push_str("\"}\n");
+    input.push_str(r#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#);
+    input.push('\n');
+
+    let mut output = Vec::new();
+    server()
+        .serve(Cursor::new(input.as_bytes()), &mut output)
+        .unwrap();
+    let lines: Vec<Value> = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+
+    assert_eq!(lines.len(), 2, "got: {lines:#?}");
+    assert_eq!(lines[0]["error"]["code"], ERR_INVALID_REQUEST);
+    assert_eq!(lines[0]["id"], Value::Null);
+    assert_eq!(lines[1]["id"], 2);
+    assert!(lines[1]["result"].is_object());
+}
+
+#[test]
 fn ping_returns_empty_object() {
     let resp = run_one(&server(), r#"{"jsonrpc":"2.0","id":10,"method":"ping"}"#);
     assert!(resp["result"].is_object());
