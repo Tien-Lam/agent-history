@@ -84,9 +84,9 @@ esac
 
 # Resolve version tag
 if [ -z "$TAG" ] && [ -z "$ARCHIVE" ]; then
-    TAG="$(curl -sSfI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")"
-    TAG="${TAG##*/}"
-    if [ -z "$TAG" ]; then
+    LATEST_URL="$(curl -sSfIL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")"
+    TAG="${LATEST_URL##*/}"
+    if [ -z "$TAG" ] || [ "$TAG" = "latest" ]; then
         echo "Error: could not determine latest release"; exit 1
     fi
 elif [ -z "$TAG" ]; then
@@ -123,7 +123,16 @@ fi
 
 case "$EXT" in
     tar.gz) tar xzf "$TMPDIR/archive" -C "$TMPDIR" ;;
-    zip)    unzip -qo "$TMPDIR/archive" -d "$TMPDIR" ;;
+    zip)
+        if command -v unzip >/dev/null 2>&1; then
+            unzip -qo "$TMPDIR/archive" -d "$TMPDIR"
+        elif command -v 7z >/dev/null 2>&1; then
+            7z x -y "-o$TMPDIR" "$TMPDIR/archive" >/dev/null
+        else
+            echo "Error: extracting Windows archives requires unzip or 7z" >&2
+            exit 1
+        fi
+        ;;
 esac
 
 # Install

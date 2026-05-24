@@ -24,25 +24,41 @@ OUT_DIR="$PWD"
 BIN_DIR=""
 BIN_DIR_WAS_SET=0
 
+require_value() {
+    local opt="$1"
+    local name="$2"
+    local value="${3:-}"
+    if [ -z "$value" ]; then
+        echo "Error: $opt requires a non-empty $name" >&2
+        usage >&2
+        exit 1
+    fi
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --target)
+            require_value "$1" TARGET "${2:-}"
             TARGET="${2:-}"
             shift 2
             ;;
         --tag)
+            require_value "$1" TAG "${2:-}"
             TAG="${2:-}"
             shift 2
             ;;
         --repo)
+            require_value "$1" REPO "${2:-}"
             REPO="${2:-}"
             shift 2
             ;;
         --out-dir)
+            require_value "$1" DIR "${2:-}"
             OUT_DIR="${2:-}"
             shift 2
             ;;
         --bin-dir)
+            require_value "$1" DIR "${2:-}"
             BIN_DIR="${2:-}"
             BIN_DIR_WAS_SET=1
             shift 2
@@ -96,6 +112,7 @@ if [ ! -f "$BIN_PATH" ]; then
 fi
 
 mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 

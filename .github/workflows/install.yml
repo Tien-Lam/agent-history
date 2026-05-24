@@ -42,6 +42,27 @@ jobs:
         if: runner.os == 'Linux'
         run: shellcheck install.sh scripts/package-release.sh scripts/smoke-release-install.sh
 
+      - name: Check shell argument validation
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+
+          bash install.sh --help >/dev/null
+          bash scripts/package-release.sh --help >/dev/null
+          bash scripts/smoke-release-install.sh --help >/dev/null
+
+          if bash scripts/package-release.sh --target >out.txt 2>err.txt; then
+            echo "package-release accepted a missing --target operand" >&2
+            exit 1
+          fi
+          grep -q "Error: --target requires a non-empty TARGET" err.txt
+
+          if bash scripts/smoke-release-install.sh --tag >out.txt 2>err.txt; then
+            echo "smoke-release-install accepted a missing --tag operand" >&2
+            exit 1
+          fi
+          grep -q "Error: --tag requires a non-empty TAG" err.txt
+
       - name: Build release binary
         run: cargo build --locked --release --features self-update
 

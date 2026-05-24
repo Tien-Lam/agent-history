@@ -22,13 +22,26 @@ EOF
 TARGET=""
 TAG="v0.0.0-smoke"
 
+require_value() {
+    local opt="$1"
+    local name="$2"
+    local value="${3:-}"
+    if [ -z "$value" ]; then
+        echo "Error: $opt requires a non-empty $name" >&2
+        usage >&2
+        exit 1
+    fi
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --target)
+            require_value "$1" TARGET "${2:-}"
             TARGET="${2:-}"
             shift 2
             ;;
         --tag)
+            require_value "$1" TAG "${2:-}"
             TAG="${2:-}"
             shift 2
             ;;
