@@ -39,6 +39,12 @@ jobs:
             ${{ runner.os }}-cargo-release-preflight-
             ${{ runner.os }}-cargo-
 
+      - name: Cache cargo-deny
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: ${{ runner.os }}-cargo-deny-${{ env.CARGO_DENY_VERSION }}
+
       - name: Format
         run: cargo fmt --check
 
@@ -49,7 +55,10 @@ jobs:
         run: cargo test --locked
 
       - name: Install cargo-deny
-        run: cargo install --locked cargo-deny --version "${CARGO_DENY_VERSION}"
+        run: |
+          if ! command -v cargo-deny >/dev/null || ! cargo-deny --version | grep -qx "cargo-deny ${CARGO_DENY_VERSION}"; then
+            cargo install --locked cargo-deny --version "${CARGO_DENY_VERSION}"
+          fi
 
       - name: Check advisories licenses bans and sources
         run: |

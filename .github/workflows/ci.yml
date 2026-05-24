@@ -163,10 +163,22 @@ jobs:
             ${{ runner.os }}-cargo-supply-chain-
             ${{ runner.os }}-cargo-
 
+      - name: Cache Rust audit tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-machete
+          key: ${{ runner.os }}-cargo-audit-tools-deny-${{ env.CARGO_DENY_VERSION }}-machete-${{ env.CARGO_MACHETE_VERSION }}
+
       - name: Install Rust audit tools
         run: |
-          cargo install --locked cargo-deny --version "${CARGO_DENY_VERSION}"
-          cargo install --locked cargo-machete --version "${CARGO_MACHETE_VERSION}"
+          if ! command -v cargo-deny >/dev/null || ! cargo-deny --version | grep -qx "cargo-deny ${CARGO_DENY_VERSION}"; then
+            cargo install --locked cargo-deny --version "${CARGO_DENY_VERSION}"
+          fi
+          if ! command -v cargo-machete >/dev/null || ! cargo-machete --version | grep -qx "${CARGO_MACHETE_VERSION}"; then
+            cargo install --locked cargo-machete --version "${CARGO_MACHETE_VERSION}"
+          fi
 
       - name: Install actionlint
         run: |
