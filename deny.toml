@@ -9,8 +9,8 @@ targets = [
 [advisories]
 yanked = "deny"
 ignore = [
-    { id = "RUSTSEC-2024-0436", reason = "Transitive via optional fastembed/tokenizers; no patched upstream path yet." },
-    { id = "RUSTSEC-2025-0141", reason = "Transitive via syntect; bincode advisory is unmaintained, not a vulnerability." },
+    { id = "RUSTSEC-2024-0436", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: fastembed/tokenizers; transitive via optional embeddings; no patched upstream path yet." },
+    { id = "RUSTSEC-2025-0141", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: syntect/bincode; transitive via syntect; bincode advisory is unmaintained, not a vulnerability." },
 ]
 
 [licenses]
@@ -34,14 +34,14 @@ confidence-threshold = 0.8
 multiple-versions = "deny"
 wildcards = "deny"
 skip = [
-    { crate = "base64@0.13.1", reason = "Transitive through fastembed/tokenizers spm_precompiled; direct deps use base64 0.22." },
-    { crate = "darling@0.20.11", reason = "Transitive through fastembed/tokenizers derive_builder while Tantivy uses darling 0.23." },
-    { crate = "darling_core@0.20.11", reason = "Transitive through fastembed/tokenizers derive_builder while Tantivy uses darling 0.23." },
-    { crate = "darling_macro@0.20.11", reason = "Transitive through fastembed/tokenizers derive_builder while Tantivy uses darling 0.23." },
-    { crate = "getrandom@0.2.17", reason = "Transitive through rustls/ring; newer getrandom versions also arrive through tokenizers and tempfile." },
-    { crate = "getrandom@0.4.2", reason = "Transitive through tempfile/uuid; older getrandom versions remain in rustls and tokenizers trees." },
-    { crate = "windows-sys@0.52.0", reason = "Transitive through self_update/self-replace on Windows release paths." },
-    { crate = "windows-sys@0.59.0", reason = "Transitive through arboard and Tantivy/fs4 until those dependency trees converge." },
+    { crate = "base64@0.13.1", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: fastembed/tokenizers; transitive through spm_precompiled; direct deps use base64 0.22." },
+    { crate = "darling@0.20.11", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: fastembed/tokenizers; transitive through derive_builder while Tantivy uses darling 0.23." },
+    { crate = "darling_core@0.20.11", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: fastembed/tokenizers; transitive through derive_builder while Tantivy uses darling 0.23." },
+    { crate = "darling_macro@0.20.11", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: fastembed/tokenizers; transitive through derive_builder while Tantivy uses darling 0.23." },
+    { crate = "getrandom@0.2.17", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: rustls/ring; transitive through rustls/ring; newer getrandom versions also arrive through tokenizers and tempfile." },
+    { crate = "getrandom@0.4.2", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: tempfile/uuid; transitive through tempfile/uuid; older getrandom versions remain in rustls and tokenizers trees." },
+    { crate = "windows-sys@0.52.0", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: self_update/self-replace; transitive through Windows release paths." },
+    { crate = "windows-sys@0.59.0", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: arboard/tantivy/fs4; transitive through arboard and Tantivy/fs4 until those dependency trees converge." },
 ]
 
 [sources]
