@@ -6,7 +6,8 @@ use crate::cli::resolvers::parse_provider_slug;
 #[derive(Args)]
 pub(crate) struct IndexCommand {
     /// Reindex only sessions from this provider
-    /// (`claude-code`, `copilot-cli`, `gemini-cli`, `codex-cli`, `opencode`, `cursor`).
+    /// (`claude-code`, `copilot-cli`, `gemini-cli`, `codex-cli`, `opencode`,
+    /// `cursor`, `aider`, `zed-ai`, `cline`, `continue-dev`).
     #[arg(long, value_parser = parse_provider_slug, conflicts_with = "params")]
     pub(crate) provider: Option<Provider>,
 

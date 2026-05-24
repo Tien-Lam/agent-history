@@ -1,0 +1,1270 @@
+---
+source: tests/cli_help_snapshots.rs
+expression: snapshot
+---
+===== root =====
+Browse and search AI agent conversation history
+
+Usage: aghist [OPTIONS] [COMMAND]
+
+Commands:
+  export     Export a session to Markdown, JSON, or HTML
+  index      Build or refresh the search index. Idempotent and delta-aware
+  search     Search indexed sessions for a query
+  health     Machine-readable doctor: validates index, manifest, and provider state
+  sources    Inspect detected provider sources, or manage the remote-source registry
+  show       Resolve a citation ref `<provider>/<session-id>#<turn>` to one message
+  diff       Compare two sessions turn-by-turn in diff-hunk style
+  track      Track how a topic evolved across sessions (LLM-required)
+  decisions  Heuristic-extract candidate architectural decisions from sessions
+  mcp        Run a stdio MCP server exposing aghist's read paths to agents
+  schema     Emit JSON-Schema (draft-2020-12) for an aghist subcommand
+  todos      Surface unresolved TODOs / follow-ups / open bd refs across sessions
+  threads    Cluster sessions into "threads" of related work
+  note       Manage per-user notes attached to sessions or turns
+  tag        Manage per-user tags attached to sessions or turns
+  star       Mark a session or turn as starred
+  unstar     Remove a star from a session or turn. Errors with `star-not-found` if the ref is not currently starred
+  stars      List starred sessions and turns
+  usage      Aggregate token usage and (when pricing is known) USD cost across sessions
+  project    Per-project productivity dashboard
+  report     Cross-project weekly summary suitable for journals or reviews
+  update     Update a self-managed release binary to the latest GitHub release
+  uninstall  Remove a self-managed release binary and data
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --list             List sessions without opening the TUI
+      --limit <LIMIT>    Maximum number of sessions to return when paired with `--list`. JSON output includes `meta.next_cursor` if more results remain [default: 20]
+      --cursor <CURSOR>  Opaque pagination cursor (from a prior `meta.next_cursor`) for `--list`
+      --reindex          Force rebuild the search index
+      --json             Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+      --ndjson           Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+      --provider <SLUG>  Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+      --since <RFC3339>  RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+      --until <RFC3339>  RFC 3339 upper bound on message/session timestamp (inclusive)
+      --project <NAME>   Substring match against the session's project name (case-insensitive)
+      --role <ROLE>      Restrict to messages with this role: `user`, `assistant`, or `tool`
+      --has-tool-call    Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+      --note <SUBSTR>    Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+      --tag <NAME>       Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+      --starred          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+  -h, --help             Print help
+  -V, --version          Print version
+
+===== export =====
+Export a session to Markdown, JSON, or HTML
+
+Usage: aghist export [OPTIONS]
+
+Options:
+  -f, --format <FORMAT>          Output format: md, json, html
+  -s, --session <SESSION>        Session ID/prefix, `<provider>/<id>`, or `<source>:<provider>/<id>` to export
+  -o, --output <OUTPUT>          Output file path (defaults to stdout)
+      --turn-range <TURN_RANGE>  Slice the session by 1-based turn range (e.g. `12:25`, `:10`, `5:`, or `7`). Bounds are inclusive. Out-of-range bounds clamp to the available messages
+      --include-notes            Inline private annotations (notes from the metadata sidecar) at their citation refs. Session-level notes render once near the top; turn-level notes render after the message they're attached to. Notes stay marked "private annotation" so consumers don't conflate them with session content. No-op when the metadata sidecar is absent or has no matching notes
+      --json                     Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+      --ndjson                   Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+      --params <JSON>            JSON request body containing all params at once. Mutually exclusive with other flags. Schema: `{format, session, output?, turn_range?, include_notes?}`. Lets agents skip per-flag discovery and submit a single JSON request
+      --provider <SLUG>          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+      --since <RFC3339>          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+      --until <RFC3339>          RFC 3339 upper bound on message/session timestamp (inclusive)
+      --project <NAME>           Substring match against the session's project name (case-insensitive)
+      --role <ROLE>              Restrict to messages with this role: `user`, `assistant`, or `tool`
+      --has-tool-call            Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+      --note <SUBSTR>            Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+      --tag <NAME>               Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+      --starred                  Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+  -h, --help                     Print help
+
+===== index =====
+Build or refresh the search index. Idempotent and delta-aware.
+
+Skips sessions whose source files are unchanged since the last run, re-indexes those that have changed, and indexes any new sessions. Always exits with status 0 on success and prints a JSON summary of `added` / `updated` / `unchanged` counts to stdout.
+
+Usage: aghist index [OPTIONS]
+
+Options:
+      --provider <PROVIDER>
+          Reindex only sessions from this provider (`claude-code`, `copilot-cli`, `gemini-cli`, `codex-cli`, `opencode`, `cursor`, `aider`, `zed-ai`, `cline`, `continue-dev`)
+
+      --force
+          Force a full rebuild by clearing the index first
+
+      --accept-download
+          Authorise the one-off download of the embedding model (~90 MB `AllMiniLML6V2`). Required the first time semantic indexing runs; consent is persisted next to the index, so subsequent runs don't need this flag. Without consent (and without this flag), indexing stays purely lexical
+
+      --params <JSON>
+          JSON request body containing all params at once. Mutually exclusive with other flags. Schema: `{provider?, force?, accept_download?}`
+
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== search =====
+Search indexed sessions for a query
+
+Usage: aghist search [OPTIONS] [QUERY]
+
+Arguments:
+  [QUERY]
+          Tantivy query string (matches content + project fields).
+          
+          Omit when reading the query from `--query-file`, `--stdin`, or `--params`.
+
+Options:
+      --query-file <PATH>
+          Read the query from a file (use `-` for stdin).
+          
+          Useful for queries containing shell metacharacters (quotes, braces, etc.) without escaping. Trailing whitespace is stripped.
+
+      --stdin
+          Read the query from standard input (read until EOF).
+          
+          Useful for queries containing shell metacharacters (quotes, braces, etc.) without escaping. Trailing whitespace is stripped.
+
+  -n, --limit <LIMIT>
+          Maximum number of hits to return
+          
+          [default: 20]
+
+      --cursor <CURSOR>
+          Opaque pagination cursor from a prior `meta.next_cursor`
+
+      --json
+          Force JSON output (default: JSON on pipe, table on TTY)
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --watch
+          Long-running stream: emit one NDJSON line per new hit as sessions land.
+          
+          First poll backfills all existing matches up to `--limit`, then each subsequent poll emits only previously-unseen `(session_id, message_id)` hits. Useful for an "agent of agents" watching another agent's progress. Output is NDJSON regardless of TTY; `--json` is implied.
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --watch-interval-ms <MS>
+          Poll interval in milliseconds when `--watch` is set (default 2000)
+          
+          [default: 2000]
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --watch-iterations <N>
+          Stop watch mode after N polls (0 = run until interrupted; default 0).
+          
+          Mostly useful for tests and one-shot snapshots.
+          
+          [default: 0]
+
+      --debug-search
+          Show BM25 score breakdown per result (Tantivy explanation tree). Useful for tuning relevance and surfacing ranking surprises
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --hybrid-weight <FLOAT>
+          Reciprocal Rank Fusion weight on the semantic side, in `[0.0, 1.0]`.
+          
+          `0.0` (default) -> lexical-only BM25, identical to omitting the flag. `0.5` -> equal RRF blend of BM25 and `FastEmbed` cosine ranks. `1.0` -> semantic-only.
+          
+          Fails open: if the binary lacks the `embeddings` feature, or no consent / embedding store exists yet, the search degrades to lexical-only regardless of this value (see `meta.engine` in JSON output). When hybrid is active, `score` becomes the RRF fused score (small, ~0-0.03) - not a BM25 score.
+          
+          [default: 0]
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --params <JSON>
+          JSON request body containing all params at once. Mutually exclusive with other flags. Schema: `{query, limit?, json?, hybrid_weight?}`. The `query` field carries the literal query string; use `--query-file` / `--stdin` for file/stdin input
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== health =====
+Machine-readable doctor: validates index, manifest, and provider state.
+
+Exits 0 if all checks pass (or only warn), 1 if any check fails. The JSON envelope is `{ok, checks:[{name, status, hint?}], summary}` so agents can branch on individual check kinds.
+
+Usage: aghist health [OPTIONS]
+
+Options:
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== sources =====
+Inspect detected provider sources, or manage the remote-source registry.
+
+With no subcommand: lists detected provider sources (paths, session counts, sizes, last-indexed-at) — helpful for diagnosing "why isn't my session showing up?".
+
+Subcommands manage the persistent registry of remote sources stored in `config.toml` under `[[sources]]`. Local sources are still auto-detected; the registry is for hosts whose history dirs aghist can't see directly (e.g. SSH/rsync targets on other machines).
+
+Usage: aghist sources [OPTIONS] [COMMAND]
+
+Commands:
+  add     Register a new remote source. Persists to `config.toml`
+  list    List registered remote sources
+  remove  Remove a registered remote source by name
+  pull    Pull a remote source's history into a local cache via rsync
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== sources pull =====
+Pull a remote source's history into a local cache via rsync.
+
+Mirrors `<host>:<path>/` to `<cache>/sources/<name>/data/` using rsync. The cache root defaults to the platform cache dir (overridable via `AGHIST_SOURCES_CACHE_DIR`). After pulling, writes a per-source manifest with byte/file counts and the pull timestamp; downstream indexing (federated search, ahist-y3o.6.3) consumes these.
+
+`--all` pulls every registered source in turn. Pass `--dry-run` to invoke rsync with `--dry-run` (no files written) - useful to validate connectivity without mutating the cache. The rsync binary can be overridden with `AGHIST_RSYNC_BIN` (used by tests; not for end users).
+
+Usage: aghist sources pull [OPTIONS] [NAME]
+
+Arguments:
+  [NAME]
+          Name of the source to pull. Mutually exclusive with `--all`
+
+Options:
+      --all
+          Pull every registered source
+
+      --dry-run
+          Run rsync with `--dry-run`; no files are written
+
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== show =====
+Resolve a citation ref `<provider>/<session-id>#<turn>` to one message
+
+Usage: aghist show [OPTIONS] [REF]
+
+Arguments:
+  [REF]  Citation ref. E.g. `claude-code/abc-123#7`
+
+Options:
+  -f, --format <FORMAT>
+          Output format: md (default), json, text [default: md]
+      --include-context <INCLUDE_CONTEXT>
+          Include N turns before and after the target for context (default 0) [default: 0]
+      --params <JSON>
+          JSON request body containing all params at once. Mutually exclusive with other flags. Schema: `{reference, format?, include_context?}`
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+  -h, --help
+          Print help
+
+===== diff =====
+Compare two sessions turn-by-turn in diff-hunk style.
+
+Computes the longest-common-subsequence of the two sessions' messages (keyed by role + first-64-chars of content) and emits hunks of diverging turns, with 2 lines of shared context around each hunk. Useful for "compare yesterday's debug session with today's working one".
+
+Session refs: `<provider>/<session-id>` (no turn suffix).
+
+Usage: aghist diff [OPTIONS] <SESSION1> <SESSION2>
+
+Arguments:
+  <SESSION1>
+          First session ref (e.g. `claude-code/abc-123` or `laptop:claude-code/abc-123`)
+
+  <SESSION2>
+          Second session ref (e.g. `claude-code/def-456` or `laptop:claude-code/def-456`)
+
+Options:
+  -c, --context <N>
+          Context lines around each changed hunk (default 2)
+          
+          [default: 2]
+
+      --json
+          Force JSON output (default: unified diff text on TTY, JSON on pipe)
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== track =====
+Track how a topic evolved across sessions (LLM-required).
+
+Finds sessions that mention the topic by keyword, extracts relevant excerpts, and asks the LLM what *changed* about the topic across them. Output is a chronological timeline: `{session_ref, date, event, direction}`. Directions: `introduced`, `revised`, `confirmed`, `dropped`.
+
+Requires `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`).
+
+Usage: aghist track [OPTIONS] <TOPIC>
+
+Arguments:
+  <TOPIC>
+          Free-text topic to track (e.g. "auth middleware", "BM25 scoring")
+
+Options:
+  -n, --limit <LIMIT>
+          Maximum sessions to scan for the topic (0 = no limit, default 50)
+          
+          [default: 50]
+
+      --json
+          Force JSON output (default: table on TTY, JSON on pipe)
+
+      --llm-model <MODEL>
+          Override the LLM model id (default: from `AGHIST_LLM_MODEL` or claude-haiku-4-5)
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== decisions =====
+Heuristic-extract candidate architectural decisions from sessions.
+
+Default path is the deterministic regex/marker heuristic: scores each sentence against decision-marker phrases (e.g. "we decided", "instead of") and returns ranked candidates with citation refs.
+
+Pass `--llm` to route the heuristic candidates through a Claude Messages API call that returns structured records of the form `{summary, rationale, alternatives, ref}`. Configured via env: `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`), `AGHIST_LLM_ENDPOINT` (defaults to api.anthropic.com), `AGHIST_LLM_MODEL` (defaults to claude-haiku-4-5). The system prompt is sent with `cache_control: ephemeral` so multi-session runs reuse Anthropic's prompt cache.
+
+Usage: aghist decisions [OPTIONS]
+
+Options:
+  -s, --session <SESSION_OR_REF>
+          Restrict to a single session by id, unique id prefix, or full citation ref `<provider>/<session-id>#<turn>` (turn ignored)
+
+      --threshold <FLOAT>
+          Drop sentences whose score is below this threshold. Default 3.0 keeps explicit decisions and pairs of soft markers
+          
+          [default: 3]
+
+  -n, --limit <LIMIT>
+          Maximum number of candidates to return across all sessions, after sorting by score descending (heuristic) or by recency (--llm)
+          
+          [default: 50]
+
+      --json
+          Force JSON output (default: JSON on pipe, table on TTY)
+
+      --llm
+          Route heuristic candidates through an LLM for structured extraction. Requires `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`)
+
+      --llm-model <MODEL>
+          Override the LLM model id (default: claude-haiku-4-5-20251001 or `AGHIST_LLM_MODEL`). Only meaningful with `--llm`
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== todos =====
+Surface unresolved TODOs / follow-ups / open bd refs across sessions.
+
+Heuristic-first scan: looks for `TODO`, `follow-up`, `come back to`, `we should`, and beads-style refs (e.g. `ahist-y3o.7.2`). Each match becomes one candidate keyed by a citation ref so the caller can `aghist show` or quote the originating turn. No LLM, no `bd` lookups — agents can post-process (e.g. drop refs whose `bd show` reports closed).
+
+Pass `--llm` to route the heuristic candidates through a Claude Messages API call that returns structured records of the form `{description, raised_at: ref, target_session?, status_inferred}`. Configured via env (`ANTHROPIC_API_KEY` / `AGHIST_LLM_API_KEY`, `AGHIST_LLM_ENDPOINT`, `AGHIST_LLM_MODEL`); the system prompt is sent with `cache_control: ephemeral` to cap re-invocation cost.
+
+Usage: aghist todos [OPTIONS]
+
+Options:
+      --kind <KIND>
+          Restrict to one or more kinds. Repeat the flag, or comma-separate. Valid: `todo`, `follow-up`, `come-back-to`, `we-should`, `bd-ref`
+
+  -n, --limit <LIMIT>
+          Maximum number of candidates to emit (0 = no limit)
+          
+          [default: 200]
+
+      --json
+          Force JSON output (default: JSON on pipe, table on TTY)
+
+      --llm
+          Route heuristic candidates through an LLM for structured extraction (`description` / `target_session` / `status_inferred`). Requires `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`)
+
+      --llm-model <MODEL>
+          Override the LLM model id (default: claude-haiku-4-5-20251001 or `AGHIST_LLM_MODEL`). Only meaningful with `--llm`
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== threads =====
+Cluster sessions into "threads" of related work.
+
+Default heuristic: bucket sessions by `project_name`, then walk each bucket chronologically — sessions cluster when their gap is within `--gap-hours` (default 4h). Useful for "what's the history on feature X across multiple sessions?".
+
+Pass `--llm` to route session digests through a Claude Messages API call that groups by semantic topic *across project boundaries*. The heuristic can't cross projects; the LLM can. Configured via env (`ANTHROPIC_API_KEY` / `AGHIST_LLM_API_KEY`, `AGHIST_LLM_ENDPOINT`, `AGHIST_LLM_MODEL`); the system prompt is sent with `cache_control: ephemeral` to cap re-invocation cost.
+
+Usage: aghist threads [OPTIONS]
+
+Options:
+      --gap-hours <HOURS>
+          Cluster gap in hours. Sessions in the same project within this gap merge into one thread; longer gaps split. Ignored with `--llm`
+          
+          [default: 4]
+
+      --min-sessions <N>
+          Drop threads with fewer than this many sessions. Ignored with `--llm`
+          
+          [default: 1]
+
+  -n, --limit <LIMIT>
+          Maximum number of threads to emit (0 = no limit)
+          
+          [default: 50]
+
+      --json
+          Force JSON output (default: JSON on pipe, table on TTY)
+
+      --llm
+          Route session digests through an LLM for semantic topic clustering across project boundaries. Requires `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`)
+
+      --llm-model <MODEL>
+          Override the LLM model id (default: claude-haiku-4-5-20251001 or `AGHIST_LLM_MODEL`). Only meaningful with `--llm`
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --llm-max-sessions <N>
+          Cap on session digests sent to the LLM (most recent kept). One digest is ~150 bytes, so 200 input is roughly 7.5K tokens per call. Only meaningful with `--llm`
+          
+          [default: 200]
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== mcp =====
+Run a stdio MCP server exposing aghist's read paths to agents.
+
+Speaks JSON-RPC 2.0 over stdin/stdout with newline-delimited messages, per the MCP stdio transport. Tools: `search_sessions`, `list_sessions`, `get_session`, `get_message`, `reindex`, `health`.
+
+Usage: aghist mcp [OPTIONS]
+
+Options:
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== schema =====
+Emit JSON-Schema (draft-2020-12) for an aghist subcommand.
+
+Lets agents discover params, response shapes, and exit codes without scraping `--help`. Use `--list` to enumerate available subcommands or `--all` to dump every schema in one document.
+
+Usage: aghist schema [OPTIONS] [SUBCMD]
+
+Arguments:
+  [SUBCMD]
+          Subcommand name (e.g. `search`, `list`, `health`). Omit with `--list` or `--all`
+
+Options:
+      --list
+          List available schema subcommand names as JSON
+
+      --all
+          Emit every schema as one object keyed by subcommand name
+
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== note =====
+Manage per-user notes attached to sessions or turns.
+
+Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db` by default; override with `AGHIST_METADATA_DB`). Each note is keyed by a session ref of the form `<provider>/<session-id>` (session-level), `<provider>/<session-id>#<turn>` (turn-level), or the same shapes prefixed with `<source>:` for remote-source sessions. aghist never mutates the underlying provider history files.
+
+Usage: aghist note [OPTIONS] <COMMAND>
+
+Commands:
+  add     Attach a new note to a session ref. The body is read from `--body`, `--body-file`, or stdin (`--stdin`). Outputs the created note as JSON (single object) on stdout
+  list    List notes, optionally filtered by session ref
+  edit    Replace the body of an existing note
+  remove  Remove a note by id. Outputs the deleted row as JSON on stdout
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== note add =====
+Attach a new note to a session ref. The body is read from `--body`, `--body-file`, or stdin (`--stdin`). Outputs the created note as JSON (single object) on stdout
+
+Usage: aghist note add [OPTIONS] <REF>
+
+Arguments:
+  <REF>  Session ref: `<provider>/<session-id>[#<turn>]` or `<source>:<provider>/<session-id>[#<turn>]`
+
+Options:
+      --body <TEXT>       Note body as a literal string. Mutually exclusive with `--body-file`/`--stdin`
+      --body-file <PATH>  Read the body from a file (use `-` for stdin)
+      --stdin             Read the body from standard input (read until EOF)
+      --json              Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+      --ndjson            Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+      --provider <SLUG>   Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+      --since <RFC3339>   RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+      --until <RFC3339>   RFC 3339 upper bound on message/session timestamp (inclusive)
+      --project <NAME>    Substring match against the session's project name (case-insensitive)
+      --role <ROLE>       Restrict to messages with this role: `user`, `assistant`, or `tool`
+      --has-tool-call     Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+      --note <SUBSTR>     Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+      --tag <NAME>        Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+      --starred           Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+  -h, --help              Print help
+
+===== tag =====
+Manage per-user tags attached to sessions or turns.
+
+Tags live in the metadata sidecar (same database as `aghist note`). Each tag is a short label (e.g. `review`, `todo`) attached to a session ref of the form `<provider>/<session-id>`, `<provider>/<session-id>#<turn>`, or the same shapes prefixed with `<source>:` for remote-source sessions. The (`session_ref`, `tag`) pair is unique: adding the same tag twice is a no-op error. aghist never mutates the underlying provider history files.
+
+Usage: aghist tag [OPTIONS] <COMMAND>
+
+Commands:
+  add     Attach a tag to a session ref. Outputs the created row as JSON on stdout. Adding the same (ref, tag) pair twice raises a `tag-conflict` error
+  list    List tags, optionally filtered by session ref and/or tag value
+  remove  Detach a tag from a session ref. Outputs the deleted row as JSON
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --json
+          Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== tag add =====
+Attach a tag to a session ref. Outputs the created row as JSON on stdout. Adding the same (ref, tag) pair twice raises a `tag-conflict` error
+
+Usage: aghist tag add [OPTIONS] <REF> <TAG>
+
+Arguments:
+  <REF>  Session ref: `<provider>/<session-id>[#<turn>]` or `<source>:<provider>/<session-id>[#<turn>]`
+  <TAG>  Tag label. Whitespace-trimmed; must be non-empty
+
+Options:
+      --json             Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+      --ndjson           Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+      --provider <SLUG>  Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+      --since <RFC3339>  RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+      --until <RFC3339>  RFC 3339 upper bound on message/session timestamp (inclusive)
+      --project <NAME>   Substring match against the session's project name (case-insensitive)
+      --role <ROLE>      Restrict to messages with this role: `user`, `assistant`, or `tool`
+      --has-tool-call    Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+      --note <SUBSTR>    Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+      --starred          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+  -h, --help             Print help
+
+===== stars =====
+List starred sessions and turns.
+
+With no ref: every star, newest first. With a session ref: the session row plus any of its turns. With a turn-level ref: that turn exactly. Remote sessions use a `<source>:` prefix. Empty result exits with code 3.
+
+Usage: aghist stars [OPTIONS] [REF]
+
+Arguments:
+  [REF]
+          Optional session ref filter
+
+Options:
+      --json
+          Force JSON output (default: JSON on pipe, table on TTY)
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== usage =====
+Aggregate token usage and (when pricing is known) USD cost across sessions.
+
+Walks every session that passes the global filter flags (`--provider`, `--since`, `--project`, etc.) and produces one row per group (default `--by model`). Pricing comes from a small hand-curated table — sessions using a model not in the table contribute tokens but report `cost_usd: null`, and any unpriced session anywhere in the report nulls the overall total too. We don't extrapolate prices.
+
+JSON envelope: `{rows:[...], totals:{...}, meta:{group_by, ...}}`. Rows are ordered by `total_tokens` descending, with key as a stable tiebreaker. Empty result exits 3.
+
+Usage: aghist usage [OPTIONS]
+
+Options:
+      --by <DIM>
+          Group rows by `model` (default), `provider`, or `project`
+          
+          [default: model]
+
+  -n, --limit <LIMIT>
+          Cap rows after sorting (0 = no limit). Totals always cover every matching session, even those clipped from `rows`
+          
+          [default: 0]
+
+      --json
+          Force JSON output (default: JSON on pipe, table on TTY)
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== project =====
+Per-project productivity dashboard.
+
+Aggregates one project's history into a single envelope: session and message counts, token usage (with cost when known), heuristic architectural decisions, open TODOs, cross-session work threads, the files most often touched by tool calls, and a 24-bucket UTC time-of-day histogram. No LLM — agents that want richer extraction can post-process by `aghist show`-ing the citation refs.
+
+`<name>` is matched as a case-insensitive substring against the session's `project_name`. Use `--decisions`/`--todos`/`--threads`/ `--files` to cap each section (raw counts live in `meta.*_total`).
+
+Empty result (no matching sessions) exits with code 3.
+
+Usage: aghist project [OPTIONS] <NAME>
+
+Arguments:
+  <NAME>
+          Project name. Matched as a case-insensitive substring against each session's `project_name`
+
+Options:
+      --decisions <N>
+          Cap the decisions section. 0 = no cap
+          
+          [default: 5]
+
+      --todos <N>
+          Cap the todos section. 0 = no cap
+          
+          [default: 10]
+
+      --threads <N>
+          Cap the threads section. 0 = no cap
+          
+          [default: 5]
+
+      --files <N>
+          Cap the top-files section. 0 = no cap
+          
+          [default: 10]
+
+      --json
+          Force JSON output (default: JSON on pipe, table on TTY)
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== report =====
+Cross-project weekly summary suitable for journals or reviews.
+
+Aggregates a window of activity across every provider into a single envelope: top active projects, decision count, open TODOs, and completed work threads. Token totals and (when pricing is known) USD cost line up with `aghist usage`. The window defaults to the last 7 days; `--week`/`--month`/`--days N` are mutually exclusive shortcuts. The global `--since`/`--until` filters override the computed start/end if set.
+
+Default output is Markdown — paste straight into a journal. Pass `--json` for the structured envelope (schema: `aghist schema report`). Empty result (no matching sessions) exits with code 3.
+
+Usage: aghist report [OPTIONS]
+
+Options:
+      --days <N>
+          Window length in days. Mutually exclusive with `--week`/`--month`
+
+      --week
+          Shorthand for `--days 7`
+
+      --month
+          Shorthand for `--days 30`
+
+      --top-projects <N>
+          Cap the top-projects section. 0 = no cap
+          
+          [default: 3]
+
+      --decisions <N>
+          Cap the decisions section. 0 = no cap
+          
+          [default: 5]
+
+      --ndjson
+          Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+
+      --todos <N>
+          Cap the todos section. 0 = no cap
+          
+          [default: 10]
+
+      --provider <SLUG>
+          Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+
+      --threads <N>
+          Cap the threads section. 0 = no cap
+          
+          [default: 5]
+
+      --json
+          Emit the structured JSON envelope instead of Markdown
+
+      --since <RFC3339>
+          RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+
+      --until <RFC3339>
+          RFC 3339 upper bound on message/session timestamp (inclusive)
+
+      --project <NAME>
+          Substring match against the session's project name (case-insensitive)
+
+      --role <ROLE>
+          Restrict to messages with this role: `user`, `assistant`, or `tool`
+
+      --has-tool-call
+          Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+
+      --note <SUBSTR>
+          Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+
+      --tag <NAME>
+          Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+
+      --starred
+          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+===== update =====
+Update a self-managed release binary to the latest GitHub release
+
+Usage: aghist update [OPTIONS]
+
+Options:
+      --json             Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+      --ndjson           Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+      --provider <SLUG>  Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+      --since <RFC3339>  RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+      --until <RFC3339>  RFC 3339 upper bound on message/session timestamp (inclusive)
+      --project <NAME>   Substring match against the session's project name (case-insensitive)
+      --role <ROLE>      Restrict to messages with this role: `user`, `assistant`, or `tool`
+      --has-tool-call    Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+      --note <SUBSTR>    Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+      --tag <NAME>       Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+      --starred          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+  -h, --help             Print help
+
+===== uninstall =====
+Remove a self-managed release binary and data
+
+Usage: aghist uninstall [OPTIONS]
+
+Options:
+      --json             Force JSON output (for one-shot commands like --list, export). Mutually exclusive with --ndjson
+      --ndjson           Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
+      --provider <SLUG>  Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
+      --since <RFC3339>  RFC 3339 lower bound on message/session timestamp (inclusive). Example: `--since 2025-01-01T00:00:00Z`
+      --until <RFC3339>  RFC 3339 upper bound on message/session timestamp (inclusive)
+      --project <NAME>   Substring match against the session's project name (case-insensitive)
+      --role <ROLE>      Restrict to messages with this role: `user`, `assistant`, or `tool`
+      --has-tool-call    Keep only messages (or sessions containing messages) that include a tool invocation. Has no effect on session-level lookups that do not load message content
+      --note <SUBSTR>    Keep only sessions that have a user note whose body contains this substring (case-insensitive). Matches notes attached to the session itself or to any of its turns. Notes live in the metadata sidecar (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides)
+      --tag <NAME>       Keep only sessions that have this exact tag attached (session-level OR on any of its turns). Tags live in the same metadata sidecar
+      --starred          Keep only sessions that have at least one star (session-level OR on any of its turns). Stars live in the same metadata sidecar
+  -h, --help             Print help
