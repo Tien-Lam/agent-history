@@ -39,6 +39,13 @@ pub enum ConfigLoadError {
         slug: String,
         expected: String,
     },
+    #[error("invalid remote source #{index} ('{name}') in {path}: {reason}")]
+    InvalidRemoteSource {
+        path: PathBuf,
+        index: usize,
+        name: String,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +148,7 @@ impl Config {
             })?;
         config.normalize();
         config.validate_provider_slugs(path)?;
+        config.validate_remote_sources(path)?;
         Ok(config)
     }
 
@@ -164,6 +172,24 @@ impl Config {
         validate_provider_slug_list(path, "providers.enabled", &self.providers.enabled)?;
         if let Some(exposed) = self.providers.mcp_exposed.as_ref() {
             validate_provider_slug_list(path, "providers.mcp_exposed", exposed)?;
+        }
+        Ok(())
+    }
+
+    fn validate_remote_sources(&self, path: &Path) -> Result<(), ConfigLoadError> {
+        let mut seen = HashSet::new();
+        for (idx, source) in self.sources.iter().enumerate() {
+            source
+                .validate()
+                .map_err(|reason| invalid_remote_source(path, idx, source, reason))?;
+            if !seen.insert(source.name.as_str()) {
+                return Err(invalid_remote_source(
+                    path,
+                    idx,
+                    source,
+                    "duplicate source name".to_string(),
+                ));
+            }
         }
         Ok(())
     }
@@ -232,6 +258,20 @@ fn expected_provider_slugs() -> String {
         .join(", ")
 }
 
+fn invalid_remote_source(
+    path: &Path,
+    idx: usize,
+    source: &RemoteSource,
+    reason: String,
+) -> ConfigLoadError {
+    ConfigLoadError::InvalidRemoteSource {
+        path: path.to_path_buf(),
+        index: idx + 1,
+        name: source.name.clone(),
+        reason,
+    }
+}
+
 fn config_path_from_env_value(value: Option<String>) -> Option<PathBuf> {
     value
         .filter(|path| !path.trim().is_empty())
@@ -242,7 +282,7 @@ fn config_path_from_env_value(value: Option<String>) -> Option<PathBuf> {
 mod tests {
     use std::path::PathBuf;
 
-    use super::config_path_from_env_value;
+    use super::{config_path_from_env_value, Config, ConfigLoadError};
 
     #[test]
     fn config_path_from_env_value_ignores_blank_values() {
@@ -253,5 +293,64 @@ mod tests {
             config_path_from_env_value(Some("/tmp/aghist.toml".to_string())),
             Some(PathBuf::from("/tmp/aghist.toml"))
         );
+    }
+
+    #[test]
+    fn config_load_rejects_invalid_remote_source_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+[[sources]]
+name = "../outside"
+host = "example.test"
+path = "~/.claude"
+"#,
+        )
+        .unwrap();
+
+        let err = Config::try_load_from(&path).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConfigLoadError::InvalidRemoteSource {
+                index: 1,
+                reason,
+                ..
+            } if reason.contains("source name")
+        ));
+    }
+
+    #[test]
+    fn config_load_rejects_duplicate_remote_source_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+[[sources]]
+name = "work"
+host = "one.example"
+path = "~/.claude"
+
+[[sources]]
+name = "work"
+host = "two.example"
+path = "~/.claude"
+"#,
+        )
+        .unwrap();
+
+        let err = Config::try_load_from(&path).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConfigLoadError::InvalidRemoteSource {
+                index: 2,
+                reason,
+                ..
+            } if reason == "duplicate source name"
+        ));
     }
 }
