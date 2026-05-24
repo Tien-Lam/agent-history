@@ -63,6 +63,18 @@ jobs:
           fi
           grep -q "Error: --tag requires a non-empty TAG" err.txt
 
+          if bash scripts/package-release.sh --target x86_64-unknown-linux-gnu --tag ../bad --out-dir "$RUNNER_TEMP" >out.txt 2>err.txt; then
+            echo "package-release accepted an unsafe --tag value" >&2
+            exit 1
+          fi
+          grep -q "unsafe archive filename" err.txt
+
+          if bash scripts/package-release.sh --target ../bad --tag v0.0.0 --out-dir "$RUNNER_TEMP" >out.txt 2>err.txt; then
+            echo "package-release accepted an unsafe --target value" >&2
+            exit 1
+          fi
+          grep -q "unsafe archive filename" err.txt
+
       - name: Check install archive validation
         if: runner.os == 'Linux'
         run: |

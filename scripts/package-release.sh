@@ -35,6 +35,18 @@ require_value() {
     fi
 }
 
+validate_artifact_component() {
+    local label="$1"
+    local value="$2"
+    case "$value" in
+        ""|*/*|*\\*|*..*|*[!A-Za-z0-9._+-]*)
+            echo "Error: $label contains unsafe archive filename characters: $value" >&2
+            echo "Allowed characters: ASCII letters, digits, '.', '_', '+', and '-'; no path separators or '..'." >&2
+            exit 1
+            ;;
+    esac
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --target)
@@ -93,6 +105,8 @@ fi
 if [ -z "$BIN_DIR" ]; then
     BIN_DIR="target/$TARGET/release"
 fi
+validate_artifact_component "target" "$TARGET"
+validate_artifact_component "tag" "$TAG"
 
 case "$TARGET" in
     *-windows-*) BIN_NAME="aghist.exe"; EXT="zip" ;;
