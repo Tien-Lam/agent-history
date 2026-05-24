@@ -20,9 +20,18 @@ impl Consent {
         index_dir.join(CONSENT_FILENAME)
     }
 
+    pub fn read(index_dir: &Path) -> Result<Option<Self>, EmbedError> {
+        let path = Self::path(index_dir);
+        let raw = match std::fs::read_to_string(path) {
+            Ok(raw) => raw,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        serde_json::from_str(&raw).map(Some).map_err(Into::into)
+    }
+
     pub fn load(index_dir: &Path) -> Option<Self> {
-        let raw = std::fs::read_to_string(Self::path(index_dir)).ok()?;
-        serde_json::from_str(&raw).ok()
+        Self::read(index_dir).ok().flatten()
     }
 
     /// Writes (or refreshes) consent. Creates `index_dir` if needed.
@@ -52,5 +61,17 @@ mod tests {
         let loaded = Consent::load(dir.path()).expect("consent should load after record");
         assert_eq!(loaded.model, DEFAULT_MODEL);
         assert_eq!(loaded.accepted_at, written.accepted_at);
+    }
+
+    #[test]
+    fn read_reports_corrupt_existing_consent() {
+        let dir = tempdir().unwrap();
+        std::fs::write(Consent::path(dir.path()), b"not json").unwrap();
+
+        assert!(Consent::load(dir.path()).is_none());
+        assert!(matches!(
+            Consent::read(dir.path()),
+            Err(EmbedError::Json(_))
+        ));
     }
 }

@@ -17,22 +17,12 @@ pub(in crate::services::index) fn run_embeddings(
     prune_providers: Option<&HashSet<Provider>>,
     accept_download: bool,
 ) -> Result<serde_json::Value, ErrorEnvelope> {
-    let consent = embed::Consent::load(index_dir);
-    let consent = match (consent, accept_download) {
-        (Some(c), _) => c,
-        (None, true) => embed::Consent::record(index_dir, embed::DEFAULT_MODEL).map_err(|e| {
-            ErrorEnvelope::new(
-                "embed-error",
-                format!("failed to record embedding-download consent: {e}"),
-            )
-        })?,
-        (None, false) => {
-            return Ok(serde_json::json!({
-                "status": "awaiting-consent",
-                "model": embed::DEFAULT_MODEL,
-                "hint": "re-run with `--accept-download` to enable semantic indexing",
-            }));
-        }
+    let Some(consent) = load_or_record_consent(index_dir, accept_download)? else {
+        return Ok(serde_json::json!({
+            "status": "awaiting-consent",
+            "model": embed::DEFAULT_MODEL,
+            "hint": "re-run with `--accept-download` to enable semantic indexing",
+        }));
     };
 
     let (mut store, evicted_old_schema) = open_embedding_store(index_dir)?;
@@ -119,6 +109,38 @@ pub(in crate::services::index) fn run_embeddings(
     }))
 }
 
+fn load_or_record_consent(
+    index_dir: &Path,
+    accept_download: bool,
+) -> Result<Option<embed::Consent>, ErrorEnvelope> {
+    let consent = match embed::Consent::read(index_dir) {
+        Ok(consent) => consent,
+        Err(embed::EmbedError::Json(_)) if accept_download => None,
+        Err(error) => {
+            return Err(ErrorEnvelope::new(
+                "embed-error",
+                format!("failed to read embedding-download consent: {error}"),
+            )
+            .with_hint(
+                "Delete embeddings-consent.json or re-run `aghist index --accept-download`.",
+            ));
+        }
+    };
+
+    match (consent, accept_download) {
+        (Some(consent), _) => Ok(Some(consent)),
+        (None, true) => embed::Consent::record(index_dir, embed::DEFAULT_MODEL)
+            .map(Some)
+            .map_err(|e| {
+                ErrorEnvelope::new(
+                    "embed-error",
+                    format!("failed to record embedding-download consent: {e}"),
+                )
+            }),
+        (None, false) => Ok(None),
+    }
+}
+
 fn message_key_matches_provider_scope(key: &str, providers: &HashSet<Provider>) -> bool {
     let provider_slug = key.split('\x1f').next().unwrap_or("");
     Provider::from_slug(provider_slug).is_some_and(|provider| providers.contains(&provider))
@@ -177,6 +199,33 @@ mod tests {
         assert!(summary["messages_reused_from_cache"].as_u64().unwrap() > 0);
         assert_eq!(summary["messages_pruned_from_store"], 0);
         assert!(summary["messages_total_in_store"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn corrupt_consent_without_accept_download_is_reported() {
+        let index_dir = tempfile::tempdir().unwrap();
+        std::fs::write(embed::Consent::path(index_dir.path()), b"not json").unwrap();
+
+        let err = run_embeddings(index_dir.path(), &[], &[], None, false).unwrap_err();
+
+        assert_eq!(err.kind, "embed-error");
+        assert!(err
+            .message
+            .contains("failed to read embedding-download consent"));
+        assert!(err.hint.as_deref().is_some_and(|hint| {
+            hint.contains("embeddings-consent.json") && hint.contains("index --accept-download")
+        }));
+    }
+
+    #[test]
+    fn corrupt_consent_with_accept_download_is_refreshed() {
+        let index_dir = tempfile::tempdir().unwrap();
+        std::fs::write(embed::Consent::path(index_dir.path()), b"not json").unwrap();
+
+        let summary = run_embeddings(index_dir.path(), &[], &[], None, true).unwrap();
+
+        assert_eq!(summary["status"], "enabled");
+        assert!(embed::Consent::read(index_dir.path()).unwrap().is_some());
     }
 
     #[test]

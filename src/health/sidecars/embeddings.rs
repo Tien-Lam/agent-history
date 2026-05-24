@@ -17,11 +17,8 @@ pub(in crate::health) fn embedding_consent_health_check(index_dir: &Path) -> (He
         );
     }
 
-    let consent = std::fs::read_to_string(&path)
-        .map_err(|e| e.to_string())
-        .and_then(|raw| serde_json::from_str::<Consent>(&raw).map_err(|e| e.to_string()));
-    match consent {
-        Ok(consent) => (
+    match Consent::read(index_dir) {
+        Ok(Some(consent)) => (
             HealthCheck {
                 name: "embedding-consent-readable",
                 status: HealthStatus::Ok,
@@ -33,6 +30,15 @@ pub(in crate::health) fn embedding_consent_health_check(index_dir: &Path) -> (He
                 hint: None,
             },
             true,
+        ),
+        Ok(None) => (
+            HealthCheck {
+                name: "embedding-consent-readable",
+                status: HealthStatus::Ok,
+                message: "embedding consent absent; semantic indexing is opt-in".to_string(),
+                hint: None,
+            },
+            false,
         ),
         Err(e) => (
             HealthCheck {
@@ -145,5 +151,17 @@ mod tests {
 
         assert_eq!(check.status, HealthStatus::Fail);
         assert!(check.message.contains("embedding store is not readable"));
+    }
+
+    #[test]
+    fn embedding_consent_health_check_fails_corrupt_consent() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(Consent::path(dir.path()), b"not json").unwrap();
+
+        let (check, present) = embedding_consent_health_check(dir.path());
+
+        assert_eq!(check.status, HealthStatus::Fail);
+        assert!(!present);
+        assert!(check.message.contains("embedding consent is not readable"));
     }
 }
