@@ -87,19 +87,42 @@ fn pull_one_source(
     src.validate()
         .map_err(|message| ErrorEnvelope::new("usage", message))?;
     let source_dir = src.cache_dir(cache_root);
-    ensure_cache_dir(&source_dir, "source cache dir")?;
-
     let data_dir = src.data_dir(cache_root);
-    ensure_cache_dir(&data_dir, "source data dir")?;
 
-    run_rsync_pull(src, &data_dir, dry_run)?;
-
-    let (file_count, byte_count) = if dry_run {
-        (0, 0)
+    let dry_run_target = if dry_run {
+        Some(tempfile::tempdir().map_err(|e| {
+            ErrorEnvelope::new(
+                "io-error",
+                format!("failed to create dry-run cache dir: {e}"),
+            )
+        })?)
     } else {
-        count_dir(&data_dir)
+        ensure_cache_dir(&source_dir, "source cache dir")?;
+        ensure_cache_dir(&data_dir, "source data dir")?;
+        None
     };
+    let rsync_data_dir = dry_run_target
+        .as_ref()
+        .map_or(data_dir.as_path(), |dir| dir.path());
+
+    run_rsync_pull(src, rsync_data_dir, dry_run)?;
+
     let pulled_at = Utc::now();
+    if dry_run {
+        return Ok(PullResult {
+            name: src.name.clone(),
+            host: src.host.clone(),
+            path: src.path.clone(),
+            transport: src.transport.slug().to_string(),
+            data_dir: data_dir.display().to_string(),
+            dry_run,
+            byte_count: 0,
+            file_count: 0,
+            pulled_at,
+        });
+    }
+
+    let (file_count, byte_count) = count_dir(&data_dir);
     let manifest = config::SourceCacheManifest {
         name: src.name.clone(),
         host: src.host.clone(),

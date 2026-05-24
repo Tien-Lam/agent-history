@@ -102,6 +102,19 @@ fn sources_pull_dry_run_passes_flag_and_skips_count() {
         logged.lines().any(|line| line == "--dry-run"),
         "rsync should have received --dry-run: {logged}"
     );
+    let destination = logged.lines().last().expect("rsync destination arg");
+    assert!(
+        !destination.starts_with(cache_dir.to_str().expect("utf8 cache dir")),
+        "dry-run should use a temporary destination, got {destination}"
+    );
+    assert!(
+        !cache_dir.join("box").exists(),
+        "dry-run must not create cache source dirs"
+    );
+    assert!(
+        !cache_dir.join("box").join(".aghist-source.json").exists(),
+        "dry-run must not write a source manifest"
+    );
 }
 
 #[test]
