@@ -1,18 +1,6 @@
 use super::*;
 
 #[test]
-fn env_var_overrides_default_path() {
-    let tmp = TempDir::new().unwrap();
-    let custom = tmp.path().join("custom.db");
-    // SAFETY: tests run sequentially within a test binary by default; the
-    // env var is set and read here only.
-    std::env::set_var(ENV_PATH, &custom);
-    let resolved = default_path().expect("path resolves with env var set");
-    std::env::remove_var(ENV_PATH);
-    assert_eq!(resolved, custom);
-}
-
-#[test]
 fn filter_session_keys_returns_none_when_no_filter_active() {
     let (_tmp, conn) = open_fresh();
     let result = filter_session_keys(&conn, None, None, false).unwrap();

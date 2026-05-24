@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
@@ -8,7 +9,11 @@ use super::{MetadataError, Result, ENV_PATH};
 /// Resolve the metadata.db path. Honors `AGHIST_METADATA_DB`, otherwise falls
 /// back to the platform data dir (`~/.local/share/aghist/metadata.db` on Linux).
 pub fn default_path() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var(ENV_PATH) {
+    default_path_from_env_value(std::env::var_os(ENV_PATH))
+}
+
+pub(super) fn default_path_from_env_value(override_path: Option<OsString>) -> Option<PathBuf> {
+    if let Some(p) = override_path {
         if !p.is_empty() {
             return Some(PathBuf::from(p));
         }

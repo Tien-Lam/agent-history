@@ -6,6 +6,19 @@ fn migrations_validate() {
 }
 
 #[test]
+fn env_value_overrides_default_path_without_global_mutation() {
+    let tmp = TempDir::new().unwrap();
+    let custom = tmp.path().join("custom.db");
+
+    let resolved = super::super::connection::default_path_from_env_value(Some(
+        custom.clone().into_os_string(),
+    ))
+    .expect("path resolves with override");
+
+    assert_eq!(resolved, custom);
+}
+
+#[test]
 fn open_creates_db_and_parent_dir() {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("nested/dir/metadata.db");
