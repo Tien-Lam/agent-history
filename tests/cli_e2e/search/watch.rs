@@ -159,3 +159,28 @@ fn search_watch_requires_query() {
         "expected usage envelope, got: {stderr}"
     );
 }
+
+#[test]
+fn search_watch_rejects_zero_interval() {
+    let output = aghist()
+        .args([
+            "search",
+            "anything",
+            "--watch",
+            "--watch-interval-ms",
+            "0",
+            "--watch-iterations",
+            "1",
+        ])
+        .output()
+        .unwrap();
+
+    cli::assert_exit_code(&output, 2);
+    let envelope = cli::output_stderr_error(&output);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        cli::output_stderr(&output).contains("watch interval must be at least 1 millisecond"),
+        "stderr: {}",
+        cli::output_stderr(&output)
+    );
+}

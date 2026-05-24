@@ -40,7 +40,7 @@ pub(crate) struct SearchCommand {
     pub(crate) limit: usize,
 
     /// Opaque pagination cursor from a prior `meta.next_cursor`.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "params")]
     pub(crate) cursor: Option<String>,
 
     /// Force JSON output (default: JSON on pipe, table on TTY)
@@ -61,6 +61,7 @@ pub(crate) struct SearchCommand {
         long,
         default_value_t = SEARCH_WATCH_INTERVAL_MS_DEFAULT,
         value_name = "MS",
+        value_parser = parse_watch_interval_ms,
         conflicts_with = "params"
     )]
     pub(crate) watch_interval_ms: u64,
@@ -111,6 +112,17 @@ fn parse_search_limit(raw: &str) -> Result<usize, String> {
         .map_err(|e| format!("invalid search limit: {e}"))?;
     if value == 0 {
         Err("search limit must be at least 1".to_string())
+    } else {
+        Ok(value)
+    }
+}
+
+fn parse_watch_interval_ms(raw: &str) -> Result<u64, String> {
+    let value = raw
+        .parse::<u64>()
+        .map_err(|e| format!("invalid watch interval: {e}"))?;
+    if value == 0 {
+        Err("watch interval must be at least 1 millisecond".to_string())
     } else {
         Ok(value)
     }

@@ -95,3 +95,26 @@ fn search_rejects_zero_limit_flag() {
         cli::output_stderr(&output)
     );
 }
+
+#[test]
+fn search_params_conflicts_with_cursor_flag() {
+    let body = serde_json::json!({
+        "query": "anything",
+        "json": true
+    })
+    .to_string();
+    let output = aghist()
+        .args(["search", "--params", &body, "--cursor", "abc"])
+        .output()
+        .unwrap();
+
+    cli::assert_exit_code(&output, 2);
+    let envelope = cli::output_stderr_error(&output);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        cli::output_stderr(&output).contains("--params")
+            && cli::output_stderr(&output).contains("--cursor"),
+        "stderr: {}",
+        cli::output_stderr(&output)
+    );
+}
