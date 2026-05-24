@@ -49,7 +49,7 @@ pub(crate) struct ProjectCommand {
 #[derive(Args)]
 pub(crate) struct ReportCommand {
     /// Window length in days. Mutually exclusive with `--week`/`--month`.
-    #[arg(long, value_name = "N", conflicts_with_all = ["week", "month"])]
+    #[arg(long, value_name = "N", conflicts_with_all = ["week", "month"], value_parser = parse_report_days)]
     pub(crate) days: Option<i64>,
 
     /// Shorthand for `--days 7`.
@@ -79,4 +79,15 @@ pub(crate) struct ReportCommand {
     /// Emit the structured JSON envelope instead of Markdown.
     #[arg(long)]
     pub(crate) json: bool,
+}
+
+fn parse_report_days(raw: &str) -> Result<i64, String> {
+    let value = raw
+        .parse::<i64>()
+        .map_err(|e| format!("invalid report days: {e}"))?;
+    if value < 1 {
+        Err("report days must be at least 1".to_string())
+    } else {
+        Ok(value)
+    }
 }

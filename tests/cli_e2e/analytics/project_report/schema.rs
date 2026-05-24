@@ -42,3 +42,17 @@ fn schema_subcommand_includes_report() {
     assert!(resp["top_projects"].is_object());
     assert!(resp["project_count"].is_object());
 }
+
+#[test]
+fn report_rejects_zero_days_flag() {
+    let assert = aghist().args(["report", "--days", "0"]).assert().code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("report days must be at least 1"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
