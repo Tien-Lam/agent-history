@@ -38,10 +38,12 @@ impl App {
         };
         let display: Vec<&Session> = if self.filter.is_active() {
             let starred_only = self.filter.starred_only;
+            let msg_ids = self.msg_filter_session_ids.as_ref();
             let stars = &self.stars;
             base.into_iter()
                 .filter(|s| self.filter.matches(s))
                 .filter(|s| !starred_only || stars.is_starred(s.provider, &s.id.0))
+                .filter(|s| msg_ids.is_none_or(|ids| ids.contains(&s.identity_key())))
                 .collect()
         } else {
             base
@@ -114,5 +116,84 @@ impl App {
         if self.mode == AppMode::ExportMenu {
             render_export_overlay(frame, size, self.export_cursor);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use chrono::{TimeZone, Utc};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use crate::config::Config;
+    use crate::model::{Provider, Role, Session, SessionId};
+    use crate::stars::StarStore;
+
+    use super::*;
+
+    fn session(id: &str, summary: &str) -> Session {
+        Session {
+            id: SessionId(id.to_string()),
+            provider: Provider::ClaudeCode,
+            project_path: None,
+            project_name: Some("filter-render".to_string()),
+            git_branch: None,
+            started_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            ended_at: None,
+            summary: Some(summary.to_string()),
+            model: None,
+            token_usage: None,
+            message_count: 1,
+            source_path: std::path::PathBuf::from(format!("/tmp/{id}.jsonl")),
+        }
+    }
+
+    fn render_to_text(terminal: &Terminal<TestBackend>) -> String {
+        let buf = terminal.backend().buffer();
+        let area = buf.area;
+        let mut result = String::new();
+        for y in area.y..area.y + area.height {
+            let mut line = String::new();
+            for x in area.x..area.x + area.width {
+                if let Some(cell) = buf.cell((x, y)) {
+                    line.push_str(cell.symbol());
+                }
+            }
+            result.push_str(line.trim_end());
+            result.push('\n');
+        }
+        result
+    }
+
+    #[test]
+    fn render_applies_message_level_filter_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut app = App::with_stars(
+            Vec::new(),
+            Config::default(),
+            StarStore::load_from(&tmp.path().join("metadata.db")),
+        );
+        let kept = session("tool-session", "Tool session");
+        let filtered = session("plain-session", "Plain session");
+        app.msg_filter_session_ids = Some(HashSet::from([kept.identity_key()]));
+        app.filter.role = Some(Role::Tool);
+        app.sessions = vec![kept, filtered];
+        app.loading = false;
+        app.session_list.state.select(Some(0));
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+
+        let text = render_to_text(&terminal);
+        assert!(
+            text.contains("Tool session"),
+            "message-level filter should keep the matching session, got:\n{text}"
+        );
+        assert!(
+            !text.contains("Plain session"),
+            "message-level filter should hide non-matching sessions, got:\n{text}"
+        );
     }
 }
