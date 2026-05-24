@@ -66,7 +66,14 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+if [ -z "$INSTALL_DIR" ]; then
+    if [ -z "${HOME:-}" ]; then
+        echo "Error: could not determine default install directory because HOME is unset" >&2
+        echo "Pass --to DIR to choose an install directory." >&2
+        exit 1
+    fi
+    INSTALL_DIR="$HOME/.local/bin"
+fi
 
 # Detect platform
 OS="$(uname -s)"

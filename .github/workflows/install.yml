@@ -103,6 +103,12 @@ jobs:
           bash install.sh --to "$tmp/bin" --tag v0.0.0-validation --archive "$tmp/valid.tar.gz" >/dev/null
           test -x "$tmp/bin/aghist"
 
+          if env -u HOME bash install.sh --tag v0.0.0-validation --archive "$tmp/valid.tar.gz" >"$tmp/out" 2>"$tmp/err"; then
+            echo "install.sh accepted a missing HOME without --to" >&2
+            exit 1
+          fi
+          grep -q "could not determine default install directory because HOME is unset" "$tmp/err"
+
           printf 'unexpected\n' > "$tmp/extra"
           (cd "$tmp" && tar czf "$tmp/invalid.tar.gz" aghist aghist.install extra)
           if bash install.sh --to "$tmp/invalid-bin" --tag v0.0.0-validation --archive "$tmp/invalid.tar.gz" >"$tmp/out" 2>"$tmp/err"; then
