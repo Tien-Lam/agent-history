@@ -23,7 +23,7 @@ impl App {
     /// embedded yet. The TUI uses this to decide whether to show the hybrid
     /// indicator at all.
     pub fn hybrid_available(&self) -> bool {
-        self.hybrid_available
+        self.hybrid.available
     }
 
     /// User-visible state of the hybrid toggle. Independent of
@@ -31,7 +31,7 @@ impl App {
     /// ready, queries silently fall open to lexical-only and `last_engine()`
     /// reflects what actually ran.
     pub fn hybrid_enabled(&self) -> bool {
-        self.hybrid_enabled
+        self.hybrid.enabled
     }
 
     /// Engine that produced the current `search_results` (`"lexical"` or
@@ -45,7 +45,7 @@ impl App {
     /// real fastembed pipeline.
     #[doc(hidden)]
     pub fn set_hybrid_available_for_tests(&mut self, available: bool) {
-        self.hybrid_available = available;
+        self.hybrid.available = available;
     }
 
     pub(super) fn start_indexing(&self) {
@@ -121,7 +121,7 @@ impl App {
         if self.search_query.is_empty() {
             self.filtered_session_ids = None;
             self.search_results.clear();
-            self.last_engine = if self.hybrid_enabled && self.hybrid_available {
+            self.last_engine = if self.hybrid.enabled && self.hybrid.available {
                 "hybrid"
             } else {
                 "lexical"
@@ -144,7 +144,7 @@ impl App {
         // Try the hybrid pipeline first when the user has it on; fall open to
         // lexical-only on any failure (no consent, empty store, embedder
         // bootstrap fails, etc). `meta.engine` reflects what actually ran.
-        let hybrid_hits = if self.hybrid_enabled && self.hybrid_available {
+        let hybrid_hits = if self.hybrid.enabled && self.hybrid.available {
             embed::try_hybrid_search(
                 &self.index_dir,
                 index,

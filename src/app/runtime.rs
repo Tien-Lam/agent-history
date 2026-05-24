@@ -28,11 +28,11 @@ impl App {
         self.search_index = SearchIndex::open_or_create(&self.index_dir)
             .map(Arc::new)
             .ok();
-        self.hybrid_available = embed::hybrid_ready(&self.index_dir);
+        self.hybrid.available = embed::hybrid_ready(&self.index_dir);
         // Default ON when the embedding pipeline is wired up — hybrid is
         // strictly an improvement over lexical when the store is populated.
         // Users can still hit the toggle to compare modes side-by-side.
-        self.hybrid_enabled = self.hybrid_available;
+        self.hybrid.enabled = self.hybrid.available;
 
         self.load_sessions();
         self.start_indexing();
@@ -56,7 +56,7 @@ impl App {
 
             self.tick();
 
-            if self.should_quit {
+            if self.lifecycle.should_quit {
                 break;
             }
         }

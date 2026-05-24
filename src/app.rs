@@ -27,14 +27,38 @@ mod state;
 pub use state::AppMode;
 use state::FilterState;
 
-#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone, Copy)]
+struct LifecycleState {
+    loading: bool,
+    should_quit: bool,
+}
+
+impl Default for LifecycleState {
+    fn default() -> Self {
+        Self {
+            loading: true,
+            should_quit: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct HybridState {
+    /// True when a hybrid search pipeline is wired up for this index dir
+    /// (feature compiled in + consent recorded + non-empty store). Decided
+    /// at startup; toggled to `false` if a later check fails.
+    available: bool,
+    /// User-controlled toggle: when `true` and `available`, queries run
+    /// through RRF. Defaults on when available.
+    enabled: bool,
+}
+
 pub struct App {
     config: Config,
     sessions: Vec<Session>,
     message_cache: LruCache<String, Vec<Message>>,
     mode: AppMode,
-    loading: bool,
-    should_quit: bool,
+    lifecycle: LifecycleState,
     warnings: Vec<String>,
 
     session_list: SessionListComponent,
@@ -53,13 +77,7 @@ pub struct App {
     index_ready: bool,
     index_progress: Option<(usize, usize)>,
     search_pending_at: Option<Instant>,
-    /// True when a hybrid search pipeline is wired up for this index dir
-    /// (feature compiled in + consent recorded + non-empty store). Decided
-    /// at startup; toggled to `false` if a later check fails.
-    hybrid_available: bool,
-    /// User-controlled toggle: when `true` and `hybrid_available`, queries
-    /// run through RRF. Defaults on when available.
-    hybrid_enabled: bool,
+    hybrid: HybridState,
     /// Engine that produced `search_results` (`"lexical"` or `"hybrid"`).
     /// Surfaced in the status bar so users can see whether their toggle
     /// actually engaged the semantic side.
@@ -99,8 +117,7 @@ impl App {
             sessions: Vec::new(),
             message_cache: LruCache::new(cache_size),
             mode: AppMode::Browse,
-            loading: true,
-            should_quit: false,
+            lifecycle: LifecycleState::default(),
             warnings: Vec::new(),
 
             session_list: SessionListComponent::new(),
@@ -119,8 +136,7 @@ impl App {
             index_ready: false,
             index_progress: None,
             search_pending_at: None,
-            hybrid_available: false,
-            hybrid_enabled: false,
+            hybrid: HybridState::default(),
             last_engine: "lexical",
 
             filter: FilterState::new(),
@@ -137,7 +153,7 @@ impl App {
     }
 
     pub fn is_loading(&self) -> bool {
-        self.loading
+        self.lifecycle.loading
     }
 
     pub fn session_count(&self) -> usize {
@@ -149,6 +165,6 @@ impl App {
     }
 
     pub fn should_quit(&self) -> bool {
-        self.should_quit
+        self.lifecycle.should_quit
     }
 }

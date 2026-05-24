@@ -65,7 +65,7 @@ impl App {
         // Show the engine indicator only when the embedding pipeline is wired
         // up — otherwise lexical is the only option and the badge would just
         // be visual noise.
-        let engine_label = if self.hybrid_available {
+        let engine_label = if self.hybrid.available {
             Some(self.last_engine)
         } else {
             None
@@ -73,7 +73,7 @@ impl App {
         self.status_bar.render(
             StatusBarProps {
                 mode: self.mode,
-                loading: self.loading,
+                loading: self.lifecycle.loading,
                 search_query: &self.search_query,
                 index_progress: self.index_progress,
                 warning_count,
@@ -162,7 +162,7 @@ mod tests {
         app.msg_filter_session_ids = Some(HashSet::from([kept.identity_key()]));
         app.filter.role = Some(Role::Tool);
         app.sessions = vec![kept, filtered];
-        app.loading = false;
+        app.lifecycle.loading = false;
         app.session_list.state.select(Some(0));
 
         let backend = TestBackend::new(120, 40);

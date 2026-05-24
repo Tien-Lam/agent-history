@@ -23,9 +23,9 @@ impl App {
                 self.search_pending_at = Some(Instant::now());
             }
             Action::ToggleHybrid => {
-                if self.hybrid_available {
-                    self.hybrid_enabled = !self.hybrid_enabled;
-                    self.status_message = Some(if self.hybrid_enabled {
+                if self.hybrid.available {
+                    self.hybrid.enabled = !self.hybrid.enabled;
+                    self.status_message = Some(if self.hybrid.enabled {
                         "Hybrid search: ON".to_string()
                     } else {
                         "Hybrid search: OFF".to_string()
@@ -33,7 +33,7 @@ impl App {
                     // Re-run the current query so the engine label and result
                     // ordering reflect the new mode immediately.
                     if self.search_query.is_empty() {
-                        self.last_engine = if self.hybrid_enabled {
+                        self.last_engine = if self.hybrid.enabled {
                             "hybrid"
                         } else {
                             "lexical"

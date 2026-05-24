@@ -11,7 +11,7 @@ impl App {
     pub fn dispatch(&mut self, action: Action) {
         match action {
             Action::Quit => {
-                self.should_quit = true;
+                self.lifecycle.should_quit = true;
             }
 
             Action::NextItem
@@ -143,7 +143,7 @@ impl App {
         match action {
             Action::SessionsLoaded(sessions) => {
                 self.sessions = sessions;
-                self.loading = false;
+                self.lifecycle.loading = false;
                 self.search_results.clear();
                 self.filtered_session_ids = None;
                 if !self.sessions.is_empty() {
