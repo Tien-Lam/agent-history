@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use tantivy::{IndexWriter, TantivyDocument, Term};
 
@@ -45,13 +46,14 @@ struct IndexPass<'a> {
     stats: &'a mut IndexStats,
     providers: &'a [Box<dyn HistoryProvider>],
     progress_tx: &'a crossbeam_channel::Sender<Action>,
+    fingerprint_cache: HashMap<PathBuf, crate::search::types::FileFingerprint>,
     total: usize,
 }
 
 impl IndexPass<'_> {
     fn index_session(&mut self, index: usize, session: &Session) -> Result<String, SearchError> {
         let session_key = session.identity_key();
-        let current_fingerprint = match file_fingerprint(&session.source_path) {
+        let current_fingerprint = match self.file_fingerprint(&session.source_path) {
             Ok(fingerprint) => fingerprint,
             Err(error) => {
                 self.skip_failed_session(index, session, &session_key, error);
@@ -140,6 +142,19 @@ impl IndexPass<'_> {
             .progress_tx
             .send(Action::IndexProgress(index + 1, self.total));
     }
+
+    fn file_fingerprint(
+        &mut self,
+        path: &Path,
+    ) -> std::io::Result<crate::search::types::FileFingerprint> {
+        if let Some(fingerprint) = self.fingerprint_cache.get(path) {
+            return Ok(fingerprint.clone());
+        }
+        let fingerprint = file_fingerprint(path)?;
+        self.fingerprint_cache
+            .insert(path.to_path_buf(), fingerprint.clone());
+        Ok(fingerprint)
+    }
 }
 
 impl SearchIndex {
@@ -199,6 +214,7 @@ impl SearchIndex {
                 stats: &mut stats,
                 providers,
                 progress_tx,
+                fingerprint_cache: HashMap::new(),
                 total,
             };
             for (i, session) in sessions.iter().enumerate() {
