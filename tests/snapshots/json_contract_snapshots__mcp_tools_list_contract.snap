@@ -1,6 +1,5 @@
 ---
 source: tests/json_contract_snapshots.rs
-assertion_line: 20
 expression: pretty
 ---
 {
@@ -18,6 +17,7 @@ expression: pretty
           },
           "query": {
             "description": "Tantivy query string. Matches the `content` and `project` fields.",
+            "maxLength": 65536,
             "type": "string"
           }
         },
@@ -44,6 +44,7 @@ expression: pretty
           },
           "project": {
             "description": "Substring match on session project_name.",
+            "maxLength": 1024,
             "type": "string"
           },
           "provider": {
@@ -90,10 +91,12 @@ expression: pretty
             "type": "string"
           },
           "session_id": {
+            "maxLength": 1024,
             "type": "string"
           },
           "source": {
             "description": "Source name from list_sessions. Omit for unique matches; use 'local' for local-only lookup.",
+            "maxLength": 64,
             "type": "string"
           }
         },
@@ -120,6 +123,7 @@ expression: pretty
           },
           "ref": {
             "description": "Citation ref. Example: claude-code/abc-123#7",
+            "maxLength": 1024,
             "pattern": "^([A-Za-z0-9][A-Za-z0-9_-]*:)?(claude-code|copilot-cli|gemini-cli|codex-cli|opencode|cursor|aider|zed-ai|cline|continue-dev)/[^#]+#[1-9][0-9]*$",
             "type": "string"
           }
