@@ -33,9 +33,14 @@ pub fn run_session_with_config_and_sources_cache(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(path) = config_path {
-        cmd.env("AGHIST_CONFIG", path);
-    }
+    let default_config;
+    let config_path = if let Some(path) = config_path {
+        path
+    } else {
+        default_config = env_home.join("config.toml");
+        &default_config
+    };
+    cmd.env("AGHIST_CONFIG", config_path);
     if let Some(path) = sources_cache {
         cmd.env("AGHIST_SOURCES_CACHE_DIR", path);
     } else {

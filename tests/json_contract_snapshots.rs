@@ -1,7 +1,5 @@
 mod common;
 
-use std::path::Path;
-
 use assert_cmd::Command;
 use serde_json::Value;
 
@@ -148,11 +146,6 @@ fn assert_health_fixture_is_exercised(doc: &Value) {
         !fidelity.is_empty(),
         "contract fixture should produce provider fidelity"
     );
-}
-
-fn run_mcp_session(env_home: &Path, requests: &[Value]) -> Vec<Value> {
-    let config = env_home.join("config.toml");
-    common::mcp::run_session_with_config(env_home, Some(&config), requests)
 }
 
 #[test]
@@ -331,7 +324,7 @@ fn health_json_contract_snapshot() {
 #[test]
 fn mcp_tools_list_contract_snapshot() {
     let home = tempfile::tempdir().unwrap();
-    let responses = run_mcp_session(
+    let responses = common::mcp::run_session(
         home.path(),
         &[serde_json::json!({
             "jsonrpc": "2.0",
@@ -362,7 +355,7 @@ fn mcp_reindex_contract_snapshot() {
         .build();
     let home = fixture.base_path.parent().unwrap();
 
-    let responses = run_mcp_session(
+    let responses = common::mcp::run_session(
         home,
         &[
             serde_json::json!({
@@ -404,7 +397,7 @@ fn mcp_health_contract_snapshot() {
         .build();
     let home = fixture.base_path.parent().unwrap();
 
-    let responses = run_mcp_session(
+    let responses = common::mcp::run_session(
         home,
         &[
             serde_json::json!({
