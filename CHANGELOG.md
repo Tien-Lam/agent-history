@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.1] - 2026-05-24
+
+Maintenance release for the 0.3 line.
+
+### Fixed
+
+- Preserve TUI message-level filters during render, so role/tool/message filters cannot leak messages from hidden sessions.
+- Reject unknown provider slugs in config instead of silently ignoring invalid allowlist entries.
+- Surface partial provider/source discovery failures consistently in CLI, TUI, and MCP flows.
+- Harden provider parsers against recent shape drift across Claude Code, Codex CLI, Copilot CLI, Gemini CLI, OpenCode, Cursor, Cline, Continue.dev, and Zed AI histories.
+- Keep source-qualified refs intact across `show`, `export`, `diff`, metadata filters, MCP resources, and federated search results.
+- Tighten self-managed `update`/`uninstall` guardrails so build-tree, Cargo, and package-manager binaries are rejected before mutating files.
+
+### Changed
+
+- Split large command, provider, schema, search, TUI, MCP, export, metadata, and report modules into smaller internal modules without changing the public CLI contracts.
+- Release archives now include and smoke-test the `aghist.install` marker used by `aghist update` and `aghist uninstall`.
+- Trimmed stale install documentation and clarified source installs with `cargo install --locked`.
+
+### Tests
+
+- Added broad provider conformance, JSON/MCP contract, markdown link, supply-chain, release archive, all-features embeddings, recall benchmark, and user-data safety coverage.
+- CI now includes supply-chain policy checks, actionlint, release dry-runs, Windows build/test coverage, and all-features clippy/test coverage.
+
 ## [0.3.0] - 2026-05-09
 
 The y3o roadmap: aghist grows an agent-friendly CLI surface, semantic search, an MCP server, and cross-machine federated history.
@@ -141,6 +165,7 @@ The y3o roadmap: aghist grows an agent-friendly CLI surface, semantic search, an
 - GitHub Actions CI (clippy, tests, build)
 - Snapshot tests with insta
 
+[0.3.1]: https://github.com/Tien-Lam/agent-history/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Tien-Lam/agent-history/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Tien-Lam/agent-history/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Tien-Lam/agent-history/compare/v0.1.3...v0.2.0
