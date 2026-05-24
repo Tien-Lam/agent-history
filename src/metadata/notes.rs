@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
-use super::{validate_session_ref, MetadataError, Result};
+use super::{refs::turn_prefix_like_pattern, validate_session_ref, MetadataError, Result};
 
 /// One row from the `notes` table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -74,10 +74,10 @@ pub fn note_list(conn: &Connection, filter: Option<&str>) -> Result<Vec<Note>> {
                 let rows = stmt.query_map(params![raw], row_to_note)?;
                 rows.collect::<rusqlite::Result<Vec<_>>>()?
             } else {
-                let prefix = format!("{raw}#%");
+                let prefix = turn_prefix_like_pattern(raw);
                 let sql = format!(
                     "SELECT {columns} FROM notes \
-                     WHERE session_ref = ?1 OR session_ref LIKE ?2 {order}"
+                     WHERE session_ref = ?1 OR session_ref LIKE ?2 ESCAPE '\\' {order}"
                 );
                 let mut stmt = conn.prepare(&sql)?;
                 let rows = stmt.query_map(params![raw, prefix], row_to_note)?;

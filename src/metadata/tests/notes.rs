@@ -81,6 +81,21 @@ fn note_list_filters_by_session_or_turn() {
 }
 
 #[test]
+fn note_list_escapes_like_wildcards_in_session_ids() {
+    let (_tmp, conn) = open_fresh();
+    let exact = note_add(&conn, "claude-code/a_b%z", "session-level").unwrap();
+    let turn = note_add(&conn, "claude-code/a_b%z#1", "turn").unwrap();
+    let wildcard_collision = note_add(&conn, "claude-code/axbzz#1", "other").unwrap();
+
+    let scoped = note_list(&conn, Some("claude-code/a_b%z")).unwrap();
+    let ids: Vec<_> = scoped.iter().map(|n| n.id).collect();
+
+    assert!(ids.contains(&exact.id));
+    assert!(ids.contains(&turn.id));
+    assert!(!ids.contains(&wildcard_collision.id));
+}
+
+#[test]
 fn note_edit_updates_body_and_bumps_timestamp() {
     let (_tmp, conn) = open_fresh();
     let original = note_add(&conn, "claude-code/abc", "v1").unwrap();

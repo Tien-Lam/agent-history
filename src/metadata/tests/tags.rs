@@ -81,6 +81,21 @@ fn tag_list_filters_by_session_or_turn_or_tag_value() {
 }
 
 #[test]
+fn tag_list_escapes_like_wildcards_in_session_ids() {
+    let (_tmp, conn) = open_fresh();
+    let exact = tag_add(&conn, "claude-code/a_b%z", "review").unwrap();
+    let turn = tag_add(&conn, "claude-code/a_b%z#1", "review").unwrap();
+    let wildcard_collision = tag_add(&conn, "claude-code/axbzz#1", "review").unwrap();
+
+    let scoped = tag_list(&conn, Some("claude-code/a_b%z"), Some("review")).unwrap();
+    let ids: Vec<_> = scoped.iter().map(|t| t.id).collect();
+
+    assert!(ids.contains(&exact.id));
+    assert!(ids.contains(&turn.id));
+    assert!(!ids.contains(&wildcard_collision.id));
+}
+
+#[test]
 fn tag_remove_returns_deleted_row_and_is_idempotent_negative() {
     let (_tmp, conn) = open_fresh();
     let added = tag_add(&conn, "claude-code/abc", "review").unwrap();

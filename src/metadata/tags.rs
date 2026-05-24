@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
-use super::{validate_session_ref, MetadataError, Result};
+use super::{refs::turn_prefix_like_pattern, validate_session_ref, MetadataError, Result};
 
 /// One row from the `tags` table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -97,9 +97,9 @@ pub fn tag_list(
             clauses.push("session_ref = ?");
             params_vec.push(Box::new(raw.to_string()));
         } else {
-            clauses.push("(session_ref = ? OR session_ref LIKE ?)");
+            clauses.push("(session_ref = ? OR session_ref LIKE ? ESCAPE '\\')");
             params_vec.push(Box::new(raw.to_string()));
-            params_vec.push(Box::new(format!("{raw}#%")));
+            params_vec.push(Box::new(turn_prefix_like_pattern(raw)));
         }
     }
     if let Some(raw) = tag_filter {

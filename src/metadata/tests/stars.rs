@@ -51,6 +51,21 @@ fn star_list_filters_by_session_or_turn() {
 }
 
 #[test]
+fn star_list_escapes_like_wildcards_in_session_ids() {
+    let (_tmp, conn) = open_fresh();
+    let exact = star_add(&conn, "claude-code/a_b%z").unwrap();
+    let turn = star_add(&conn, "claude-code/a_b%z#1").unwrap();
+    let wildcard_collision = star_add(&conn, "claude-code/axbzz#1").unwrap();
+
+    let scoped = star_list(&conn, Some("claude-code/a_b%z")).unwrap();
+    let refs: Vec<_> = scoped.iter().map(|s| s.session_ref.clone()).collect();
+
+    assert!(refs.contains(&exact.session_ref));
+    assert!(refs.contains(&turn.session_ref));
+    assert!(!refs.contains(&wildcard_collision.session_ref));
+}
+
+#[test]
 fn star_remove_returns_deleted_row_and_is_idempotent_negative() {
     let (_tmp, conn) = open_fresh();
     let added = star_add(&conn, "claude-code/abc").unwrap();

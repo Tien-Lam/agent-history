@@ -41,3 +41,20 @@ pub fn session_key_from_ref(raw: &str) -> std::result::Result<String, MetadataEr
         .map_or(raw, |(session_ref, _turn)| session_ref)
         .to_string())
 }
+
+pub(super) fn turn_prefix_like_pattern(session_ref: &str) -> String {
+    let mut pattern = escape_like(session_ref);
+    pattern.push_str("#%");
+    pattern
+}
+
+fn escape_like(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
