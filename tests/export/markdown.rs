@@ -73,3 +73,23 @@ fn markdown_has_tool_call_sections() {
         assert!(md.contains("Tool:"), "tool call should show tool name");
     }
 }
+
+#[test]
+fn markdown_escapes_tool_name_inside_html_summary() {
+    use aghist::model::{ContentBlock, ToolCall};
+
+    let (session, mut messages) = super::sample_session();
+    messages[0].content = vec![ContentBlock::ToolUse(ToolCall {
+        id: "tool-1".to_string(),
+        name: "Read</summary><script>alert(1)</script>".to_string(),
+        arguments: "{}".to_string(),
+    })];
+
+    let md = export::to_markdown(&session, &messages);
+
+    assert!(md.contains("Read&lt;/summary&gt;&lt;script&gt;alert(1)&lt;/script&gt;"));
+    assert!(
+        !md.contains("Read</summary><script>"),
+        "tool name should not break out of the generated summary: {md}"
+    );
+}

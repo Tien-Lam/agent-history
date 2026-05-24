@@ -83,7 +83,11 @@ fn render_content_md(out: &mut String, blocks: &[ContentBlock]) {
                 render_fenced_code(out, language.as_deref(), code);
             }
             ContentBlock::ToolUse(tool) => {
-                let _ = writeln!(out, "<details>\n<summary>Tool: {}</summary>\n", tool.name);
+                let _ = writeln!(
+                    out,
+                    "<details>\n<summary>Tool: {}</summary>\n",
+                    escape_html_text(&tool.name)
+                );
                 render_fenced_code(out, Some("json"), &tool.arguments);
                 out.push_str("</details>\n\n");
             }
@@ -139,4 +143,11 @@ fn sanitize_fence_info(language: &str) -> String {
         .collect::<String>()
         .trim()
         .to_string()
+}
+
+fn escape_html_text(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
