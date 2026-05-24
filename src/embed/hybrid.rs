@@ -79,8 +79,7 @@ pub fn try_hybrid_search(
 }
 
 #[cfg(not(feature = "embeddings"))]
-#[allow(clippy::missing_const_for_fn)]
-pub fn try_hybrid_search(
+pub const fn try_hybrid_search(
     _index_dir: &Path,
     _index: &crate::search::SearchIndex,
     _query: &str,
