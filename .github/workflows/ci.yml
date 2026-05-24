@@ -98,6 +98,8 @@ jobs:
     name: ubuntu-24.04 / stable / all-features
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    env:
+      CARGO_TARGET_DIR: target/all-features
 
     steps:
       - uses: actions/checkout@v6
@@ -111,6 +113,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            target/all-features
           key: ${{ runner.os }}-cargo-all-features-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-all-features-
