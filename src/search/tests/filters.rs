@@ -80,3 +80,43 @@ fn session_ids_with_messages_filters_by_has_tool_call() {
     assert_eq!(combined.len(), 1);
     assert!(combined.contains(&s_with_tool_key));
 }
+
+#[test]
+fn project_filtered_search_scans_beyond_initial_rank_window() {
+    let dir = tempdir().unwrap();
+    let index = SearchIndex::open_or_create(dir.path()).unwrap();
+
+    let stub = StubProvider::new(Provider::ClaudeCode);
+    let mut sessions = Vec::new();
+    for i in 0..150 {
+        let project = if i == 149 {
+            "target-project"
+        } else {
+            "noise-project"
+        };
+        let mut session = make_session(&format!("sess-{i:03}"), project);
+        session.source_path = dir.path().join(format!("sess-{i:03}.jsonl"));
+        std::fs::write(&session.source_path, format!("sess-{i:03}")).unwrap();
+        stub.add(
+            session.clone(),
+            vec![make_message(&format!("m-{i:03}"), "needle shared text")],
+        );
+        sessions.push(session);
+    }
+
+    let providers: Vec<Box<dyn crate::provider::HistoryProvider>> = vec![Box::new(stub)];
+    let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+    index.build_index(&sessions, &providers, &tx).unwrap();
+    let filters = SearchFilters {
+        project: Some("target".to_string()),
+        ..SearchFilters::default()
+    };
+
+    let result = index
+        .search_inner_with_total("needle", 1, &filters, false)
+        .unwrap();
+
+    assert_eq!(result.total, 1);
+    assert_eq!(result.hits.len(), 1);
+    assert_eq!(result.hits[0].0.session_id(), "sess-149");
+}

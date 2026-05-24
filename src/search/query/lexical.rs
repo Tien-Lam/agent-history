@@ -1,11 +1,13 @@
 use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{Occur, Query, QueryParser};
-use tantivy::TantivyDocument;
+use tantivy::{Searcher, TantivyDocument};
 
 use super::combined_query;
 use crate::search::index::SearchIndex;
 use crate::search::types::{SearchError, SearchFilters, SearchHit};
 use crate::search::Explanation;
+
+const PROJECT_FILTER_PAGE_SIZE: usize = 128;
 
 pub(crate) struct SearchInnerOutput {
     pub(crate) hits: Vec<(SearchHit, Option<Explanation>)>,
@@ -85,40 +87,37 @@ impl SearchIndex {
                 total: 0,
             });
         }
+        if limit == 0 {
+            return Ok(SearchInnerOutput {
+                hits: Vec::new(),
+                total: 0,
+            });
+        }
 
         self.reader.reload()?;
         let searcher = self.reader.searcher();
         let combined = self.combined_search_query(query_str, filters)?;
 
         let project_needle = Self::project_filter_needle(filters);
-        let (top_docs, total) = if project_needle.is_some() {
-            // Project is post-filtered; over-fetch to keep results stable when
-            // a restrictive project filter would otherwise prune the limit-N
-            // window. Exact totals for this mode require materializing the
-            // post-filtered hit set, so callers keep using the full collection
-            // strategy when a project filter is present.
-            let fetch_limit = limit.saturating_mul(8).max(limit);
-            let top_docs = searcher.search(
-                &combined,
-                &TopDocs::with_limit(fetch_limit).order_by_score(),
-            )?;
-            (top_docs, 0)
-        } else {
-            searcher.search(
-                &combined,
-                &(TopDocs::with_limit(limit).order_by_score(), Count),
-            )?
-        };
+        if let Some(project_needle) = project_needle.as_deref() {
+            return self.search_project_filtered(
+                &searcher,
+                &*combined,
+                query_str,
+                limit,
+                project_needle,
+                explain,
+            );
+        }
+
+        let (top_docs, total) = searcher.search(
+            &combined,
+            &(TopDocs::with_limit(limit).order_by_score(), Count),
+        )?;
 
         let mut hits = Vec::with_capacity(top_docs.len().min(limit));
         for (score, addr) in top_docs {
-            if hits.len() >= limit {
-                break;
-            }
             let doc: TantivyDocument = searcher.doc(addr)?;
-            if !self.matches_project_filter(&doc, project_needle.as_deref()) {
-                continue;
-            }
             let hit = self.doc_to_hit(&doc, query_str, score);
             let explanation = if explain {
                 Some(combined.explain(&searcher, addr)?)
@@ -128,11 +127,56 @@ impl SearchIndex {
             hits.push((hit, explanation));
         }
 
-        let total = if project_needle.is_some() {
-            hits.len()
-        } else {
-            total
-        };
+        Ok(SearchInnerOutput { hits, total })
+    }
+
+    fn search_project_filtered(
+        &self,
+        searcher: &Searcher,
+        query: &dyn Query,
+        query_str: &str,
+        limit: usize,
+        project_needle: &str,
+        explain: bool,
+    ) -> Result<SearchInnerOutput, SearchError> {
+        let pre_filter_total = searcher.search(query, &Count)?;
+        let page_size = PROJECT_FILTER_PAGE_SIZE.max(limit);
+        let mut offset = 0usize;
+        let mut total = 0usize;
+        let mut hits = Vec::with_capacity(limit);
+
+        while offset < pre_filter_total {
+            let top_docs = searcher.search(
+                query,
+                &TopDocs::with_limit(page_size)
+                    .and_offset(offset)
+                    .order_by_score(),
+            )?;
+            if top_docs.is_empty() {
+                break;
+            }
+
+            for (score, addr) in top_docs {
+                let doc: TantivyDocument = searcher.doc(addr)?;
+                if !self.matches_project_filter(&doc, Some(project_needle)) {
+                    continue;
+                }
+                total = total.saturating_add(1);
+                if hits.len() >= limit {
+                    continue;
+                }
+
+                let hit = self.doc_to_hit(&doc, query_str, score);
+                let explanation = if explain {
+                    Some(query.explain(searcher, addr)?)
+                } else {
+                    None
+                };
+                hits.push((hit, explanation));
+            }
+
+            offset = offset.saturating_add(page_size);
+        }
 
         Ok(SearchInnerOutput { hits, total })
     }
