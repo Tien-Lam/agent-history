@@ -24,6 +24,14 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
     })
 }
 
+pub(crate) fn env_path(var: &str) -> Option<PathBuf> {
+    path_from_env_value(std::env::var_os(var))
+}
+
+pub(crate) fn env_var_is_non_empty(var: &str) -> bool {
+    env_value_is_non_empty(std::env::var_os(var))
+}
+
 pub(crate) fn discovery_error(provider: &'static str) -> impl Fn(std::io::Error) -> ProviderError {
     move |source| ProviderError::Discovery { provider, source }
 }
@@ -32,12 +40,17 @@ fn home_dir_from_env_value(
     override_home: Option<OsString>,
     fallback: impl FnOnce() -> Option<PathBuf>,
 ) -> Option<PathBuf> {
-    if let Some(home) = override_home {
-        if !home.is_empty() {
-            return Some(PathBuf::from(home));
-        }
-    }
-    fallback()
+    path_from_env_value(override_home).or_else(fallback)
+}
+
+fn path_from_env_value(override_path: Option<OsString>) -> Option<PathBuf> {
+    override_path
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+}
+
+fn env_value_is_non_empty(value: Option<OsString>) -> bool {
+    value.is_some_and(|value| !value.is_empty())
 }
 
 #[cfg(test)]
@@ -62,5 +75,25 @@ mod tests {
             )),
             Some(PathBuf::from("/override/home"))
         );
+    }
+
+    #[test]
+    fn path_from_env_value_ignores_empty_override() {
+        assert_eq!(path_from_env_value(Some(OsString::new())), None);
+    }
+
+    #[test]
+    fn path_from_env_value_uses_non_empty_override() {
+        assert_eq!(
+            path_from_env_value(Some(OsString::from("/override/path"))),
+            Some(PathBuf::from("/override/path"))
+        );
+    }
+
+    #[test]
+    fn env_value_is_non_empty_treats_empty_as_unset() {
+        assert!(!env_value_is_non_empty(None));
+        assert!(!env_value_is_non_empty(Some(OsString::new())));
+        assert!(env_value_is_non_empty(Some(OsString::from("/override"))));
     }
 }

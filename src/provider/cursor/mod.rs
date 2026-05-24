@@ -50,8 +50,8 @@ impl CursorProvider {
 fn base_dirs() -> Vec<PathBuf> {
     let mut result = Vec::new();
 
-    if let Ok(cursor_home) = std::env::var("CURSOR_HOME") {
-        result.push(PathBuf::from(cursor_home));
+    if let Some(cursor_home) = super::env_path("CURSOR_HOME") {
+        result.push(cursor_home);
     }
 
     if let Some(home) = super::home_dir() {
@@ -67,7 +67,7 @@ fn base_dirs() -> Vec<PathBuf> {
         result.push(home.join("AppData").join("Roaming").join("Cursor"));
     }
 
-    if std::env::var("AGHIST_HOME").is_err() {
+    if !super::env_var_is_non_empty("AGHIST_HOME") {
         if let Some(base) = directories::BaseDirs::new() {
             let appdata = base.config_dir().join("Cursor");
             if !result.iter().any(|p| p == &appdata) {

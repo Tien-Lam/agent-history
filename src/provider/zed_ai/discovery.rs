@@ -13,8 +13,8 @@ pub(super) const CONVERSATIONS_SUBDIR: &str = "conversations";
 pub(super) fn base_dirs() -> Vec<PathBuf> {
     let mut result: Vec<PathBuf> = Vec::new();
 
-    if let Ok(zed_home) = std::env::var("ZED_HOME") {
-        result.push(PathBuf::from(zed_home));
+    if let Some(zed_home) = super::super::env_path("ZED_HOME") {
+        result.push(zed_home);
     }
 
     if let Some(home) = super::super::home_dir() {
@@ -28,7 +28,7 @@ pub(super) fn base_dirs() -> Vec<PathBuf> {
         result.push(home.join("AppData").join("Roaming").join("Zed"));
     }
 
-    if std::env::var("AGHIST_HOME").is_err() {
+    if !super::super::env_var_is_non_empty("AGHIST_HOME") {
         if let Some(base) = directories::BaseDirs::new() {
             let appdata = base.config_dir().join("Zed");
             if !result.iter().any(|p| p == &appdata) {

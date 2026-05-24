@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use super::*;
@@ -77,5 +78,15 @@ fn release_marker_does_not_override_system_package_path() {
     assert_eq!(
         detect_install_source_with(&exe, None, None),
         InstallSource::SystemPackage
+    );
+}
+
+#[test]
+fn path_from_env_value_ignores_empty_override() {
+    assert_eq!(path_from_env_value(None), None);
+    assert_eq!(path_from_env_value(Some(OsString::new())), None);
+    assert_eq!(
+        path_from_env_value(Some(OsString::from("/tmp/cargo-home"))),
+        Some(PathBuf::from("/tmp/cargo-home"))
     );
 }

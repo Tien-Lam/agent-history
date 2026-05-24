@@ -11,8 +11,8 @@ pub(super) const SESSIONS_SUBDIR: &str = "sessions";
 pub(super) fn base_dirs() -> Vec<PathBuf> {
     let mut result: Vec<PathBuf> = Vec::new();
 
-    if let Ok(continue_home) = std::env::var("CONTINUE_HOME") {
-        result.push(PathBuf::from(continue_home));
+    if let Some(continue_home) = super::super::env_path("CONTINUE_HOME") {
+        result.push(continue_home);
         return result;
     }
 

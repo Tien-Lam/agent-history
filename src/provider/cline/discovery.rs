@@ -19,8 +19,8 @@ pub(super) fn tasks_dir(base: &Path) -> PathBuf {
 pub(super) fn base_dirs() -> Vec<PathBuf> {
     let mut result: Vec<PathBuf> = Vec::new();
 
-    if let Ok(cline_home) = std::env::var("CLINE_HOME") {
-        result.push(PathBuf::from(cline_home));
+    if let Some(cline_home) = super::super::env_path("CLINE_HOME") {
+        result.push(cline_home);
         return result;
     }
 

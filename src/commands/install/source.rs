@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 const INSTALL_MARKER_METHOD: &str = "method=github-release";
@@ -12,9 +13,13 @@ pub(super) enum InstallSource {
 }
 
 pub(super) fn detect_install_source(exe: &Path) -> InstallSource {
-    let cargo_home = std::env::var_os("CARGO_HOME").map(PathBuf::from);
+    let cargo_home = path_from_env_value(std::env::var_os("CARGO_HOME"));
     let home = directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
     detect_install_source_with(exe, cargo_home.as_deref(), home.as_deref())
+}
+
+fn path_from_env_value(value: Option<OsString>) -> Option<PathBuf> {
+    value.filter(|value| !value.is_empty()).map(PathBuf::from)
 }
 
 fn detect_install_source_with(

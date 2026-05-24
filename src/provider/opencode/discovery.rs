@@ -18,7 +18,7 @@ pub(super) fn base_dirs() -> Vec<PathBuf> {
         result.push(local_share);
     }
 
-    if std::env::var("AGHIST_HOME").is_err() {
+    if !super::super::env_var_is_non_empty("AGHIST_HOME") {
         // Also check platform-native data directories.
         if let Some(data_dir) =
             directories::ProjectDirs::from("", "", "opencode").map(|d| d.data_dir().to_path_buf())
@@ -37,8 +37,8 @@ pub(super) fn base_dirs() -> Vec<PathBuf> {
         }
     }
 
-    if let Ok(data_dir) = std::env::var("OPENCODE_DATA_DIR") {
-        result.push(PathBuf::from(data_dir));
+    if let Some(data_dir) = super::super::env_path("OPENCODE_DATA_DIR") {
+        result.push(data_dir);
     }
 
     result

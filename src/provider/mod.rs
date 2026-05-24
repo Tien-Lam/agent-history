@@ -23,4 +23,6 @@ pub use load::{
     ProviderParseStats,
 };
 
-pub(crate) use paths::{discovery_error, home_dir, project_name_from_path};
+pub(crate) use paths::{
+    discovery_error, env_path, env_var_is_non_empty, home_dir, project_name_from_path,
+};

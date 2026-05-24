@@ -32,8 +32,8 @@ fn base_dirs() -> Vec<PathBuf> {
     if let Some(home) = super::home_dir() {
         result.push(home.join(".codex").join("sessions"));
     }
-    if let Ok(codex_home) = std::env::var("CODEX_HOME") {
-        result.push(PathBuf::from(codex_home).join("sessions"));
+    if let Some(codex_home) = super::env_path("CODEX_HOME") {
+        result.push(codex_home.join("sessions"));
     }
     result
 }

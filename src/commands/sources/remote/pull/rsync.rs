@@ -8,7 +8,7 @@ pub(super) fn run_rsync_pull(
     data_dir: &Path,
     dry_run: bool,
 ) -> Result<(), ErrorEnvelope> {
-    let rsync_bin = std::env::var("AGHIST_RSYNC_BIN").unwrap_or_else(|_| "rsync".to_string());
+    let rsync_bin = rsync_bin_from_env(std::env::var("AGHIST_RSYNC_BIN").ok());
     let remote = build_rsync_remote_url(src);
     let mut local = data_dir.display().to_string();
     if !local.ends_with('/') {
@@ -49,6 +49,12 @@ pub(super) fn run_rsync_pull(
         "remote: {remote} - stderr: {}",
         stderr.lines().last().unwrap_or("").trim()
     )))
+}
+
+fn rsync_bin_from_env(value: Option<String>) -> String {
+    value
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "rsync".to_string())
 }
 
 fn build_rsync_remote_url(src: &config::RemoteSource) -> String {
@@ -92,6 +98,16 @@ mod tests {
         assert_eq!(
             build_rsync_remote_url(&src),
             "rsync://example.test/module/path/"
+        );
+    }
+
+    #[test]
+    fn rsync_bin_from_env_ignores_empty_override() {
+        assert_eq!(rsync_bin_from_env(None), "rsync");
+        assert_eq!(rsync_bin_from_env(Some(String::new())), "rsync");
+        assert_eq!(
+            rsync_bin_from_env(Some("custom-rsync".to_string())),
+            "custom-rsync"
         );
     }
 }
