@@ -137,7 +137,7 @@ jobs:
         run: |
           mkdir -p target/deny
           cargo metadata --format-version 1 > target/deny/default.json
-          cargo deny check --metadata-path target/deny/default.json --hide-inclusion-graph -A advisory-not-detected
+          cargo deny check --metadata-path target/deny/default.json --hide-inclusion-graph -A advisory-not-detected -A unmatched-skip
           cargo metadata --format-version 1 --all-features > target/deny/all-features.json
           cargo deny check --metadata-path target/deny/all-features.json --hide-inclusion-graph
 
