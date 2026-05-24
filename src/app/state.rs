@@ -50,7 +50,7 @@ impl App {
     }
 
     pub(super) fn display_count(&self) -> usize {
-        self.display_sessions().len()
+        self.display_session_indices().len()
     }
 
     pub(super) fn resolve_selected_session(
