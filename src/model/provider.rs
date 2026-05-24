@@ -42,11 +42,18 @@ impl<'de> serde::Deserialize<'de> for Provider {
 
 impl Provider {
     pub fn spec(self) -> ProviderSpec {
-        PROVIDER_SPECS
-            .iter()
-            .copied()
-            .find(|spec| spec.provider == self)
-            .expect("every Provider variant has a ProviderSpec")
+        match self {
+            Self::ClaudeCode => CLAUDE_CODE_SPEC,
+            Self::CopilotCli => COPILOT_CLI_SPEC,
+            Self::GeminiCli => GEMINI_CLI_SPEC,
+            Self::CodexCli => CODEX_CLI_SPEC,
+            Self::OpenCode => OPENCODE_SPEC,
+            Self::Cursor => CURSOR_SPEC,
+            Self::Aider => AIDER_SPEC,
+            Self::ZedAi => ZED_AI_SPEC,
+            Self::Cline => CLINE_SPEC,
+            Self::ContinueDev => CONTINUE_DEV_SPEC,
+        }
     }
 
     pub fn as_str(self) -> &'static str {

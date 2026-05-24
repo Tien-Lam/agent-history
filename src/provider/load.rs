@@ -111,7 +111,6 @@ pub fn load_messages_for_session(
     }
 
     registry::runtime_spec(session.provider)
-        .expect("every Provider variant has a runtime provider spec")
         .stateless()
         .load_messages(session)
 }

@@ -54,79 +54,106 @@ impl RuntimeProviderSpec {
     }
 }
 
+pub const CLAUDE_CODE_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: CLAUDE_CODE_SPEC,
+    detect: detect_claude_code,
+    from_dirs: claude_code_from_dirs,
+    remote_candidates: claude_code_remote_candidates,
+};
+
+pub const COPILOT_CLI_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: COPILOT_CLI_SPEC,
+    detect: detect_copilot_cli,
+    from_dirs: copilot_cli_from_dirs,
+    remote_candidates: copilot_cli_remote_candidates,
+};
+
+pub const GEMINI_CLI_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: GEMINI_CLI_SPEC,
+    detect: detect_gemini_cli,
+    from_dirs: gemini_cli_from_dirs,
+    remote_candidates: gemini_cli_remote_candidates,
+};
+
+pub const CODEX_CLI_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: CODEX_CLI_SPEC,
+    detect: detect_codex_cli,
+    from_dirs: codex_cli_from_dirs,
+    remote_candidates: codex_cli_remote_candidates,
+};
+
+pub const OPENCODE_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: OPENCODE_SPEC,
+    detect: detect_opencode,
+    from_dirs: opencode_from_dirs,
+    remote_candidates: opencode_remote_candidates,
+};
+
+pub const CURSOR_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: CURSOR_SPEC,
+    detect: detect_cursor,
+    from_dirs: cursor_from_dirs,
+    remote_candidates: cursor_remote_candidates,
+};
+
+pub const AIDER_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: AIDER_SPEC,
+    detect: detect_aider,
+    from_dirs: aider_from_dirs,
+    remote_candidates: aider_remote_candidates,
+};
+
+pub const ZED_AI_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: ZED_AI_SPEC,
+    detect: detect_zed_ai,
+    from_dirs: zed_ai_from_dirs,
+    remote_candidates: zed_ai_remote_candidates,
+};
+
+pub const CLINE_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: CLINE_SPEC,
+    detect: detect_cline,
+    from_dirs: cline_from_dirs,
+    remote_candidates: cline_remote_candidates,
+};
+
+pub const CONTINUE_DEV_RUNTIME_SPEC: RuntimeProviderSpec = RuntimeProviderSpec {
+    metadata: CONTINUE_DEV_SPEC,
+    detect: detect_continue_dev,
+    from_dirs: continue_dev_from_dirs,
+    remote_candidates: continue_dev_remote_candidates,
+};
+
 pub const RUNTIME_PROVIDER_SPECS: &[RuntimeProviderSpec] = &[
-    RuntimeProviderSpec {
-        metadata: CLAUDE_CODE_SPEC,
-        detect: detect_claude_code,
-        from_dirs: claude_code_from_dirs,
-        remote_candidates: claude_code_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: COPILOT_CLI_SPEC,
-        detect: detect_copilot_cli,
-        from_dirs: copilot_cli_from_dirs,
-        remote_candidates: copilot_cli_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: GEMINI_CLI_SPEC,
-        detect: detect_gemini_cli,
-        from_dirs: gemini_cli_from_dirs,
-        remote_candidates: gemini_cli_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: CODEX_CLI_SPEC,
-        detect: detect_codex_cli,
-        from_dirs: codex_cli_from_dirs,
-        remote_candidates: codex_cli_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: OPENCODE_SPEC,
-        detect: detect_opencode,
-        from_dirs: opencode_from_dirs,
-        remote_candidates: opencode_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: CURSOR_SPEC,
-        detect: detect_cursor,
-        from_dirs: cursor_from_dirs,
-        remote_candidates: cursor_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: AIDER_SPEC,
-        detect: detect_aider,
-        from_dirs: aider_from_dirs,
-        remote_candidates: aider_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: ZED_AI_SPEC,
-        detect: detect_zed_ai,
-        from_dirs: zed_ai_from_dirs,
-        remote_candidates: zed_ai_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: CLINE_SPEC,
-        detect: detect_cline,
-        from_dirs: cline_from_dirs,
-        remote_candidates: cline_remote_candidates,
-    },
-    RuntimeProviderSpec {
-        metadata: CONTINUE_DEV_SPEC,
-        detect: detect_continue_dev,
-        from_dirs: continue_dev_from_dirs,
-        remote_candidates: continue_dev_remote_candidates,
-    },
+    CLAUDE_CODE_RUNTIME_SPEC,
+    COPILOT_CLI_RUNTIME_SPEC,
+    GEMINI_CLI_RUNTIME_SPEC,
+    CODEX_CLI_RUNTIME_SPEC,
+    OPENCODE_RUNTIME_SPEC,
+    CURSOR_RUNTIME_SPEC,
+    AIDER_RUNTIME_SPEC,
+    ZED_AI_RUNTIME_SPEC,
+    CLINE_RUNTIME_SPEC,
+    CONTINUE_DEV_RUNTIME_SPEC,
 ];
 
-pub fn runtime_spec(provider: Provider) -> Option<&'static RuntimeProviderSpec> {
-    RUNTIME_PROVIDER_SPECS
-        .iter()
-        .find(|spec| spec.provider() == provider)
+pub fn runtime_spec(provider: Provider) -> &'static RuntimeProviderSpec {
+    match provider {
+        Provider::ClaudeCode => &CLAUDE_CODE_RUNTIME_SPEC,
+        Provider::CopilotCli => &COPILOT_CLI_RUNTIME_SPEC,
+        Provider::GeminiCli => &GEMINI_CLI_RUNTIME_SPEC,
+        Provider::CodexCli => &CODEX_CLI_RUNTIME_SPEC,
+        Provider::OpenCode => &OPENCODE_RUNTIME_SPEC,
+        Provider::Cursor => &CURSOR_RUNTIME_SPEC,
+        Provider::Aider => &AIDER_RUNTIME_SPEC,
+        Provider::ZedAi => &ZED_AI_RUNTIME_SPEC,
+        Provider::Cline => &CLINE_RUNTIME_SPEC,
+        Provider::ContinueDev => &CONTINUE_DEV_RUNTIME_SPEC,
+    }
 }
 
 pub fn provider_from_dirs(provider: Provider, dirs: Vec<PathBuf>) -> Box<dyn HistoryProvider> {
-    runtime_spec(provider)
-        .expect("every Provider has a RuntimeProviderSpec")
-        .from_dirs(dirs)
+    runtime_spec(provider).from_dirs(dirs)
 }
 
 /// Candidate base dirs for a provider rooted at a federated source cache.
@@ -134,9 +161,7 @@ pub fn provider_from_dirs(provider: Provider, dirs: Vec<PathBuf>) -> Box<dyn His
 /// The cache may contain either a full home directory or an exact provider
 /// history directory. Each provider gets both forms where applicable.
 pub fn remote_candidate_dirs(provider: Provider, root: &Path) -> Vec<PathBuf> {
-    runtime_spec(provider)
-        .expect("every Provider has a RuntimeProviderSpec")
-        .remote_candidate_dirs(root)
+    runtime_spec(provider).remote_candidate_dirs(root)
 }
 
 #[cfg(test)]
