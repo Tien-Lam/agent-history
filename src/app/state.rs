@@ -17,26 +17,36 @@ pub enum AppMode {
 }
 
 impl App {
-    pub(super) fn display_sessions(&self) -> Vec<&Session> {
-        let base: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
+    pub(super) fn display_session_indices(&self) -> Vec<usize> {
+        let base: Vec<usize> = if let Some(ref ids) = self.filtered_session_ids {
             ids.iter()
-                .filter_map(|id| self.sessions.iter().find(|s| s.identity_key() == *id))
+                .filter_map(|id| self.sessions.iter().position(|s| s.identity_key() == *id))
                 .collect()
         } else {
-            self.sessions.iter().collect()
+            (0..self.sessions.len()).collect()
         };
 
         let starred_only = self.filter.starred_only;
         let msg_ids = self.msg_filter_session_ids.as_ref();
         if self.filter.is_active() {
             base.into_iter()
-                .filter(|s| self.filter.matches(s))
-                .filter(|s| !starred_only || self.stars.is_starred(s.provider, &s.id.0))
-                .filter(|s| msg_ids.is_none_or(|ids| ids.contains(&s.identity_key())))
+                .filter(|&idx| {
+                    let session = &self.sessions[idx];
+                    self.filter.matches(session)
+                        && (!starred_only || self.stars.is_starred(session.provider, &session.id.0))
+                        && msg_ids.is_none_or(|ids| ids.contains(&session.identity_key()))
+                })
                 .collect()
         } else {
             base
         }
+    }
+
+    pub(super) fn display_sessions(&self) -> Vec<&Session> {
+        self.display_session_indices()
+            .into_iter()
+            .map(|idx| &self.sessions[idx])
+            .collect()
     }
 
     pub(super) fn display_count(&self) -> usize {

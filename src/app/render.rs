@@ -26,28 +26,11 @@ impl App {
             ])
             .split(main_layout[0]);
 
-        // Inline display computation so the resulting `Vec<&Session>` borrows
-        // only `self.sessions` — leaving `self.session_list`, `self.stars`,
-        // and `self.message_cache` free to be borrowed independently below.
-        let base: Vec<&Session> = if let Some(ref ids) = self.filtered_session_ids {
-            ids.iter()
-                .filter_map(|id| self.sessions.iter().find(|s| s.identity_key() == *id))
-                .collect()
-        } else {
-            self.sessions.iter().collect()
-        };
-        let display: Vec<&Session> = if self.filter.is_active() {
-            let starred_only = self.filter.starred_only;
-            let msg_ids = self.msg_filter_session_ids.as_ref();
-            let stars = &self.stars;
-            base.into_iter()
-                .filter(|s| self.filter.matches(s))
-                .filter(|s| !starred_only || stars.is_starred(s.provider, &s.id.0))
-                .filter(|s| msg_ids.is_none_or(|ids| ids.contains(&s.identity_key())))
-                .collect()
-        } else {
-            base
-        };
+        let display_indices = self.display_session_indices();
+        let display: Vec<&Session> = display_indices
+            .into_iter()
+            .map(|idx| &self.sessions[idx])
+            .collect();
 
         // Session list
         let list_focused = self.mode == AppMode::Browse || self.mode == AppMode::Search;
