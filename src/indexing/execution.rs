@@ -35,7 +35,7 @@ pub(super) fn build_index(
     scope: &query_scope::QueryScope,
     options: IndexingOptions,
 ) -> Result<search::IndexStats, ErrorEnvelope> {
-    let (tx, _rx) = crossbeam_channel::unbounded();
+    let (tx, _rx) = crossbeam_channel::bounded(1);
     // SearchIndex still needs the full provider list for message-loading
     // dispatch; the session set and pruning scope enforce the selected view.
     let result = if let Some(want) = options.provider_filter {

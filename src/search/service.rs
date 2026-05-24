@@ -96,7 +96,7 @@ impl<'a> SearchService<'a> {
         let index =
             SearchIndex::open_or_create(&self.index_dir).map_err(SearchServiceError::OpenIndex)?;
 
-        let (tx, _rx) = crossbeam_channel::unbounded::<Action>();
+        let (tx, _rx) = crossbeam_channel::bounded::<Action>(1);
         let stats = if let Some(scope) = request.provider_scope {
             index
                 .build_index_for_providers(sessions, self.providers, &tx, scope)

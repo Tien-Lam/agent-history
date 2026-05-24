@@ -138,9 +138,11 @@ impl IndexPass<'_> {
     }
 
     fn report_progress(&self, index: usize) {
+        // Progress is best-effort. Non-UI callers may intentionally pass a
+        // tiny, undrained channel because they only care about final stats.
         let _ = self
             .progress_tx
-            .send(Action::IndexProgress(index + 1, self.total));
+            .try_send(Action::IndexProgress(index + 1, self.total));
     }
 
     fn file_fingerprint(
