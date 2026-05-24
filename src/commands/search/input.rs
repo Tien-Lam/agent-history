@@ -2,14 +2,16 @@ use std::path::Path;
 
 use aghist::cli_error::ErrorEnvelope;
 
-use crate::commands::input::{read_text_input, TextInput, TextInputMessages};
+use crate::commands::input::{read_text_input_with_limit, TextInput, TextInputMessages};
+
+const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
 
 pub(super) fn resolve_search_query(
     query: Option<&str>,
     query_file: Option<&Path>,
     stdin: bool,
 ) -> Result<String, ErrorEnvelope> {
-    read_text_input(
+    read_text_input_with_limit(
         TextInput {
             inline: query,
             file: query_file,
@@ -23,6 +25,8 @@ pub(super) fn resolve_search_query(
             usage_hint: Some("Run `aghist search --help` for usage."),
         },
         true,
+        MAX_SEARCH_QUERY_BYTES,
+        "search query",
     )
 }
 
