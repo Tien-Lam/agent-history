@@ -114,3 +114,24 @@ fn decisions_llm_model_without_llm_flag_is_usage_error() {
         "hint should mention --llm: {stderr:?}"
     );
 }
+
+#[test]
+fn decisions_llm_rejects_blank_model_override() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = aghist()
+        .args(["decisions", "--llm", "--llm-model", " \t "])
+        .env("AGHIST_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("\"kind\":\"usage\""),
+        "stderr should be usage envelope, got: {stderr:?}"
+    );
+    assert!(
+        stderr.contains("LLM model must not be blank"),
+        "stderr should explain blank model rejection: {stderr:?}"
+    );
+}
