@@ -79,6 +79,30 @@ fn visit_jsonl_records_rejects_oversized_lines_and_continues() {
     assert!(errors[0].error.contains("byte limit"));
 }
 
+#[test]
+fn visit_jsonl_records_rejects_oversized_unterminated_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("data.jsonl");
+    std::fs::write(&path, "x".repeat(128)).unwrap();
+
+    let mut records = Vec::new();
+    let mut errors = Vec::new();
+    let stats = jsonl::visit_jsonl_records_with_max_line_bytes::<Row, _, _>(
+        &path,
+        16,
+        |record| records.push(record),
+        |error| errors.push(error),
+    )
+    .unwrap();
+
+    assert_eq!(stats.line_count, 1);
+    assert_eq!(stats.parse_errors, 1);
+    assert!(records.is_empty());
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].line_number, 1);
+    assert!(errors[0].error.contains("byte limit"));
+}
+
 proptest::proptest! {
     #[test]
     fn visit_jsonl_records_never_panics_on_arbitrary_lines(lines in proptest::collection::vec(any::<String>(), 0..40)) {

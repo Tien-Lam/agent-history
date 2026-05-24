@@ -136,13 +136,17 @@ fn read_bounded_line<R: BufRead>(
 }
 
 fn drain_line<R: BufRead>(reader: &mut R) -> Result<(), ProviderError> {
-    let mut discard = Vec::new();
     loop {
-        discard.clear();
-        let read = reader.read_until(b'\n', &mut discard)?;
-        if read == 0 || discard.ends_with(b"\n") {
+        let buffer = reader.fill_buf()?;
+        if buffer.is_empty() {
             return Ok(());
         }
+        if let Some(pos) = buffer.iter().position(|byte| *byte == b'\n') {
+            reader.consume(pos + 1);
+            return Ok(());
+        }
+        let len = buffer.len();
+        reader.consume(len);
     }
 }
 
