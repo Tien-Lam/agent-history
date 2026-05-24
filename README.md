@@ -85,8 +85,9 @@ aghist uninstall
 
 Removes a self-managed release binary installed by the shell script or extracted
 from an official release archive with `aghist.install` beside it, plus the
-search index and configuration file. Unknown files in the default configuration
-directory are preserved. For Cargo, package-manager, or manually copied installs
+search index and default configuration file. Unknown files in the default
+configuration directory are preserved, and explicit `AGHIST_CONFIG` override
+files are left alone. For Cargo, package-manager, or manually copied installs
 without the marker, uninstall the binary with that installer/process and remove
 the data directories manually if desired.
 

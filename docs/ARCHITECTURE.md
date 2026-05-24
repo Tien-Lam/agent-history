@@ -42,7 +42,7 @@ The dispatcher handles two broad execution paths:
 1. **TUI mode** (no subcommand, no `--list`) — sets up the terminal with crossterm, creates `App`, runs the event loop, then restores terminal state on exit.
 2. **One-shot CLI subcommands** — see the full surface in the [`README`](../README.md#agent-friendly-cli). Each subcommand emits stable JSON on a pipe, uses semantic exit codes, and has a discoverable JSON Schema (`aghist schema <subcmd>`).
 
-CLI parsing uses clap with derive macros. Configuration is loaded from `~/.config/aghist/config.toml` (or `%APPDATA%\aghist\config.toml` on Windows) via `Config::load()`. Providers are auto-detected, then filtered against the config's enabled list.
+CLI parsing uses clap with derive macros. Configuration is loaded from `~/.config/aghist/config.toml` (or `%APPDATA%\aghist\config.toml` on Windows) via `Config::try_load()`, so malformed config fails command startup instead of silently falling back to defaults. Providers are auto-detected, then filtered against the config's enabled list.
 
 ### Output discipline
 
@@ -254,8 +254,9 @@ Three output formats, all producing a complete standalone document:
 
 ## Release and install safety
 
-Release packaging is shared through `scripts/package-release.sh`. CI runs a
-release dry-run on every main/PR CI pass: build a self-updating release binary,
-package a synthetic archive, install it locally with `install.sh --archive`,
-verify the binary and `aghist.install` marker, then uninstall it. The tag
+Release packaging is shared through `scripts/package-release.sh`. Main/PR CI
+builds a self-updating release binary as the release dry-run. The separate
+Install Script workflow, triggered when installer or packaging scripts change,
+packages a synthetic archive, installs it locally with `install.sh --archive`,
+verifies the binary and `aghist.install` marker, then uninstalls it. The tag
 release workflow uses the same packaging script before publishing artifacts.

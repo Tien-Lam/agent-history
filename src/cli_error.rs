@@ -11,7 +11,7 @@
 //! | 2    | usage error (bad flags, parse failure) |
 //! | 3    | success but empty (no rows / no hits) |
 //!
-//! The canonical list of `kind` values lives in `AGENTS.md`.
+//! Error kinds are covered by the CLI/schema contract tests.
 
 use std::fmt;
 use std::io::{self, Write};
