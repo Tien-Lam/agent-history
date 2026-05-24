@@ -31,6 +31,12 @@ impl McpServer {
         )
         .map_err(|e| e.message)?;
 
+        if !outcome.summary.errors.is_empty() {
+            let errors = serde_json::to_string(&outcome.summary.errors)
+                .unwrap_or_else(|_| "<unserializable errors>".to_string());
+            return Err(format!("reindex completed with errors: {errors}"));
+        }
+
         serde_json::to_value(outcome.summary)
             .map_err(|e| format!("failed to serialize reindex summary: {e}"))
     }

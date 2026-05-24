@@ -10,7 +10,8 @@ impl McpServer {
         let mut discovery = if let Some(cache_root) = self.scope.sources_cache_root() {
             federated::discover_federated(&self.providers, self.scope.sources(), cache_root)
         } else {
-            let mut local = self.collect_local_discovery();
+            let mut local =
+                federated::discover_federated(&self.providers, &[], std::path::Path::new(""));
             if self.scope.has_remote_sources() {
                 local.failures.push(SourceFailure {
                     source: LOCAL_SOURCE.to_string(),
@@ -21,24 +22,6 @@ impl McpServer {
         };
         self.scope.retain_discovery(&mut discovery);
         discovery
-    }
-
-    fn collect_local_discovery(&self) -> FederatedDiscovery {
-        let mut all = Vec::new();
-        for p in &self.providers {
-            if let Ok(found) = p.discover_sessions() {
-                all.extend(found);
-            }
-        }
-        let source_by_session = all
-            .iter()
-            .map(|session| (session.identity_key(), LOCAL_SOURCE.to_string()))
-            .collect();
-        FederatedDiscovery {
-            sessions: all,
-            source_by_session,
-            failures: Vec::new(),
-        }
     }
 
     pub(in crate::mcp) fn provider_scope(&self) -> HashSet<Provider> {

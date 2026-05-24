@@ -98,6 +98,7 @@ fn index_schema_describes_summary_contract() {
     let response = &schema["response"];
     assert_eq!(response["additionalProperties"], false);
     for field in [
+        "status",
         "providers",
         "sessions_total",
         "added",

@@ -3,7 +3,8 @@ use std::path::Path;
 
 use super::*;
 use crate::config::{RemoteSource, Transport};
-use crate::provider::{claude_code::ClaudeCodeProvider, HistoryProvider};
+use crate::model::{Message, Provider, Session};
+use crate::provider::{claude_code::ClaudeCodeProvider, HistoryProvider, ProviderError};
 
 fn write_claude_fixture(home: &Path, session_id: &str) {
     let projects = home.join(".claude").join("projects").join("proj");
@@ -20,6 +21,29 @@ fn write_claude_fixture(home: &Path, session_id: &str) {
     std::fs::write(&history, format!("{entry}\n")).unwrap();
 }
 
+struct FailingProvider;
+
+impl HistoryProvider for FailingProvider {
+    fn provider(&self) -> Provider {
+        Provider::ClaudeCode
+    }
+
+    fn base_dirs(&self) -> &[std::path::PathBuf] {
+        &[]
+    }
+
+    fn discover_sessions(&self) -> Result<Vec<Session>, ProviderError> {
+        Err(ProviderError::Parse {
+            path: "bad-provider-state".into(),
+            reason: "fixture discovery failed".to_string(),
+        })
+    }
+
+    fn load_messages(&self, _session: &Session) -> Result<Vec<Message>, ProviderError> {
+        Ok(Vec::new())
+    }
+}
+
 #[test]
 fn local_only_when_no_sources_registered() {
     let tmp = tempfile::tempdir().unwrap();
@@ -34,6 +58,25 @@ fn local_only_when_no_sources_registered() {
     assert_eq!(result.sessions.len(), 1);
     assert_eq!(result.source_of_session(&result.sessions[0]), LOCAL_SOURCE);
     assert!(result.failures.is_empty());
+}
+
+#[test]
+fn local_provider_discovery_errors_are_reported() {
+    let providers: Vec<Box<dyn HistoryProvider>> = vec![Box::new(FailingProvider)];
+    let cache = tempfile::tempdir().unwrap();
+
+    let result = discover_federated(&providers, &[], cache.path());
+
+    assert!(result.sessions.is_empty());
+    assert_eq!(result.failures.len(), 1);
+    assert_eq!(result.failures[0].source, LOCAL_SOURCE);
+    assert!(
+        result.failures[0]
+            .message
+            .contains("provider 'claude-code' discovery failed"),
+        "{:?}",
+        result.failures
+    );
 }
 
 #[test]

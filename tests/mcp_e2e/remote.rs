@@ -86,6 +86,52 @@ fn mcp_remote_source_cache_round_trips_list_search_message_and_resource() {
     assert_remote_mcp_followup(&followup, &hit_ref);
 }
 
+#[test]
+fn mcp_reindex_remote_source_discovery_error_returns_tool_error() {
+    let workdir = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let config_path = workdir.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"[[sources]]
+name = "laptop"
+host = "laptop.local"
+path = "/home/x/.claude"
+transport = "ssh"
+"#,
+    )
+    .unwrap();
+    let missing_cache = workdir.path().join("missing-cache");
+
+    let responses = run_session_with_config_and_sources_cache(
+        home.path(),
+        Some(&config_path),
+        Some(&missing_cache),
+        &[serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "reindex",
+                "arguments": { "force": true }
+            }
+        })],
+    );
+
+    assert_eq!(responses.len(), 1, "got: {responses:#?}");
+    let result = &responses[0]["result"];
+    assert_eq!(result["isError"], true, "got: {result:#?}");
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("reindex completed with errors") && text.contains("laptop"),
+        "unexpected tool error: {text}"
+    );
+    assert!(
+        result.get("structuredContent").is_none(),
+        "error result should not expose successful structured content: {result:#?}"
+    );
+}
+
 fn assert_remote_mcp_initial_responses(responses: &[Value]) -> (String, String) {
     let sessions = responses[0]["result"]["structuredContent"]["sessions"]
         .as_array()

@@ -14,13 +14,29 @@ pub use remote::providers_rooted_at;
 pub(super) type DiscoveryOutcome = (String, Vec<Session>, Option<SourceFailure>);
 
 fn discover_local(local_providers: &[Box<dyn HistoryProvider>]) -> DiscoveryOutcome {
+    discover_provider_sessions(LOCAL_SOURCE, local_providers)
+}
+
+pub(super) fn discover_provider_sessions(
+    source: &str,
+    providers: &[Box<dyn HistoryProvider>],
+) -> DiscoveryOutcome {
     let mut sessions = Vec::new();
-    for p in local_providers {
-        if let Ok(found) = p.discover_sessions() {
-            sessions.extend(found);
+    let mut errors = Vec::new();
+    for p in providers {
+        match p.discover_sessions() {
+            Ok(found) => sessions.extend(found),
+            Err(error) => errors.push(format!(
+                "provider '{}' discovery failed: {error}",
+                p.provider().slug()
+            )),
         }
     }
-    (LOCAL_SOURCE.to_string(), sessions, None)
+    let failure = (!errors.is_empty()).then(|| SourceFailure {
+        source: source.to_string(),
+        message: errors.join("; "),
+    });
+    (source.to_string(), sessions, failure)
 }
 
 fn merge_discovery_outcomes(outcomes: Vec<DiscoveryOutcome>) -> FederatedDiscovery {

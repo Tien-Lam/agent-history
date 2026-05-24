@@ -83,21 +83,5 @@ pub(super) fn discover_remote(src: &RemoteSource, cache_root: &Path) -> Discover
         );
     }
     let providers = providers_rooted_at(&data_dir);
-    let mut sessions = Vec::new();
-    let mut first_err: Option<String> = None;
-    for p in &providers {
-        match p.discover_sessions() {
-            Ok(found) => sessions.extend(found),
-            Err(e) => {
-                if first_err.is_none() {
-                    first_err = Some(e.to_string());
-                }
-            }
-        }
-    }
-    let failure = first_err.map(|message| SourceFailure {
-        source: src.name.clone(),
-        message,
-    });
-    (src.name.clone(), sessions, failure)
+    super::discover_provider_sessions(&src.name, &providers)
 }

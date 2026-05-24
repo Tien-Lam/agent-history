@@ -1,4 +1,4 @@
-use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
+use aghist::cli_error::{ErrorEnvelope, EXIT_ERROR, EXIT_OK};
 use aghist::model::Provider;
 use aghist::output::write_json_line;
 use aghist::services::index::{self as index_service, IndexSummary};
@@ -13,8 +13,13 @@ pub(crate) fn run_index(
 ) -> Result<i32, ErrorEnvelope> {
     let summary =
         index_service::build_index_summary(providers, scope, filter, force, accept_download)?;
+    let exit_code = if summary.has_errors() {
+        EXIT_ERROR
+    } else {
+        EXIT_OK
+    };
     write_index_summary(&summary)?;
-    Ok(EXIT_OK)
+    Ok(exit_code)
 }
 
 fn write_index_summary(summary: &IndexSummary) -> Result<(), ErrorEnvelope> {

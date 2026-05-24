@@ -37,6 +37,10 @@ fn indexing_summary_response_schema() -> Value {
     closed_object_schema(
         schema_props([
             (
+                "status",
+                json!({ "type": "string", "enum": ["ok", "partial"] }),
+            ),
+            (
                 "providers",
                 json!({ "type": "array", "items": { "type": "string", "enum": provider_slug_enum() } }),
             ),
@@ -58,6 +62,7 @@ fn indexing_summary_response_schema() -> Value {
             ),
         ]),
         &[
+            "status",
             "providers",
             "sessions_total",
             "added",

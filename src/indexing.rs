@@ -34,6 +34,7 @@ pub struct IndexingOutcome {
 
 #[derive(Debug, Serialize)]
 pub struct IndexingSummary {
+    pub status: IndexingStatus,
     pub providers: Vec<String>,
     pub sessions_total: usize,
     pub added: usize,
@@ -45,6 +46,13 @@ pub struct IndexingSummary {
     pub index_dir: String,
     pub duration_ms: u64,
     pub errors: Vec<IndexingError>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IndexingStatus {
+    Ok,
+    Partial,
 }
 
 #[derive(Debug, Serialize)]
@@ -104,6 +112,11 @@ pub fn run_indexing(
     );
 
     let summary = IndexingSummary {
+        status: if errors.is_empty() {
+            IndexingStatus::Ok
+        } else {
+            IndexingStatus::Partial
+        },
         providers: provider_slugs(
             options.provider_filter,
             options.unfiltered_scope,

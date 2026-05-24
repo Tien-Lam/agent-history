@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::config::{self, Config, RemoteSource};
-use crate::federated::{self, FederatedDiscovery};
+use crate::federated::{self, FederatedDiscovery, SourceFailure, LOCAL_SOURCE};
 use crate::model::Provider;
 use crate::provider::{self, HistoryProvider};
 
@@ -92,7 +92,14 @@ impl QueryScope {
         let mut discovery = if let Some(cache_root) = self.sources_cache_root() {
             federated::discover_federated(local_providers, &self.sources, cache_root)
         } else {
-            federated::discover_federated(local_providers, &[], Path::new(""))
+            let mut local = federated::discover_federated(local_providers, &[], Path::new(""));
+            if self.has_remote_sources() {
+                local.failures.push(SourceFailure {
+                    source: LOCAL_SOURCE.to_string(),
+                    message: "sources cache dir unavailable".to_string(),
+                });
+            }
+            local
         };
         self.retain_discovery(&mut discovery);
         discovery

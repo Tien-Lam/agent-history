@@ -14,6 +14,12 @@ pub struct IndexSummary {
     embeddings: serde_json::Value,
 }
 
+impl IndexSummary {
+    pub fn has_errors(&self) -> bool {
+        !self.core.errors.is_empty()
+    }
+}
+
 pub fn build_index_summary(
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,

@@ -30,6 +30,7 @@ fn index_no_data_emits_zero_counts_json() {
         .success();
 
     let parsed = cli::assert_stdout_json(&output);
+    assert_eq!(parsed["status"], "ok");
     assert_eq!(parsed["added"], 0);
     assert_eq!(parsed["updated"], 0);
     assert_eq!(parsed["unchanged"], 0);
@@ -56,6 +57,7 @@ fn index_idempotent_second_run_reports_unchanged() {
         .assert()
         .success();
     let first_json = cli::assert_stdout_json(&first);
+    assert_eq!(first_json["status"], "ok");
     assert_eq!(
         first_json["added"], 1,
         "first run should classify session as 'added'"
@@ -71,6 +73,7 @@ fn index_idempotent_second_run_reports_unchanged() {
         .assert()
         .success();
     let second_json = cli::assert_stdout_json(&second);
+    assert_eq!(second_json["status"], "ok");
     assert_eq!(second_json["added"], 0);
     assert_eq!(second_json["updated"], 0);
     assert_eq!(
@@ -103,6 +106,7 @@ fn index_provider_filter_restricts_scope() {
         .assert()
         .success();
     let parsed = cli::assert_stdout_json(&output);
+    assert_eq!(parsed["status"], "ok");
     assert_eq!(parsed["providers"], serde_json::json!(["claude-code"]));
     assert_eq!(
         parsed["sessions_total"], 1,
@@ -132,6 +136,7 @@ fn index_provider_filter_includes_remote_cache_without_local_provider() {
         .success();
 
     let parsed = cli::assert_stdout_json(&output);
+    assert_eq!(parsed["status"], "ok");
     assert_eq!(parsed["providers"], serde_json::json!(["claude-code"]));
     assert_eq!(parsed["sessions_total"], 1);
     assert_eq!(parsed["added"], 1);
@@ -139,6 +144,43 @@ fn index_provider_filter_includes_remote_cache_without_local_provider() {
         parsed["messages_indexed"].as_u64().unwrap() >= 1,
         "remote session messages should be indexed: {parsed}"
     );
+}
+
+#[test]
+fn index_remote_source_discovery_error_exits_one_with_partial_summary() {
+    let home = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let config_path = workdir.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"[[sources]]
+name = "laptop"
+host = "laptop.local"
+path = "/home/x/.claude"
+transport = "ssh"
+"#,
+    )
+    .unwrap();
+    let cache_dir = workdir.path().join("cache");
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .arg("index")
+        .env("AGHIST_HOME", home.path())
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .assert()
+        .code(1);
+
+    let parsed = cli::assert_stdout_json(&output);
+    assert_eq!(parsed["status"], "partial");
+    assert_eq!(parsed["sessions_total"], 0);
+    assert_eq!(parsed["errors"][0]["source"], "laptop");
+    assert!(parsed["errors"][0]["error"]
+        .as_str()
+        .unwrap()
+        .contains("cache missing"));
 }
 
 #[test]
