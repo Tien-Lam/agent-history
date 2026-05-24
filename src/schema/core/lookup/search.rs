@@ -37,6 +37,10 @@ fn search_params_properties() -> SchemaProperties {
             json!({ "type": "boolean", "description": "Force JSON output (default: JSON on pipe, table on TTY)." }),
         ),
         (
+            "debug_search",
+            json!({ "type": "boolean", "description": "Include Tantivy score explanation trees on each hit." }),
+        ),
+        (
             "watch",
             json!({ "type": "boolean", "description": "Long-running NDJSON stream of new hits." }),
         ),

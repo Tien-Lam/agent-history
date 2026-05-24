@@ -114,6 +114,7 @@ pub(crate) struct SearchArgs {
     pub(crate) limit: usize,
     pub(crate) cursor: Option<String>,
     pub(crate) json: bool,
+    pub(crate) debug_search: bool,
     pub(crate) hybrid_weight: f32,
 }
 

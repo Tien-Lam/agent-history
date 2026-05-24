@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::super::common::{closed_object_schema, object_schema, provider_slug_enum, schema_props};
+use super::super::common::{closed_object_schema, provider_slug_enum, schema_props};
 
 fn index_error_schema() -> Value {
     json!({
@@ -24,13 +24,52 @@ fn index_error_schema() -> Value {
 }
 
 fn embeddings_status_schema() -> Value {
-    object_schema(
-        schema_props([(
-            "status",
-            json!({ "type": "string", "enum": ["disabled", "awaiting-consent", "enabled"] }),
-        )]),
-        &["status"],
-    )
+    json!({
+        "oneOf": [
+            closed_object_schema(
+                schema_props([
+                    ("status", json!({ "const": "disabled" })),
+                    ("reason", json!({ "type": "string" })),
+                    ("accept_download_requested", json!({ "type": "boolean" })),
+                ]),
+                &["status", "reason", "accept_download_requested"],
+            ),
+            closed_object_schema(
+                schema_props([
+                    ("status", json!({ "const": "awaiting-consent" })),
+                    ("model", json!({ "type": "string" })),
+                    ("hint", json!({ "type": "string" })),
+                ]),
+                &["status", "model", "hint"],
+            ),
+            closed_object_schema(
+                schema_props([
+                    ("status", json!({ "const": "enabled" })),
+                    ("model", json!({ "type": "string" })),
+                    ("dim", json!({ "type": "integer", "minimum": 1 })),
+                    ("messages_embedded", json!({ "type": "integer", "minimum": 0 })),
+                    ("messages_reused_from_cache", json!({ "type": "integer", "minimum": 0 })),
+                    ("messages_pruned_from_store", json!({ "type": "integer", "minimum": 0 })),
+                    ("messages_total_in_store", json!({ "type": "integer", "minimum": 0 })),
+                    ("evicted_old_schema", json!({ "type": "boolean" })),
+                    ("consent_accepted_at", json!({ "type": "string", "format": "date-time" })),
+                    ("errors", json!({ "type": "array", "items": { "type": "string" } })),
+                ]),
+                &[
+                    "status",
+                    "model",
+                    "dim",
+                    "messages_embedded",
+                    "messages_reused_from_cache",
+                    "messages_pruned_from_store",
+                    "messages_total_in_store",
+                    "evicted_old_schema",
+                    "consent_accepted_at",
+                    "errors",
+                ],
+            ),
+        ]
+    })
 }
 
 fn indexing_summary_response_schema() -> Value {

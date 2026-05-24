@@ -81,10 +81,12 @@ fn dispatch_one_shot_search(
             limit: args.limit,
             cursor: args.cursor,
             json: args.json,
+            debug_search,
             hybrid_weight: args.hybrid_weight,
         },
         args.params,
     )?;
+    let debug_search = debug_search || resolved.debug_search;
     search_command(
         providers,
         scope,

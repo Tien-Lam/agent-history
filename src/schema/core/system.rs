@@ -7,6 +7,192 @@ use super::super::common::{
 };
 use super::super::subcommands;
 
+fn source_row_schema() -> Value {
+    closed_object_schema(
+        schema_props([
+            ("provider", json!({ "type": "string" })),
+            (
+                "paths",
+                json!({ "type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string" },
+                        "exists": { "type": "boolean" },
+                        "bytes": { "type": "integer", "minimum": 0 }
+                    },
+                    "required": ["path", "exists", "bytes"],
+                    "additionalProperties": false
+                } }),
+            ),
+            ("session_count", json!({ "type": "integer", "minimum": 0 })),
+            ("total_bytes", json!({ "type": "integer", "minimum": 0 })),
+            ("discover_error", json!({ "type": ["string", "null"] })),
+        ]),
+        &[
+            "provider",
+            "paths",
+            "session_count",
+            "total_bytes",
+            "discover_error",
+        ],
+    )
+}
+
+fn remote_source_schema() -> Value {
+    closed_object_schema(
+        schema_props([
+            ("name", json!({ "type": "string" })),
+            ("host", json!({ "type": "string" })),
+            ("path", json!({ "type": "string" })),
+            (
+                "transport",
+                json!({ "type": "string", "enum": ["ssh", "rsync"] }),
+            ),
+        ]),
+        &["name", "host", "path", "transport"],
+    )
+}
+
+fn remote_sources_payload_schema() -> Value {
+    closed_object_schema(
+        schema_props([
+            (
+                "sources",
+                json!({ "type": "array", "items": remote_source_schema() }),
+            ),
+            ("config_path", json!({ "type": "string" })),
+        ]),
+        &["sources", "config_path"],
+    )
+}
+
+fn remote_source_mutation_response_schema(field: &'static str) -> Value {
+    closed_object_schema(
+        schema_props([
+            (field, remote_source_schema()),
+            ("config_path", json!({ "type": "string" })),
+        ]),
+        &[field, "config_path"],
+    )
+}
+
+fn pull_result_schema() -> Value {
+    closed_object_schema(
+        schema_props([
+            ("name", json!({ "type": "string" })),
+            ("host", json!({ "type": "string" })),
+            ("path", json!({ "type": "string" })),
+            (
+                "transport",
+                json!({ "type": "string", "enum": ["ssh", "rsync"] }),
+            ),
+            ("data_dir", json!({ "type": "string" })),
+            ("dry_run", json!({ "type": "boolean" })),
+            ("byte_count", json!({ "type": "integer", "minimum": 0 })),
+            ("file_count", json!({ "type": "integer", "minimum": 0 })),
+            (
+                "pulled_at",
+                json!({ "type": "string", "format": "date-time" }),
+            ),
+        ]),
+        &[
+            "name",
+            "host",
+            "path",
+            "transport",
+            "data_dir",
+            "dry_run",
+            "byte_count",
+            "file_count",
+            "pulled_at",
+        ],
+    )
+}
+
+fn pull_response_schema() -> Value {
+    json!({
+        "oneOf": [
+            closed_object_schema(
+                schema_props([
+                    ("results", json!({ "type": "array", "items": pull_result_schema() })),
+                    ("cache_dir", json!({ "type": "string" })),
+                ]),
+                &["results", "cache_dir"],
+            ),
+            {
+                "description": "NDJSON output (one pull result per line).",
+                "allOf": [pull_result_schema()]
+            }
+        ]
+    })
+}
+
+fn machine_output_params() -> [(&'static str, Value); 2] {
+    [
+        ("json", json!({ "type": "boolean" })),
+        ("ndjson", json!({ "type": "boolean" })),
+    ]
+}
+
+fn sources_subcommands_schema() -> Value {
+    json!({
+        "add": {
+            "description": "Register a new remote source and persist it to config.toml.",
+            "params": closed_object_schema(
+                schema_props([
+                    ("name", json!({ "type": "string" })),
+                    ("host", json!({ "type": "string" })),
+                    ("path", json!({ "type": "string" })),
+                    ("transport", json!({ "type": "string", "enum": ["ssh", "rsync"], "default": "ssh" })),
+                    ("json", json!({ "type": "boolean" })),
+                    ("ndjson", json!({ "type": "boolean" })),
+                ]),
+                &["name", "host", "path"],
+            ),
+            "response": remote_source_mutation_response_schema("added")
+        },
+        "list": {
+            "description": "List registered remote sources.",
+            "params": closed_object_schema(schema_props(machine_output_params()), &[]),
+            "response": {
+                "oneOf": [
+                    remote_sources_payload_schema(),
+                    {
+                        "description": "NDJSON output (one remote source per line).",
+                        "allOf": [remote_source_schema()]
+                    }
+                ]
+            }
+        },
+        "remove": {
+            "description": "Remove a registered remote source by name.",
+            "params": closed_object_schema(
+                schema_props([
+                    ("name", json!({ "type": "string" })),
+                    ("json", json!({ "type": "boolean" })),
+                    ("ndjson", json!({ "type": "boolean" })),
+                ]),
+                &["name"],
+            ),
+            "response": remote_source_mutation_response_schema("removed")
+        },
+        "pull": {
+            "description": "Pull one registered source, or all registered sources, into the local source cache.",
+            "params": closed_object_schema(
+                schema_props([
+                    ("name", json!({ "type": "string", "description": "Source name. Mutually exclusive with all." })),
+                    ("all", json!({ "type": "boolean", "description": "Pull every registered source." })),
+                    ("dry_run", json!({ "type": "boolean", "default": false })),
+                    ("json", json!({ "type": "boolean" })),
+                    ("ndjson", json!({ "type": "boolean" })),
+                ]),
+                &[],
+            ),
+            "response": pull_response_schema()
+        }
+    })
+}
+
 pub(in crate::schema) fn sources_schema() -> Value {
     json!({
         "$schema": SCHEMA_DRAFT,
@@ -41,30 +227,15 @@ pub(in crate::schema) fn sources_schema() -> Value {
                 },
                 {
                     "description": "NDJSON output (one source row per line).",
-                    "$ref": "#/definitions/SourceRow"
+                    "allOf": [source_row_schema()]
                 }
             ]
         },
+        "subcommands": sources_subcommands_schema(),
         "definitions": {
-            "SourceRow": {
-                "type": "object",
-                "properties": {
-                    "provider": { "type": "string" },
-                    "paths": { "type": "array", "items": {
-                        "type": "object",
-                        "properties": {
-                            "path": { "type": "string" },
-                            "exists": { "type": "boolean" },
-                            "bytes": { "type": "integer", "minimum": 0 }
-                        },
-                        "required": ["path", "exists", "bytes"]
-                    } },
-                    "session_count": { "type": "integer", "minimum": 0 },
-                    "total_bytes": { "type": "integer", "minimum": 0 },
-                    "discover_error": { "type": ["string", "null"] }
-                },
-                "required": ["provider", "paths", "session_count", "total_bytes"]
-            }
+            "SourceRow": source_row_schema(),
+            "RemoteSource": remote_source_schema(),
+            "PullResult": pull_result_schema()
         },
         "exit_codes": exit_codes()
     })
@@ -122,7 +293,7 @@ pub(in crate::schema) fn schema_schema() -> Value {
                     json!({
                         "type": "string",
                         "enum": subcommands(),
-                        "description": "Subcommand whose schema to emit. Use 'all' or '--list' on the CLI for index/dump."
+                        "description": "Subcommand whose schema to emit. Use `--all` or `--list` on the CLI for index/dump."
                     }),
                 ),
                 (

@@ -17,7 +17,7 @@ pub(crate) struct TrackCommand {
     #[arg(long)]
     pub(crate) json: bool,
 
-    /// Override the LLM model id (default: from `AGHIST_LLM_MODEL` or claude-haiku-4-5).
+    /// Override the LLM model id (default: from `AGHIST_LLM_MODEL` or claude-haiku-4-5-20251001).
     #[arg(long, value_name = "MODEL")]
     pub(crate) llm_model: Option<String>,
 }

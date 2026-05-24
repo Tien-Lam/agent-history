@@ -6,6 +6,7 @@ fn search_schema_describes_query_param() {
     let params = &schema["params"]["properties"];
     assert!(params["query"].is_object());
     assert!(params["limit"].is_object());
+    assert!(params["debug_search"].is_object());
     assert_eq!(
         params["limit"]["default"],
         serde_json::json!(crate::schema_fragments::SEARCH_LIMIT_DEFAULT)
@@ -121,10 +122,56 @@ fn index_schema_describes_summary_contract() {
             "index schema missing property for {field}"
         );
     }
-    assert_eq!(
-        response["properties"]["embeddings"]["properties"]["status"]["enum"],
-        serde_json::json!(["disabled", "awaiting-consent", "enabled"])
+    let variants = response["properties"]["embeddings"]["oneOf"]
+        .as_array()
+        .expect("embeddings schema variants");
+    let statuses: Vec<&str> = variants
+        .iter()
+        .map(|variant| {
+            variant["properties"]["status"]["const"]
+                .as_str()
+                .expect("status const")
+        })
+        .collect();
+    assert_eq!(statuses, vec!["disabled", "awaiting-consent", "enabled"]);
+    assert!(
+        variants[2]["properties"]["messages_total_in_store"].is_object(),
+        "enabled embeddings schema should document cache counters"
     );
+}
+
+#[test]
+fn sources_schema_describes_remote_registry_subcommands() {
+    let schema = schema_for("sources").unwrap();
+    let subcommands = schema["subcommands"]
+        .as_object()
+        .expect("sources schema subcommands");
+
+    for name in ["add", "list", "remove", "pull"] {
+        assert!(
+            subcommands.contains_key(name),
+            "sources schema missing subcommand {name}"
+        );
+        assert!(
+            subcommands[name]["params"].is_object(),
+            "sources {name} missing params schema"
+        );
+        assert!(
+            subcommands[name]["response"].is_object(),
+            "sources {name} missing response schema"
+        );
+    }
+
+    assert_eq!(
+        string_array(&subcommands["add"]["params"]["required"]),
+        vec!["name", "host", "path"]
+    );
+    assert_eq!(
+        string_array(&subcommands["remove"]["params"]["required"]),
+        vec!["name"]
+    );
+    assert!(subcommands["pull"]["params"]["properties"]["dry_run"].is_object());
+    assert!(subcommands["pull"]["response"]["oneOf"].is_array());
 }
 
 #[test]

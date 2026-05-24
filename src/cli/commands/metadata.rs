@@ -37,7 +37,7 @@ pub(crate) enum SourcesCommand {
     /// rsync. The cache root defaults to the platform cache dir (overridable
     /// via `AGHIST_SOURCES_CACHE_DIR`). After pulling, writes a per-source
     /// manifest with byte/file counts and the pull timestamp; downstream
-    /// indexing (federated search, ahist-y3o.6.3) consumes these.
+    /// indexing and federated search consume these.
     ///
     /// `--all` pulls every registered source in turn. Pass `--dry-run` to
     /// invoke rsync with `--dry-run` (no files written) - useful to validate

@@ -44,6 +44,8 @@ struct SearchParams {
     #[serde(default)]
     json: bool,
     #[serde(default)]
+    debug_search: bool,
+    #[serde(default)]
     hybrid_weight: f32,
 }
 
@@ -106,6 +108,7 @@ pub(super) fn resolve_search_params(json: &str) -> Result<SearchArgs, ErrorEnvel
         limit: p.limit,
         cursor: p.cursor,
         json: p.json,
+        debug_search: p.debug_search,
         hybrid_weight: p.hybrid_weight,
     })
 }

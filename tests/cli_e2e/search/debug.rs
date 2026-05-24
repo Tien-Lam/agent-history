@@ -48,6 +48,33 @@ fn search_debug_search_json_includes_explanation() {
 }
 
 #[test]
+fn search_params_debug_search_json_includes_explanation() {
+    let fixture = common::fixtures::claude::claude_single_session(4);
+    let home = fixture.base_path.parent().unwrap();
+    let index_dir = tempfile::tempdir().unwrap();
+
+    let output = aghist()
+        .args([
+            "search",
+            "--params",
+            r#"{"query":"User","json":true,"debug_search":true}"#,
+        ])
+        .env("AGHIST_HOME", home)
+        .env("AGHIST_INDEX_DIR", index_dir.path())
+        .output()
+        .unwrap();
+
+    cli::assert_success(&output);
+    let doc = cli::output_stdout_json(&output);
+    let arr = cli::json_array(&doc, "hits");
+    assert!(!arr.is_empty());
+    assert!(
+        arr[0].get("explanation").is_some(),
+        "--params debug_search must include explanation field"
+    );
+}
+
+#[test]
 fn search_without_debug_search_omits_explanation_field() {
     let fixture = common::fixtures::claude::claude_single_session(4);
     let home = fixture.base_path.parent().unwrap();

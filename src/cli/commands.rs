@@ -79,7 +79,7 @@ pub(crate) enum Command {
     /// `{summary, rationale, alternatives, ref}`. Configured via env:
     /// `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`),
     /// `AGHIST_LLM_ENDPOINT` (defaults to api.anthropic.com),
-    /// `AGHIST_LLM_MODEL` (defaults to claude-haiku-4-5). The system prompt
+    /// `AGHIST_LLM_MODEL` (defaults to claude-haiku-4-5-20251001). The system prompt
     /// is sent with `cache_control: ephemeral` so multi-session runs reuse
     /// Anthropic's prompt cache.
     Decisions(DecisionsCommand),

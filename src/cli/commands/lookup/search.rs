@@ -89,10 +89,11 @@ pub(crate) struct SearchCommand {
     )]
     pub(crate) hybrid_weight: f32,
 
-    /// JSON request body containing all params at once. Mutually exclusive
-    /// with other flags. Schema: `{query, limit?, json?, hybrid_weight?}`.
-    /// The `query` field carries the literal query string; use
-    /// `--query-file` / `--stdin` for file/stdin input.
+    /// JSON request body containing all one-shot params at once. Mutually
+    /// exclusive with other flags. Schema:
+    /// `{query, limit?, cursor?, json?, debug_search?, hybrid_weight?}`.
+    /// The `query` field carries the literal query string; use `--query-file`
+    /// / `--stdin` for file/stdin input.
     #[arg(long, value_name = "JSON")]
     pub(crate) params: Option<String>,
 }

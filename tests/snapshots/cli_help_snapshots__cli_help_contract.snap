@@ -208,7 +208,7 @@ Options:
           Substring match against the session's project name (case-insensitive)
 
       --params <JSON>
-          JSON request body containing all params at once. Mutually exclusive with other flags. Schema: `{query, limit?, json?, hybrid_weight?}`. The `query` field carries the literal query string; use `--query-file` / `--stdin` for file/stdin input
+          JSON request body containing all one-shot params at once. Mutually exclusive with other flags. Schema: `{query, limit?, cursor?, json?, debug_search?, hybrid_weight?}`. The `query` field carries the literal query string; use `--query-file` / `--stdin` for file/stdin input
 
       --role <ROLE>
           Restrict to messages with this role: `user`, `assistant`, or `tool`
@@ -328,7 +328,7 @@ Options:
 ===== sources pull =====
 Pull a remote source's history into a local cache via rsync.
 
-Mirrors `<host>:<path>/` to `<cache>/sources/<name>/data/` using rsync. The cache root defaults to the platform cache dir (overridable via `AGHIST_SOURCES_CACHE_DIR`). After pulling, writes a per-source manifest with byte/file counts and the pull timestamp; downstream indexing (federated search, ahist-y3o.6.3) consumes these.
+Mirrors `<host>:<path>/` to `<cache>/sources/<name>/data/` using rsync. The cache root defaults to the platform cache dir (overridable via `AGHIST_SOURCES_CACHE_DIR`). After pulling, writes a per-source manifest with byte/file counts and the pull timestamp; downstream indexing and federated search consume these.
 
 `--all` pulls every registered source in turn. Pass `--dry-run` to invoke rsync with `--dry-run` (no files written) - useful to validate connectivity without mutating the cache. The rsync binary can be overridden with `AGHIST_RSYNC_BIN` (used by tests; not for end users).
 
@@ -502,7 +502,7 @@ Options:
           Force JSON output (default: table on TTY, JSON on pipe)
 
       --llm-model <MODEL>
-          Override the LLM model id (default: from `AGHIST_LLM_MODEL` or claude-haiku-4-5)
+          Override the LLM model id (default: from `AGHIST_LLM_MODEL` or claude-haiku-4-5-20251001)
 
       --ndjson
           Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
@@ -542,7 +542,7 @@ Heuristic-extract candidate architectural decisions from sessions.
 
 Default path is the deterministic regex/marker heuristic: scores each sentence against decision-marker phrases (e.g. "we decided", "instead of") and returns ranked candidates with citation refs.
 
-Pass `--llm` to route the heuristic candidates through a Claude Messages API call that returns structured records of the form `{summary, rationale, alternatives, ref}`. Configured via env: `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`), `AGHIST_LLM_ENDPOINT` (defaults to api.anthropic.com), `AGHIST_LLM_MODEL` (defaults to claude-haiku-4-5). The system prompt is sent with `cache_control: ephemeral` so multi-session runs reuse Anthropic's prompt cache.
+Pass `--llm` to route the heuristic candidates through a Claude Messages API call that returns structured records of the form `{summary, rationale, alternatives, ref}`. Configured via env: `ANTHROPIC_API_KEY` (or `AGHIST_LLM_API_KEY`), `AGHIST_LLM_ENDPOINT` (defaults to api.anthropic.com), `AGHIST_LLM_MODEL` (defaults to claude-haiku-4-5-20251001). The system prompt is sent with `cache_control: ephemeral` so multi-session runs reuse Anthropic's prompt cache.
 
 Usage: aghist decisions [OPTIONS]
 
