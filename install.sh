@@ -21,6 +21,17 @@ Options:
 EOF
 }
 
+validate_release_tag() {
+    local tag="$1"
+    case "$tag" in
+        ""|*/*|*\\*|*..*|*[!A-Za-z0-9._+-]*)
+            echo "Error: release tag contains unsafe characters: $tag" >&2
+            echo "Allowed characters: ASCII letters, digits, '.', '_', '+', and '-'; no path separators or '..'." >&2
+            exit 1
+            ;;
+    esac
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --to)
@@ -92,6 +103,7 @@ if [ -z "$TAG" ] && [ -z "$ARCHIVE" ]; then
 elif [ -z "$TAG" ]; then
     TAG="local"
 fi
+validate_release_tag "$TAG"
 
 # Download and extract
 case "$TARGET" in

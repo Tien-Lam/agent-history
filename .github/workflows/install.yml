@@ -75,6 +75,18 @@ jobs:
           fi
           grep -q "unsafe archive filename" err.txt
 
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          printf '#!/usr/bin/env sh\nprintf "fake aghist\\n"\n' > "$tmp/aghist"
+          chmod +x "$tmp/aghist"
+          printf 'method=github-release\n' > "$tmp/aghist.install"
+          (cd "$tmp" && tar czf "$tmp/valid.tar.gz" aghist aghist.install)
+          if bash install.sh --to "$tmp/bin" --tag ../bad --archive "$tmp/valid.tar.gz" >out.txt 2>err.txt; then
+            echo "install.sh accepted an unsafe --tag value" >&2
+            exit 1
+          fi
+          grep -q "release tag contains unsafe characters" err.txt
+
       - name: Check install archive validation
         if: runner.os == 'Linux'
         run: |
