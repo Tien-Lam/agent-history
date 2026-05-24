@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod action;
 pub mod app;
 pub mod cli_error;

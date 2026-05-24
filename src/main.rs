@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use aghist::cli_error::{ErrorEnvelope, EXIT_USAGE};
 
 use std::path::PathBuf;
