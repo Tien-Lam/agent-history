@@ -70,7 +70,14 @@ impl SearchHit {
         snippet: String,
         score: f32,
     ) -> Self {
-        let message_key = note_id.map_or_else(String::new, |id| format!("note:{id}"));
+        let message_key = note_id.map_or_else(
+            || {
+                note_session_ref
+                    .as_deref()
+                    .map_or_else(String::new, |reference| format!("note-ref:{reference}"))
+            },
+            |id| format!("note:{id}"),
+        );
         Self {
             kind: HitKind::Note,
             session_key: String::new(),
@@ -128,3 +135,32 @@ pub struct SemanticCandidate {
 /// use; large enough to dampen the penalty for rank-1 vs rank-2 differences,
 /// small enough that rank still matters.
 pub const RRF_K: f32 = 60.0;
+
+#[cfg(test)]
+mod tests {
+    use super::SearchHit;
+
+    #[test]
+    fn note_hit_message_key_prefers_stable_note_id() {
+        let hit = SearchHit::note(
+            Some(42),
+            Some("laptop:claude-code/session-a#1".to_string()),
+            "body".to_string(),
+            1.0,
+        );
+
+        assert_eq!(hit.message_key(), "note:42");
+    }
+
+    #[test]
+    fn note_hit_message_key_falls_back_to_ref_when_id_missing() {
+        let hit = SearchHit::note(
+            None,
+            Some("laptop:claude-code/session-a#1".to_string()),
+            "body".to_string(),
+            1.0,
+        );
+
+        assert_eq!(hit.message_key(), "note-ref:laptop:claude-code/session-a#1");
+    }
+}
