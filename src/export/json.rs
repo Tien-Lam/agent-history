@@ -68,5 +68,5 @@ pub(crate) fn to_json_with_notes_for_session_ref(
         messages,
         notes: notes_field,
     })
-    .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
+    .unwrap_or_else(|e| serde_json::json!({ "error": e.to_string() }).to_string())
 }
