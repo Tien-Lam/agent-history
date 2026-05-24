@@ -1,3 +1,4 @@
+use proptest::prelude::*;
 use serde::Deserialize;
 
 use super::*;
@@ -45,6 +46,19 @@ fn visit_jsonl_records_skips_blank_lines_and_tracks_malformed_lines() {
     assert_eq!(records[1].value.value, "two");
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].line_number, 3);
+}
+
+proptest::proptest! {
+    #[test]
+    fn visit_jsonl_records_never_panics_on_arbitrary_lines(lines in proptest::collection::vec(any::<String>(), 0..40)) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("arbitrary.jsonl");
+        std::fs::write(&path, lines.join("\n")).unwrap();
+
+        let stats = visit_jsonl_records::<Row, _, _>(&path, |_| {}, |_| {}).unwrap();
+
+        prop_assert!(stats.parse_errors <= stats.line_count);
+    }
 }
 
 #[test]
