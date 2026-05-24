@@ -28,6 +28,13 @@ pub enum ConfigLoadError {
         #[source]
         source: Box<toml::de::Error>,
     },
+    #[error("unknown provider slug '{slug}' in {field} of {path}; expected one of: {expected}")]
+    UnknownProviderSlug {
+        path: PathBuf,
+        field: &'static str,
+        slug: String,
+        expected: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,31 +138,32 @@ impl Config {
                 source: Box::new(source),
             })?;
         config.normalize();
+        config.validate_provider_slugs(path)?;
         Ok(config)
     }
 
     pub fn load_from(path: &Path) -> Self {
-        let mut config: Self = match std::fs::read_to_string(path) {
-            Ok(contents) => match toml::from_str(&contents) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!(
-                        "warning: failed to parse {}: {e}; using defaults",
-                        path.display()
-                    );
-                    Self::default()
-                }
-            },
-            Err(_) => Self::default(),
-        };
-        config.normalize();
-        config
+        match Self::try_load_from(path) {
+            Ok(config) => config,
+            Err(error) => {
+                eprintln!("warning: failed to load config: {error}; using defaults");
+                Self::default()
+            }
+        }
     }
 
     fn normalize(&mut self) {
         if self.cache_size == 0 {
             self.cache_size = 1;
         }
+    }
+
+    fn validate_provider_slugs(&self, path: &Path) -> Result<(), ConfigLoadError> {
+        validate_provider_slug_list(path, "providers.enabled", &self.providers.enabled)?;
+        if let Some(exposed) = self.providers.mcp_exposed.as_ref() {
+            validate_provider_slug_list(path, "providers.mcp_exposed", exposed)?;
+        }
+        Ok(())
     }
 
     /// Serialize to TOML and write atomically to `path`. Creates the parent
@@ -179,9 +187,9 @@ impl Config {
     ///
     /// Resolution rules:
     /// - When `providers.mcp_exposed` is unset, fall back to `enabled_providers()`.
-    /// - When set, return the intersection with `enabled_providers()`. Slugs
-    ///   that aren't in `enabled` (or aren't valid providers) are silently
-    ///   dropped — narrowing only, no escalation.
+    /// - When set, return the intersection with `enabled_providers()`. Valid
+    ///   providers that aren't in `enabled` are dropped — narrowing only, no
+    ///   escalation.
     pub fn mcp_exposed_providers(&self) -> HashSet<Provider> {
         let enabled = self.enabled_providers();
         let Some(allow) = self.providers.mcp_exposed.as_ref() else {
@@ -193,4 +201,31 @@ impl Config {
             .filter(|p| enabled.contains(p))
             .collect()
     }
+}
+
+fn validate_provider_slug_list(
+    path: &Path,
+    field: &'static str,
+    slugs: &[String],
+) -> Result<(), ConfigLoadError> {
+    if let Some(slug) = slugs
+        .iter()
+        .find(|slug| Provider::from_slug(slug.as_str()).is_none())
+    {
+        return Err(ConfigLoadError::UnknownProviderSlug {
+            path: path.to_path_buf(),
+            field,
+            slug: slug.clone(),
+            expected: expected_provider_slugs(),
+        });
+    }
+    Ok(())
+}
+
+fn expected_provider_slugs() -> String {
+    Provider::all()
+        .iter()
+        .map(|provider| provider.slug())
+        .collect::<Vec<_>>()
+        .join(", ")
 }

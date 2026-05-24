@@ -103,7 +103,7 @@ fn partial_config_fills_defaults() {
 }
 
 #[test]
-fn unknown_provider_names_ignored() {
+fn strict_config_rejects_unknown_enabled_provider_slug() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     fs::write(
@@ -111,11 +111,11 @@ fn unknown_provider_names_ignored() {
         "[providers]\nenabled = [\"claude-code\", \"nonexistent-provider\"]\n",
     )
     .unwrap();
-    let config = Config::load_from(&path);
 
-    let enabled = config.enabled_providers();
-    assert_eq!(enabled.len(), 1);
-    assert!(enabled.contains(&Provider::ClaudeCode));
+    let error = Config::try_load_from(&path).unwrap_err().to_string();
+    assert!(error.contains("unknown provider slug 'nonexistent-provider'"));
+    assert!(error.contains("providers.enabled"));
+    assert!(error.contains("claude-code"));
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn mcp_exposed_empty_hides_all_from_mcp() {
 }
 
 #[test]
-fn mcp_exposed_unknown_slugs_are_ignored() {
+fn strict_config_rejects_unknown_mcp_exposed_provider_slug() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     fs::write(
@@ -213,11 +213,11 @@ fn mcp_exposed_unknown_slugs_are_ignored() {
          mcp_exposed = [\"claude-code\", \"made-up-provider\"]\n",
     )
     .unwrap();
-    let config = Config::load_from(&path);
 
-    let exposed = config.mcp_exposed_providers();
-    assert_eq!(exposed.len(), 1);
-    assert!(exposed.contains(&Provider::ClaudeCode));
+    let error = Config::try_load_from(&path).unwrap_err().to_string();
+    assert!(error.contains("unknown provider slug 'made-up-provider'"));
+    assert!(error.contains("providers.mcp_exposed"));
+    assert!(error.contains("claude-code"));
 }
 
 #[test]

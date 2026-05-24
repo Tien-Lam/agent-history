@@ -113,6 +113,29 @@ fn reindex_does_not_clear_index_on_config_error() {
 }
 
 #[test]
+fn unknown_provider_in_config_exits_with_config_error() {
+    let root = tempfile::tempdir().unwrap();
+    let config_path = root.path().join("bad-provider.toml");
+    std::fs::write(
+        &config_path,
+        "[providers]\nenabled = [\"claude-code\", \"made-up-provider\"]\n",
+    )
+    .unwrap();
+
+    let assert = aghist()
+        .arg("--list")
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .failure();
+    let parsed = cli::assert_stderr_error(&assert);
+
+    assert_eq!(parsed["error"]["kind"], "config-error");
+    let message = parsed["error"]["message"].as_str().unwrap();
+    assert!(message.contains("unknown provider slug 'made-up-provider'"));
+    assert!(message.contains("providers.enabled"));
+}
+
+#[test]
 fn reindex_reports_index_open_failure() {
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");

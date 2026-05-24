@@ -147,12 +147,12 @@ mod tests {
     }
 
     #[test]
-    fn enabled_scope_ignores_unknown_provider_slugs() {
+    fn enabled_scope_uses_validated_provider_set() {
         let config = Config {
             providers: ProviderConfig {
                 enabled: vec![
                     Provider::ClaudeCode.slug().to_string(),
-                    "made-up-provider".to_string(),
+                    Provider::CodexCli.slug().to_string(),
                 ],
                 mcp_exposed: None,
             },
@@ -160,7 +160,8 @@ mod tests {
         };
 
         let scope = QueryScope::enabled(&config);
-        assert_eq!(scope.providers().len(), 1);
+        assert_eq!(scope.providers().len(), 2);
         assert!(scope.contains_provider(Provider::ClaudeCode));
+        assert!(scope.contains_provider(Provider::CodexCli));
     }
 }
