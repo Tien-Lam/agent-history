@@ -13,7 +13,16 @@ fn schema_subcommand_includes_project() {
     let parsed: serde_json::Value =
         serde_json::from_str(std::str::from_utf8(&project_schema.stdout).unwrap().trim()).unwrap();
     assert_eq!(parsed["command"], "project");
-    assert_eq!(parsed["params"]["properties"]["name"]["minLength"], 1);
+    let props = &parsed["params"]["properties"];
+    assert_eq!(props["name"]["minLength"], 1);
+    assert_eq!(
+        props["decisions"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::REPORT_SECTION_LIMIT_MAX)
+    );
+    assert_eq!(
+        props["todos"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::REPORT_SECTION_LIMIT_MAX)
+    );
     let response = &parsed["response"]["properties"];
     assert!(response["session_count"].is_object());
     assert!(response["top_files"].is_object());
@@ -36,7 +45,15 @@ fn schema_subcommand_includes_report() {
     assert_eq!(parsed["command"], "report");
     let props = &parsed["params"]["properties"];
     assert_eq!(props["days"]["default"], 7);
+    assert_eq!(
+        props["days"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::REPORT_DAYS_MAX)
+    );
     assert_eq!(props["top_projects"]["default"], 3);
+    assert_eq!(
+        props["top_projects"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::REPORT_SECTION_LIMIT_MAX)
+    );
     let resp = &parsed["response"]["properties"];
     assert!(resp["window"].is_object());
     assert!(resp["top_projects"].is_object());
@@ -53,6 +70,37 @@ fn report_rejects_zero_days_flag() {
             .as_str()
             .unwrap()
             .contains("report days must be at least 1"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
+#[test]
+fn project_rejects_zero_section_limit_flag() {
+    let assert = aghist()
+        .args(["project", "alpha", "--todos", "0"])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("section limit must be at least 1"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
+#[test]
+fn report_rejects_zero_section_limit_flag() {
+    let assert = aghist().args(["report", "--todos", "0"]).assert().code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("section limit must be at least 1"),
         "unexpected error envelope: {envelope:#}"
     );
 }

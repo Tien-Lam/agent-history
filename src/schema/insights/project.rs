@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::REPORT_SECTION_LIMIT_MAX;
+
 use super::super::common::{
     closed_object_schema, exit_codes, schema_props_with_filters, SCHEMA_DRAFT,
 };
@@ -69,36 +71,40 @@ pub(in crate::schema) fn project_schema() -> Value {
                 "decisions",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
+                    "minimum": 1,
+                    "maximum": REPORT_SECTION_LIMIT_MAX,
                     "default": 5,
-                    "description": "Cap the decisions section (0 = no cap). Raw count remains in meta.decisions_total."
+                    "description": "Cap the decisions section. Raw count remains in meta.decisions_total."
                 }),
             ),
             (
                 "todos",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
+                    "minimum": 1,
+                    "maximum": REPORT_SECTION_LIMIT_MAX,
                     "default": 10,
-                    "description": "Cap the todos section (0 = no cap). Raw count remains in meta.todos_total."
+                    "description": "Cap the todos section. Raw count remains in meta.todos_total."
                 }),
             ),
             (
                 "threads",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
+                    "minimum": 1,
+                    "maximum": REPORT_SECTION_LIMIT_MAX,
                     "default": 5,
-                    "description": "Cap the threads section (0 = no cap). Raw count remains in meta.threads_total."
+                    "description": "Cap the threads section. Raw count remains in meta.threads_total."
                 }),
             ),
             (
                 "files",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
+                    "minimum": 1,
+                    "maximum": REPORT_SECTION_LIMIT_MAX,
                     "default": 10,
-                    "description": "Cap the top-files section (0 = no cap). Raw count remains in meta.files_total."
+                    "description": "Cap the top-files section. Raw count remains in meta.files_total."
                 }),
             ),
             (

@@ -73,7 +73,7 @@ pub(super) fn render_usage_human<W: io::Write>(
     if total_rows > report.rows.len() {
         writeln!(
             out,
-            "(showing {} of {} row(s) — pass --limit 0 for all)",
+            "(showing {} of {} row(s) — raise --limit to include more)",
             report.rows.len(),
             total_rows,
         )?;

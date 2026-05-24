@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::{USAGE_LIMIT_DEFAULT, USAGE_LIMIT_MAX};
+
 use super::super::common::{
     closed_object_schema, exit_codes, schema_props_with_filters, SCHEMA_DRAFT,
 };
@@ -20,9 +22,10 @@ fn usage_params_schema() -> Value {
                 "limit",
                 json!({
                     "type": "integer",
-                    "minimum": 0,
-                    "default": 0,
-                    "description": "Cap rows after sorting (0 = no limit). Totals always cover every matching session."
+                    "minimum": 1,
+                    "maximum": USAGE_LIMIT_MAX,
+                    "default": USAGE_LIMIT_DEFAULT,
+                    "description": "Cap rows after sorting. Totals always cover every matching session."
                 }),
             ),
             (

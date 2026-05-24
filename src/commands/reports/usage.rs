@@ -33,7 +33,7 @@ pub(crate) fn usage_command(
     }
 
     let total_rows = report.rows.len();
-    let trimmed = if limit > 0 && total_rows > limit {
+    let trimmed = if total_rows > limit {
         let mut r = report;
         r.rows.truncate(limit);
         r

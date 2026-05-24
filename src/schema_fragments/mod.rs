@@ -21,6 +21,11 @@ pub const ANALYSIS_THREADS_LIMIT_DEFAULT: usize = 50;
 pub const ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT: usize = 200;
 pub const ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX: usize = 1_000;
 
+pub const USAGE_LIMIT_DEFAULT: usize = 100;
+pub const USAGE_LIMIT_MAX: usize = 10_000;
+pub const REPORT_DAYS_MAX: i64 = 3_650;
+pub const REPORT_SECTION_LIMIT_MAX: usize = 10_000;
+
 pub const MCP_SEARCH_LIMIT_MAX: usize = 200;
 pub const MCP_LIST_LIMIT_DEFAULT: usize = 50;
 pub const MCP_LIST_LIMIT_MAX: usize = 1_000;

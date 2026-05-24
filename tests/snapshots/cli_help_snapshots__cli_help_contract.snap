@@ -494,7 +494,7 @@ Arguments:
 
 Options:
   -n, --limit <LIMIT>
-          Maximum sessions to scan for the topic (0 = no limit, default 50)
+          Maximum matching sessions to send to the LLM
           
           [default: 50]
 
@@ -616,7 +616,7 @@ Options:
           Restrict to one or more kinds. Repeat the flag, or comma-separate. Valid: `todo`, `follow-up`, `come-back-to`, `we-should`, `bd-ref`
 
   -n, --limit <LIMIT>
-          Maximum number of candidates to emit (0 = no limit)
+          Maximum number of candidates to emit
           
           [default: 200]
 
@@ -683,7 +683,7 @@ Options:
           [default: 1]
 
   -n, --limit <LIMIT>
-          Maximum number of threads to emit (0 = no limit)
+          Maximum number of threads to emit
           
           [default: 50]
 
@@ -1044,9 +1044,9 @@ Options:
           [default: model]
 
   -n, --limit <LIMIT>
-          Cap rows after sorting (0 = no limit). Totals always cover every matching session, even those clipped from `rows`
+          Cap rows after sorting. Totals always cover every matching session, even those clipped from `rows`
           
-          [default: 0]
+          [default: 100]
 
       --json
           Force JSON output (default: JSON on pipe, table on TTY)
@@ -1101,22 +1101,22 @@ Arguments:
 
 Options:
       --decisions <N>
-          Cap the decisions section. 0 = no cap
+          Cap the decisions section
           
           [default: 5]
 
       --todos <N>
-          Cap the todos section. 0 = no cap
+          Cap the todos section
           
           [default: 10]
 
       --threads <N>
-          Cap the threads section. 0 = no cap
+          Cap the threads section
           
           [default: 5]
 
       --files <N>
-          Cap the top-files section. 0 = no cap
+          Cap the top-files section
           
           [default: 10]
 
@@ -1176,12 +1176,12 @@ Options:
           Shorthand for `--days 30`
 
       --top-projects <N>
-          Cap the top-projects section. 0 = no cap
+          Cap the top-projects section
           
           [default: 3]
 
       --decisions <N>
-          Cap the decisions section. 0 = no cap
+          Cap the decisions section
           
           [default: 5]
 
@@ -1189,7 +1189,7 @@ Options:
           Force newline-delimited JSON output (for streaming commands). Mutually exclusive with --json
 
       --todos <N>
-          Cap the todos section. 0 = no cap
+          Cap the todos section
           
           [default: 10]
 
@@ -1197,7 +1197,7 @@ Options:
           Restrict to a single provider slug, e.g. `claude-code` or `codex-cli`
 
       --threads <N>
-          Cap the threads section. 0 = no cap
+          Cap the threads section
           
           [default: 5]
 

@@ -119,6 +119,21 @@ fn usage_invalid_by_value_emits_usage_envelope() {
         "expected error mentioning bad --by value, got: {stderr}"
     );
 }
+
+#[test]
+fn usage_rejects_zero_limit_flag() {
+    let assert = aghist().args(["usage", "--limit", "0"]).assert().code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("usage limit must be at least 1"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
 #[test]
 fn usage_limit_truncates_rows_but_totals_cover_all() {
     let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
@@ -156,6 +171,14 @@ fn schema_subcommand_includes_usage() {
         serde_json::from_str(std::str::from_utf8(&usage_schema.stdout).unwrap().trim()).unwrap();
     assert_eq!(parsed["command"], "usage");
     assert_eq!(parsed["params"]["properties"]["by"]["default"], "model");
+    assert_eq!(
+        parsed["params"]["properties"]["limit"]["default"],
+        serde_json::json!(aghist::schema_fragments::USAGE_LIMIT_DEFAULT)
+    );
+    assert_eq!(
+        parsed["params"]["properties"]["limit"]["maximum"],
+        serde_json::json!(aghist::schema_fragments::USAGE_LIMIT_MAX)
+    );
     let row_props = &parsed["definitions"]["UsageRow"]["properties"];
     assert!(row_props["cost_usd"].is_object());
     assert!(row_props["total_tokens"].is_object());
