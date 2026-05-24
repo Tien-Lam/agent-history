@@ -6,6 +6,7 @@ use aghist::provider::HistoryProvider;
 use tempfile::TempDir;
 
 use super::super::fixtures;
+use super::super::helpers::fixtures_dir;
 
 pub struct ProviderCase {
     pub label: &'static str,
@@ -66,4 +67,26 @@ pub fn generated_provider_cases(
         })
         .collect();
     GeneratedProviderCases { _dirs: dirs, cases }
+}
+
+pub fn static_fixture_provider_cases() -> Vec<ProviderCase> {
+    [
+        ("claude", Provider::ClaudeCode, "claude"),
+        ("copilot", Provider::CopilotCli, "copilot"),
+        ("copilot_v2", Provider::CopilotCli, "copilot_v2"),
+        ("codex", Provider::CodexCli, "codex"),
+        ("codex_v2", Provider::CodexCli, "codex_v2"),
+        ("opencode", Provider::OpenCode, "opencode"),
+        ("opencode_v2", Provider::OpenCode, "opencode_v2"),
+        ("gemini", Provider::GeminiCli, "gemini"),
+    ]
+    .into_iter()
+    .map(|(label, expected_provider, fixture_dir)| ProviderCase {
+        label,
+        provider: provider_from_dirs(expected_provider, vec![fixtures_dir().join(fixture_dir)]),
+        expected_provider,
+        expected_sessions: None,
+        expected_messages_per_session: None,
+    })
+    .collect()
 }

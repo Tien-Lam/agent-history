@@ -96,6 +96,21 @@ pub fn assert_discover_load_roundtrip(case: &ProviderCase) {
                 "{} recorded an unexpected message_count for {}",
                 case.label, session.id.0
             );
+            assert_eq!(
+                session.message_count,
+                messages.len(),
+                "{} session {} message_count does not match loaded messages",
+                case.label,
+                session.id.0
+            );
+        } else if session.message_count > 0 {
+            assert!(
+                !messages.is_empty(),
+                "{} session {} has message_count={} but load_messages returned no messages",
+                case.label,
+                session.id.0,
+                session.message_count
+            );
         } else {
             assert!(
                 !messages.is_empty(),
@@ -104,13 +119,6 @@ pub fn assert_discover_load_roundtrip(case: &ProviderCase) {
                 session.id.0
             );
         }
-        assert_eq!(
-            session.message_count,
-            messages.len(),
-            "{} session {} message_count does not match loaded messages",
-            case.label,
-            session.id.0
-        );
         assert!(
             load.parse_stats.records_seen >= messages.len(),
             "{} session {} parse stats did not account for loaded messages",

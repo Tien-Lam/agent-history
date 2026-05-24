@@ -5,7 +5,9 @@ use common::provider_conformance::assertions::{
     assert_discover_load_roundtrip, assert_missing_dir_discovers_empty,
     assert_registry_constructor_roundtrip, assert_stateless_loader_roundtrip,
 };
-use common::provider_conformance::cases::{generated_provider_cases, missing_dir_provider_cases};
+use common::provider_conformance::cases::{
+    generated_provider_cases, missing_dir_provider_cases, static_fixture_provider_cases,
+};
 use common::provider_conformance::contract::provider_contract_json;
 use std::panic::AssertUnwindSafe;
 
@@ -38,6 +40,13 @@ fn generated_providers_discover_and_load_messages() {
     let cases = generated_provider_cases(2, 4);
     for case in cases.cases() {
         assert_discover_load_roundtrip(case);
+    }
+}
+
+#[test]
+fn static_fixture_providers_discover_and_load_messages() {
+    for case in static_fixture_provider_cases() {
+        assert_discover_load_roundtrip(&case);
     }
 }
 
