@@ -58,6 +58,8 @@ pub enum EmbedError {
         len: usize,
         max: usize,
     },
+    #[error("embedding store encoded payload is too large: {len} bytes exceeds {max}")]
+    StoreTooLarge { len: usize, max: usize },
     #[cfg(feature = "embeddings")]
     #[error("fastembed error: {0}")]
     Fastembed(String),

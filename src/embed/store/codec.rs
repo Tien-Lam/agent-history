@@ -14,6 +14,7 @@ pub(super) const MAX_STRING_FIELD_BYTES: usize = u32::MAX as usize;
 pub(super) const MAX_MODEL_FIELD_BYTES: usize = 4 * 1024;
 pub(super) const MAX_MESSAGE_KEY_FIELD_BYTES: usize = 64 * 1024;
 pub(super) const MAX_EMBEDDING_DIM: u32 = 8192;
+pub(super) const MAX_EMBEDDING_STORE_BYTES: usize = 512 * 1024 * 1024;
 
 pub(super) struct DecodedStore {
     pub(super) dim: u32,
@@ -27,26 +28,31 @@ pub(super) fn encode(
     entries: &HashMap<String, Entry>,
 ) -> Result<Vec<u8>, EmbedError> {
     let dim_usize = checked_dim(dim)?;
-    let per_record = 4 + 32 + HASH_LEN + dim_usize * 4;
-    let mut out =
-        Vec::with_capacity(STORE_MAGIC.len() + 4 * 3 + model.len() + entries.len() * per_record);
-    out.extend_from_slice(STORE_MAGIC);
-    out.extend_from_slice(&STORE_VERSION.to_le_bytes());
-    out.extend_from_slice(&dim.to_le_bytes());
     let model_bytes = model.as_bytes();
-    out.extend_from_slice(
-        &bounded_u32_len("model", model_bytes, MAX_MODEL_FIELD_BYTES)?.to_le_bytes(),
-    );
-    out.extend_from_slice(model_bytes);
+    let model_len = bounded_u32_len("model", model_bytes, MAX_MODEL_FIELD_BYTES)?;
     // Stable order: sorting lets snapshots and fixture tests be deterministic.
     let mut ids: Vec<&String> = entries.keys().collect();
     ids.sort();
-    for id in ids {
+    let id_lens: Vec<u32> = ids
+        .iter()
+        .map(|id| bounded_u32_len("message key", id.as_bytes(), MAX_MESSAGE_KEY_FIELD_BYTES))
+        .collect::<Result<_, _>>()?;
+    let capacity = checked_encoded_capacity(
+        model_bytes.len(),
+        id_lens.iter().map(|len| *len as usize),
+        dim_usize,
+    )?;
+
+    let mut out = Vec::with_capacity(capacity);
+    out.extend_from_slice(STORE_MAGIC);
+    out.extend_from_slice(&STORE_VERSION.to_le_bytes());
+    out.extend_from_slice(&dim.to_le_bytes());
+    out.extend_from_slice(&model_len.to_le_bytes());
+    out.extend_from_slice(model_bytes);
+    for (id, id_len) in ids.into_iter().zip(id_lens) {
         let entry = &entries[id];
+        out.extend_from_slice(&id_len.to_le_bytes());
         let id_bytes = id.as_bytes();
-        out.extend_from_slice(
-            &bounded_u32_len("message key", id_bytes, MAX_MESSAGE_KEY_FIELD_BYTES)?.to_le_bytes(),
-        );
         out.extend_from_slice(id_bytes);
         out.extend_from_slice(&entry.hash);
         for f in &entry.vector {
@@ -141,6 +147,51 @@ fn checked_dim(dim: u32) -> Result<usize, EmbedError> {
         });
     }
     Ok(dim as usize)
+}
+
+pub(super) fn checked_encoded_capacity(
+    model_len: usize,
+    id_lens: impl IntoIterator<Item = usize>,
+    dim_usize: usize,
+) -> Result<usize, EmbedError> {
+    let header_len = checked_store_len_add(STORE_MAGIC.len(), 4 * 3)?;
+    let mut len = checked_store_len_add(header_len, model_len)?;
+    for id_len in id_lens {
+        len = checked_store_len_add(len, checked_record_len(id_len, dim_usize)?)?;
+        ensure_store_len(len)?;
+    }
+    ensure_store_len(len)
+}
+
+fn checked_record_len(id_len: usize, dim_usize: usize) -> Result<usize, EmbedError> {
+    let vector_bytes = checked_store_len_mul(dim_usize, 4)?;
+    let len = checked_store_len_add(4, id_len)?;
+    let len = checked_store_len_add(len, HASH_LEN)?;
+    checked_store_len_add(len, vector_bytes)
+}
+
+fn checked_store_len_mul(left: usize, right: usize) -> Result<usize, EmbedError> {
+    left.checked_mul(right)
+        .ok_or_else(|| store_too_large(usize::MAX))
+}
+
+fn checked_store_len_add(left: usize, right: usize) -> Result<usize, EmbedError> {
+    left.checked_add(right)
+        .ok_or_else(|| store_too_large(usize::MAX))
+}
+
+fn ensure_store_len(len: usize) -> Result<usize, EmbedError> {
+    if len > MAX_EMBEDDING_STORE_BYTES {
+        return Err(store_too_large(len));
+    }
+    Ok(len)
+}
+
+fn store_too_large(len: usize) -> EmbedError {
+    EmbedError::StoreTooLarge {
+        len,
+        max: MAX_EMBEDDING_STORE_BYTES,
+    }
 }
 
 struct Cursor<'a> {

@@ -4,8 +4,9 @@ use std::fs;
 use tempfile::tempdir;
 
 use super::codec::{
-    checked_field_len, MAX_EMBEDDING_DIM, MAX_MESSAGE_KEY_FIELD_BYTES, MAX_MODEL_FIELD_BYTES,
-    MAX_STRING_FIELD_BYTES, STORE_MAGIC, STORE_VERSION,
+    checked_encoded_capacity, checked_field_len, MAX_EMBEDDING_DIM, MAX_EMBEDDING_STORE_BYTES,
+    MAX_MESSAGE_KEY_FIELD_BYTES, MAX_MODEL_FIELD_BYTES, MAX_STRING_FIELD_BYTES, STORE_MAGIC,
+    STORE_VERSION,
 };
 use super::*;
 use crate::embed::{content_hash, DEFAULT_MODEL};
@@ -171,6 +172,27 @@ fn flush_rejects_oversized_message_keys() {
             len,
             max: MAX_MESSAGE_KEY_FIELD_BYTES,
         } if len == MAX_MESSAGE_KEY_FIELD_BYTES + 1
+    ));
+}
+
+#[test]
+fn checked_encoded_capacity_rejects_payloads_above_store_limit() {
+    let per_record = 4 + MAX_MESSAGE_KEY_FIELD_BYTES + HASH_LEN + 4;
+    let record_count = (MAX_EMBEDDING_STORE_BYTES / per_record) + 1;
+
+    let err = checked_encoded_capacity(
+        0,
+        std::iter::repeat_n(MAX_MESSAGE_KEY_FIELD_BYTES, record_count),
+        1,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        err,
+        EmbedError::StoreTooLarge {
+            len,
+            max: MAX_EMBEDDING_STORE_BYTES,
+        } if len > MAX_EMBEDDING_STORE_BYTES
     ));
 }
 
