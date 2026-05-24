@@ -48,11 +48,9 @@ pub(super) fn print_search_table(
     next_cursor: Option<&str>,
 ) -> io::Result<()> {
     let mut out = io::stdout().lock();
-    let any_remote = hits.iter().any(|(h, _)| {
-        source_by_session
-            .get(h.session_key())
-            .is_some_and(|s| s != federated::LOCAL_SOURCE)
-    });
+    let any_remote = hits
+        .iter()
+        .any(|(h, _)| hit_has_remote_source(h, source_by_session));
 
     if any_remote {
         writeln!(
@@ -84,6 +82,20 @@ pub(super) fn print_search_table(
         )?;
     }
     Ok(())
+}
+
+fn hit_has_remote_source(
+    hit: &search::SearchHit,
+    source_by_session: &HashMap<String, String>,
+) -> bool {
+    if matches!(hit.kind(), search::HitKind::Note) {
+        return aghist::dto::source_from_note_ref(hit.note_session_ref())
+            != federated::LOCAL_SOURCE;
+    }
+
+    source_by_session
+        .get(hit.session_key())
+        .is_some_and(|s| s != federated::LOCAL_SOURCE)
 }
 
 pub(super) fn write_watch_hit<W: Write>(
@@ -164,4 +176,49 @@ fn write_table_row<W: Write>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_note_hit_requests_source_column() {
+        let hit = search::SearchHit::note(
+            Some(7),
+            Some("laptop:claude-code/session-a#1".to_string()),
+            "remote note".to_string(),
+            1.0,
+        );
+
+        assert!(hit_has_remote_source(&hit, &HashMap::new()));
+    }
+
+    #[test]
+    fn local_note_hit_does_not_request_source_column() {
+        let hit = search::SearchHit::note(
+            Some(8),
+            Some("claude-code/session-a#1".to_string()),
+            "local note".to_string(),
+            1.0,
+        );
+
+        assert!(!hit_has_remote_source(&hit, &HashMap::new()));
+    }
+
+    #[test]
+    fn message_hit_uses_session_source_map() {
+        let hit = search::SearchHit::message(
+            "claude-code/session-a".to_string(),
+            "session-a".to_string(),
+            "claude-code/session-a#msg".to_string(),
+            "msg".to_string(),
+            "message".to_string(),
+            1.0,
+        );
+        let mut sources = HashMap::new();
+        sources.insert("claude-code/session-a".to_string(), "laptop".to_string());
+
+        assert!(hit_has_remote_source(&hit, &sources));
+    }
 }
