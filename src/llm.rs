@@ -30,7 +30,7 @@
 //! The system prompt is the largest static block per call. It's marked with
 //! `cache_control: ephemeral` so subsequent calls in the same invocation
 //! (one per session) hit Anthropic's prompt cache and pay near-zero for
-//! the system tokens. This is the cost lever called out in the bead.
+//! the system tokens. This is the main cost lever for the LLM-backed paths.
 //!
 //! ## Testability
 //!
