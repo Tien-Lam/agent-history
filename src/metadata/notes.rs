@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use crate::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES;
 
-use super::{refs::turn_prefix_like_pattern, validate_session_ref, MetadataError, Result};
+use super::{refs::SessionRefPredicate, validate_session_ref, MetadataError, Result};
 
 /// One row from the `notes` table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -80,22 +80,17 @@ pub fn note_list(conn: &Connection, filter: Option<&str>) -> Result<Vec<Note>> {
             rows.collect::<rusqlite::Result<Vec<_>>>()?
         }
         Some(raw) => {
-            validate_session_ref(raw)?;
-            if raw.contains('#') {
-                let sql = format!("SELECT {columns} FROM notes WHERE session_ref = ?1 {order}");
-                let mut stmt = conn.prepare(&sql)?;
-                let rows = stmt.query_map(params![raw], row_to_note)?;
-                rows.collect::<rusqlite::Result<Vec<_>>>()?
-            } else {
-                let prefix = turn_prefix_like_pattern(raw);
-                let sql = format!(
-                    "SELECT {columns} FROM notes \
-                     WHERE session_ref = ?1 OR session_ref LIKE ?2 ESCAPE '\\' {order}"
-                );
-                let mut stmt = conn.prepare(&sql)?;
-                let rows = stmt.query_map(params![raw, prefix], row_to_note)?;
-                rows.collect::<rusqlite::Result<Vec<_>>>()?
-            }
+            let predicate = SessionRefPredicate::parse(raw)?;
+            let sql = format!(
+                "SELECT {columns} FROM notes WHERE {} {order}",
+                predicate.clause()
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params_vec = predicate.params();
+            let param_refs: Vec<&dyn rusqlite::ToSql> =
+                params_vec.iter().map(AsRef::as_ref).collect();
+            let rows = stmt.query_map(param_refs.as_slice(), row_to_note)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
         }
     };
     Ok(notes)

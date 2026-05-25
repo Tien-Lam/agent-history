@@ -1,3 +1,5 @@
+use rusqlite::ToSql;
+
 use crate::config::validate_source_name;
 use crate::model::{split_source_prefix, CitationParseError, SessionOrTurnRef};
 use crate::schema_fragments::REFERENCE_MAX_BYTES;
@@ -57,6 +59,42 @@ pub(super) fn turn_prefix_like_pattern(session_ref: &str) -> String {
     let mut pattern = escape_like(session_ref);
     pattern.push_str("#%");
     pattern
+}
+
+pub(super) struct SessionRefPredicate {
+    session_ref: String,
+    turn_prefix: Option<String>,
+}
+
+impl SessionRefPredicate {
+    pub(super) fn parse(raw: &str) -> std::result::Result<Self, MetadataError> {
+        validate_session_ref(raw)?;
+        Ok(Self {
+            session_ref: raw.to_string(),
+            turn_prefix: (!raw.contains('#')).then(|| turn_prefix_like_pattern(raw)),
+        })
+    }
+
+    pub(super) fn clause(&self) -> &'static str {
+        if self.turn_prefix.is_some() {
+            "(session_ref = ? OR session_ref LIKE ? ESCAPE '\\')"
+        } else {
+            "session_ref = ?"
+        }
+    }
+
+    pub(super) fn params(&self) -> Vec<Box<dyn ToSql>> {
+        let mut params: Vec<Box<dyn ToSql>> = Vec::new();
+        self.append_params(&mut params);
+        params
+    }
+
+    pub(super) fn append_params(&self, params: &mut Vec<Box<dyn ToSql>>) {
+        params.push(Box::new(self.session_ref.clone()));
+        if let Some(prefix) = self.turn_prefix.as_ref() {
+            params.push(Box::new(prefix.clone()));
+        }
+    }
 }
 
 fn escape_like(value: &str) -> String {

@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use crate::schema_fragments::METADATA_TAG_MAX_BYTES;
 
-use super::{refs::turn_prefix_like_pattern, validate_session_ref, MetadataError, Result};
+use super::{refs::SessionRefPredicate, validate_session_ref, MetadataError, Result};
 
 /// One row from the `tags` table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -100,15 +100,9 @@ pub fn tag_list(
     let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
     if let Some(raw) = session_ref_filter {
-        validate_session_ref(raw)?;
-        if raw.contains('#') {
-            clauses.push("session_ref = ?");
-            params_vec.push(Box::new(raw.to_string()));
-        } else {
-            clauses.push("(session_ref = ? OR session_ref LIKE ? ESCAPE '\\')");
-            params_vec.push(Box::new(raw.to_string()));
-            params_vec.push(Box::new(turn_prefix_like_pattern(raw)));
-        }
+        let predicate = SessionRefPredicate::parse(raw)?;
+        clauses.push(predicate.clause());
+        predicate.append_params(&mut params_vec);
     }
     if let Some(raw) = tag_filter {
         let normalized = normalize_tag(raw)?;
