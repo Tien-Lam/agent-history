@@ -4,9 +4,8 @@ use aghist::model::ContentBlock;
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
-use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
 use crate::commands::filtering::{
-    load_messages_or_warn, metadata_filter_matches_source, PreparedFilters,
+    collect_filtered_federated_sessions, load_messages_or_warn, PreparedFilters,
 };
 
 /// Scan all providers for sessions mentioning `topic`, returning up to `limit` with excerpts.
@@ -20,18 +19,13 @@ pub(super) fn scan_topic_sessions(
 ) -> Vec<aghist::llm::TrackSession> {
     let needle = topic.to_lowercase();
     let mut matched: Vec<aghist::llm::TrackSession> = Vec::new();
-    let filters = PreparedFilters::from_args(filters);
+    let prepared_filters = PreparedFilters::from_args(filters);
 
-    let discovery = federated_discovery_for_commands(providers, scope);
-    for session in discovery.sessions {
-        if !filters.matches_session(&session) {
-            continue;
-        }
-        let source = source_for_session(&discovery.source_by_session, &session);
-        if !metadata_filter_matches_source(&session, source, metadata_keys) {
-            continue;
-        }
-        let Some(messages) = load_messages_or_warn(providers, source, &session) else {
+    let filtered = collect_filtered_federated_sessions(providers, scope, filters, metadata_keys);
+    for filtered_session in filtered.sessions {
+        let source = filtered_session.source;
+        let session = filtered_session.session;
+        let Some(messages) = load_messages_or_warn(providers, &source, &session) else {
             continue;
         };
         let mut excerpts: Vec<String> = Vec::new();
@@ -39,7 +33,7 @@ pub(super) fn scan_topic_sessions(
             if excerpts.len() >= 3 {
                 break;
             }
-            if !filters.matches_message(msg) {
+            if !prepared_filters.matches_message(msg) {
                 continue;
             }
             for block in &msg.content {
@@ -61,7 +55,7 @@ pub(super) fn scan_topic_sessions(
             continue;
         }
         matched.push(aghist::llm::TrackSession {
-            source: (source != aghist::federated::LOCAL_SOURCE).then(|| source.to_string()),
+            source: (source != aghist::federated::LOCAL_SOURCE).then_some(source),
             provider: session.provider,
             session_id: session.id.clone(),
             started_at: session.started_at,

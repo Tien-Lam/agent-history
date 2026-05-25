@@ -1,14 +1,16 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use aghist::cli_error::ErrorEnvelope;
+use aghist::federated::{FederatedDiscovery, SourceFailure};
 use aghist::metadata;
 use aghist::model::{Message, Session};
-use aghist::provider;
 use aghist::search::SearchFilters;
 use aghist::session_resolver;
 use aghist::session_warnings::SessionLoadWarning;
+use aghist::{provider, query_scope};
 
 use super::super::cli::FilterArgs;
+use super::discovery::federated_discovery_for_commands;
 use super::metadata::{metadata_error, open_metadata_db};
 
 /// Prepared command filters used by report and analysis paths that scan many
@@ -76,6 +78,68 @@ pub(crate) fn metadata_filter_matches_source(
     metadata_keys: Option<&HashSet<String>>,
 ) -> bool {
     session_resolver::metadata_filter_matches_source(session, source, metadata_keys)
+}
+
+pub(crate) struct FilteredSession {
+    pub(crate) source: String,
+    pub(crate) session: Session,
+}
+
+pub(crate) struct FilteredFederatedSessions {
+    pub(crate) sessions: Vec<FilteredSession>,
+    pub(crate) source_by_session: HashMap<String, String>,
+    pub(crate) failures: Vec<SourceFailure>,
+}
+
+impl FilteredFederatedSessions {
+    pub(crate) fn into_discovery(self) -> FederatedDiscovery {
+        FederatedDiscovery {
+            sessions: self
+                .sessions
+                .into_iter()
+                .map(|filtered| filtered.session)
+                .collect(),
+            source_by_session: self.source_by_session,
+            failures: self.failures,
+        }
+    }
+}
+
+pub(crate) fn collect_filtered_federated_sessions(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    scope: &query_scope::QueryScope,
+    filters: &FilterArgs,
+    metadata_keys: Option<&HashSet<String>>,
+) -> FilteredFederatedSessions {
+    let filters = PreparedFilters::from_args(filters);
+    let discovery = federated_discovery_for_commands(providers, scope);
+    let FederatedDiscovery {
+        sessions,
+        source_by_session,
+        failures,
+    } = discovery;
+    let sessions = sessions
+        .into_iter()
+        .filter_map(|session| {
+            if !filters.matches_session(&session) {
+                return None;
+            }
+            let source = session_resolver::source_for_session(&source_by_session, &session);
+            if !metadata_filter_matches_source(&session, source, metadata_keys) {
+                return None;
+            }
+            Some(FilteredSession {
+                source: source.to_string(),
+                session,
+            })
+        })
+        .collect();
+
+    FilteredFederatedSessions {
+        sessions,
+        source_by_session,
+        failures,
+    }
 }
 
 pub(crate) fn load_messages_or_warn(

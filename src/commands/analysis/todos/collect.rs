@@ -4,9 +4,8 @@ use aghist::todos::{self, TodoCandidate, TodoKind};
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
-use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
 use crate::commands::filtering::{
-    load_messages_or_warn, metadata_filter_matches_source, PreparedFilters,
+    collect_filtered_federated_sessions, load_messages_or_warn, PreparedFilters,
 };
 
 use super::TodoRow;
@@ -20,17 +19,12 @@ pub(super) fn collect_federated_todo_candidates(
 ) -> Vec<TodoRow> {
     let prepared_filters = PreparedFilters::from_args(filters);
 
-    let discovery = federated_discovery_for_commands(providers, scope);
+    let filtered = collect_filtered_federated_sessions(providers, scope, filters, metadata_keys);
     let mut candidates = Vec::new();
 
-    for session in discovery.sessions {
-        let source = source_for_session(&discovery.source_by_session, &session).to_string();
-        if !prepared_filters.matches_session(&session) {
-            continue;
-        }
-        if !metadata_filter_matches_source(&session, &source, metadata_keys) {
-            continue;
-        }
+    for filtered_session in filtered.sessions {
+        let source = filtered_session.source;
+        let session = filtered_session.session;
         let Some(messages) = load_messages_or_warn(providers, &source, &session) else {
             continue;
         };

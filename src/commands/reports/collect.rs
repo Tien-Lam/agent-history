@@ -3,10 +3,7 @@ use std::collections::{HashMap, HashSet};
 use aghist::model::{Message, Session};
 use aghist::{provider, query_scope};
 
-use super::super::discovery::{federated_discovery_for_commands, source_for_session};
-use super::super::filtering::{
-    load_messages_or_warn, metadata_filter_matches_source, PreparedFilters,
-};
+use super::super::filtering::{collect_filtered_federated_sessions, load_messages_or_warn};
 use crate::cli::FilterArgs;
 
 pub(super) type SessionBundle = (Session, Vec<Message>);
@@ -22,20 +19,10 @@ pub(super) fn collect_federated_filtered_sessions(
     filters: &FilterArgs,
     metadata_keys: Option<&HashSet<String>>,
 ) -> Vec<Session> {
-    let filters = PreparedFilters::from_args(filters);
-    let discovery = federated_discovery_for_commands(providers, scope);
-    let source_by_session = discovery.source_by_session;
-    discovery
+    collect_filtered_federated_sessions(providers, scope, filters, metadata_keys)
         .sessions
         .into_iter()
-        .filter(|session| filters.matches_session(session))
-        .filter(|session| {
-            metadata_filter_matches_source(
-                session,
-                source_for_session(&source_by_session, session),
-                metadata_keys,
-            )
-        })
+        .map(|filtered| filtered.session)
         .collect()
 }
 
@@ -46,32 +33,21 @@ pub(super) fn collect_federated_message_bundles(
     metadata_keys: Option<&HashSet<String>>,
     include_session: impl Fn(&Session) -> bool,
 ) -> FederatedSessionBundles {
-    let filters = PreparedFilters::from_args(filters);
-    let discovery = federated_discovery_for_commands(providers, scope);
-    let source_by_session = discovery.source_by_session;
+    let filtered = collect_filtered_federated_sessions(providers, scope, filters, metadata_keys);
     let mut bundles = Vec::new();
-    for session in discovery.sessions {
-        if !filters.matches_session(&session) {
-            continue;
-        }
-        if !metadata_filter_matches_source(
-            &session,
-            source_for_session(&source_by_session, &session),
-            metadata_keys,
-        ) {
-            continue;
-        }
+    for filtered_session in filtered.sessions {
+        let source = filtered_session.source;
+        let session = filtered_session.session;
         if !include_session(&session) {
             continue;
         }
-        let source = source_for_session(&source_by_session, &session);
-        let Some(messages) = load_messages_or_warn(providers, source, &session) else {
+        let Some(messages) = load_messages_or_warn(providers, &source, &session) else {
             continue;
         };
         bundles.push((session, messages));
     }
     FederatedSessionBundles {
         bundles,
-        source_by_session,
+        source_by_session: filtered.source_by_session,
     }
 }

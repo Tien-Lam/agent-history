@@ -3,9 +3,8 @@ use std::collections::HashSet;
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
-use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
 use crate::commands::filtering::{
-    load_messages_or_warn, metadata_filter_matches_source, PreparedFilters,
+    collect_filtered_federated_sessions, load_messages_or_warn, PreparedFilters,
 };
 
 use super::DecisionRow;
@@ -32,18 +31,15 @@ pub(super) fn collect_federated_decision_rows(
         metadata_keys,
         threshold,
     } = request;
-    let filters = PreparedFilters::from_args(filters);
-    let discovery = federated_discovery_for_commands(providers, scope);
+    let filter_args = filters;
+    let prepared_filters = PreparedFilters::from_args(filter_args);
+    let filtered =
+        collect_filtered_federated_sessions(providers, scope, filter_args, metadata_keys);
     let mut rows: Vec<DecisionRow> = Vec::new();
-    for session in discovery.sessions {
-        let source = source_for_session(&discovery.source_by_session, &session).to_string();
+    for filtered_session in filtered.sessions {
+        let source = filtered_session.source;
+        let session = filtered_session.session;
         if source_needle.is_some_and(|want| want != source) {
-            continue;
-        }
-        if !filters.matches_session(&session) {
-            continue;
-        }
-        if !metadata_filter_matches_source(&session, &source, metadata_keys) {
             continue;
         }
         if let Some(needle) = session_needle {
@@ -57,7 +53,7 @@ pub(super) fn collect_federated_decision_rows(
         let scored: Vec<_> = messages
             .iter()
             .enumerate()
-            .filter(|(_, message)| filters.matches_message(message))
+            .filter(|(_, message)| prepared_filters.matches_message(message))
             .collect();
         for (idx, msg) in scored {
             let turn = u32::try_from(idx + 1).unwrap_or(u32::MAX);
