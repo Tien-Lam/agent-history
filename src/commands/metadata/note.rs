@@ -12,7 +12,6 @@ mod output;
 use output::{emit_note_list, emit_note_payload};
 
 pub(crate) fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
-    let conn = open_metadata_db()?;
     match command {
         NoteCommand::Add {
             reference,
@@ -21,6 +20,7 @@ pub(crate) fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i3
             stdin,
         } => {
             let body = read_note_body(body.as_deref(), body_file.as_deref(), stdin)?;
+            let conn = open_metadata_db()?;
             let note =
                 metadata::note_add(&conn, &reference, &body).map_err(|e| metadata_error(&e))?;
             emit_note_payload(&note, "added", mode)?;
@@ -28,6 +28,7 @@ pub(crate) fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i3
         }
         NoteCommand::List { reference, json } => {
             let mode = if json { OutputMode::Json } else { mode };
+            let conn = open_metadata_db()?;
             let notes =
                 metadata::note_list(&conn, reference.as_deref()).map_err(|e| metadata_error(&e))?;
             emit_note_list(&notes, mode)?;
@@ -44,11 +45,13 @@ pub(crate) fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i3
             stdin,
         } => {
             let body = read_note_body(body.as_deref(), body_file.as_deref(), stdin)?;
+            let conn = open_metadata_db()?;
             let note = metadata::note_edit(&conn, id, &body).map_err(|e| metadata_error(&e))?;
             emit_note_payload(&note, "updated", mode)?;
             Ok(EXIT_OK)
         }
         NoteCommand::Remove { id } => {
+            let conn = open_metadata_db()?;
             let note = metadata::note_remove(&conn, id).map_err(|e| metadata_error(&e))?;
             emit_note_payload(&note, "removed", mode)?;
             Ok(EXIT_OK)
