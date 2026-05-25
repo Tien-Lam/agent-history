@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use rusqlite::{params, Connection};
 
+use crate::schema_fragments::METADATA_NOTE_FILTER_MAX_BYTES;
+
 use super::refs::session_key_from_ref;
 use super::tags::normalize_tag;
 use super::{MetadataError, Result};
@@ -30,6 +32,12 @@ pub fn filter_session_keys(
         let needle = needle.trim();
         if needle.is_empty() {
             return Err(MetadataError::EmptyBody);
+        }
+        if needle.len() > METADATA_NOTE_FILTER_MAX_BYTES {
+            return Err(MetadataError::NoteFilterTooLong {
+                bytes: needle.len(),
+                max_bytes: METADATA_NOTE_FILTER_MAX_BYTES,
+            });
         }
         let pattern = format!("%{needle}%");
         let mut stmt = conn

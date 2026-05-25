@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::METADATA_TAG_MAX_BYTES;
+
 use super::super::common::{
     closed_object_schema, count_array_response, exit_codes, object_schema, schema_props,
     schema_ref, source_qualified_session_ref_pattern, with_description, SCHEMA_DRAFT,
@@ -21,7 +23,7 @@ fn tag_row_schema() -> Value {
                     "description": "<provider>/<session-id>[#<turn>] or <source>:<provider>/<session-id>[#<turn>]"
                 }),
             ),
-            ("tag", json!({ "type": "string", "minLength": 1 })),
+            ("tag", tag_value_schema()),
             (
                 "created_at",
                 json!({ "type": "string", "description": "ISO-8601 UTC, sub-second precision." }),
@@ -42,7 +44,7 @@ fn tag_subcommands_schema() -> Value {
             "description": "List tags, optionally filtered by session ref and/or tag value. Session-level filter matches the session row plus all of its turns; turn-level filter matches that turn exactly. `tag` filter narrows to a specific tag value and combines with the ref filter.",
             "params": closed_object_schema(schema_props([
                 ("reference", session_ref_param_schema()),
-                ("tag", json!({ "type": "string", "minLength": 1 })),
+                ("tag", tag_value_schema()),
                 ("json", json!({ "type": "boolean" }))
             ]), &[]),
             "response": count_array_response("tags", "#/definitions/Tag")
@@ -59,10 +61,18 @@ fn tag_mutation_params_schema() -> Value {
     closed_object_schema(
         schema_props([
             ("reference", session_ref_param_schema()),
-            ("tag", json!({ "type": "string", "minLength": 1 })),
+            ("tag", tag_value_schema()),
         ]),
         &["reference", "tag"],
     )
+}
+
+fn tag_value_schema() -> Value {
+    json!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": METADATA_TAG_MAX_BYTES
+    })
 }
 
 fn tag_row_response_schema(field: &'static str) -> Value {

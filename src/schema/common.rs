@@ -106,6 +106,7 @@ pub(super) fn filter_params_fragment() -> Vec<(&'static str, Value)> {
             "note",
             json!({
                 "type": "string",
+                "maxLength": schema_fragments::METADATA_NOTE_FILTER_MAX_BYTES,
                 "description": "Keep only sessions that have a user note whose body contains this case-insensitive substring (session-level OR any of its turns). Backed by the metadata sidecar."
             }),
         ),
@@ -113,6 +114,7 @@ pub(super) fn filter_params_fragment() -> Vec<(&'static str, Value)> {
             "tag",
             json!({
                 "type": "string",
+                "maxLength": schema_fragments::METADATA_TAG_MAX_BYTES,
                 "description": "Keep only sessions with this exact tag attached (session-level OR any of its turns). Backed by the metadata sidecar."
             }),
         ),

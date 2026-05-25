@@ -52,10 +52,16 @@ pub enum MetadataError {
     InvalidSessionRef(String, &'static str),
     #[error("note body must not be empty")]
     EmptyBody,
+    #[error("note body exceeds {max_bytes} byte limit ({bytes} bytes)")]
+    BodyTooLong { bytes: usize, max_bytes: usize },
+    #[error("note filter exceeds {max_bytes} byte limit ({bytes} bytes)")]
+    NoteFilterTooLong { bytes: usize, max_bytes: usize },
     #[error("note id {0} not found")]
     NoteNotFound(i64),
     #[error("tag must not be empty")]
     EmptyTag,
+    #[error("tag exceeds {max_bytes} byte limit ({bytes} bytes)")]
+    TagTooLong { bytes: usize, max_bytes: usize },
     #[error("tag '{tag}' is already attached to {session_ref}")]
     TagAlreadyExists { session_ref: String, tag: String },
     #[error("tag '{tag}' is not attached to {session_ref}")]

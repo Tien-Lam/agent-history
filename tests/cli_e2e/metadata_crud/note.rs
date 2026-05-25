@@ -196,6 +196,33 @@ fn note_add_rejects_invalid_ref_with_envelope() {
     let env: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(env["error"]["kind"], "invalid-ref");
 }
+
+#[test]
+fn note_add_rejects_oversized_body_with_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("metadata.db");
+    let body_file = dir.path().join("oversized-note.txt");
+    let oversized = "x".repeat(aghist::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES + 1);
+    std::fs::write(&body_file, oversized).unwrap();
+
+    let assert = note_env(&db)
+        .args(["note", "add", "claude-code/abc", "--body-file"])
+        .arg(&body_file)
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+    let env: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(env["error"]["kind"], "usage");
+    assert!(
+        env["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("note body exceeds"),
+        "unexpected error envelope: {env:#}"
+    );
+}
+
 #[test]
 fn note_add_reads_body_from_stdin() {
     use std::io::Write as _;
@@ -240,4 +267,16 @@ fn schema_subcommand_includes_note() {
     assert!(parsed["subcommands"]["list"].is_object());
     assert!(parsed["subcommands"]["edit"].is_object());
     assert!(parsed["subcommands"]["remove"].is_object());
+    assert_eq!(
+        parsed["subcommands"]["add"]["params"]["properties"]["body"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES)
+    );
+    assert_eq!(
+        parsed["subcommands"]["edit"]["params"]["properties"]["body"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES)
+    );
+    assert_eq!(
+        parsed["definitions"]["Note"]["properties"]["body"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES)
+    );
 }

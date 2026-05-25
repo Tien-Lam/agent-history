@@ -26,6 +26,10 @@ pub const LLM_ENDPOINT_MAX_BYTES: usize = 2_048;
 pub const LLM_MODEL_MAX_BYTES: usize = 256;
 pub const LLM_VERSION_MAX_BYTES: usize = 128;
 
+pub const METADATA_TAG_MAX_BYTES: usize = 1_024;
+pub const METADATA_NOTE_BODY_MAX_BYTES: usize = 1024 * 1024;
+pub const METADATA_NOTE_FILTER_MAX_BYTES: usize = 1_024;
+
 pub const USAGE_LIMIT_DEFAULT: usize = 100;
 pub const USAGE_LIMIT_MAX: usize = 10_000;
 pub const REPORT_DAYS_MAX: i64 = 3_650;

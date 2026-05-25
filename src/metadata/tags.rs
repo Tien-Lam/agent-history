@@ -1,6 +1,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
+use crate::schema_fragments::METADATA_TAG_MAX_BYTES;
+
 use super::{refs::turn_prefix_like_pattern, validate_session_ref, MetadataError, Result};
 
 /// One row from the `tags` table.
@@ -24,12 +26,18 @@ fn row_to_tag(row: &rusqlite::Row<'_>) -> rusqlite::Result<Tag> {
 }
 
 /// Trim and validate a tag value. Tags are user-supplied labels; aghist only
-/// requires that they be non-empty after trimming. Uniqueness per
-/// `session_ref` is enforced by the schema.
+/// requires that they be non-empty after trimming and fit within the public
+/// schema limit. Uniqueness per `session_ref` is enforced by the schema.
 pub(super) fn normalize_tag(tag: &str) -> Result<&str> {
     let trimmed = tag.trim();
     if trimmed.is_empty() {
         return Err(MetadataError::EmptyTag);
+    }
+    if trimmed.len() > METADATA_TAG_MAX_BYTES {
+        return Err(MetadataError::TagTooLong {
+            bytes: trimmed.len(),
+            max_bytes: METADATA_TAG_MAX_BYTES,
+        });
     }
     Ok(trimmed)
 }

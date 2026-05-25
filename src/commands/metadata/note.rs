@@ -1,6 +1,7 @@
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::metadata;
 use aghist::output::OutputMode;
+use aghist::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES;
 
 use super::super::super::cli::NoteCommand;
 use super::super::input::{read_text_input_with_limit, TextInput, TextInputMessages};
@@ -9,8 +10,6 @@ use super::{metadata_error, open_metadata_db};
 mod output;
 
 use output::{emit_note_list, emit_note_payload};
-
-const MAX_NOTE_BODY_BYTES: usize = 1024 * 1024;
 
 pub(crate) fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i32, ErrorEnvelope> {
     let conn = open_metadata_db()?;
@@ -76,7 +75,7 @@ fn read_note_body(
             usage_hint: None,
         },
         false,
-        MAX_NOTE_BODY_BYTES,
+        METADATA_NOTE_BODY_MAX_BYTES,
         "note body",
     )
 }

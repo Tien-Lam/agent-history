@@ -1,6 +1,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
+use crate::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES;
+
 use super::{refs::turn_prefix_like_pattern, validate_session_ref, MetadataError, Result};
 
 /// One row from the `notes` table.
@@ -25,15 +27,26 @@ fn row_to_note(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
 
 const NOTE_COLUMNS: &str = "id, session_ref, body, created_at, updated_at";
 
-/// Insert a note for `session_ref` with `body`. Returns the freshly-inserted
-/// row (including server-generated id and timestamps). Both the ref and body
-/// are validated; empty bodies are rejected.
-pub fn note_add(conn: &Connection, session_ref: &str, body: &str) -> Result<Note> {
-    let session_ref = validate_session_ref(session_ref)?;
+fn normalize_note_body(body: &str) -> Result<&str> {
     let body = body.trim();
     if body.is_empty() {
         return Err(MetadataError::EmptyBody);
     }
+    if body.len() > METADATA_NOTE_BODY_MAX_BYTES {
+        return Err(MetadataError::BodyTooLong {
+            bytes: body.len(),
+            max_bytes: METADATA_NOTE_BODY_MAX_BYTES,
+        });
+    }
+    Ok(body)
+}
+
+/// Insert a note for `session_ref` with `body`. Returns the freshly-inserted
+/// row (including server-generated id and timestamps). Both the ref and body
+/// are validated; empty and oversized bodies are rejected.
+pub fn note_add(conn: &Connection, session_ref: &str, body: &str) -> Result<Note> {
+    let session_ref = validate_session_ref(session_ref)?;
+    let body = normalize_note_body(body)?;
     conn.execute(
         "INSERT INTO notes(session_ref, body) VALUES (?1, ?2)",
         params![session_ref, body],
@@ -91,10 +104,7 @@ pub fn note_list(conn: &Connection, filter: Option<&str>) -> Result<Vec<Note>> {
 /// Replace the body of an existing note and bump `updated_at`. Returns the
 /// updated row, or `MetadataError::NoteNotFound` if no row matches `id`.
 pub fn note_edit(conn: &Connection, id: i64, body: &str) -> Result<Note> {
-    let body = body.trim();
-    if body.is_empty() {
-        return Err(MetadataError::EmptyBody);
-    }
+    let body = normalize_note_body(body)?;
     let changed = conn.execute(
         "UPDATE notes \
             SET body = ?1, \

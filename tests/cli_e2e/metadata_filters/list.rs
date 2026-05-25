@@ -242,3 +242,32 @@ fn list_invalid_note_substring_emits_usage_envelope() {
     let env: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(env["error"]["kind"], "usage");
 }
+
+#[test]
+fn list_oversized_metadata_filters_emit_usage_envelope() {
+    let (_keep, home) = three_session_fixture();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = db_dir.path().join("metadata.db");
+
+    for (flag, value) in [
+        (
+            "--note",
+            "x".repeat(aghist::schema_fragments::METADATA_NOTE_FILTER_MAX_BYTES + 1),
+        ),
+        (
+            "--tag",
+            "x".repeat(aghist::schema_fragments::METADATA_TAG_MAX_BYTES + 1),
+        ),
+    ] {
+        let assert = aghist()
+            .args(["--list", flag, &value])
+            .env("AGHIST_HOME", &home)
+            .env("AGHIST_METADATA_DB", &db)
+            .assert()
+            .code(2);
+        let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+        let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+        let env: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert_eq!(env["error"]["kind"], "usage");
+    }
+}

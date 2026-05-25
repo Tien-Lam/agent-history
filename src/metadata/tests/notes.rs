@@ -1,4 +1,5 @@
 use super::*;
+use crate::schema_fragments::{METADATA_NOTE_BODY_MAX_BYTES, METADATA_NOTE_FILTER_MAX_BYTES};
 
 #[test]
 fn note_add_returns_populated_row() {
@@ -52,6 +53,38 @@ fn note_add_trims_body() {
     let (_tmp, conn) = open_fresh();
     let note = note_add(&conn, "claude-code/abc", "  hello  \n").unwrap();
     assert_eq!(note.body, "hello");
+}
+
+#[test]
+fn note_add_and_edit_reject_oversized_bodies_after_trimming() {
+    let (_tmp, conn) = open_fresh();
+    let oversized = "x".repeat(METADATA_NOTE_BODY_MAX_BYTES + 1);
+    assert!(matches!(
+        note_add(&conn, "claude-code/abc", &oversized),
+        Err(MetadataError::BodyTooLong { bytes, max_bytes })
+            if bytes == METADATA_NOTE_BODY_MAX_BYTES + 1
+                && max_bytes == METADATA_NOTE_BODY_MAX_BYTES
+    ));
+
+    let note = note_add(&conn, "claude-code/abc", "small").unwrap();
+    assert!(matches!(
+        note_edit(&conn, note.id, &oversized),
+        Err(MetadataError::BodyTooLong { bytes, max_bytes })
+            if bytes == METADATA_NOTE_BODY_MAX_BYTES + 1
+                && max_bytes == METADATA_NOTE_BODY_MAX_BYTES
+    ));
+}
+
+#[test]
+fn note_filter_rejects_oversized_substring() {
+    let (_tmp, conn) = open_fresh();
+    let oversized = "x".repeat(METADATA_NOTE_FILTER_MAX_BYTES + 1);
+    assert!(matches!(
+        filter_session_keys(&conn, Some(&oversized), None, false),
+        Err(MetadataError::NoteFilterTooLong { bytes, max_bytes })
+            if bytes == METADATA_NOTE_FILTER_MAX_BYTES + 1
+                && max_bytes == METADATA_NOTE_FILTER_MAX_BYTES
+    ));
 }
 
 #[test]

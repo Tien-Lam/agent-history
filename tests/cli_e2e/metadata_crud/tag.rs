@@ -209,6 +209,30 @@ fn tag_add_rejects_empty_tag_with_envelope() {
     let env: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(env["error"]["kind"], "usage");
 }
+
+#[test]
+fn tag_add_rejects_oversized_tag_with_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("metadata.db");
+    let oversized = "x".repeat(aghist::schema_fragments::METADATA_TAG_MAX_BYTES + 1);
+
+    let assert = tag_env(&db)
+        .args(["tag", "add", "claude-code/abc", &oversized])
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+    let env: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(env["error"]["kind"], "usage");
+    assert!(
+        env["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("tag must be at most"),
+        "unexpected error envelope: {env:#}"
+    );
+}
+
 #[test]
 fn schema_subcommand_includes_tag() {
     let out = aghist().args(["schema", "--list"]).output().unwrap();
@@ -227,4 +251,16 @@ fn schema_subcommand_includes_tag() {
     assert!(parsed["subcommands"]["list"].is_object());
     assert!(parsed["subcommands"]["remove"].is_object());
     assert!(parsed["definitions"]["Tag"].is_object());
+    assert_eq!(
+        parsed["subcommands"]["add"]["params"]["properties"]["tag"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::METADATA_TAG_MAX_BYTES)
+    );
+    assert_eq!(
+        parsed["subcommands"]["list"]["params"]["properties"]["tag"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::METADATA_TAG_MAX_BYTES)
+    );
+    assert_eq!(
+        parsed["definitions"]["Tag"]["properties"]["tag"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::METADATA_TAG_MAX_BYTES)
+    );
 }

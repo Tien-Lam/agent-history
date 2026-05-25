@@ -44,12 +44,26 @@ pub(crate) fn metadata_error(err: &MetadataError) -> ErrorEnvelope {
         }
         MetadataError::EmptyBody => ErrorEnvelope::new("usage", "note body must not be empty")
             .with_hint("Pass --body \"text\", --body-file PATH, or --stdin."),
+        MetadataError::BodyTooLong { max_bytes, .. } => ErrorEnvelope::new(
+            "usage",
+            format!("note body must be at most {max_bytes} bytes"),
+        )
+        .with_hint("Shorten the note or store long-form context outside the metadata sidecar."),
+        MetadataError::NoteFilterTooLong { max_bytes, .. } => ErrorEnvelope::new(
+            "usage",
+            format!("note filter must be at most {max_bytes} bytes"),
+        )
+        .with_hint("Use a shorter --note substring."),
         MetadataError::NoteNotFound(id) => {
             ErrorEnvelope::new("note-not-found", format!("no note with id {id}"))
                 .with_hint("Run `aghist note list` to see existing note ids.")
         }
         MetadataError::EmptyTag => ErrorEnvelope::new("usage", "tag must not be empty")
             .with_hint("Pass a non-empty tag value, e.g. `aghist tag add <ref> review`."),
+        MetadataError::TagTooLong { max_bytes, .. } => {
+            ErrorEnvelope::new("usage", format!("tag must be at most {max_bytes} bytes"))
+                .with_hint("Use a shorter tag label.")
+        }
         MetadataError::TagAlreadyExists { session_ref, tag } => ErrorEnvelope::new(
             "tag-conflict",
             format!("tag '{tag}' is already attached to {session_ref}"),

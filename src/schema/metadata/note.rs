@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES;
+
 use super::super::common::{
     closed_object_schema, count_array_response, exit_codes, object_schema, schema_props,
     schema_ref, source_qualified_session_ref_pattern, with_description, SCHEMA_DRAFT,
@@ -21,7 +23,7 @@ fn note_row_schema() -> Value {
                     "description": "<provider>/<session-id>[#<turn>] or <source>:<provider>/<session-id>[#<turn>]"
                 }),
             ),
-            ("body", json!({ "type": "string", "minLength": 1 })),
+            ("body", note_body_schema()),
             (
                 "created_at",
                 json!({ "type": "string", "description": "ISO-8601 UTC, sub-second precision." }),
@@ -42,7 +44,7 @@ fn note_subcommands_schema() -> Value {
             "params": closed_object_schema(
                 schema_props([
                     ("reference", session_ref_param_schema()),
-                    ("body", json!({ "type": "string", "description": "Literal body text. Mutually exclusive with body_file/stdin." })),
+                    ("body", with_description(note_body_schema(), "Literal body text. Mutually exclusive with body_file/stdin.")),
                     ("body_file", json!({ "type": "string", "description": "Path to read body from ('-' for stdin)." })),
                     ("stdin", json!({ "type": "boolean", "description": "Read body from standard input." })),
                 ]),
@@ -66,7 +68,7 @@ fn note_subcommands_schema() -> Value {
             "params": closed_object_schema(
                 schema_props([
                     ("id", json!({ "type": "integer", "minimum": 1 })),
-                    ("body", json!({ "type": "string" })),
+                    ("body", note_body_schema()),
                     ("body_file", json!({ "type": "string" })),
                     ("stdin", json!({ "type": "boolean" })),
                 ]),
@@ -82,6 +84,14 @@ fn note_subcommands_schema() -> Value {
             ),
             "response": note_row_response_schema("removed")
         }
+    })
+}
+
+fn note_body_schema() -> Value {
+    json!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": METADATA_NOTE_BODY_MAX_BYTES
     })
 }
 

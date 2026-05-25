@@ -1,4 +1,5 @@
 use super::*;
+use crate::schema_fragments::METADATA_TAG_MAX_BYTES;
 
 #[test]
 fn tag_add_returns_populated_row() {
@@ -18,6 +19,17 @@ fn tag_add_trims_and_rejects_empty() {
     assert!(matches!(
         tag_add(&conn, "claude-code/abc", "   "),
         Err(MetadataError::EmptyTag)
+    ));
+}
+
+#[test]
+fn tag_add_rejects_oversized_tag_after_trimming() {
+    let (_tmp, conn) = open_fresh();
+    let oversized = "x".repeat(METADATA_TAG_MAX_BYTES + 1);
+    assert!(matches!(
+        tag_add(&conn, "claude-code/abc", &oversized),
+        Err(MetadataError::TagTooLong { bytes, max_bytes })
+            if bytes == METADATA_TAG_MAX_BYTES + 1 && max_bytes == METADATA_TAG_MAX_BYTES
     ));
 }
 

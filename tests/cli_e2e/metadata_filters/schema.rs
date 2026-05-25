@@ -19,5 +19,13 @@ fn schema_search_includes_metadata_filter_params() {
         props["starred"].is_object(),
         "search schema missing 'starred' param"
     );
+    assert_eq!(
+        props["note"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::METADATA_NOTE_FILTER_MAX_BYTES)
+    );
+    assert_eq!(
+        props["tag"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::METADATA_TAG_MAX_BYTES)
+    );
     assert_eq!(props["starred"]["type"], "boolean");
 }
