@@ -85,10 +85,8 @@ impl SearchIndex {
         let mut fused: Vec<SearchHit> = by_id
             .into_values()
             .map(|(lex_rank, sem_rank, mut hit)| {
-                #[allow(clippy::cast_precision_loss)]
-                let lex_term = lex_rank.map_or(0.0, |r| w_lex / (RRF_K + r as f32));
-                #[allow(clippy::cast_precision_loss)]
-                let sem_term = sem_rank.map_or(0.0, |r| w_sem / (RRF_K + r as f32));
+                let lex_term = lex_rank.map_or(0.0, |rank| w_lex / (RRF_K + rrf_rank(rank)));
+                let sem_term = sem_rank.map_or(0.0, |rank| w_sem / (RRF_K + rrf_rank(rank)));
                 hit.score = lex_term + sem_term;
                 hit
             })
@@ -105,5 +103,12 @@ impl SearchIndex {
         });
         fused.truncate(limit);
         Ok(fused)
+    }
+}
+
+fn rrf_rank(rank: usize) -> f32 {
+    match u16::try_from(rank) {
+        Ok(rank) => f32::from(rank),
+        Err(_) => f32::from(u16::MAX),
     }
 }
