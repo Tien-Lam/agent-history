@@ -1,8 +1,8 @@
-use std::io::{self, IsTerminal};
+use std::io;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::llm::TrackEvent;
-use aghist::output::write_json_line;
+use aghist::output::{should_emit_json, write_json_line};
 
 use crate::commands::text::truncate;
 
@@ -13,7 +13,7 @@ pub(super) fn emit_track_output(
     force_json: bool,
 ) -> Result<(), ErrorEnvelope> {
     let stdout = io::stdout();
-    let want_json = force_json || !stdout.is_terminal();
+    let want_json = should_emit_json(force_json);
     let mut out = stdout.lock();
     if want_json {
         write_track_json(&mut out, topic, sessions_scanned, events)

@@ -2,10 +2,11 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::Session;
+use aghist::output::should_emit_json;
 
 use crate::commands::discovery::{qualified_session_ref, source_for_session};
 
-use super::super::common::{llm_config_from_env, map_llm_error, should_emit_json};
+use super::super::common::{llm_config_from_env, map_llm_error};
 use super::output::{render_llm_threads_human, render_llm_threads_json};
 use super::LlmThreadRow;
 

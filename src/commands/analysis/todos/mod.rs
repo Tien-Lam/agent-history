@@ -3,13 +3,12 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::CitationRef;
+use aghist::output::should_emit_json;
 use aghist::todos::{TodoCandidate, TodoKind};
 use aghist::{provider, query_scope};
 use chrono::{DateTime, Utc};
 
 use crate::cli::FilterArgs;
-
-use super::common::should_emit_json;
 
 mod collect;
 mod llm;

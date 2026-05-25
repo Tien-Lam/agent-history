@@ -38,6 +38,10 @@ impl OutputMode {
     }
 }
 
+pub fn should_emit_json(force_json: bool) -> bool {
+    force_json || !io::stdout().is_terminal()
+}
+
 pub fn write_json_line<W, T>(out: &mut W, value: &T) -> io::Result<()>
 where
     W: Write,

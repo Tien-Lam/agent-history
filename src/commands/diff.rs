@@ -1,7 +1,6 @@
-use std::io::{self, IsTerminal};
-
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::{ContentBlock, Message, Role, Session};
+use aghist::output::should_emit_json;
 use aghist::services::lookup as lookup_service;
 use aghist::session_resolver::SelectorShape;
 use aghist::{provider, query_scope};
@@ -169,7 +168,7 @@ pub(crate) fn diff_command(
         .collect();
 
     let ops = lcs_diff(&lines1, &lines2)?;
-    let want_json = force_json || !io::stdout().is_terminal();
+    let want_json = should_emit_json(force_json);
     let render = DiffRenderInput {
         raw1: &target1.session_ref,
         raw2: &target2.session_ref,

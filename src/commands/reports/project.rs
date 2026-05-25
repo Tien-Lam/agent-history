@@ -1,7 +1,8 @@
 use std::collections::HashSet;
-use std::io::{self, IsTerminal};
+use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
+use aghist::output::should_emit_json;
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
@@ -48,7 +49,7 @@ pub(crate) fn project_command(
         |session| qualified_session_ref(&collected.source_by_session, session),
         |session, turn| qualified_citation_ref(&collected.source_by_session, session, turn),
     );
-    let want_json = force_json || !io::stdout().is_terminal();
+    let want_json = should_emit_json(force_json);
     let stdout = io::stdout();
     let mut out = stdout.lock();
     if want_json {

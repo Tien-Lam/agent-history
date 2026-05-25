@@ -2,11 +2,10 @@ use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::Provider;
+use aghist::output::should_emit_json;
 use aghist::todos::TodoCandidate;
 
-use super::super::common::{
-    llm_config_from_env, map_llm_error, ordered_session_groups, should_emit_json,
-};
+use super::super::common::{llm_config_from_env, map_llm_error, ordered_session_groups};
 use super::output::{render_llm_todos_human, render_llm_todos_json};
 use super::{LlmTodoRow, TodoRow};
 

@@ -1,15 +1,10 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::io::{self, IsTerminal};
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::model::{Provider, SessionId};
 
 pub(super) type SessionGroupKey = (String, Provider, SessionId);
-
-pub(super) fn should_emit_json(force_json: bool) -> bool {
-    force_json || !io::stdout().is_terminal()
-}
 
 pub(super) fn llm_config_from_env(
     llm_model: Option<&str>,

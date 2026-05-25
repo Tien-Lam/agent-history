@@ -3,10 +3,10 @@ mod output;
 mod watch;
 
 use std::collections::HashSet;
-use std::io::{self, IsTerminal};
 use std::path::Path;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
+use aghist::output::should_emit_json;
 use aghist::search::{self, SearchFilters};
 use aghist::services::search as search_service;
 use aghist::{provider, query_scope};
@@ -82,7 +82,7 @@ pub(crate) fn search_command(
         return Ok(EXIT_EMPTY);
     }
 
-    let want_json = force_json || !io::stdout().is_terminal();
+    let want_json = should_emit_json(force_json);
     if want_json {
         print_search_json(
             &page.hits,

@@ -4,11 +4,10 @@ use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::{Provider, Role};
 use chrono::{DateTime, Utc};
 
-use super::super::common::{
-    llm_config_from_env, map_llm_error, ordered_session_groups, should_emit_json,
-};
+use super::super::common::{llm_config_from_env, map_llm_error, ordered_session_groups};
 use super::output::{render_llm_decisions_human, render_llm_decisions_json};
 use super::{DecisionRow, LlmRow};
+use aghist::output::should_emit_json;
 
 /// Route heuristic candidates through the LLM and emit structured decisions.
 ///
