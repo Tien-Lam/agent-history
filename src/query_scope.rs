@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::config::{self, Config, RemoteSource};
-use crate::federated::{self, FederatedDiscovery, SourceFailure, LOCAL_SOURCE};
+use crate::federated::{self, FederatedDiscovery, SourceFailure};
 use crate::model::Provider;
 use crate::provider::{self, HistoryProvider};
 
@@ -93,23 +93,27 @@ impl QueryScope {
             federated::discover_federated(local_providers, &self.sources, cache_root)
         } else {
             let mut local = federated::discover_federated(local_providers, &[], Path::new(""));
-            if self.has_remote_sources() {
-                local.failures.push(SourceFailure {
-                    source: LOCAL_SOURCE.to_string(),
-                    message: "sources cache dir unavailable".to_string(),
-                });
-            }
+            local
+                .failures
+                .extend(self.sources.iter().map(source_cache_failure));
             local
         };
         self.retain_discovery(&mut discovery);
         discovery
     }
 
-    pub fn discover_remote_sources(&self) -> Option<FederatedDiscovery> {
-        let cache_root = self.sources_cache_root()?;
-        let mut discovery = federated::discover_remote_sources(&self.sources, cache_root);
+    pub fn discover_remote_sources(&self) -> FederatedDiscovery {
+        let mut discovery = if let Some(cache_root) = self.sources_cache_root() {
+            federated::discover_remote_sources(&self.sources, cache_root)
+        } else {
+            FederatedDiscovery {
+                sessions: Vec::new(),
+                source_by_session: HashMap::new(),
+                failures: self.sources.iter().map(source_cache_failure).collect(),
+            }
+        };
         self.retain_discovery(&mut discovery);
-        Some(discovery)
+        discovery
     }
 }
 
@@ -117,9 +121,18 @@ pub fn detect_enabled_providers(config: &Config) -> Vec<Box<dyn HistoryProvider>
     QueryScope::enabled(config).filter_provider_instances(provider::detect_all_providers())
 }
 
+fn source_cache_failure(source: &RemoteSource) -> SourceFailure {
+    SourceFailure {
+        source: source.name.clone(),
+        message: "sources cache dir unavailable".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::config::{Config, ProviderConfig};
+    use std::collections::HashSet;
+
+    use crate::config::{Config, ProviderConfig, RemoteSource, Transport};
     use crate::model::Provider;
 
     use super::QueryScope;
@@ -163,5 +176,58 @@ mod tests {
         assert_eq!(scope.providers().len(), 2);
         assert!(scope.contains_provider(Provider::ClaudeCode));
         assert!(scope.contains_provider(Provider::CodexCli));
+    }
+
+    #[test]
+    fn discovery_without_source_cache_root_reports_each_remote_source() {
+        let scope = QueryScope::from_parts(
+            HashSet::from([Provider::ClaudeCode]),
+            vec![remote_source("desk"), remote_source("laptop")],
+            None,
+        );
+
+        let discovery = scope.discover_federated(&[]);
+
+        assert!(discovery.sessions.is_empty());
+        let failures: Vec<_> = discovery
+            .failures
+            .iter()
+            .map(|failure| (failure.source.as_str(), failure.message.as_str()))
+            .collect();
+        assert_eq!(
+            failures,
+            vec![
+                ("desk", "sources cache dir unavailable"),
+                ("laptop", "sources cache dir unavailable"),
+            ]
+        );
+    }
+
+    #[test]
+    fn remote_discovery_without_source_cache_root_preserves_source_failures() {
+        let scope = QueryScope::from_parts(
+            HashSet::from([Provider::ClaudeCode]),
+            vec![remote_source("desk")],
+            None,
+        );
+
+        let discovery = scope.discover_remote_sources();
+
+        assert!(discovery.sessions.is_empty());
+        assert_eq!(discovery.failures.len(), 1);
+        assert_eq!(discovery.failures[0].source, "desk");
+        assert_eq!(
+            discovery.failures[0].message,
+            "sources cache dir unavailable"
+        );
+    }
+
+    fn remote_source(name: &str) -> RemoteSource {
+        RemoteSource {
+            name: name.to_string(),
+            host: "host.example".to_string(),
+            path: "/history".to_string(),
+            transport: Transport::Ssh,
+        }
     }
 }

@@ -50,9 +50,7 @@ fn append_remote_sessions(
     scope: &query_scope::QueryScope,
     filter: Option<Provider>,
 ) -> Vec<federated::SourceFailure> {
-    let Some(remote) = scope.discover_remote_sources() else {
-        return Vec::new();
-    };
+    let remote = scope.discover_remote_sources();
 
     sessions.extend(
         remote
