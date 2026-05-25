@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use aghist::config;
+use aghist::schema_fragments::{METADATA_TAG_MAX_BYTES, REFERENCE_MAX_BYTES};
 use clap::Subcommand;
 
 use super::super::resolvers::parse_transport;
@@ -67,7 +68,7 @@ pub(crate) enum NoteCommand {
     Add {
         /// Session ref: `<provider>/<session-id>[#<turn>]` or
         /// `<source>:<provider>/<session-id>[#<turn>]`.
-        #[arg(value_name = "REF")]
+        #[arg(value_name = "REF", value_parser = parse_metadata_reference)]
         reference: String,
 
         /// Note body as a literal string. Mutually exclusive with `--body-file`/`--stdin`.
@@ -89,7 +90,7 @@ pub(crate) enum NoteCommand {
     /// only notes on that exact turn. Remote sessions use a `<source>:` prefix.
     List {
         /// Optional session ref filter.
-        #[arg(value_name = "REF")]
+        #[arg(value_name = "REF", value_parser = parse_metadata_reference)]
         reference: Option<String>,
 
         /// Force JSON output (default: JSON on pipe, table on TTY).
@@ -131,11 +132,11 @@ pub(crate) enum TagCommand {
     Add {
         /// Session ref: `<provider>/<session-id>[#<turn>]` or
         /// `<source>:<provider>/<session-id>[#<turn>]`.
-        #[arg(value_name = "REF")]
+        #[arg(value_name = "REF", value_parser = parse_metadata_reference)]
         reference: String,
 
         /// Tag label. Whitespace-trimmed; must be non-empty.
-        #[arg(value_name = "TAG")]
+        #[arg(value_name = "TAG", value_parser = parse_metadata_tag)]
         tag: String,
     },
     /// List tags, optionally filtered by session ref and/or tag value.
@@ -146,11 +147,11 @@ pub(crate) enum TagCommand {
     /// `--tag <name>` narrows to a specific tag value (combinable with the ref filter).
     List {
         /// Optional session ref filter.
-        #[arg(value_name = "REF")]
+        #[arg(value_name = "REF", value_parser = parse_metadata_reference)]
         reference: Option<String>,
 
         /// Filter by exact tag value (e.g. `--tag review`).
-        #[arg(long, value_name = "TAG")]
+        #[arg(long, value_name = "TAG", value_parser = parse_metadata_tag)]
         tag: Option<String>,
 
         /// Force JSON output (default: JSON on pipe, table on TTY).
@@ -161,13 +162,31 @@ pub(crate) enum TagCommand {
     #[command(alias = "rm")]
     Remove {
         /// Session ref the tag is attached to.
-        #[arg(value_name = "REF")]
+        #[arg(value_name = "REF", value_parser = parse_metadata_reference)]
         reference: String,
 
         /// Tag label to remove.
-        #[arg(value_name = "TAG")]
+        #[arg(value_name = "TAG", value_parser = parse_metadata_tag)]
         tag: String,
     },
+}
+
+pub(super) fn parse_metadata_reference(raw: &str) -> Result<String, String> {
+    if raw.len() > REFERENCE_MAX_BYTES {
+        return Err(format!(
+            "reference must be at most {REFERENCE_MAX_BYTES} bytes"
+        ));
+    }
+    Ok(raw.to_string())
+}
+
+fn parse_metadata_tag(raw: &str) -> Result<String, String> {
+    if raw.len() > METADATA_TAG_MAX_BYTES {
+        return Err(format!(
+            "tag must be at most {METADATA_TAG_MAX_BYTES} bytes"
+        ));
+    }
+    Ok(raw.to_string())
 }
 
 fn parse_note_id(raw: &str) -> Result<i64, String> {
@@ -178,5 +197,24 @@ fn parse_note_id(raw: &str) -> Result<i64, String> {
         Err("note id must be at least 1".to_string())
     } else {
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_metadata_reference_rejects_oversized_values() {
+        let raw = "r".repeat(REFERENCE_MAX_BYTES + 1);
+        let err = parse_metadata_reference(&raw).unwrap_err();
+        assert!(err.contains(&REFERENCE_MAX_BYTES.to_string()));
+    }
+
+    #[test]
+    fn parse_metadata_tag_rejects_oversized_values() {
+        let raw = "t".repeat(METADATA_TAG_MAX_BYTES + 1);
+        let err = parse_metadata_tag(&raw).unwrap_err();
+        assert!(err.contains(&METADATA_TAG_MAX_BYTES.to_string()));
     }
 }

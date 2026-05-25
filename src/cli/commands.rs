@@ -8,6 +8,7 @@ mod target;
 
 use analysis::{DecisionsCommand, ThreadsCommand, TodosCommand, TrackCommand};
 use lookup::{DiffCommand, ExportCommand, IndexCommand, SearchCommand, ShowCommand};
+use metadata::parse_metadata_reference;
 pub(crate) use metadata::{NoteCommand, SourcesCommand, TagCommand};
 use reports::{ProjectCommand, ReportCommand, UsageCommand};
 pub(crate) use target::{
@@ -170,14 +171,14 @@ pub(crate) enum Command {
     /// raises a `star-conflict` error. aghist never mutates provider history files.
     Star {
         /// Session ref: `<provider>/<session-id>[#<turn>]` or `<source>:<provider>/<session-id>[#<turn>]`.
-        #[arg(value_name = "REF")]
+        #[arg(value_name = "REF", value_parser = parse_metadata_reference)]
         reference: String,
     },
     /// Remove a star from a session or turn. Errors with `star-not-found` if
     /// the ref is not currently starred.
     Unstar {
         /// Session ref: `<provider>/<session-id>[#<turn>]` or `<source>:<provider>/<session-id>[#<turn>]`.
-        #[arg(value_name = "REF")]
+        #[arg(value_name = "REF", value_parser = parse_metadata_reference)]
         reference: String,
     },
     /// List starred sessions and turns.
@@ -187,7 +188,7 @@ pub(crate) enum Command {
     /// Remote sessions use a `<source>:` prefix. Empty result exits with code 3.
     Stars {
         /// Optional session ref filter.
-        #[arg(value_name = "REF")]
+        #[arg(value_name = "REF", value_parser = parse_metadata_reference)]
         reference: Option<String>,
 
         /// Force JSON output (default: JSON on pipe, table on TTY).
