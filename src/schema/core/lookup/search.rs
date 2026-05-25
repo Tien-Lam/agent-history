@@ -1,9 +1,9 @@
 use serde_json::{json, Value};
 
 use crate::schema_fragments::{
-    CURSOR_TOKEN_MAX_BYTES, SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX,
-    SEARCH_QUERY_MAX_BYTES, SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_INTERVAL_MS_MAX,
-    SEARCH_WATCH_ITERATIONS_DEFAULT, SEARCH_WATCH_ITERATIONS_MAX,
+    CLI_PATH_MAX_BYTES, CURSOR_TOKEN_MAX_BYTES, SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT,
+    SEARCH_LIMIT_MAX, SEARCH_QUERY_MAX_BYTES, SEARCH_WATCH_INTERVAL_MS_DEFAULT,
+    SEARCH_WATCH_INTERVAL_MS_MAX, SEARCH_WATCH_ITERATIONS_DEFAULT, SEARCH_WATCH_ITERATIONS_MAX,
 };
 
 use super::super::super::common::{
@@ -19,7 +19,7 @@ fn search_params_properties() -> SchemaProperties {
         ),
         (
             "query_file",
-            json!({ "type": "string", "description": "Read query from file path (use '-' for stdin)." }),
+            json!({ "type": "string", "maxLength": CLI_PATH_MAX_BYTES, "description": "Read query from file path (use '-' for stdin)." }),
         ),
         (
             "stdin",

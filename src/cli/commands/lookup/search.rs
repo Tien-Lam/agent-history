@@ -7,7 +7,7 @@ use aghist::schema_fragments::{
 };
 use clap::Args;
 
-use crate::cli::parse_cursor_token;
+use crate::cli::{parse_cli_path, parse_cursor_token};
 
 #[derive(Args)]
 #[allow(clippy::struct_excessive_bools)] // CLI flag struct: clap requires bool fields per flag
@@ -22,7 +22,7 @@ pub(crate) struct SearchCommand {
     ///
     /// Useful for queries containing shell metacharacters (quotes, braces, etc.)
     /// without escaping. Trailing whitespace is stripped.
-    #[arg(long, value_name = "PATH", conflicts_with_all = ["stdin", "params"])]
+    #[arg(long, value_name = "PATH", conflicts_with_all = ["stdin", "params"], value_parser = parse_cli_path)]
     pub(crate) query_file: Option<PathBuf>,
 
     /// Read the query from standard input (read until EOF).

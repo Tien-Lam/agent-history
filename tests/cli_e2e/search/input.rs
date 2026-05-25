@@ -102,6 +102,24 @@ fn search_query_file_missing_path_emits_io_error() {
 }
 
 #[test]
+fn search_query_file_rejects_oversized_path() {
+    let oversized = "p".repeat(aghist::schema_fragments::CLI_PATH_MAX_BYTES + 1);
+    let assert = aghist()
+        .args(["search", "--query-file", oversized.as_str()])
+        .assert()
+        .code(2);
+    let envelope = cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("file path must be at most"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
+#[test]
 fn search_query_file_dash_reads_from_stdin() {
     let dir = tempfile::tempdir().unwrap();
     let output = aghist()

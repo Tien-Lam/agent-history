@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::{EXPORT_TURN_RANGE_MAX_BYTES, REFERENCE_MAX_BYTES};
+use crate::schema_fragments::{
+    CLI_PATH_MAX_BYTES, EXPORT_TURN_RANGE_MAX_BYTES, REFERENCE_MAX_BYTES,
+};
 
 use super::super::super::common::{closed_object_schema, exit_codes, schema_props, SCHEMA_DRAFT};
 
@@ -20,7 +22,7 @@ pub(in crate::schema) fn export_schema() -> Value {
                 ),
                 (
                     "output",
-                    json!({ "type": "string", "description": "Output file path (defaults to stdout)." }),
+                    json!({ "type": "string", "maxLength": CLI_PATH_MAX_BYTES, "description": "Output file path (defaults to stdout)." }),
                 ),
                 (
                     "turn_range",

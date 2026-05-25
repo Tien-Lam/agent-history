@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use aghist::export;
 use clap::Args;
 
+use crate::cli::parse_cli_path;
+
 use super::parse_reference_selector;
 
 #[derive(Args)]
@@ -27,7 +29,7 @@ pub(crate) struct ExportCommand {
     pub(crate) session: Option<String>,
 
     /// Output file path (defaults to stdout)
-    #[arg(long, short, conflicts_with = "params")]
+    #[arg(long, short, conflicts_with = "params", value_parser = parse_cli_path)]
     pub(crate) output: Option<PathBuf>,
 
     /// Slice the session by 1-based turn range (e.g. `12:25`, `:10`, `5:`, or `7`).

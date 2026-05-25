@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::{METADATA_NOTE_BODY_MAX_BYTES, REFERENCE_MAX_BYTES};
+use crate::schema_fragments::{
+    CLI_PATH_MAX_BYTES, METADATA_NOTE_BODY_MAX_BYTES, REFERENCE_MAX_BYTES,
+};
 
 use super::super::common::{
     closed_object_schema, count_array_response, exit_codes, object_schema, schema_props,
@@ -49,7 +51,7 @@ fn note_subcommands_schema() -> Value {
                 schema_props([
                     ("reference", session_ref_param_schema()),
                     ("body", with_description(note_body_schema(), "Literal body text. Mutually exclusive with body_file/stdin.")),
-                    ("body_file", json!({ "type": "string", "description": "Path to read body from ('-' for stdin)." })),
+                    ("body_file", json!({ "type": "string", "maxLength": CLI_PATH_MAX_BYTES, "description": "Path to read body from ('-' for stdin)." })),
                     ("stdin", json!({ "type": "boolean", "description": "Read body from standard input." })),
                 ]),
                 &["reference"],
@@ -73,7 +75,7 @@ fn note_subcommands_schema() -> Value {
                 schema_props([
                     ("id", json!({ "type": "integer", "minimum": 1 })),
                     ("body", note_body_schema()),
-                    ("body_file", json!({ "type": "string" })),
+                    ("body_file", json!({ "type": "string", "maxLength": CLI_PATH_MAX_BYTES })),
                     ("stdin", json!({ "type": "boolean" })),
                 ]),
                 &["id"],

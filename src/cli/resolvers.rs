@@ -9,6 +9,8 @@ use aghist::schema_fragments::{
 use aghist::todos::TodoKind;
 use aghist::{config, export};
 
+use super::validate_cli_path;
+
 mod params;
 
 pub(super) fn parse_transport(raw: &str) -> Result<config::Transport, String> {
@@ -115,6 +117,10 @@ fn validate_export_args(args: ResolvedExport) -> Result<ResolvedExport, ErrorEnv
             )
             .with_hint("Use a range like `12:25`, `:10`, `5:`, or `7`."));
         }
+    }
+    if let Some(output) = args.output.as_deref() {
+        validate_cli_path(output)
+            .map_err(|e| ErrorEnvelope::new("usage", e).with_hint("Use a shorter output path."))?;
     }
     Ok(args)
 }

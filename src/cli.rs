@@ -2,9 +2,13 @@ mod commands;
 mod filters;
 mod resolvers;
 
+use std::path::{Path, PathBuf};
+
 use clap::Parser;
 
-use aghist::schema_fragments::{CURSOR_TOKEN_MAX_BYTES, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX};
+use aghist::schema_fragments::{
+    CLI_PATH_MAX_BYTES, CURSOR_TOKEN_MAX_BYTES, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX,
+};
 
 pub(crate) use commands::{
     AnalysisCommand, Command, CommandTarget, ContextCommand, ContextFreeCommand, LookupCommand,
@@ -67,6 +71,23 @@ pub(crate) fn parse_cursor_token(raw: &str) -> Result<String, String> {
     Ok(raw.to_string())
 }
 
+pub(crate) fn parse_cli_path(raw: &str) -> Result<PathBuf, String> {
+    validate_cli_path(raw)?;
+    Ok(PathBuf::from(raw))
+}
+
+pub(crate) fn validate_cli_path(path: impl AsRef<Path>) -> Result<(), String> {
+    let path = path.as_ref();
+    let display = path.as_os_str().to_string_lossy();
+    if display.len() > CLI_PATH_MAX_BYTES {
+        Err(format!(
+            "file path must be at most {CLI_PATH_MAX_BYTES} bytes"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn parse_list_limit(raw: &str) -> Result<usize, String> {
     let value = raw
         .parse::<usize>()
@@ -105,5 +126,12 @@ mod tests {
         let raw = "c".repeat(CURSOR_TOKEN_MAX_BYTES + 1);
         let err = parse_cursor_token(&raw).unwrap_err();
         assert!(err.contains(&CURSOR_TOKEN_MAX_BYTES.to_string()));
+    }
+
+    #[test]
+    fn parse_cli_path_rejects_oversized_values() {
+        let raw = "p".repeat(CLI_PATH_MAX_BYTES + 1);
+        let err = parse_cli_path(&raw).unwrap_err();
+        assert!(err.contains(&CLI_PATH_MAX_BYTES.to_string()));
     }
 }

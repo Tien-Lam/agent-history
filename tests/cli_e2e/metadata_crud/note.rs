@@ -1,4 +1,5 @@
 use super::super::aghist;
+use super::super::common::cli;
 use assert_cmd::Command;
 
 fn note_env(metadata_db: &std::path::Path) -> Command {
@@ -7,6 +8,32 @@ fn note_env(metadata_db: &std::path::Path) -> Command {
     // Notes don't read provider data, but main resolves AGHIST_HOME before
     // dispatch, so isolate it to keep the test hermetic.
     cmd
+}
+
+#[test]
+fn note_add_rejects_oversized_body_file_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("metadata.db");
+    let oversized = "p".repeat(aghist::schema_fragments::CLI_PATH_MAX_BYTES + 1);
+    let assert = note_env(&db)
+        .args([
+            "note",
+            "add",
+            "claude-code/abc#3",
+            "--body-file",
+            oversized.as_str(),
+        ])
+        .assert()
+        .code(2);
+    let envelope = cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("file path must be at most"),
+        "unexpected error envelope: {envelope:#}"
+    );
 }
 #[test]
 fn note_add_then_list_round_trips_via_json() {

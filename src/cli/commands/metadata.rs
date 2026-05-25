@@ -4,6 +4,8 @@ use aghist::config;
 use aghist::schema_fragments::{METADATA_TAG_MAX_BYTES, REFERENCE_MAX_BYTES};
 use clap::Subcommand;
 
+use crate::cli::parse_cli_path;
+
 use super::super::resolvers::parse_transport;
 
 /// Subcommands of `aghist sources` that manage the remote-source registry.
@@ -91,7 +93,7 @@ pub(crate) enum NoteCommand {
         body: Option<String>,
 
         /// Read the body from a file (use `-` for stdin).
-        #[arg(long, conflicts_with_all = ["body", "stdin"], value_name = "PATH")]
+        #[arg(long, conflicts_with_all = ["body", "stdin"], value_name = "PATH", value_parser = parse_cli_path)]
         body_file: Option<PathBuf>,
 
         /// Read the body from standard input (read until EOF).
@@ -123,7 +125,7 @@ pub(crate) enum NoteCommand {
         body: Option<String>,
 
         /// Read the new body from a file (use `-` for stdin).
-        #[arg(long, conflicts_with_all = ["body", "stdin"], value_name = "PATH")]
+        #[arg(long, conflicts_with_all = ["body", "stdin"], value_name = "PATH", value_parser = parse_cli_path)]
         body_file: Option<PathBuf>,
 
         /// Read the new body from standard input (read until EOF).

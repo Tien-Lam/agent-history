@@ -19,6 +19,33 @@ fn export_nonexistent_session_emits_envelope_and_exits_one() {
         .contains("nonexistent"));
     assert!(parsed["error"]["hint"].is_string());
 }
+
+#[test]
+fn export_rejects_oversized_output_path() {
+    let oversized = "p".repeat(aghist::schema_fragments::CLI_PATH_MAX_BYTES + 1);
+    let assert = aghist()
+        .args([
+            "export",
+            "--format",
+            "md",
+            "--session",
+            "any",
+            "--output",
+            oversized.as_str(),
+        ])
+        .assert()
+        .code(2);
+    let envelope = cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("file path must be at most"),
+        "unexpected error envelope: {envelope:#}"
+    );
+}
+
 #[test]
 fn export_json_valid_output() {
     let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()
