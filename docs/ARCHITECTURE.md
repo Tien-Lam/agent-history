@@ -48,6 +48,11 @@ CLI parsing uses clap with derive macros. Configuration is loaded from `~/.confi
 
 Successful command output goes to stdout as either a JSON document (machine modes) or a human-readable table (TTY mode); errors go to stderr as a single-line `{"error":{"kind":"…","message":"…","hint":"…"}}` envelope and never to stdout. `--json` and `--ndjson` are global flags that override the TTY auto-detect; they are mutually exclusive. Exit codes are stable contract: `0` success, `1` runtime error, `2` usage error, `3` success-but-empty (treat as the empty answer, not a failure).
 
+Command schemas are closed objects. String inputs must either be bounded with
+`maxLength` or closed with `enum`/`const`; path inputs use the same limit
+constants as the clap parsers so schema-driven clients cannot bypass CLI
+validation.
+
 ### Citation refs
 
 `<provider-slug>/<session-id>#<turn>` (e.g. `claude-code/abc-123#7`) is the canonical handle for a single message. Remote/federated refs add an optional source prefix: `<source>:<provider-slug>/<session-id>#<turn>`. Refs are *opaque-stable across reindex* — the same `(source, provider, session-id, turn)` points at the same message as long as the source files are unchanged. `src/model/citation.rs` defines `CitationRef`/`QualifiedCitationRef`; `src/session_resolver.rs` centralizes local, remote, prefix, and ambiguous lookup behavior. `src/services/lookup.rs` owns the common "resolve then load messages" path used by show/export/diff and MCP handlers.

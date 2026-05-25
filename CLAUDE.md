@@ -33,6 +33,7 @@ cargo insta review                   # after test failures that update snapshots
 - `thiserror` in library code, `anyhow` only at the binary boundary (`main.rs`)
 - Corrupt/missing session files must be skipped, never crash
 - CLI errors go to stderr as single-line JSON `{kind, message, hint?}`; stdout is clean for piping
+- CLI and JSON Schema string params are bounded with `maxLength` or closed with `enum`/`const`; `schema_string_params_are_bounded_or_closed` enforces this
 - `AGHIST_HOME` overrides the home dir in tests — all provider `detect()` functions respect it
 
 ## Adding a provider
