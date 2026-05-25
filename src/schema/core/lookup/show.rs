@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::{SHOW_INCLUDE_CONTEXT_DEFAULT, SHOW_INCLUDE_CONTEXT_MAX};
+use crate::schema_fragments::{
+    REFERENCE_MAX_BYTES, SHOW_INCLUDE_CONTEXT_DEFAULT, SHOW_INCLUDE_CONTEXT_MAX,
+};
 
 use super::super::super::common::{
     closed_object_schema, exit_codes, provider_slug_enum, schema_props,
@@ -20,6 +22,7 @@ pub(in crate::schema) fn show_schema() -> Value {
                     "reference",
                     json!({
                         "type": "string",
+                        "maxLength": REFERENCE_MAX_BYTES,
                         "pattern": source_qualified_citation_ref_pattern(),
                         "description": "Citation ref. Examples: claude-code/abc-123#7, laptop:claude-code/abc-123#7"
                     }),

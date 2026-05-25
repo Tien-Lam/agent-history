@@ -51,6 +51,20 @@ fn validate_rejects_bad_refs() {
 }
 
 #[test]
+fn validate_rejects_oversized_refs() {
+    let raw = format!(
+        "claude-code/{}",
+        "s".repeat(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert!(matches!(
+        validate_session_ref(&raw),
+        Err(MetadataError::SessionRefTooLong { bytes, max_bytes })
+            if bytes == raw.len()
+                && max_bytes == crate::schema_fragments::REFERENCE_MAX_BYTES
+    ));
+}
+
+#[test]
 fn session_key_from_ref_validates_and_strips_turn_suffix() {
     assert_eq!(
         session_key_from_ref("claude-code/abc-123#7").unwrap(),

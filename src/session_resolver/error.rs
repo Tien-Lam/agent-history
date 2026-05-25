@@ -13,6 +13,10 @@ pub enum ResolutionError {
         selector: String,
         message: String,
     },
+    SelectorTooLong {
+        bytes: usize,
+        max_bytes: usize,
+    },
     TurnRefForSession,
     SessionRefRequired(String),
     NotFound(String),
@@ -29,6 +33,7 @@ impl ResolutionError {
             Self::InvalidSourceName(_)
             | Self::InvalidSessionRef { .. }
             | Self::InvalidCitationRef { .. }
+            | Self::SelectorTooLong { .. }
             | Self::TurnRefForSession
             | Self::SessionRefRequired(_) => "usage",
             Self::NotFound(_) => "session-not-found",
@@ -44,6 +49,9 @@ impl ResolutionError {
             Self::InvalidCitationRef { .. } => Some(
                 "Format: <provider-slug>/<session-id>#<turn> or <source>:<provider-slug>/<session-id>#<turn>.",
             ),
+            Self::SelectorTooLong { .. } => {
+                Some("Use a shorter session id, session ref, or citation ref.")
+            }
             Self::TurnRefForSession => Some(
                 "Use `aghist show <ref>` for a single turn, or remove the `#<turn>` suffix.",
             ),
@@ -79,6 +87,9 @@ impl fmt::Display for ResolutionError {
             }
             Self::InvalidCitationRef { selector, message } => {
                 write!(f, "invalid citation ref '{selector}': {message}")
+            }
+            Self::SelectorTooLong { bytes, max_bytes } => {
+                write!(f, "selector exceeds {max_bytes} byte limit ({bytes} bytes)")
             }
             Self::TurnRefForSession => {
                 f.write_str("expected a session ref, not a turn-level citation ref")

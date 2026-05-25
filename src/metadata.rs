@@ -50,6 +50,8 @@ pub enum MetadataError {
     },
     #[error("invalid session ref '{0}': {1}")]
     InvalidSessionRef(String, &'static str),
+    #[error("session ref exceeds {max_bytes} byte limit ({bytes} bytes)")]
+    SessionRefTooLong { bytes: usize, max_bytes: usize },
     #[error("note body must not be empty")]
     EmptyBody,
     #[error("note body exceeds {max_bytes} byte limit ({bytes} bytes)")]

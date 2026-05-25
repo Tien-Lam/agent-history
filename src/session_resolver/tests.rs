@@ -140,3 +140,51 @@ fn citation_resolution_preserves_remote_source_in_ref() {
     assert_eq!(selected.source, "laptop");
     assert_eq!(selected.citation_ref, "laptop:claude-code/remote-session#3");
 }
+
+#[test]
+fn resolution_rejects_oversized_selectors_before_lookup() {
+    let sessions = vec![session(Provider::ClaudeCode, "short", "/local/short.jsonl")];
+    let sources = source_map(&sessions, "laptop");
+    let resolver = SessionResolver::new(&sessions, &sources);
+
+    let session_selector = format!(
+        "claude-code/{}",
+        "s".repeat(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert!(matches!(
+        resolver.resolve_session_selector(
+            &session_selector,
+            SelectorShape::SessionRefOrIdPrefix,
+        ),
+        Err(ResolutionError::SelectorTooLong { bytes, max_bytes })
+            if bytes == session_selector.len()
+                && max_bytes == crate::schema_fragments::REFERENCE_MAX_BYTES
+    ));
+
+    let citation_selector = format!(
+        "claude-code/{}#1",
+        "s".repeat(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert!(matches!(
+        resolver.resolve_citation_selector(&citation_selector),
+        Err(ResolutionError::SelectorTooLong { bytes, max_bytes })
+            if bytes == citation_selector.len()
+                && max_bytes == crate::schema_fragments::REFERENCE_MAX_BYTES
+    ));
+
+    let prefix = "s".repeat(crate::schema_fragments::REFERENCE_MAX_BYTES + 1);
+    assert!(matches!(
+        resolver.find_by_id_prefix(&prefix, None, LookupSource::Any),
+        Err(ResolutionError::SelectorTooLong { bytes, max_bytes })
+            if bytes == prefix.len()
+                && max_bytes == crate::schema_fragments::REFERENCE_MAX_BYTES
+    ));
+
+    let exact_id = "s".repeat(crate::schema_fragments::REFERENCE_MAX_BYTES);
+    assert!(matches!(
+        resolver.find_exact(Provider::ClaudeCode, &exact_id, LookupSource::Local),
+        Err(ResolutionError::SelectorTooLong { bytes, max_bytes })
+            if bytes == Provider::ClaudeCode.slug().len() + 1 + exact_id.len()
+                && max_bytes == crate::schema_fragments::REFERENCE_MAX_BYTES
+    ));
+}

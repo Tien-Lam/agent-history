@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::hash::BuildHasher;
 
 use crate::model::{Provider, Session};
+use crate::schema_fragments::REFERENCE_MAX_BYTES;
 
 use super::error::ResolutionError;
 use super::parse::{parse_citation_ref, parse_session_ref};
@@ -39,6 +40,7 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
         selector: &str,
         shape: SelectorShape,
     ) -> Result<SelectedSession<'a>, ResolutionError> {
+        ensure_selector_len(selector)?;
         if selector.contains('#') {
             return Err(ResolutionError::TurnRefForSession);
         }
@@ -80,6 +82,7 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
         &self,
         selector: &str,
     ) -> Result<SelectedCitation<'a>, ResolutionError> {
+        ensure_selector_len(selector)?;
         let (source, citation) =
             if let Some((source, raw_ref)) = split_valid_source_prefix(selector)? {
                 (Some(source), parse_citation_ref(raw_ref, selector)?)
@@ -113,6 +116,7 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
         provider_filter: Option<Provider>,
         source_filter: LookupSource<'_>,
     ) -> Result<SelectedSession<'a>, ResolutionError> {
+        ensure_lookup_selector_len(session_id, source_filter)?;
         let candidates: Vec<&Session> = self
             .sessions
             .iter()
@@ -136,8 +140,9 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
         session_id: &str,
         source_filter: LookupSource<'_>,
     ) -> Result<SelectedSession<'a>, ResolutionError> {
-        let selector =
-            source_filter.qualify_selector(&format!("{}/{}", provider.slug(), session_id));
+        ensure_exact_selector_len(provider, session_id, source_filter)?;
+        let raw_selector = format!("{}/{}", provider.slug(), session_id);
+        let selector = source_filter.qualify_selector(&raw_selector);
         let matches: Vec<&Session> = self
             .sessions
             .iter()
@@ -186,4 +191,50 @@ impl<'a, S: BuildHasher> SessionResolver<'a, S> {
             candidates,
         }
     }
+}
+
+fn ensure_selector_len(selector: &str) -> Result<(), ResolutionError> {
+    if selector.len() > REFERENCE_MAX_BYTES {
+        return Err(ResolutionError::SelectorTooLong {
+            bytes: selector.len(),
+            max_bytes: REFERENCE_MAX_BYTES,
+        });
+    }
+    Ok(())
+}
+
+fn ensure_lookup_selector_len(
+    selector: &str,
+    source_filter: LookupSource<'_>,
+) -> Result<(), ResolutionError> {
+    let bytes = match source_filter {
+        LookupSource::Named(source) => source.len() + 1 + selector.len(),
+        LookupSource::Any | LookupSource::Local => selector.len(),
+    };
+    if bytes > REFERENCE_MAX_BYTES {
+        return Err(ResolutionError::SelectorTooLong {
+            bytes,
+            max_bytes: REFERENCE_MAX_BYTES,
+        });
+    }
+    Ok(())
+}
+
+fn ensure_exact_selector_len(
+    provider: Provider,
+    session_id: &str,
+    source_filter: LookupSource<'_>,
+) -> Result<(), ResolutionError> {
+    let raw_ref_len = provider.slug().len() + 1 + session_id.len();
+    let bytes = match source_filter {
+        LookupSource::Named(source) => source.len() + 1 + raw_ref_len,
+        LookupSource::Any | LookupSource::Local => raw_ref_len,
+    };
+    if bytes > REFERENCE_MAX_BYTES {
+        return Err(ResolutionError::SelectorTooLong {
+            bytes,
+            max_bytes: REFERENCE_MAX_BYTES,
+        });
+    }
+    Ok(())
 }

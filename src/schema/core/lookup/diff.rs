@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::REFERENCE_MAX_BYTES;
+
 use super::super::super::common::{
     closed_object_schema, exit_codes, schema_props, source_qualified_session_only_ref_pattern,
     SCHEMA_DRAFT,
@@ -18,6 +20,7 @@ pub(in crate::schema) fn diff_schema() -> Value {
                     "session1",
                     json!({
                         "type": "string",
+                        "maxLength": REFERENCE_MAX_BYTES,
                         "pattern": source_qualified_session_only_ref_pattern(),
                         "description": "First session ref. Examples: claude-code/abc-123, laptop:claude-code/abc-123"
                     }),
@@ -26,6 +29,7 @@ pub(in crate::schema) fn diff_schema() -> Value {
                     "session2",
                     json!({
                         "type": "string",
+                        "maxLength": REFERENCE_MAX_BYTES,
                         "pattern": source_qualified_session_only_ref_pattern(),
                         "description": "Second session ref. Examples: claude-code/def-456, laptop:claude-code/def-456"
                     }),

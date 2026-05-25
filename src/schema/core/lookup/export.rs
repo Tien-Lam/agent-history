@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::REFERENCE_MAX_BYTES;
+
 use super::super::super::common::{closed_object_schema, exit_codes, schema_props, SCHEMA_DRAFT};
 
 pub(in crate::schema) fn export_schema() -> Value {
@@ -14,7 +16,7 @@ pub(in crate::schema) fn export_schema() -> Value {
                 ("format", json!({ "type": "string", "enum": ["md", "json", "html"] })),
                 (
                     "session",
-                    json!({ "type": "string", "description": "Session ID/prefix, `<provider>/<session-id>`, or `<source>:<provider>/<session-id>`." }),
+                    json!({ "type": "string", "maxLength": REFERENCE_MAX_BYTES, "description": "Session ID/prefix, `<provider>/<session-id>`, or `<source>:<provider>/<session-id>`." }),
                 ),
                 (
                     "output",

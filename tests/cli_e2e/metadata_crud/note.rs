@@ -272,6 +272,14 @@ fn schema_subcommand_includes_note() {
         serde_json::json!(aghist::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES)
     );
     assert_eq!(
+        parsed["subcommands"]["add"]["params"]["properties"]["reference"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert_eq!(
+        parsed["subcommands"]["list"]["params"]["properties"]["reference"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert_eq!(
         parsed["subcommands"]["edit"]["params"]["properties"]["body"]["maxLength"],
         serde_json::json!(aghist::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES)
     );

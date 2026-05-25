@@ -4,6 +4,7 @@ use std::str::FromStr;
 use serde::Serialize;
 
 use super::{CitationParseError, CitationRef};
+use crate::schema_fragments::REFERENCE_MAX_BYTES;
 
 /// Split an optional source prefix from a ref.
 ///
@@ -46,6 +47,12 @@ impl FromStr for QualifiedCitationRef {
     type Err = CitationParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() > REFERENCE_MAX_BYTES {
+            return Err(CitationParseError::TooLong {
+                bytes: s.len(),
+                max_bytes: REFERENCE_MAX_BYTES,
+            });
+        }
         let (source, raw_ref) = split_source_prefix(s);
         let citation = raw_ref.parse::<CitationRef>()?;
         Ok(Self {

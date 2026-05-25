@@ -268,6 +268,10 @@ fn health_schema_documents_provider_fidelity_contract() {
 #[test]
 fn show_schema_includes_reference_pattern() {
     let schema = schema_for("show").unwrap();
+    assert_eq!(
+        schema["params"]["properties"]["reference"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
     let pattern = &schema["params"]["properties"]["reference"]["pattern"];
     assert!(pattern.is_string());
     let re = regex_lite_check(pattern.as_str().unwrap(), "claude-code/abc-123#7");
@@ -291,6 +295,14 @@ fn show_schema_includes_reference_pattern() {
 #[test]
 fn diff_schema_includes_source_qualified_session_pattern() {
     let schema = schema_for("diff").unwrap();
+    assert_eq!(
+        schema["params"]["properties"]["session1"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert_eq!(
+        schema["params"]["properties"]["session2"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
     let pattern = schema["params"]["properties"]["session1"]["pattern"]
         .as_str()
         .unwrap();
@@ -299,6 +311,15 @@ fn diff_schema_includes_source_qualified_session_pattern() {
     assert!(
         pattern.ends_with("/[^#]+$"),
         "diff session ref pattern should reject turn suffixes"
+    );
+}
+
+#[test]
+fn export_schema_bounds_session_selector() {
+    let schema = schema_for("export").unwrap();
+    assert_eq!(
+        schema["params"]["properties"]["session"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::REFERENCE_MAX_BYTES)
     );
 }
 

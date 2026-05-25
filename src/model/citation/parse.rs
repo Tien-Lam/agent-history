@@ -6,6 +6,7 @@ use super::base::session_id_is_valid;
 use super::{CitationRef, SessionOrTurnRef, SessionRef};
 use crate::model::provider::Provider;
 use crate::model::session::SessionId;
+use crate::schema_fragments::REFERENCE_MAX_BYTES;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum CitationParseError {
@@ -23,6 +24,18 @@ pub enum CitationParseError {
     UnknownProvider(String),
     #[error("invalid turn '{0}' (must be a positive integer)")]
     InvalidTurn(String),
+    #[error("reference exceeds {max_bytes} byte limit ({bytes} bytes)")]
+    TooLong { bytes: usize, max_bytes: usize },
+}
+
+fn enforce_ref_length(s: &str) -> Result<(), CitationParseError> {
+    if s.len() > REFERENCE_MAX_BYTES {
+        return Err(CitationParseError::TooLong {
+            bytes: s.len(),
+            max_bytes: REFERENCE_MAX_BYTES,
+        });
+    }
+    Ok(())
 }
 
 fn parse_session_head(s: &str) -> Result<(Provider, SessionId), CitationParseError> {
@@ -53,6 +66,7 @@ impl FromStr for SessionRef {
     type Err = CitationParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        enforce_ref_length(s)?;
         if s.is_empty() {
             return Err(CitationParseError::Empty);
         }
@@ -73,6 +87,7 @@ impl FromStr for CitationRef {
     type Err = CitationParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        enforce_ref_length(s)?;
         if s.is_empty() {
             return Err(CitationParseError::Empty);
         }
@@ -103,6 +118,7 @@ impl FromStr for SessionOrTurnRef {
     type Err = CitationParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        enforce_ref_length(s)?;
         if s.contains('#') {
             s.parse::<CitationRef>().map(Self::Turn)
         } else {

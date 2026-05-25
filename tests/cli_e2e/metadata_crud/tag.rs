@@ -256,6 +256,14 @@ fn schema_subcommand_includes_tag() {
         serde_json::json!(aghist::schema_fragments::METADATA_TAG_MAX_BYTES)
     );
     assert_eq!(
+        parsed["subcommands"]["add"]["params"]["properties"]["reference"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert_eq!(
+        parsed["subcommands"]["list"]["params"]["properties"]["reference"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert_eq!(
         parsed["subcommands"]["list"]["params"]["properties"]["tag"]["maxLength"],
         serde_json::json!(aghist::schema_fragments::METADATA_TAG_MAX_BYTES)
     );

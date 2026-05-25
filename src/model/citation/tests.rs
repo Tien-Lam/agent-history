@@ -229,6 +229,42 @@ fn parse_rejects_non_numeric_turn() {
 }
 
 #[test]
+fn parse_rejects_oversized_refs() {
+    let session = format!(
+        "claude-code/{}",
+        "s".repeat(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert!(matches!(
+        session.parse::<SessionRef>(),
+        Err(CitationParseError::TooLong { bytes, max_bytes })
+            if bytes == session.len()
+                && max_bytes == crate::schema_fragments::REFERENCE_MAX_BYTES
+    ));
+
+    let citation = format!(
+        "claude-code/{}#1",
+        "s".repeat(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert!(matches!(
+        citation.parse::<CitationRef>(),
+        Err(CitationParseError::TooLong { bytes, max_bytes })
+            if bytes == citation.len()
+                && max_bytes == crate::schema_fragments::REFERENCE_MAX_BYTES
+    ));
+
+    let qualified = format!(
+        "laptop:claude-code/{}#1",
+        "s".repeat(crate::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+    assert!(matches!(
+        qualified.parse::<QualifiedCitationRef>(),
+        Err(CitationParseError::TooLong { bytes, max_bytes })
+            if bytes == qualified.len()
+                && max_bytes == crate::schema_fragments::REFERENCE_MAX_BYTES
+    ));
+}
+
+#[test]
 fn new_validates_inputs() {
     assert!(CitationRef::new(Provider::ClaudeCode, sid("abc"), 1).is_some());
     assert!(CitationRef::new(Provider::ClaudeCode, sid("abc"), 0).is_none());

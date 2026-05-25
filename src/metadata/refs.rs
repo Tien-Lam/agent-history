@@ -1,5 +1,6 @@
 use crate::config::validate_source_name;
 use crate::model::{split_source_prefix, CitationParseError, SessionOrTurnRef};
+use crate::schema_fragments::REFERENCE_MAX_BYTES;
 
 use super::MetadataError;
 
@@ -13,6 +14,12 @@ use super::MetadataError;
 /// non-empty; if a turn is present it must parse as a positive integer.
 pub fn validate_session_ref(raw: &str) -> std::result::Result<&str, MetadataError> {
     let invalid = |reason: &'static str| MetadataError::InvalidSessionRef(raw.to_string(), reason);
+    if raw.len() > REFERENCE_MAX_BYTES {
+        return Err(MetadataError::SessionRefTooLong {
+            bytes: raw.len(),
+            max_bytes: REFERENCE_MAX_BYTES,
+        });
+    }
     let (source, unqualified) = split_source_prefix(raw);
     if let Some(source) = source {
         validate_source_name(source).map_err(|_message| invalid("invalid source name"))?;
@@ -28,6 +35,7 @@ pub fn validate_session_ref(raw: &str) -> std::result::Result<&str, MetadataErro
             }
             CitationParseError::UnknownProvider(_) => "unknown provider slug",
             CitationParseError::InvalidTurn(_) => "turn must be a positive integer",
+            CitationParseError::TooLong { .. } => "reference exceeds byte limit",
         };
         invalid(reason)
     })?;

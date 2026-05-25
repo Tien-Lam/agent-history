@@ -42,6 +42,11 @@ pub(crate) fn metadata_error(err: &MetadataError) -> ErrorEnvelope {
                 "Use '<provider>/<session-id>' or '<provider>/<session-id>#<turn>'. Valid providers: {valid}."
             ))
         }
+        MetadataError::SessionRefTooLong { max_bytes, .. } => ErrorEnvelope::new(
+            "usage",
+            format!("session ref must be at most {max_bytes} bytes"),
+        )
+        .with_hint("Use a shorter session id, session ref, or citation ref."),
         MetadataError::EmptyBody => ErrorEnvelope::new("usage", "note body must not be empty")
             .with_hint("Pass --body \"text\", --body-file PATH, or --stdin."),
         MetadataError::BodyTooLong { max_bytes, .. } => ErrorEnvelope::new(

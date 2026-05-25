@@ -1,12 +1,18 @@
 use serde_json::{json, Value};
 
+use crate::schema_fragments::REFERENCE_MAX_BYTES;
+
 use super::super::common::{
     closed_object_schema, count_array_response, exit_codes, object_schema, schema_props,
     schema_ref, source_qualified_session_ref_pattern, SCHEMA_DRAFT,
 };
 
 fn session_ref_param_schema() -> Value {
-    json!({ "type": "string", "pattern": source_qualified_session_ref_pattern() })
+    json!({
+        "type": "string",
+        "maxLength": REFERENCE_MAX_BYTES,
+        "pattern": source_qualified_session_ref_pattern()
+    })
 }
 
 fn star_row() -> Value {

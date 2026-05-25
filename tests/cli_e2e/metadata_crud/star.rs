@@ -136,6 +136,30 @@ fn star_rejects_invalid_ref_with_envelope() {
     let env: serde_json::Value = serde_json::from_str(line).unwrap();
     assert_eq!(env["error"]["kind"], "invalid-ref");
 }
+
+#[test]
+fn star_rejects_oversized_ref_with_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("metadata.db");
+    let reference = format!(
+        "claude-code/{}",
+        "s".repeat(aghist::schema_fragments::REFERENCE_MAX_BYTES)
+    );
+
+    let assert = star_env(&db).args(["star", &reference]).assert().code(2);
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    let line = stderr.lines().find(|l| l.starts_with('{')).unwrap();
+    let env: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(env["error"]["kind"], "usage");
+    assert!(
+        env["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("session ref must be at most"),
+        "unexpected error envelope: {env:#}"
+    );
+}
+
 #[test]
 fn schema_subcommand_includes_star_unstar_stars() {
     let out = aghist().args(["schema", "--list"]).output().unwrap();
@@ -154,6 +178,10 @@ fn schema_subcommand_includes_star_unstar_stars() {
             serde_json::from_str(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
         assert_eq!(parsed["command"], name);
         assert!(parsed["definitions"]["Star"].is_object());
+        assert_eq!(
+            parsed["params"]["properties"]["reference"]["maxLength"],
+            serde_json::json!(aghist::schema_fragments::REFERENCE_MAX_BYTES)
+        );
     }
 }
 
