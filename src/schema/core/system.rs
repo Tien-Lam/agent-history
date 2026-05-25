@@ -134,15 +134,28 @@ fn pull_result_schema() -> Value {
     )
 }
 
+fn pull_summary_schema() -> Value {
+    closed_object_schema(
+        schema_props([
+            ("source_count", json!({ "type": "integer", "minimum": 0 })),
+            ("file_count", json!({ "type": "integer", "minimum": 0 })),
+            ("byte_count", json!({ "type": "integer", "minimum": 0 })),
+            ("dry_run", json!({ "type": "boolean" })),
+        ]),
+        &["source_count", "file_count", "byte_count", "dry_run"],
+    )
+}
+
 fn pull_response_schema() -> Value {
     json!({
         "oneOf": [
             closed_object_schema(
                 schema_props([
                     ("results", json!({ "type": "array", "items": pull_result_schema() })),
+                    ("summary", pull_summary_schema()),
                     ("cache_dir", json!({ "type": "string" })),
                 ]),
-                &["results", "cache_dir"],
+                &["results", "summary", "cache_dir"],
             ),
             {
                 "description": "NDJSON output (one pull result per line).",

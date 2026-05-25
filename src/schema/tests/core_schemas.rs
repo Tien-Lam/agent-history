@@ -256,6 +256,17 @@ fn sources_schema_describes_remote_registry_subcommands() {
     );
     assert!(subcommands["pull"]["params"]["properties"]["dry_run"].is_object());
     assert!(subcommands["pull"]["response"]["oneOf"].is_array());
+    let pull_json = &subcommands["pull"]["response"]["oneOf"][0];
+    assert!(
+        string_array(&pull_json["required"]).contains(&"summary"),
+        "pull JSON response should require aggregate summary"
+    );
+    for field in ["source_count", "file_count", "byte_count", "dry_run"] {
+        assert!(
+            string_array(&pull_json["properties"]["summary"]["required"]).contains(&field),
+            "pull summary missing required field {field}"
+        );
+    }
 }
 
 #[test]

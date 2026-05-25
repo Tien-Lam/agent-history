@@ -42,6 +42,13 @@ fn sources_pull_invokes_rsync_and_writes_manifest() {
         results[0]["byte_count"].as_u64().unwrap() > 0,
         "byte_count should be nonzero after pull: {results:?}"
     );
+    assert_eq!(parsed["summary"]["source_count"], 1);
+    assert_eq!(parsed["summary"]["file_count"], 1);
+    assert_eq!(parsed["summary"]["dry_run"], false);
+    assert!(
+        parsed["summary"]["byte_count"].as_u64().unwrap() > 0,
+        "summary byte_count should be nonzero after pull: {parsed:?}"
+    );
 
     let logged = std::fs::read_to_string(&args_log).unwrap();
     assert!(
@@ -96,6 +103,10 @@ fn sources_pull_dry_run_passes_flag_and_skips_count() {
     assert_eq!(parsed["results"][0]["dry_run"], true);
     assert_eq!(parsed["results"][0]["file_count"], 0);
     assert_eq!(parsed["results"][0]["byte_count"], 0);
+    assert_eq!(parsed["summary"]["source_count"], 1);
+    assert_eq!(parsed["summary"]["file_count"], 0);
+    assert_eq!(parsed["summary"]["byte_count"], 0);
+    assert_eq!(parsed["summary"]["dry_run"], true);
 
     let logged = std::fs::read_to_string(&args_log).unwrap();
     assert!(
@@ -223,6 +234,13 @@ fn sources_pull_all_iterates_every_source() {
         .collect();
     assert!(names.contains(&"a"), "{names:?}");
     assert!(names.contains(&"b"), "{names:?}");
+    assert_eq!(parsed["summary"]["source_count"], 2);
+    assert_eq!(parsed["summary"]["file_count"], 2);
+    assert_eq!(parsed["summary"]["dry_run"], false);
+    assert!(
+        parsed["summary"]["byte_count"].as_u64().unwrap() > 0,
+        "summary byte_count should include pulled sources: {parsed:?}"
+    );
 
     assert!(cache_dir.join("a").join(".aghist-source.json").exists());
     assert!(cache_dir.join("b").join(".aghist-source.json").exists());
