@@ -17,6 +17,20 @@ impl OutputFlags {
     pub(crate) fn new(json: bool, ndjson: bool) -> Self {
         Self { json, ndjson }
     }
+
+    fn json_only(self, local_json: bool, command: &str) -> Result<bool, ErrorEnvelope> {
+        if self.ndjson {
+            if local_json {
+                return Err(conflicting_output_flags_error());
+            }
+            return Err(ErrorEnvelope::new(
+                "usage",
+                format!("{command} does not support --ndjson"),
+            )
+            .with_hint("Use --json for a single JSON document, or remove --ndjson."));
+        }
+        Ok(self.json || local_json)
+    }
 }
 
 pub(crate) struct CommandContext {
@@ -62,6 +76,14 @@ impl CommandContext {
         OutputMode::resolve(self.output.json, self.output.ndjson, kind)
     }
 
+    pub(crate) fn json_only_output(
+        &self,
+        local_json: bool,
+        command: &str,
+    ) -> Result<bool, ErrorEnvelope> {
+        self.output.json_only(local_json, command)
+    }
+
     pub(crate) fn metadata_filter_keys(&self) -> Result<Option<HashSet<String>>, ErrorEnvelope> {
         resolve_metadata_filter(&self.filters)
     }
@@ -77,6 +99,12 @@ impl CommandContext {
     ) -> (Vec<Box<dyn provider::HistoryProvider>>, config::Config) {
         (self.providers, self.config)
     }
+}
+
+fn conflicting_output_flags_error() -> ErrorEnvelope {
+    ErrorEnvelope::new("usage", "--json and --ndjson are mutually exclusive").with_hint(
+        "Pick one. Use --json for a single JSON document; use --ndjson for streaming rows.",
+    )
 }
 
 fn load_config() -> Result<config::Config, ErrorEnvelope> {
@@ -97,4 +125,37 @@ fn validate_filter_args(filters: &FilterArgs) -> Result<(), ErrorEnvelope> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OutputFlags;
+
+    #[test]
+    fn json_only_output_accepts_global_or_local_json() {
+        assert!(OutputFlags::new(true, false)
+            .json_only(false, "search")
+            .unwrap());
+        assert!(OutputFlags::new(false, false)
+            .json_only(true, "search")
+            .unwrap());
+    }
+
+    #[test]
+    fn json_only_output_rejects_ndjson() {
+        let err = OutputFlags::new(false, true)
+            .json_only(false, "search")
+            .unwrap_err();
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains("search does not support --ndjson"));
+    }
+
+    #[test]
+    fn json_only_output_rejects_local_json_with_global_ndjson_as_conflict() {
+        let err = OutputFlags::new(false, true)
+            .json_only(true, "search")
+            .unwrap_err();
+        assert_eq!(err.kind, "usage");
+        assert_eq!(err.message, "--json and --ndjson are mutually exclusive");
+    }
 }

@@ -20,7 +20,7 @@ pub(crate) fn dispatch_report_command(
             metadata_keys.as_ref(),
             args.by,
             args.limit,
-            args.json,
+            ctx.json_only_output(args.json, "usage")?,
         ),
         ReportsCommand::Project(args) => {
             let limits = aghist::project::ProjectLimits {
@@ -36,7 +36,7 @@ pub(crate) fn dispatch_report_command(
                 metadata_keys.as_ref(),
                 &args.name,
                 limits,
-                args.json,
+                ctx.json_only_output(args.json, "project")?,
             )
         }
         ReportsCommand::Report(args) => {
@@ -60,7 +60,7 @@ pub(crate) fn dispatch_report_command(
                 metadata_keys.as_ref(),
                 window_days,
                 limits,
-                args.json,
+                ctx.json_only_output(args.json, "report")?,
             )
         }
     }

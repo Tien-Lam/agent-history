@@ -55,6 +55,7 @@ pub(crate) fn dispatch_search_command(
             },
         ),
         SearchDispatchMode::Once { debug_search } => dispatch_one_shot_search(
+            ctx,
             ctx.providers(),
             ctx.scope(),
             args,
@@ -66,6 +67,7 @@ pub(crate) fn dispatch_search_command(
 }
 
 fn dispatch_one_shot_search(
+    ctx: &CommandContext,
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,
     args: SearchDispatchArgs,
@@ -87,6 +89,7 @@ fn dispatch_one_shot_search(
         args.params,
     )?;
     let debug_search = debug_search || resolved.debug_search;
+    let force_json = ctx.json_only_output(resolved.json, "search")?;
     search_command(
         providers,
         scope,
@@ -96,7 +99,7 @@ fn dispatch_one_shot_search(
             stdin: resolved.stdin,
             limit: resolved.limit,
             cursor: resolved.cursor.as_deref(),
-            force_json: resolved.json,
+            force_json,
             filters,
             debug_search,
             hybrid_weight: resolved.hybrid_weight,

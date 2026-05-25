@@ -89,7 +89,7 @@ pub(crate) fn dispatch_lookup_command(
             &args.session1,
             &args.session2,
             args.context,
-            args.json,
+            ctx.json_only_output(args.json, "diff")?,
         ),
     }
 }
