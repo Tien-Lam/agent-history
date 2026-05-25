@@ -26,11 +26,7 @@ pub(crate) fn dispatch_metadata_command(
         MetadataCommand::Star { reference } => star_command(&reference, one_shot_mode),
         MetadataCommand::Unstar { reference } => unstar_command(&reference, one_shot_mode),
         MetadataCommand::Stars { reference, json } => {
-            let mode = if json {
-                OutputMode::Json
-            } else {
-                one_shot_mode
-            };
+            let mode = ctx.output_mode_with_local_json(CommandKind::OneShot, json)?;
             stars_list(reference.as_deref(), mode)
         }
     }

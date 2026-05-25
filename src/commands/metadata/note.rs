@@ -4,6 +4,7 @@ use aghist::output::OutputMode;
 use aghist::schema_fragments::METADATA_NOTE_BODY_MAX_BYTES;
 
 use super::super::super::cli::NoteCommand;
+use super::super::context::output_mode_with_local_json;
 use super::super::input::{read_text_input_with_limit, TextInput, TextInputMessages};
 use super::{metadata_error, open_metadata_db};
 
@@ -27,7 +28,7 @@ pub(crate) fn note_dispatch(command: NoteCommand, mode: OutputMode) -> Result<i3
             Ok(EXIT_OK)
         }
         NoteCommand::List { reference, json } => {
-            let mode = if json { OutputMode::Json } else { mode };
+            let mode = output_mode_with_local_json(mode, json)?;
             let conn = open_metadata_db()?;
             let notes =
                 metadata::note_list(&conn, reference.as_deref()).map_err(|e| metadata_error(&e))?;

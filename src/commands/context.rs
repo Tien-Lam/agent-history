@@ -76,6 +76,14 @@ impl CommandContext {
         OutputMode::resolve(self.output.json, self.output.ndjson, kind)
     }
 
+    pub(crate) fn output_mode_with_local_json(
+        &self,
+        kind: CommandKind,
+        local_json: bool,
+    ) -> Result<OutputMode, ErrorEnvelope> {
+        output_mode_with_local_json(self.output_mode(kind), local_json)
+    }
+
     pub(crate) fn json_only_output(
         &self,
         local_json: bool,
@@ -98,6 +106,20 @@ impl CommandContext {
         self,
     ) -> (Vec<Box<dyn provider::HistoryProvider>>, config::Config) {
         (self.providers, self.config)
+    }
+}
+
+pub(crate) fn output_mode_with_local_json(
+    default_mode: OutputMode,
+    local_json: bool,
+) -> Result<OutputMode, ErrorEnvelope> {
+    if local_json && matches!(default_mode, OutputMode::Ndjson) {
+        return Err(conflicting_output_flags_error());
+    }
+    if local_json {
+        Ok(OutputMode::Json)
+    } else {
+        Ok(default_mode)
     }
 }
 
@@ -154,6 +176,22 @@ mod tests {
     fn json_only_output_rejects_local_json_with_global_ndjson_as_conflict() {
         let err = OutputFlags::new(false, true)
             .json_only(true, "search")
+            .unwrap_err();
+        assert_eq!(err.kind, "usage");
+        assert_eq!(err.message, "--json and --ndjson are mutually exclusive");
+    }
+
+    #[test]
+    fn output_mode_with_local_json_preserves_default_without_local_json() {
+        assert_eq!(
+            super::output_mode_with_local_json(aghist::output::OutputMode::Ndjson, false).unwrap(),
+            aghist::output::OutputMode::Ndjson
+        );
+    }
+
+    #[test]
+    fn output_mode_with_local_json_rejects_local_json_with_default_ndjson() {
+        let err = super::output_mode_with_local_json(aghist::output::OutputMode::Ndjson, true)
             .unwrap_err();
         assert_eq!(err.kind, "usage");
         assert_eq!(err.message, "--json and --ndjson are mutually exclusive");

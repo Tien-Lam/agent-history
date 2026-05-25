@@ -3,6 +3,7 @@ use aghist::metadata;
 use aghist::output::OutputMode;
 
 use super::super::super::cli::TagCommand;
+use super::super::context::output_mode_with_local_json;
 use super::{metadata_error, open_metadata_db};
 
 mod output;
@@ -22,7 +23,7 @@ pub(crate) fn tag_dispatch(command: TagCommand, mode: OutputMode) -> Result<i32,
             tag,
             json,
         } => {
-            let mode = if json { OutputMode::Json } else { mode };
+            let mode = output_mode_with_local_json(mode, json)?;
             let tags = metadata::tag_list(&conn, reference.as_deref(), tag.as_deref())
                 .map_err(|e| metadata_error(&e))?;
             emit_tag_list(&tags, mode)?;
