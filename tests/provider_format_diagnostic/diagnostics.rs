@@ -1,4 +1,11 @@
 use super::diagnose_all_fixtures;
+use aghist::provider::claude_code::ClaudeCodeProvider;
+use aghist::provider::codex_cli::CodexCliProvider;
+use aghist::provider::copilot_cli::CopilotCliProvider;
+use aghist::provider::gemini_cli::GeminiCliProvider;
+use aghist::provider::opencode::OpenCodeProvider;
+use aghist::provider::HistoryProvider;
+use std::collections::BTreeMap;
 
 #[test]
 fn generated_provider_diagnostics_cover_every_registered_provider() {
@@ -71,6 +78,60 @@ fn all_fixture_providers_tool_call_fidelity() {
         total_tool_calls > 0,
         "no fixture produced any ToolUse blocks - tool-call extraction may be silently broken across all providers",
     );
+}
+
+#[test]
+fn edge_case_provider_diagnostics_do_not_abort_on_malformed_fixtures() {
+    let root = super::common::helpers::edge_cases_dir();
+    let cases: Vec<(&str, Box<dyn HistoryProvider>)> = vec![
+        (
+            "claude-edge",
+            Box::new(ClaudeCodeProvider::new(vec![root.join("claude")])),
+        ),
+        (
+            "codex-edge",
+            Box::new(CodexCliProvider::new(vec![root.join("codex")])),
+        ),
+        (
+            "copilot-edge",
+            Box::new(CopilotCliProvider::new(vec![root.join("copilot")])),
+        ),
+        (
+            "gemini-edge",
+            Box::new(GeminiCliProvider::new(vec![root.join("gemini")])),
+        ),
+        (
+            "opencode-edge",
+            Box::new(OpenCodeProvider::new(vec![root.join("opencode")])),
+        ),
+    ];
+
+    let diagnostics = cases
+        .into_iter()
+        .map(|(label, provider)| {
+            aghist::provider_diagnostic::analyze_provider(label, provider.as_ref(), None)
+                .unwrap_or_else(|err| panic!("{label}: edge diagnostic failed: {err}"))
+        })
+        .map(|diagnostic| (diagnostic.label.clone(), diagnostic))
+        .collect::<BTreeMap<_, _>>();
+
+    let claude = &diagnostics["claude-edge"];
+    assert_eq!(claude.session_count, 1);
+    assert_eq!(claude.message_count, 2);
+    assert_eq!(claude.parse.records_seen, 5);
+    assert_eq!(claude.parse.parse_errors, 2);
+    assert_eq!(claude.parse.empty_content, 1);
+
+    let codex = &diagnostics["codex-edge"];
+    assert_eq!(codex.session_count, 1);
+    assert_eq!(codex.message_count, 2);
+    assert_eq!(codex.parse.records_seen, 4);
+    assert_eq!(codex.parse.parse_errors, 2);
+
+    assert_eq!(diagnostics["copilot-edge"].session_count, 1);
+    assert_eq!(diagnostics["copilot-edge"].message_count, 0);
+    assert_eq!(diagnostics["gemini-edge"].session_count, 0);
+    assert_eq!(diagnostics["opencode-edge"].session_count, 1);
 }
 
 #[test]
