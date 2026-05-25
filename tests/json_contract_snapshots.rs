@@ -48,6 +48,7 @@ fn normalize_health_doc(doc: &mut Value) {
     }
 }
 
+#[cfg(unix)]
 fn normalize_sources_pull_doc(doc: &mut Value) {
     doc["cache_dir"] = serde_json::json!("[sources-cache]");
     if let Some(results) = doc.get_mut("results").and_then(Value::as_array_mut) {
@@ -121,6 +122,7 @@ fn command_response_schema(name: &str) -> Value {
     })
 }
 
+#[cfg(unix)]
 fn command_subcommand_response_schema(name: &str, subcommand: &str) -> Value {
     let schema = command_schema(name);
     serde_json::json!({
