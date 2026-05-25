@@ -6,7 +6,7 @@ use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
 
-use super::collect::{collect_federated_message_bundles, normalized_project_filter};
+use super::collect::collect_federated_message_bundles;
 use super::output::{render_project_human, render_project_json};
 use crate::commands::discovery::{
     qualified_citation_ref, qualified_session_ref, source_for_session,
@@ -29,7 +29,7 @@ pub(crate) fn project_command(
         ));
     }
     let needle_lower = needle.to_lowercase();
-    let extra_project = normalized_project_filter(filters);
+    let extra_project = filters.project_needle();
     let collected = collect_federated_message_bundles(
         providers,
         scope,

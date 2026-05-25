@@ -15,14 +15,6 @@ pub(super) struct FederatedSessionBundles {
     pub(super) source_by_session: HashMap<String, String>,
 }
 
-pub(super) fn normalized_project_filter(filters: &FilterArgs) -> Option<String> {
-    filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty())
-}
-
 pub(super) fn collect_federated_filtered_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,

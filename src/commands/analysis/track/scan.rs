@@ -21,11 +21,7 @@ pub(super) fn scan_topic_sessions(
 ) -> Vec<aghist::llm::TrackSession> {
     let needle = topic.to_lowercase();
     let mut matched: Vec<aghist::llm::TrackSession> = Vec::new();
-    let project_needle = filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
+    let project_needle = filters.project_needle();
 
     let discovery = federated_discovery_for_commands(providers, scope);
     for session in discovery.sessions {

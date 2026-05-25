@@ -12,11 +12,7 @@ pub(super) fn collect_federated_sessions(
     filters: &FilterArgs,
     metadata_keys: Option<&HashSet<String>>,
 ) -> aghist::federated::FederatedDiscovery {
-    let project_needle = filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
+    let project_needle = filters.project_needle();
 
     let mut discovery = federated_discovery_for_commands(providers, scope);
     let source_by_session = &discovery.source_by_session;

@@ -19,11 +19,7 @@ pub(super) fn collect_federated_todo_candidates(
     metadata_keys: Option<&HashSet<String>>,
     kinds: &[TodoKind],
 ) -> Vec<TodoRow> {
-    let project_needle = filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
+    let project_needle = filters.project_needle();
 
     let discovery = federated_discovery_for_commands(providers, scope);
     let mut candidates = Vec::new();

@@ -7,7 +7,7 @@ use chrono::Utc;
 
 use crate::cli::FilterArgs;
 
-use super::collect::{collect_federated_message_bundles, normalized_project_filter};
+use super::collect::collect_federated_message_bundles;
 use super::output::render_report;
 use crate::commands::discovery::{
     qualified_citation_ref, qualified_session_ref, source_for_session,
@@ -36,7 +36,7 @@ pub(crate) fn report_command(
     }
     let window = aghist::report::ReportWindow::between(start, end);
 
-    let project_needle = normalized_project_filter(filters);
+    let project_needle = filters.project_needle();
     let collected = collect_federated_message_bundles(
         providers,
         scope,

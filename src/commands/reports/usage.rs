@@ -6,7 +6,7 @@ use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
 
-use super::collect::{collect_federated_filtered_sessions, normalized_project_filter};
+use super::collect::collect_federated_filtered_sessions;
 use super::output::{render_usage_human, render_usage_json};
 
 pub(crate) fn usage_command(
@@ -18,7 +18,7 @@ pub(crate) fn usage_command(
     limit: usize,
     force_json: bool,
 ) -> Result<i32, ErrorEnvelope> {
-    let project_needle = normalized_project_filter(filters);
+    let project_needle = filters.project_needle();
     let sessions = collect_federated_filtered_sessions(
         providers,
         scope,

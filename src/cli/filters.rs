@@ -80,6 +80,13 @@ impl FilterArgs {
     pub(crate) fn has_metadata_filter(&self) -> bool {
         self.note.is_some() || self.tag.is_some() || self.starred
     }
+
+    pub(crate) fn project_needle(&self) -> Option<String> {
+        self.project
+            .as_deref()
+            .map(str::to_lowercase)
+            .filter(|s| !s.is_empty())
+    }
 }
 
 fn parse_role_slug(raw: &str) -> Result<Role, String> {
