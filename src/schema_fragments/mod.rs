@@ -4,6 +4,7 @@ mod responses;
 
 pub const LIST_LIMIT_DEFAULT: usize = 20;
 pub const LIST_LIMIT_MAX: usize = 10_000;
+pub const CURSOR_TOKEN_MAX_BYTES: usize = 16 * 1024;
 pub const SEARCH_LIMIT_DEFAULT: usize = 20;
 pub const SEARCH_LIMIT_MAX: usize = 10_000;
 pub const SEARCH_QUERY_MAX_BYTES: usize = 64 * 1024;

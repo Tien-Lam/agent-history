@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use aghist::cli_error::ErrorEnvelope;
 use aghist::model::Provider;
 use aghist::schema_fragments::{
-    EXPORT_TURN_RANGE_MAX_BYTES, REFERENCE_MAX_BYTES, SEARCH_LIMIT_MAX, SHOW_INCLUDE_CONTEXT_MAX,
+    CURSOR_TOKEN_MAX_BYTES, EXPORT_TURN_RANGE_MAX_BYTES, REFERENCE_MAX_BYTES, SEARCH_LIMIT_MAX,
+    SHOW_INCLUDE_CONTEXT_MAX,
 };
 use aghist::todos::TodoKind;
 use aghist::{config, export};
@@ -177,6 +178,15 @@ fn validate_search_args(args: SearchArgs) -> Result<SearchArgs, ErrorEnvelope> {
         )
         .with_hint("Use a value in the schema range: 0.0 <= hybrid_weight <= 1.0."));
     }
+    if let Some(cursor) = args.cursor.as_deref() {
+        if cursor.len() > CURSOR_TOKEN_MAX_BYTES {
+            return Err(ErrorEnvelope::new(
+                "usage",
+                format!("cursor token must be at most {CURSOR_TOKEN_MAX_BYTES} bytes"),
+            )
+            .with_hint("Pass back the `meta.next_cursor` value verbatim."));
+        }
+    }
     Ok(args)
 }
 
@@ -319,5 +329,28 @@ mod tests {
 
         assert_eq!(err.kind, "usage");
         assert!(err.message.contains(&SEARCH_LIMIT_MAX.to_string()));
+    }
+
+    #[test]
+    fn resolve_search_args_rejects_oversized_cursor() {
+        let result = resolve_search_args(
+            SearchArgs {
+                query: Some("needle".to_string()),
+                query_file: None,
+                stdin: false,
+                limit: 1,
+                cursor: Some("c".repeat(CURSOR_TOKEN_MAX_BYTES + 1)),
+                json: false,
+                debug_search: false,
+                hybrid_weight: 0.0,
+            },
+            None,
+        );
+        let Err(err) = result else {
+            panic!("oversized search cursor should be rejected");
+        };
+
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains(&CURSOR_TOKEN_MAX_BYTES.to_string()));
     }
 }

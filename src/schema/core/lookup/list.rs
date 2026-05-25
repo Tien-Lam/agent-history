@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::{LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX};
+use crate::schema_fragments::{CURSOR_TOKEN_MAX_BYTES, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX};
 
 use super::super::super::common::{
     closed_object_schema, exit_codes, filter_params_fragment, list_response_schema, schema_props,
@@ -23,7 +23,7 @@ fn list_params_properties() -> SchemaProperties {
         ),
         (
             "cursor",
-            json!({ "type": "string", "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
+            json!({ "type": "string", "maxLength": CURSOR_TOKEN_MAX_BYTES, "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
         ),
     ]);
     for (name, schema) in filter_params_fragment() {

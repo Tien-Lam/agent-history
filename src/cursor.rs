@@ -16,9 +16,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::schema_fragments::CURSOR_TOKEN_MAX_BYTES;
 use crate::search::HitKind;
-
-const MAX_CURSOR_TOKEN_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Error)]
 pub enum CursorError {
@@ -82,7 +81,7 @@ impl ListCursor {
 fn encode<T: Serialize>(value: &T) -> Result<String, CursorError> {
     let json = serde_json::to_vec(value).map_err(CursorError::Encode)?;
     let token = URL_SAFE_NO_PAD.encode(json);
-    if token.len() > MAX_CURSOR_TOKEN_BYTES {
+    if token.len() > CURSOR_TOKEN_MAX_BYTES {
         return Err(CursorError::TooLarge);
     }
     Ok(token)
@@ -90,7 +89,7 @@ fn encode<T: Serialize>(value: &T) -> Result<String, CursorError> {
 
 fn decode<T: for<'de> Deserialize<'de>>(token: &str) -> Result<T, CursorError> {
     let token = token.trim();
-    if token.len() > MAX_CURSOR_TOKEN_BYTES {
+    if token.len() > CURSOR_TOKEN_MAX_BYTES {
         return Err(CursorError::TooLarge);
     }
     let bytes = URL_SAFE_NO_PAD

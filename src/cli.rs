@@ -4,7 +4,7 @@ mod resolvers;
 
 use clap::Parser;
 
-use aghist::schema_fragments::{LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX};
+use aghist::schema_fragments::{CURSOR_TOKEN_MAX_BYTES, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX};
 
 pub(crate) use commands::{
     AnalysisCommand, Command, CommandTarget, ContextCommand, ContextFreeCommand, LookupCommand,
@@ -34,7 +34,7 @@ pub(crate) struct Cli {
     pub(crate) limit: usize,
 
     /// Opaque pagination cursor (from a prior `meta.next_cursor`) for `--list`.
-    #[arg(long, requires = "list")]
+    #[arg(long, requires = "list", value_parser = parse_cursor_token)]
     pub(crate) cursor: Option<String>,
 
     /// Force rebuild the search index
@@ -56,6 +56,15 @@ pub(crate) struct Cli {
 
     #[command(subcommand)]
     pub(crate) command: Option<Command>,
+}
+
+pub(crate) fn parse_cursor_token(raw: &str) -> Result<String, String> {
+    if raw.len() > CURSOR_TOKEN_MAX_BYTES {
+        return Err(format!(
+            "cursor token must be at most {CURSOR_TOKEN_MAX_BYTES} bytes"
+        ));
+    }
+    Ok(raw.to_string())
 }
 
 fn parse_list_limit(raw: &str) -> Result<usize, String> {
@@ -89,5 +98,12 @@ mod tests {
             parse_list_limit(&(LIST_LIMIT_MAX + 1).to_string()).unwrap_err(),
             format!("list limit must be at most {LIST_LIMIT_MAX}")
         );
+    }
+
+    #[test]
+    fn parse_cursor_token_rejects_oversized_values() {
+        let raw = "c".repeat(CURSOR_TOKEN_MAX_BYTES + 1);
+        let err = parse_cursor_token(&raw).unwrap_err();
+        assert!(err.contains(&CURSOR_TOKEN_MAX_BYTES.to_string()));
     }
 }

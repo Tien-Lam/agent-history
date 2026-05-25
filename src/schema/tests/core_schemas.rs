@@ -21,6 +21,10 @@ fn search_schema_describes_query_param() {
     );
     assert!(params["cursor"].is_object());
     assert_eq!(
+        params["cursor"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::CURSOR_TOKEN_MAX_BYTES)
+    );
+    assert_eq!(
         params["watch_interval_ms"]["default"],
         serde_json::json!(crate::schema_fragments::SEARCH_WATCH_INTERVAL_MS_DEFAULT)
     );
@@ -48,6 +52,10 @@ fn list_schema_describes_pagination_params() {
         serde_json::json!(crate::schema_fragments::LIST_LIMIT_MAX)
     );
     assert!(params["cursor"].is_object());
+    assert_eq!(
+        params["cursor"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::CURSOR_TOKEN_MAX_BYTES)
+    );
 
     let json_response = &schema["response"]["oneOf"][0];
     assert_eq!(

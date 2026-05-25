@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 
 use crate::schema_fragments::{
-    SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, SEARCH_QUERY_MAX_BYTES,
-    SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_ITERATIONS_DEFAULT,
+    CURSOR_TOKEN_MAX_BYTES, SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX,
+    SEARCH_QUERY_MAX_BYTES, SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_ITERATIONS_DEFAULT,
 };
 
 use super::super::super::common::{
@@ -30,7 +30,7 @@ fn search_params_properties() -> SchemaProperties {
         ),
         (
             "cursor",
-            json!({ "type": "string", "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
+            json!({ "type": "string", "maxLength": CURSOR_TOKEN_MAX_BYTES, "description": "Opaque pagination cursor from a prior `meta.next_cursor`." }),
         ),
         (
             "json",

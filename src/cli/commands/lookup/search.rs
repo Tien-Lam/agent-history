@@ -6,6 +6,8 @@ use aghist::schema_fragments::{
 };
 use clap::Args;
 
+use crate::cli::parse_cursor_token;
+
 #[derive(Args)]
 #[allow(clippy::struct_excessive_bools)] // CLI flag struct: clap requires bool fields per flag
 pub(crate) struct SearchCommand {
@@ -40,7 +42,7 @@ pub(crate) struct SearchCommand {
     pub(crate) limit: usize,
 
     /// Opaque pagination cursor from a prior `meta.next_cursor`.
-    #[arg(long, conflicts_with = "params")]
+    #[arg(long, conflicts_with = "params", value_parser = parse_cursor_token)]
     pub(crate) cursor: Option<String>,
 
     /// Force JSON output (default: JSON on pipe, table on TTY)

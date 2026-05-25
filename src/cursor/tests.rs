@@ -73,7 +73,7 @@ fn malformed_token_is_rejected() {
 
 #[test]
 fn oversized_cursor_token_is_rejected_before_decode() {
-    let token = "A".repeat(MAX_CURSOR_TOKEN_BYTES + 1);
+    let token = "A".repeat(CURSOR_TOKEN_MAX_BYTES + 1);
 
     assert!(matches!(
         SearchCursor::decode(&token),
@@ -86,7 +86,7 @@ fn oversized_encoded_cursor_is_rejected() {
     let c = ListCursor {
         started_at: Utc.with_ymd_and_hms(2026, 5, 7, 1, 14, 0).unwrap(),
         session_id: "xyz".to_string(),
-        session_key: "x".repeat(MAX_CURSOR_TOKEN_BYTES),
+        session_key: "x".repeat(CURSOR_TOKEN_MAX_BYTES),
     };
 
     assert!(matches!(c.encode(), Err(CursorError::TooLarge)));
