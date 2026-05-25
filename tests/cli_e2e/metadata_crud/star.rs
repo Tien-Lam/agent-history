@@ -155,7 +155,7 @@ fn star_rejects_oversized_ref_with_envelope() {
         env["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("session ref must be at most"),
+            .contains("reference must be at most"),
         "unexpected error envelope: {env:#}"
     );
 }
