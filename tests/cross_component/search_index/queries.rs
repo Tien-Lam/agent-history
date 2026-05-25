@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use super::super::support::*;
 
 #[test]
@@ -90,4 +92,56 @@ fn search_index_finds_tool_output() {
         "snippet should reflect the matching tool output, got: {:?}",
         hits[0].snippet
     );
+}
+
+#[test]
+fn search_index_limits_dense_corpus_without_duplicate_hits() {
+    let token = "denselimitmarker";
+    let limit = 17;
+    let mut builder = fixtures::claude::ClaudeFixtureBuilder::new();
+    for idx in 0..40 {
+        builder = builder
+            .add_session(&format!("dense-session-{idx:03}"))
+            .project("dense-project")
+            .user(&format!("{token} user request {idx:03}"))
+            .assistant(&format!("{token} assistant response {idx:03}"))
+            .done();
+    }
+    let fixture = builder.build();
+
+    let providers: Vec<Box<dyn HistoryProvider>> =
+        vec![Box::new(ClaudeCodeProvider::new(vec![fixture
+            .base_path
+            .clone()]))];
+    let mut sessions = Vec::new();
+    for p in &providers {
+        sessions.extend(p.discover_sessions().unwrap());
+    }
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    index.build_index(&sessions, &providers, &tx).unwrap();
+
+    let hits = index.search(token, limit).unwrap();
+    assert_eq!(
+        hits.len(),
+        limit,
+        "dense corpus should return exactly the requested page size"
+    );
+
+    let mut seen = BTreeSet::new();
+    for hit in &hits {
+        assert!(
+            seen.insert((hit.session_id().to_string(), hit.message_id().to_string())),
+            "duplicate hit reference: {}/{}",
+            hit.session_id(),
+            hit.message_id()
+        );
+        assert!(
+            hit.snippet.contains(token),
+            "snippet should retain the matched token, got: {:?}",
+            hit.snippet
+        );
+    }
 }
