@@ -6,6 +6,7 @@ use aghist::federated;
 use aghist::model::Session;
 use aghist::output::write_json_line;
 use aghist::search;
+use aghist::session_resolver;
 
 use super::super::filtering::strip_turn_suffix;
 use super::super::text::truncate;
@@ -48,9 +49,9 @@ pub(super) fn print_search_table(
     next_cursor: Option<&str>,
 ) -> io::Result<()> {
     let mut out = io::stdout().lock();
-    let any_remote = hits
-        .iter()
-        .any(|(h, _)| hit_has_remote_source(h, source_by_session));
+    let any_remote = hits.iter().any(|(h, _)| {
+        hit_has_remote_source(h, sessions.get(h.session_key()).copied(), source_by_session)
+    });
 
     if any_remote {
         writeln!(
@@ -86,16 +87,28 @@ pub(super) fn print_search_table(
 
 fn hit_has_remote_source(
     hit: &search::SearchHit,
+    session: Option<&Session>,
     source_by_session: &HashMap<String, String>,
 ) -> bool {
+    hit_source(hit, session, source_by_session) != federated::LOCAL_SOURCE
+}
+
+fn hit_source<'a>(
+    hit: &'a search::SearchHit,
+    session: Option<&'a Session>,
+    source_by_session: &'a HashMap<String, String>,
+) -> &'a str {
     if matches!(hit.kind(), search::HitKind::Note) {
-        return aghist::dto::source_from_note_ref(hit.note_session_ref())
-            != federated::LOCAL_SOURCE;
+        return aghist::dto::source_from_note_ref(hit.note_session_ref());
+    }
+
+    if let Some(session) = session {
+        return session_resolver::source_for_session(source_by_session, session);
     }
 
     source_by_session
         .get(hit.session_key())
-        .is_some_and(|s| s != federated::LOCAL_SOURCE)
+        .map_or(federated::LOCAL_SOURCE, String::as_str)
 }
 
 pub(super) fn write_watch_hit<W: Write>(
@@ -150,13 +163,7 @@ fn write_table_row<W: Write>(
     let session_short = truncate(&session_label, 14);
     let snippet = truncate(&hit.snippet, 80);
     if any_remote {
-        let source = if is_note {
-            aghist::dto::source_from_note_ref(hit.note_session_ref())
-        } else {
-            source_by_session
-                .get(hit.session_key())
-                .map_or(federated::LOCAL_SOURCE, String::as_str)
-        };
+        let source = hit_source(hit, session, source_by_session);
         let source = truncate(source, 10);
         writeln!(
             out,
@@ -191,7 +198,7 @@ mod tests {
             1.0,
         );
 
-        assert!(hit_has_remote_source(&hit, &HashMap::new()));
+        assert!(hit_has_remote_source(&hit, None, &HashMap::new()));
     }
 
     #[test]
@@ -203,7 +210,7 @@ mod tests {
             1.0,
         );
 
-        assert!(!hit_has_remote_source(&hit, &HashMap::new()));
+        assert!(!hit_has_remote_source(&hit, None, &HashMap::new()));
     }
 
     #[test]
@@ -219,6 +226,6 @@ mod tests {
         let mut sources = HashMap::new();
         sources.insert("claude-code/session-a".to_string(), "laptop".to_string());
 
-        assert!(hit_has_remote_source(&hit, &sources));
+        assert!(hit_has_remote_source(&hit, None, &sources));
     }
 }
