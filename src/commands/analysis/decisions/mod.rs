@@ -76,11 +76,7 @@ pub(crate) fn decisions_command(
         }
     });
 
-    let project_needle = filters
-        .project
-        .as_deref()
-        .map(str::to_lowercase)
-        .filter(|s| !s.is_empty());
+    let project_needle = filters.project_needle();
 
     let mut rows = collect_federated_decision_rows(
         providers,
