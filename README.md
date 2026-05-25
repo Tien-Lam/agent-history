@@ -103,12 +103,12 @@ aghist --reindex          # Rebuild search index from scratch
 
 ### Agent-friendly CLI
 
-aghist's command surface is designed to be scriptable. Every subcommand:
+aghist's command surface is designed to be scriptable. Schema-exposed commands:
 
 - emits stable JSON on a pipe (or with `--json`) and a human-readable table on a TTY
 - uses semantic exit codes — `0` success, `1` runtime error, `2` usage error, `3` success-but-empty
 - on error, writes a single-line JSON envelope `{"error":{"kind":"…","message":"…","hint":"…"}}` to stderr
-- has a discoverable JSON-Schema for its params and response (`aghist schema <subcmd>`)
+- have a discoverable JSON-Schema for params and response (`aghist schema <subcmd>`)
 
 ```sh
 # Search
@@ -120,7 +120,7 @@ aghist search --params '{"query":"x","limit":5}'            # whole request as o
 aghist search "x" --debug-search                            # show BM25 explanation tree per hit
 aghist search "x" --watch                                   # stream NDJSON as new sessions land
 
-# Filters (work on --list, search, decisions, todos, threads)
+# Filters (work on list, search, analysis, and report commands)
 aghist --provider claude-code --since 2025-01-01T00:00:00Z --list
 aghist search "x" --role assistant --has-tool-call --project myrepo
 
@@ -166,7 +166,8 @@ aghist mcp                                                  # JSON-RPC 2.0 over 
                                                             # inspect tools/resources via your MCP client
 ```
 
-For the full schema of every subcommand, run `aghist schema <subcmd>`.
+For the full schema of every schema-exposed command, run `aghist schema --list`
+then `aghist schema <subcmd>`.
 
 ### Keybindings
 
