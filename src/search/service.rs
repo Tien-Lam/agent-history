@@ -109,10 +109,11 @@ impl<'a> SearchService<'a> {
 
         let session_meta: HashMap<String, &Session> =
             sessions.iter().map(|s| (s.identity_key(), s)).collect();
+        let session_refs = current_session_refs(&session_meta, source_by_session);
         let metadata_warnings = index_notes_best_effort_for_session_refs(
             &index,
             metadata::default_path(),
-            &current_session_refs(&session_meta, source_by_session),
+            &session_refs,
         )
         .err()
         .map(|error| error.to_string())
@@ -131,7 +132,7 @@ impl<'a> SearchService<'a> {
 
         let warnings = index_load_warnings(&stats.load_errors, &session_meta, source_by_session);
         let mut hits =
-            filter_hits_to_current_sessions(raw_output.hits, &session_meta, source_by_session);
+            filter_hits_to_current_sessions(raw_output.hits, &session_meta, &session_refs);
         hits = filter_hits_by_metadata(
             hits,
             &session_meta,

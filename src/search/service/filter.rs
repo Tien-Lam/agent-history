@@ -35,15 +35,8 @@ pub(super) fn filter_hits_by_metadata(
 pub(super) fn filter_hits_to_current_sessions(
     hits: Vec<SearchServiceHit>,
     session_meta: &HashMap<String, &Session>,
-    source_by_session: &HashMap<String, String>,
+    session_refs: &HashSet<String>,
 ) -> Vec<SearchServiceHit> {
-    let session_refs: HashSet<String> = session_meta
-        .values()
-        .map(|session| {
-            qualified_session_metadata_key(session, source_for_session(source_by_session, session))
-        })
-        .collect();
-
     hits.into_iter()
         .filter(|(hit, _)| match hit.kind() {
             HitKind::Message => session_meta.contains_key(hit.session_key()),
