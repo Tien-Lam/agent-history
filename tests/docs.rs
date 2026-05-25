@@ -32,7 +32,25 @@ fn changelog_release_links_match_version_history() {
         );
     }
 
-    for pair in versions.windows(2) {
+    let released_versions = changelog_released_versions(&versions);
+    if versions.iter().any(|version| version == "Unreleased") {
+        assert_eq!(
+            versions.first().map(String::as_str),
+            Some("Unreleased"),
+            "CHANGELOG.md [Unreleased] heading should be first",
+        );
+        let current = released_versions
+            .first()
+            .expect("CHANGELOG.md [Unreleased] needs a released version to compare against");
+        let expected = format!("{REPO_URL}/compare/v{current}...HEAD");
+        assert_eq!(
+            links.get("Unreleased").map(String::as_str),
+            Some(expected.as_str()),
+            "CHANGELOG.md link for [Unreleased] should compare current release to HEAD",
+        );
+    }
+
+    for pair in released_versions.windows(2) {
         let current = &pair[0];
         let previous = &pair[1];
         let expected = format!("{REPO_URL}/compare/v{previous}...v{current}");
@@ -43,7 +61,9 @@ fn changelog_release_links_match_version_history() {
         );
     }
 
-    let oldest = versions.last().expect("checked non-empty versions");
+    let oldest = released_versions
+        .last()
+        .expect("checked non-empty versions");
     let expected = format!("{REPO_URL}/releases/tag/v{oldest}");
     assert_eq!(
         links.get(oldest).map(String::as_str),
@@ -58,9 +78,10 @@ fn changelog_top_release_matches_cargo_version() {
     let cargo_toml = repo_file("Cargo.toml");
     let versions = changelog_versions(&changelog);
     let cargo_version = cargo_package_version(&cargo_toml);
+    let released_versions = changelog_released_versions(&versions);
 
     assert_eq!(
-        versions.first().map(String::as_str),
+        released_versions.first().map(String::as_str),
         Some(cargo_version.as_str()),
         "top CHANGELOG.md release should match Cargo.toml package.version",
     );
@@ -174,6 +195,14 @@ fn changelog_versions(changelog: &str) -> Vec<String> {
             let (version, _) = rest.split_once(']')?;
             Some(version.to_string())
         })
+        .collect()
+}
+
+fn changelog_released_versions(versions: &[String]) -> Vec<String> {
+    versions
+        .iter()
+        .filter(|version| version.as_str() != "Unreleased")
+        .cloned()
         .collect()
 }
 

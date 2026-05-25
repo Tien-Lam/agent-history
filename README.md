@@ -154,6 +154,7 @@ aghist threads --json                                       # cluster sessions b
 aghist sources add work --host me@laptop --path ~/.claude   # register a remote
 aghist sources pull work                                    # rsync remote → local cache
 aghist sources pull --all                                   # pull everything
+aghist sources pull --all --json | jq '.summary'            # source/file/byte totals
 aghist search "x"                                           # federates across local + remote caches
 aghist show work:claude-code/abc-123#7                      # disambiguate duplicate remote refs
 

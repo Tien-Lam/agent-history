@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `aghist sources pull --json` now includes a `summary` object with aggregate source, file, byte, and dry-run totals.
+
+### Changed
+
+- CI caches Rust build outputs consistently across Linux and Windows jobs.
+
+### Tests
+
+- Added command-schema contract checks for every schema-exposed command.
+- Added provider diagnostic coverage for malformed edge-case fixtures.
+- Added dense-corpus search indexing coverage for result limits and duplicate-hit regressions.
+- Added a JSON contract snapshot for `aghist sources pull --json`.
+
 ## [0.3.1] - 2026-05-24
 
 Maintenance release for the 0.3 line.
@@ -168,6 +185,7 @@ The y3o roadmap: aghist grows an agent-friendly CLI surface, semantic search, an
 - GitHub Actions CI (clippy, tests, build)
 - Snapshot tests with insta
 
+[Unreleased]: https://github.com/Tien-Lam/agent-history/compare/v0.3.1...HEAD
 [0.3.1]: https://github.com/Tien-Lam/agent-history/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Tien-Lam/agent-history/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Tien-Lam/agent-history/compare/v0.2.0...v0.2.1

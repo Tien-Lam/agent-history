@@ -204,7 +204,7 @@ The system **fails open**: without consent or without the `embeddings` build fea
 
 ### Federated (cross-machine)
 
-`aghist sources add` registers a remote (`<host>:<path>`) and `sources pull` rsyncs `<host>:<path>/` to `~/.cache/aghist/sources/<name>/data/` (cache root overridable via `AGHIST_SOURCES_CACHE_DIR`). Remote caches can be full home mirrors or exact provider history dirs; `provider::registry::remote_candidate_dirs` supplies both interpretations for each provider. Search/list/show/export/diff results carry a `source` field (`local` or `<remote-name>`); source-qualified refs (`work:claude-code/abc#7`) disambiguate duplicates.
+`aghist sources add` registers a remote (`<host>:<path>`) and `sources pull` rsyncs `<host>:<path>/` to `~/.cache/aghist/sources/<name>/data/` (cache root overridable via `AGHIST_SOURCES_CACHE_DIR`). Remote caches can be full home mirrors or exact provider history dirs; `provider::registry::remote_candidate_dirs` supplies both interpretations for each provider. Machine-readable pull output returns per-source rows plus an aggregate `summary` (`source_count`, `file_count`, `byte_count`, `dry_run`). Search/list/show/export/diff results carry a `source` field (`local` or `<remote-name>`); source-qualified refs (`work:claude-code/abc#7`) disambiguate duplicates.
 
 ## MCP server
 
