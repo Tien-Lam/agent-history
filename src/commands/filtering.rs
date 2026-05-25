@@ -4,24 +4,39 @@ use aghist::cli_error::ErrorEnvelope;
 use aghist::metadata;
 use aghist::model::{Message, Session};
 use aghist::provider;
+use aghist::search::SearchFilters;
 use aghist::session_resolver;
 use aghist::session_warnings::SessionLoadWarning;
 
 use super::super::cli::FilterArgs;
 use super::metadata::{metadata_error, open_metadata_db};
 
-/// Apply session-level filters (provider, since/until, project). Provider is
-/// not re-checked here when the caller already filtered by provider, but it's
-/// harmless to do so. `project_needle` is the pre-lowercased substring for
-/// efficiency in the per-session loop.
-pub(crate) fn session_matches(
-    session: &Session,
-    filters: &FilterArgs,
-    project_needle: Option<&str>,
-) -> bool {
-    filters
-        .to_search_filters()
-        .matches_session_with_project_needle(session, project_needle)
+/// Prepared command filters used by report and analysis paths that scan many
+/// sessions/messages. This avoids rebuilding `SearchFilters` and lowercasing
+/// the project needle inside hot loops.
+pub(crate) struct PreparedFilters {
+    search: SearchFilters,
+    project_needle: Option<String>,
+}
+
+impl PreparedFilters {
+    pub(crate) fn from_args(filters: &FilterArgs) -> Self {
+        let search = filters.to_search_filters();
+        let project_needle = search.project_needle();
+        Self {
+            search,
+            project_needle,
+        }
+    }
+
+    pub(crate) fn matches_session(&self, session: &Session) -> bool {
+        self.search
+            .matches_session_with_project_needle(session, self.project_needle.as_deref())
+    }
+
+    pub(crate) fn matches_message(&self, message: &Message) -> bool {
+        self.search.matches_message(message)
+    }
 }
 
 /// Resolve `--note`/`--tag`/`--starred` into a set of
@@ -61,10 +76,6 @@ pub(crate) fn metadata_filter_matches_source(
     metadata_keys: Option<&HashSet<String>>,
 ) -> bool {
     session_resolver::metadata_filter_matches_source(session, source, metadata_keys)
-}
-
-pub(crate) fn message_matches(message: &Message, filters: &FilterArgs) -> bool {
-    filters.to_search_filters().matches_message(message)
 }
 
 pub(crate) fn load_messages_or_warn(

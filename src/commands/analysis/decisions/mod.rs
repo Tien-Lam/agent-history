@@ -76,14 +76,11 @@ pub(crate) fn decisions_command(
         }
     });
 
-    let project_needle = filters.project_needle();
-
     let mut rows = collect_federated_decision_rows(
         providers,
         scope,
         DecisionCollectRequest {
             filters,
-            project_needle: project_needle.as_deref(),
             session_needle: session_needle.as_deref(),
             source_needle: source_needle.as_deref(),
             metadata_keys,

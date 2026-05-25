@@ -36,15 +36,10 @@ pub(crate) fn report_command(
     }
     let window = aghist::report::ReportWindow::between(start, end);
 
-    let project_needle = filters.project_needle();
-    let collected = collect_federated_message_bundles(
-        providers,
-        scope,
-        filters,
-        project_needle.as_deref(),
-        metadata_keys,
-        |session| session.started_at >= start && session.started_at <= end,
-    );
+    let collected =
+        collect_federated_message_bundles(providers, scope, filters, metadata_keys, |session| {
+            session.started_at >= start && session.started_at <= end
+        });
     let bundles = collected.bundles;
 
     if bundles.is_empty() {

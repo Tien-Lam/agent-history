@@ -5,7 +5,7 @@ use aghist::{provider, query_scope};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
 use super::super::filtering::{
-    load_messages_or_warn, metadata_filter_matches_source, session_matches,
+    load_messages_or_warn, metadata_filter_matches_source, PreparedFilters,
 };
 use crate::cli::FilterArgs;
 
@@ -20,15 +20,15 @@ pub(super) fn collect_federated_filtered_sessions(
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,
     filters: &FilterArgs,
-    project_needle: Option<&str>,
     metadata_keys: Option<&HashSet<String>>,
 ) -> Vec<Session> {
+    let filters = PreparedFilters::from_args(filters);
     let discovery = federated_discovery_for_commands(providers, scope);
     let source_by_session = discovery.source_by_session;
     discovery
         .sessions
         .into_iter()
-        .filter(|session| session_matches(session, filters, project_needle))
+        .filter(|session| filters.matches_session(session))
         .filter(|session| {
             metadata_filter_matches_source(
                 session,
@@ -43,15 +43,15 @@ pub(super) fn collect_federated_message_bundles(
     providers: &[Box<dyn provider::HistoryProvider>],
     scope: &query_scope::QueryScope,
     filters: &FilterArgs,
-    project_needle: Option<&str>,
     metadata_keys: Option<&HashSet<String>>,
     include_session: impl Fn(&Session) -> bool,
 ) -> FederatedSessionBundles {
+    let filters = PreparedFilters::from_args(filters);
     let discovery = federated_discovery_for_commands(providers, scope);
     let source_by_session = discovery.source_by_session;
     let mut bundles = Vec::new();
     for session in discovery.sessions {
-        if !session_matches(&session, filters, project_needle) {
+        if !filters.matches_session(&session) {
             continue;
         }
         if !metadata_filter_matches_source(

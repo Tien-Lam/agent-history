@@ -5,7 +5,7 @@ use aghist::{provider, query_scope};
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
 use crate::commands::filtering::{
-    load_messages_or_warn, message_matches, metadata_filter_matches_source, session_matches,
+    load_messages_or_warn, metadata_filter_matches_source, PreparedFilters,
 };
 
 use super::DecisionRow;
@@ -13,7 +13,6 @@ use super::DecisionRow;
 #[derive(Clone, Copy)]
 pub(super) struct DecisionCollectRequest<'a> {
     pub(super) filters: &'a FilterArgs,
-    pub(super) project_needle: Option<&'a str>,
     pub(super) session_needle: Option<&'a str>,
     pub(super) source_needle: Option<&'a str>,
     pub(super) metadata_keys: Option<&'a HashSet<String>>,
@@ -28,12 +27,12 @@ pub(super) fn collect_federated_decision_rows(
 ) -> Vec<DecisionRow> {
     let DecisionCollectRequest {
         filters,
-        project_needle,
         session_needle,
         source_needle,
         metadata_keys,
         threshold,
     } = request;
+    let filters = PreparedFilters::from_args(filters);
     let discovery = federated_discovery_for_commands(providers, scope);
     let mut rows: Vec<DecisionRow> = Vec::new();
     for session in discovery.sessions {
@@ -41,7 +40,7 @@ pub(super) fn collect_federated_decision_rows(
         if source_needle.is_some_and(|want| want != source) {
             continue;
         }
-        if !session_matches(&session, filters, project_needle) {
+        if !filters.matches_session(&session) {
             continue;
         }
         if !metadata_filter_matches_source(&session, &source, metadata_keys) {
@@ -58,7 +57,7 @@ pub(super) fn collect_federated_decision_rows(
         let scored: Vec<_> = messages
             .iter()
             .enumerate()
-            .filter(|(_, message)| message_matches(message, filters))
+            .filter(|(_, message)| filters.matches_message(message))
             .collect();
         for (idx, msg) in scored {
             let turn = u32::try_from(idx + 1).unwrap_or(u32::MAX);

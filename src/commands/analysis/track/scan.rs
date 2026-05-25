@@ -6,7 +6,7 @@ use aghist::{provider, query_scope};
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
 use crate::commands::filtering::{
-    load_messages_or_warn, message_matches, metadata_filter_matches_source, session_matches,
+    load_messages_or_warn, metadata_filter_matches_source, PreparedFilters,
 };
 
 /// Scan all providers for sessions mentioning `topic`, returning up to `limit` with excerpts.
@@ -20,11 +20,11 @@ pub(super) fn scan_topic_sessions(
 ) -> Vec<aghist::llm::TrackSession> {
     let needle = topic.to_lowercase();
     let mut matched: Vec<aghist::llm::TrackSession> = Vec::new();
-    let project_needle = filters.project_needle();
+    let filters = PreparedFilters::from_args(filters);
 
     let discovery = federated_discovery_for_commands(providers, scope);
     for session in discovery.sessions {
-        if !session_matches(&session, filters, project_needle.as_deref()) {
+        if !filters.matches_session(&session) {
             continue;
         }
         let source = source_for_session(&discovery.source_by_session, &session);
@@ -39,7 +39,7 @@ pub(super) fn scan_topic_sessions(
             if excerpts.len() >= 3 {
                 break;
             }
-            if !message_matches(msg, filters) {
+            if !filters.matches_message(msg) {
                 continue;
             }
             for block in &msg.content {

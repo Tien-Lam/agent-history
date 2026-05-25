@@ -29,18 +29,11 @@ pub(crate) fn project_command(
         ));
     }
     let needle_lower = needle.to_lowercase();
-    let extra_project = filters.project_needle();
-    let collected = collect_federated_message_bundles(
-        providers,
-        scope,
-        filters,
-        extra_project.as_deref(),
-        metadata_keys,
-        |session| {
+    let collected =
+        collect_federated_message_bundles(providers, scope, filters, metadata_keys, |session| {
             let project_name = session.project_name.as_deref().unwrap_or("");
             project_name.to_lowercase().contains(&needle_lower)
-        },
-    );
+        });
     let bundles = collected.bundles;
 
     if bundles.is_empty() {

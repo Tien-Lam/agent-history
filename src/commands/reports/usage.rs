@@ -18,14 +18,7 @@ pub(crate) fn usage_command(
     limit: usize,
     force_json: bool,
 ) -> Result<i32, ErrorEnvelope> {
-    let project_needle = filters.project_needle();
-    let sessions = collect_federated_filtered_sessions(
-        providers,
-        scope,
-        filters,
-        project_needle.as_deref(),
-        metadata_keys,
-    );
+    let sessions = collect_federated_filtered_sessions(providers, scope, filters, metadata_keys);
 
     let report = aghist::usage::aggregate(&sessions, group_by);
     if report.rows.is_empty() {
