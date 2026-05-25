@@ -73,3 +73,72 @@ fn search_incremental_reindex_after_file_change() {
         "original content should survive incremental reindex"
     );
 }
+
+#[test]
+fn opencode_incremental_reindex_tracks_session_part_changes() {
+    let fixture = fixtures::opencode::OpenCodeFixtureBuilder::new()
+        .add_session("oc-alpha")
+        .raw_message(
+            "msg-alpha",
+            r#"{"id":"msg-alpha","role":"assistant","timestamp":"2025-01-01T00:00:00Z","summary":{"title":"fallback alpha"}}"#,
+        )
+        .done()
+        .add_session("oc-bravo")
+        .raw_message(
+            "msg-bravo",
+            r#"{"id":"msg-bravo","role":"assistant","timestamp":"2025-01-01T00:01:00Z","summary":{"title":"fallback bravo"}}"#,
+        )
+        .done()
+        .build();
+    let alpha_part_dir = fixture.base_path.join("part").join("msg-alpha");
+    fs::create_dir_all(&alpha_part_dir).unwrap();
+    fs::write(
+        alpha_part_dir.join("part-001.json"),
+        r#"{"type":"text","text":"omegaoriginal"}"#,
+    )
+    .unwrap();
+    let bravo_part_dir = fixture.base_path.join("part").join("msg-bravo");
+    fs::create_dir_all(&bravo_part_dir).unwrap();
+    fs::write(
+        bravo_part_dir.join("part-001.json"),
+        r#"{"type":"text","text":"bravo original"}"#,
+    )
+    .unwrap();
+
+    let providers: Vec<Box<dyn HistoryProvider>> =
+        vec![Box::new(OpenCodeProvider::new(vec![fixture
+            .base_path
+            .clone()]))];
+    let mut sessions = Vec::new();
+    for provider in &providers {
+        sessions.extend(provider.discover_sessions().unwrap());
+    }
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::open_or_create(index_dir.path()).unwrap();
+    let (tx, _rx) = crossbeam_channel::unbounded();
+    let stats1 = index.build_index(&sessions, &providers, &tx).unwrap();
+    assert_eq!(stats1.sessions_indexed, 2);
+    assert!(!index.search("omegaoriginal", 10).unwrap().is_empty());
+    assert!(!index.search("bravo original", 10).unwrap().is_empty());
+
+    fs::write(
+        alpha_part_dir.join("part-001.json"),
+        r#"{"type":"text","text":"zetarevised"}"#,
+    )
+    .unwrap();
+
+    let mut sessions = Vec::new();
+    for provider in &providers {
+        sessions.extend(provider.discover_sessions().unwrap());
+    }
+    let stats2 = index.build_index(&sessions, &providers, &tx).unwrap();
+    assert_eq!(
+        stats2.updated, 1,
+        "only the session whose part content changed should be reindexed"
+    );
+    assert_eq!(stats2.unchanged, 1);
+    assert!(!index.search("zetarevised", 10).unwrap().is_empty());
+    assert!(index.search("omegaoriginal", 10).unwrap().is_empty());
+    assert!(!index.search("bravo original", 10).unwrap().is_empty());
+}

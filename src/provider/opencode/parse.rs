@@ -7,7 +7,7 @@ use crate::provider::parse_common::timestamp_value_to_utc;
 mod messages;
 mod session;
 
-pub(crate) use messages::parse_message_file_with_stats;
+pub(crate) use messages::{message_id_from_file, parse_message_file_with_stats};
 pub(crate) use session::build_session_from_file;
 
 fn message_text(value: &Value) -> String {

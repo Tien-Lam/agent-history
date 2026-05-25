@@ -34,6 +34,34 @@ pub(super) fn file_fingerprint(path: &Path) -> io::Result<FileFingerprint> {
     })
 }
 
+pub(super) fn combine_fingerprints<I, S>(parts: I) -> FileFingerprint
+where
+    I: IntoIterator<Item = (S, FileFingerprint)>,
+    S: AsRef<str>,
+{
+    let mut len = 0u64;
+    let mut modified_nanos = 0u64;
+    let mut hasher = Sha256::new();
+
+    for (label, fingerprint) in parts {
+        len = len.saturating_add(fingerprint.len);
+        modified_nanos = modified_nanos.max(fingerprint.modified_nanos);
+        hasher.update(label.as_ref().as_bytes());
+        hasher.update([0]);
+        hasher.update(fingerprint.len.to_le_bytes());
+        hasher.update(fingerprint.modified_nanos.to_le_bytes());
+        hasher.update(fingerprint.sha256.as_bytes());
+        hasher.update([0]);
+    }
+
+    let digest = hasher.finalize();
+    FileFingerprint {
+        len,
+        modified_nanos,
+        sha256: to_hex(&digest),
+    }
+}
+
 fn dir_fingerprint(path: &Path) -> io::Result<FileFingerprint> {
     let mut files = Vec::new();
     collect_fingerprint_files(path, path, &mut files)?;

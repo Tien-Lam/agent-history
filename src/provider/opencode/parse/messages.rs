@@ -15,6 +15,12 @@ mod parts;
 
 use parts::load_parts_into_content;
 
+pub(crate) fn message_id_from_file(path: &Path) -> Option<String> {
+    let data = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).ok()?;
+    let raw = serde_json::from_str::<RawMessage>(&data).ok()?;
+    stringish(raw.id.as_ref(), &["id"])
+}
+
 pub(crate) fn parse_message_file_with_stats(
     path: &Path,
     part_dir: &Path,

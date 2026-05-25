@@ -9,6 +9,7 @@ use crate::provider::json_text::stringish;
 use crate::provider::parse_common::MAX_PROVIDER_METADATA_FILE_BYTES;
 use crate::provider::project_name_from_path;
 
+use super::super::paths;
 use super::{timestamp_from_values, RawModel, RawTime};
 
 #[derive(Deserialize)]
@@ -62,7 +63,7 @@ pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Optio
         .and_then(|m| stringish(m.model_id.as_ref(), &["modelID", "model", "id"]));
 
     // Count messages in the message directory
-    let message_dir = storage_base.join("message").join(&id);
+    let message_dir = paths::message_dir(storage_base, &id);
     let message_count = if message_dir.exists() {
         std::fs::read_dir(&message_dir).map_or(0, |entries| {
             entries
@@ -86,6 +87,6 @@ pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Optio
         model,
         token_usage: None,
         message_count,
-        source_path: storage_base.to_path_buf(),
+        source_path: path.to_path_buf(),
     })
 }

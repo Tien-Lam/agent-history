@@ -1,14 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use tantivy::{IndexWriter, TantivyDocument, Term};
 
 use crate::action::Action;
 use crate::model::{Provider, Session};
+use crate::provider::opencode;
 use crate::provider::HistoryProvider;
 use crate::search::document::{extract_content, extract_tool_output, message_has_tool_call};
 use crate::search::fields::SearchFields;
-use crate::search::fingerprint::{file_fingerprint, manifest_has_legacy_path_keys};
+use crate::search::fingerprint::{
+    combine_fingerprints, file_fingerprint, manifest_has_legacy_path_keys,
+};
 use crate::search::types::{HitKind, IndexLoadError, IndexStats, Manifest, SearchError};
 
 use super::super::SearchIndex;
@@ -53,7 +57,7 @@ struct IndexPass<'a> {
 impl IndexPass<'_> {
     fn index_session(&mut self, index: usize, session: &Session) -> Result<String, SearchError> {
         let session_key = session.identity_key();
-        let current_fingerprint = match self.file_fingerprint(&session.source_path) {
+        let current_fingerprint = match self.session_fingerprint(session) {
             Ok(fingerprint) => fingerprint,
             Err(error) => {
                 self.skip_failed_session(index, session, &session_key, error);
@@ -157,6 +161,75 @@ impl IndexPass<'_> {
             .insert(path.to_path_buf(), fingerprint.clone());
         Ok(fingerprint)
     }
+
+    fn session_fingerprint(
+        &mut self,
+        session: &Session,
+    ) -> io::Result<crate::search::types::FileFingerprint> {
+        if session.provider == Provider::OpenCode && session.source_path.is_file() {
+            return self.opencode_session_fingerprint(session);
+        }
+        self.file_fingerprint(&session.source_path)
+    }
+
+    fn opencode_session_fingerprint(
+        &mut self,
+        session: &Session,
+    ) -> io::Result<crate::search::types::FileFingerprint> {
+        let Some(storage_base) =
+            opencode::paths::storage_base_from_source_path(&session.source_path)
+        else {
+            return self.file_fingerprint(&session.source_path);
+        };
+
+        let mut parts = Vec::new();
+        parts.push((
+            "session".to_string(),
+            self.file_fingerprint(&session.source_path)?,
+        ));
+
+        let message_dir = opencode::paths::message_dir(storage_base, &session.id.0);
+        if message_dir.exists() {
+            parts.push(("messages".to_string(), self.file_fingerprint(&message_dir)?));
+            for (label, path) in opencode_part_dirs(&message_dir, storage_base)? {
+                parts.push((label, self.file_fingerprint(&path)?));
+            }
+        }
+
+        Ok(combine_fingerprints(parts))
+    }
+}
+
+fn opencode_part_dirs(
+    message_dir: &Path,
+    storage_base: &Path,
+) -> io::Result<BTreeMap<String, PathBuf>> {
+    let part_root = opencode::paths::part_root(storage_base);
+    if !part_root.exists() {
+        return Ok(BTreeMap::new());
+    }
+
+    let mut dirs = BTreeMap::new();
+    let entries = std::fs::read_dir(message_dir)?;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(message_id) = opencode::message_id_from_file(&path).or_else(|| {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(str::to_string)
+        }) else {
+            continue;
+        };
+        let part_dir = part_root.join(&message_id);
+        if part_dir.exists() {
+            dirs.insert(format!("parts/{message_id}"), part_dir);
+        }
+    }
+    Ok(dirs)
 }
 
 impl SearchIndex {

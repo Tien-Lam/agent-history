@@ -2,10 +2,12 @@ use std::path::PathBuf;
 
 mod discovery;
 mod parse;
+pub(crate) mod paths;
 
 use super::{HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats};
 use crate::model::{Message, Provider, Session};
 use discovery::{base_dirs, discover_sessions};
+pub(crate) use parse::message_id_from_file;
 use parse::parse_message_file_with_stats;
 
 pub struct OpenCodeProvider {
@@ -48,10 +50,12 @@ impl HistoryProvider for OpenCodeProvider {
         &self,
         session: &Session,
     ) -> Result<ProviderMessageLoad, ProviderError> {
-        // source_path points to the storage base dir, session id is in session.id
-        // Messages are in message/{sessionID}/msg_*.json
-        let message_dir = session.source_path.join("message").join(&session.id.0);
-        let part_dir = session.source_path.join("part");
+        let storage_base = paths::storage_base_from_source_path(&session.source_path)
+            .map_or_else(|| session.source_path.clone(), std::path::Path::to_path_buf);
+        // Messages are in message/{sessionID}/msg_*.json. Keep accepting the
+        // legacy storage-root source_path shape for callers with old Sessions.
+        let message_dir = paths::message_dir(&storage_base, &session.id.0);
+        let part_dir = paths::part_root(&storage_base);
         tracing::debug!(message_dir = %message_dir.display(), "loading OpenCode messages");
         if !message_dir.exists() {
             tracing::warn!(message_dir = %message_dir.display(), "message directory does not exist");

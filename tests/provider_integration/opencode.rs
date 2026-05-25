@@ -17,6 +17,10 @@ fn opencode_discover_sessions() {
     assert_eq!(s.project_name.as_deref(), Some("dbproject"));
     assert_eq!(s.summary.as_deref(), Some("Refactor database layer"));
     assert_eq!(s.message_count, 2);
+    assert_eq!(
+        s.source_path.file_name().and_then(|name| name.to_str()),
+        Some("session-001.json")
+    );
 }
 
 #[test]
