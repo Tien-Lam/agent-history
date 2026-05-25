@@ -2,6 +2,7 @@ use aghist::schema_fragments::{DIFF_CONTEXT_DEFAULT, DIFF_CONTEXT_MAX};
 use clap::Args;
 
 use super::parse_reference_selector;
+use crate::cli::parsers::parse_usize_at_most;
 
 #[derive(Args)]
 pub(crate) struct DiffCommand {
@@ -23,14 +24,7 @@ pub(crate) struct DiffCommand {
 }
 
 fn parse_diff_context(raw: &str) -> Result<usize, String> {
-    let value = raw
-        .parse::<usize>()
-        .map_err(|e| format!("invalid diff context: {e}"))?;
-    if value > DIFF_CONTEXT_MAX {
-        Err(format!("diff context must be at most {DIFF_CONTEXT_MAX}"))
-    } else {
-        Ok(value)
-    }
+    parse_usize_at_most(raw, "diff context", DIFF_CONTEXT_MAX)
 }
 
 #[cfg(test)]

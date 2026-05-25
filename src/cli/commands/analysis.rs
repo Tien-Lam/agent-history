@@ -3,6 +3,8 @@ use clap::Args;
 
 use super::super::resolvers::parse_todo_kind;
 
+use crate::cli::parsers::{parse_usize_at_least, parse_usize_between};
+
 use aghist::schema_fragments::{
     ANALYSIS_DECISIONS_LIMIT_DEFAULT, ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LIMIT_DEFAULT,
     ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX,
@@ -185,16 +187,7 @@ fn parse_threads_llm_max_sessions(raw: &str) -> Result<usize, String> {
 }
 
 fn parse_positive_bounded_limit(raw: &str, label: &str, max: usize) -> Result<usize, String> {
-    let value = raw
-        .parse::<usize>()
-        .map_err(|e| format!("invalid {label}: {e}"))?;
-    if value == 0 {
-        Err(format!("{label} must be at least 1"))
-    } else if value > max {
-        Err(format!("{label} must be at most {max}"))
-    } else {
-        Ok(value)
-    }
+    parse_usize_between(raw, label, 1, max)
 }
 
 fn parse_decision_threshold(raw: &str) -> Result<f32, String> {
@@ -220,14 +213,7 @@ fn parse_gap_hours(raw: &str) -> Result<i64, String> {
 }
 
 fn parse_min_sessions(raw: &str) -> Result<usize, String> {
-    let value = raw
-        .parse::<usize>()
-        .map_err(|e| format!("invalid min sessions: {e}"))?;
-    if value == 0 {
-        Err("min sessions must be at least 1".to_string())
-    } else {
-        Ok(value)
-    }
+    parse_usize_at_least(raw, "min sessions", 1)
 }
 
 fn parse_llm_model(raw: &str) -> Result<String, String> {

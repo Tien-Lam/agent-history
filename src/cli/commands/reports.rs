@@ -6,6 +6,7 @@ use aghist::schema_fragments::{
 };
 
 use super::super::resolvers::parse_usage_group_by;
+use crate::cli::parsers::parse_usize_between;
 
 #[derive(Args)]
 pub(crate) struct UsageCommand {
@@ -108,16 +109,7 @@ fn parse_section_limit(raw: &str) -> Result<usize, String> {
 }
 
 fn parse_positive_bounded_usize(raw: &str, label: &str, max: usize) -> Result<usize, String> {
-    let value = raw
-        .parse::<usize>()
-        .map_err(|e| format!("invalid {label}: {e}"))?;
-    if value == 0 {
-        Err(format!("{label} must be at least 1"))
-    } else if value > max {
-        Err(format!("{label} must be at most {max}"))
-    } else {
-        Ok(value)
-    }
+    parse_usize_between(raw, label, 1, max)
 }
 
 fn parse_report_days(raw: &str) -> Result<i64, String> {

@@ -2,6 +2,7 @@ use aghist::schema_fragments::{SHOW_INCLUDE_CONTEXT_DEFAULT, SHOW_INCLUDE_CONTEX
 use clap::Args;
 
 use super::parse_reference_selector;
+use crate::cli::parsers::parse_u32_at_most;
 use crate::cli::resolvers::ShowFormat;
 
 #[derive(Args)]
@@ -30,16 +31,7 @@ pub(crate) struct ShowCommand {
 }
 
 fn parse_include_context(raw: &str) -> Result<u32, String> {
-    let value = raw
-        .parse::<u32>()
-        .map_err(|e| format!("invalid include context: {e}"))?;
-    if value > SHOW_INCLUDE_CONTEXT_MAX {
-        Err(format!(
-            "include context must be at most {SHOW_INCLUDE_CONTEXT_MAX}"
-        ))
-    } else {
-        Ok(value)
-    }
+    parse_u32_at_most(raw, "include context", SHOW_INCLUDE_CONTEXT_MAX)
 }
 
 #[cfg(test)]

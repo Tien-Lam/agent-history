@@ -1,5 +1,6 @@
 mod commands;
 mod filters;
+mod parsers;
 mod resolvers;
 
 use std::path::{Path, PathBuf};

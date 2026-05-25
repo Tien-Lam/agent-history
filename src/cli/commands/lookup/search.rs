@@ -7,6 +7,7 @@ use aghist::schema_fragments::{
 };
 use clap::Args;
 
+use crate::cli::parsers::{parse_u32_at_most, parse_usize_between};
 use crate::cli::{parse_cli_path, parse_cursor_token};
 
 #[derive(Args)]
@@ -110,16 +111,7 @@ pub(crate) struct SearchCommand {
 }
 
 fn parse_search_limit(raw: &str) -> Result<usize, String> {
-    let value = raw
-        .parse::<usize>()
-        .map_err(|e| format!("invalid search limit: {e}"))?;
-    match value {
-        0 => Err("search limit must be at least 1".to_string()),
-        value if value > SEARCH_LIMIT_MAX => {
-            Err(format!("search limit must be at most {SEARCH_LIMIT_MAX}"))
-        }
-        value => Ok(value),
-    }
+    parse_usize_between(raw, "search limit", 1, SEARCH_LIMIT_MAX)
 }
 
 fn parse_watch_interval_ms(raw: &str) -> Result<u64, String> {
@@ -136,16 +128,7 @@ fn parse_watch_interval_ms(raw: &str) -> Result<u64, String> {
 }
 
 fn parse_watch_iterations(raw: &str) -> Result<u32, String> {
-    let value = raw
-        .parse::<u32>()
-        .map_err(|e| format!("invalid watch iterations: {e}"))?;
-    if value > SEARCH_WATCH_ITERATIONS_MAX {
-        Err(format!(
-            "watch iterations must be at most {SEARCH_WATCH_ITERATIONS_MAX}"
-        ))
-    } else {
-        Ok(value)
-    }
+    parse_u32_at_most(raw, "watch iterations", SEARCH_WATCH_ITERATIONS_MAX)
 }
 
 fn parse_hybrid_weight(raw: &str) -> Result<f32, String> {
