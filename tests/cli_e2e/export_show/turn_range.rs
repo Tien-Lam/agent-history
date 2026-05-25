@@ -88,3 +88,29 @@ fn export_turn_range_invalid_emits_usage_envelope() {
     let parsed = cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
+
+#[test]
+fn export_turn_range_oversized_emits_usage_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let oversized = "1".repeat(aghist::schema_fragments::EXPORT_TURN_RANGE_MAX_BYTES + 1);
+
+    let assert = aghist()
+        .args([
+            "export",
+            "--format",
+            "md",
+            "--session",
+            "session-tr-bad",
+            "--turn-range",
+            &oversized,
+        ])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(2);
+    let parsed = cli::assert_stderr_error(&assert);
+    assert_eq!(parsed["error"]["kind"], "usage");
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("turn range"));
+}

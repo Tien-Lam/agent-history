@@ -7,12 +7,14 @@ pub const LIST_LIMIT_MAX: usize = 10_000;
 pub const SEARCH_LIMIT_DEFAULT: usize = 20;
 pub const SEARCH_LIMIT_MAX: usize = 10_000;
 pub const SEARCH_QUERY_MAX_BYTES: usize = 64 * 1024;
+pub const PARAMS_JSON_MAX_BYTES: usize = SEARCH_QUERY_MAX_BYTES + 4 * 1024;
 pub const SEARCH_WATCH_INTERVAL_MS_DEFAULT: u64 = 2_000;
 pub const SEARCH_WATCH_ITERATIONS_DEFAULT: u32 = 0;
 pub const SEARCH_HYBRID_WEIGHT_DEFAULT: f32 = 0.0;
 pub const SHOW_INCLUDE_CONTEXT_DEFAULT: u32 = 0;
 pub const SHOW_INCLUDE_CONTEXT_MAX: u32 = 100;
 pub const REFERENCE_MAX_BYTES: usize = 4 * 1024;
+pub const EXPORT_TURN_RANGE_MAX_BYTES: usize = 64;
 
 pub const ANALYSIS_LIMIT_MAX: usize = 10_000;
 pub const ANALYSIS_TRACK_LIMIT_DEFAULT: usize = 50;

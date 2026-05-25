@@ -100,6 +100,29 @@ fn export_params_invalid_format_value_emits_usage() {
         .unwrap()
         .contains("format"));
 }
+
+#[test]
+fn export_params_oversized_turn_range_emits_usage() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = serde_json::json!({
+        "format": "md",
+        "session": "x",
+        "turn_range": "1".repeat(aghist::schema_fragments::EXPORT_TURN_RANGE_MAX_BYTES + 1)
+    })
+    .to_string();
+    let assert = aghist()
+        .args(["export", "--params", &body])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(2);
+    let parsed = cli::assert_stderr_error(&assert);
+    assert_eq!(parsed["error"]["kind"], "usage");
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("turn range"));
+}
+
 #[test]
 fn export_params_with_turn_range_slices_output() {
     let fixture = common::fixtures::claude::ClaudeFixtureBuilder::new()

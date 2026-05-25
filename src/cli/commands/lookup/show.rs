@@ -1,6 +1,7 @@
 use aghist::schema_fragments::{SHOW_INCLUDE_CONTEXT_DEFAULT, SHOW_INCLUDE_CONTEXT_MAX};
 use clap::Args;
 
+use super::parse_reference_selector;
 use crate::cli::resolvers::ShowFormat;
 
 #[derive(Args)]
@@ -9,7 +10,8 @@ pub(crate) struct ShowCommand {
     #[arg(
         value_name = "REF",
         conflicts_with = "params",
-        required_unless_present = "params"
+        required_unless_present = "params",
+        value_parser = parse_reference_selector
     )]
     pub(crate) reference: Option<String>,
 

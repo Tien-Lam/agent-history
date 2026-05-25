@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use aghist::cli_error::ErrorEnvelope;
-use aghist::schema_fragments::{SEARCH_LIMIT_DEFAULT, SHOW_INCLUDE_CONTEXT_DEFAULT};
+use aghist::schema_fragments::{
+    PARAMS_JSON_MAX_BYTES, SEARCH_LIMIT_DEFAULT, SHOW_INCLUDE_CONTEXT_DEFAULT,
+};
 use aghist::{export, model::Provider};
 
 use super::{parse_provider_slug, ResolvedExport, SearchArgs, ShowFormat};
@@ -120,6 +122,15 @@ pub(super) fn resolve_show_params(json: &str) -> Result<(String, ShowFormat, u32
 }
 
 fn parse_params<T: serde::de::DeserializeOwned>(json: &str, cmd: &str) -> Result<T, ErrorEnvelope> {
+    if json.len() > PARAMS_JSON_MAX_BYTES {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("--params for `{cmd}` must be at most {PARAMS_JSON_MAX_BYTES} bytes"),
+        )
+        .with_hint(
+            "Pass only the command params JSON; use file/stdin options for large text inputs.",
+        ));
+    }
     serde_json::from_str(json).map_err(|e| {
         ErrorEnvelope::new(
             "usage",
@@ -137,4 +148,19 @@ fn parse_params_field<T, E: std::fmt::Display>(
     parse(raw).map_err(|e| {
         ErrorEnvelope::new("usage", format!("--params field `{field}` is invalid: {e}"))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_params_rejects_oversized_json_before_deserialize() {
+        let oversized = " ".repeat(PARAMS_JSON_MAX_BYTES + 1);
+        let err = parse_params::<serde_json::Value>(&oversized, "show")
+            .expect_err("oversized --params body should be rejected before JSON parsing");
+
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains(&PARAMS_JSON_MAX_BYTES.to_string()));
+    }
 }

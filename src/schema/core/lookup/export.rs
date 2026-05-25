@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::REFERENCE_MAX_BYTES;
+use crate::schema_fragments::{EXPORT_TURN_RANGE_MAX_BYTES, REFERENCE_MAX_BYTES};
 
 use super::super::super::common::{closed_object_schema, exit_codes, schema_props, SCHEMA_DRAFT};
 
@@ -26,6 +26,7 @@ pub(in crate::schema) fn export_schema() -> Value {
                     "turn_range",
                     json!({
                         "type": "string",
+                        "maxLength": EXPORT_TURN_RANGE_MAX_BYTES,
                         "pattern": "^[0-9]*(:[0-9]*)?$",
                         "description": "1-based inclusive turn range: A:B, :B, A:, or a single A."
                     }),

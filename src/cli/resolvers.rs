@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use aghist::cli_error::ErrorEnvelope;
 use aghist::model::Provider;
-use aghist::schema_fragments::{SEARCH_LIMIT_MAX, SHOW_INCLUDE_CONTEXT_MAX};
+use aghist::schema_fragments::{
+    EXPORT_TURN_RANGE_MAX_BYTES, REFERENCE_MAX_BYTES, SEARCH_LIMIT_MAX, SHOW_INCLUDE_CONTEXT_MAX,
+};
 use aghist::todos::TodoKind;
 use aghist::{config, export};
 
@@ -82,7 +84,7 @@ pub(crate) fn resolve_export_args(
     include_notes: bool,
     params: Option<String>,
 ) -> Result<ResolvedExport, ErrorEnvelope> {
-    if let Some(json) = params {
+    let args = if let Some(json) = params {
         params::resolve_export_params(&json)
     } else {
         Ok(ResolvedExport {
@@ -92,7 +94,28 @@ pub(crate) fn resolve_export_args(
             turn_range,
             include_notes,
         })
+    }?;
+    validate_export_args(args)
+}
+
+fn validate_export_args(args: ResolvedExport) -> Result<ResolvedExport, ErrorEnvelope> {
+    if args.session.len() > REFERENCE_MAX_BYTES {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("session selector must be at most {REFERENCE_MAX_BYTES} bytes"),
+        )
+        .with_hint("Use a shorter session id, session ref, or unique id prefix."));
     }
+    if let Some(turn_range) = args.turn_range.as_deref() {
+        if turn_range.len() > EXPORT_TURN_RANGE_MAX_BYTES {
+            return Err(ErrorEnvelope::new(
+                "usage",
+                format!("turn range must be at most {EXPORT_TURN_RANGE_MAX_BYTES} bytes"),
+            )
+            .with_hint("Use a range like `12:25`, `:10`, `5:`, or `7`."));
+        }
+    }
+    Ok(args)
 }
 
 pub(crate) fn resolve_index_args(
@@ -178,6 +201,13 @@ pub(crate) fn resolve_show_args(
 fn validate_show_args(
     args: (String, ShowFormat, u32),
 ) -> Result<(String, ShowFormat, u32), ErrorEnvelope> {
+    if args.0.len() > REFERENCE_MAX_BYTES {
+        return Err(ErrorEnvelope::new(
+            "usage",
+            format!("reference must be at most {REFERENCE_MAX_BYTES} bytes"),
+        )
+        .with_hint("Use a shorter citation ref."));
+    }
     if args.2 > SHOW_INCLUDE_CONTEXT_MAX {
         return Err(ErrorEnvelope::new(
             "usage",
@@ -225,6 +255,47 @@ mod tests {
 
         assert_eq!(err.kind, "usage");
         assert!(err.message.contains(&SHOW_INCLUDE_CONTEXT_MAX.to_string()));
+    }
+
+    #[test]
+    fn resolve_show_args_rejects_oversized_reference() {
+        let reference = format!("claude-code/{}#1", "s".repeat(REFERENCE_MAX_BYTES));
+        let err = resolve_show_args(Some(reference), ShowFormat::Md, 0, None)
+            .expect_err("oversized show ref should be rejected before lookup");
+
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains(&REFERENCE_MAX_BYTES.to_string()));
+    }
+
+    #[test]
+    fn resolve_export_args_rejects_oversized_selector_and_turn_range() {
+        let session = "s".repeat(REFERENCE_MAX_BYTES + 1);
+        let err = resolve_export_args(
+            Some(export::ExportFormat::Markdown),
+            Some(session),
+            None,
+            None,
+            false,
+            None,
+        )
+        .expect_err("oversized export selector should be rejected before lookup");
+        assert_eq!(err.kind, "usage");
+        assert!(err.message.contains(&REFERENCE_MAX_BYTES.to_string()));
+
+        let turn_range = "1".repeat(EXPORT_TURN_RANGE_MAX_BYTES + 1);
+        let err = resolve_export_args(
+            Some(export::ExportFormat::Markdown),
+            Some("session-id".to_string()),
+            None,
+            Some(turn_range),
+            false,
+            None,
+        )
+        .expect_err("oversized export turn range should be rejected before lookup");
+        assert_eq!(err.kind, "usage");
+        assert!(err
+            .message
+            .contains(&EXPORT_TURN_RANGE_MAX_BYTES.to_string()));
     }
 
     #[test]

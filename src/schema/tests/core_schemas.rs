@@ -321,6 +321,10 @@ fn export_schema_bounds_session_selector() {
         schema["params"]["properties"]["session"]["maxLength"],
         serde_json::json!(crate::schema_fragments::REFERENCE_MAX_BYTES)
     );
+    assert_eq!(
+        schema["params"]["properties"]["turn_range"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::EXPORT_TURN_RANGE_MAX_BYTES)
+    );
 }
 
 #[test]

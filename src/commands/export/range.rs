@@ -7,6 +7,12 @@
 /// Returns `(start, end)` with `1 <= start <= end <= total`, ready to be
 /// converted to a 0-based half-open slice via `start-1 .. end`.
 pub(super) fn parse_turn_range(spec: &str, total: usize) -> Result<(usize, usize), String> {
+    if spec.len() > aghist::schema_fragments::EXPORT_TURN_RANGE_MAX_BYTES {
+        return Err(format!(
+            "turn range must be at most {} bytes",
+            aghist::schema_fragments::EXPORT_TURN_RANGE_MAX_BYTES
+        ));
+    }
     if total == 0 {
         return Err("session has no messages to slice".to_string());
     }
@@ -55,6 +61,7 @@ pub(super) fn parse_turn_range(spec: &str, total: usize) -> Result<(usize, usize
 #[cfg(test)]
 mod tests {
     use super::parse_turn_range;
+    use aghist::schema_fragments::EXPORT_TURN_RANGE_MAX_BYTES;
 
     #[test]
     fn full_range() {
@@ -112,5 +119,11 @@ mod tests {
     #[test]
     fn empty_spec_rejects() {
         assert!(parse_turn_range("", 10).is_err());
+    }
+
+    #[test]
+    fn oversized_spec_rejects() {
+        let spec = "1".repeat(EXPORT_TURN_RANGE_MAX_BYTES + 1);
+        assert!(parse_turn_range(&spec, 10).is_err());
     }
 }
