@@ -10,7 +10,6 @@ targets = [
 yanked = "deny"
 ignore = [
     { id = "RUSTSEC-2024-0436", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: fastembed/tokenizers; transitive via optional embeddings; no patched upstream path yet." },
-    { id = "RUSTSEC-2025-0141", reason = "reviewed: 2026-05-24; next-review: 2026-11-24; upstream: syntect/bincode; transitive via syntect; bincode advisory is unmaintained, not a vulnerability." },
 ]
 
 [licenses]
