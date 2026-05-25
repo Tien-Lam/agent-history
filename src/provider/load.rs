@@ -1,3 +1,4 @@
+use std::io;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -12,12 +13,37 @@ pub trait HistoryProvider: Send + Sync {
     fn discover_sessions(&self) -> Result<Vec<Session>, ProviderError>;
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError>;
 
+    fn index_fingerprint_paths(
+        &self,
+        session: &Session,
+    ) -> io::Result<Vec<ProviderFingerprintPath>> {
+        Ok(vec![ProviderFingerprintPath::new(
+            "source",
+            session.source_path.clone(),
+        )])
+    }
+
     fn load_messages_with_stats(
         &self,
         session: &Session,
     ) -> Result<ProviderMessageLoad, ProviderError> {
         self.load_messages(session)
             .map(ProviderMessageLoad::from_messages)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderFingerprintPath {
+    pub label: String,
+    pub path: PathBuf,
+}
+
+impl ProviderFingerprintPath {
+    pub fn new(label: impl Into<String>, path: PathBuf) -> Self {
+        Self {
+            label: label.into(),
+            path,
+        }
     }
 }
 
@@ -113,4 +139,17 @@ pub fn load_messages_for_session(
     registry::runtime_spec(session.provider)
         .stateless()
         .load_messages(session)
+}
+
+pub fn index_fingerprint_paths_for_session(
+    session: &Session,
+    providers: &[Box<dyn HistoryProvider>],
+) -> io::Result<Vec<ProviderFingerprintPath>> {
+    if let Some(provider) = providers.iter().find(|p| p.provider() == session.provider) {
+        return provider.index_fingerprint_paths(session);
+    }
+
+    registry::runtime_spec(session.provider)
+        .stateless()
+        .index_fingerprint_paths(session)
 }

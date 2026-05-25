@@ -1,10 +1,15 @@
+use std::collections::BTreeMap;
+use std::io;
 use std::path::PathBuf;
 
 mod discovery;
 mod parse;
 pub(crate) mod paths;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad, ProviderParseStats};
+use super::{
+    HistoryProvider, ProviderError, ProviderFingerprintPath, ProviderMessageLoad,
+    ProviderParseStats,
+};
 use crate::model::{Message, Provider, Session};
 use discovery::{base_dirs, discover_sessions};
 pub(crate) use parse::message_id_from_file;
@@ -93,4 +98,71 @@ impl HistoryProvider for OpenCodeProvider {
             parse_stats,
         })
     }
+
+    fn index_fingerprint_paths(
+        &self,
+        session: &Session,
+    ) -> io::Result<Vec<ProviderFingerprintPath>> {
+        if !session.source_path.is_file() {
+            return Ok(vec![ProviderFingerprintPath::new(
+                "source",
+                session.source_path.clone(),
+            )]);
+        }
+
+        let Some(storage_base) = paths::storage_base_from_source_path(&session.source_path) else {
+            return Ok(vec![ProviderFingerprintPath::new(
+                "source",
+                session.source_path.clone(),
+            )]);
+        };
+
+        let mut fingerprint_paths = vec![ProviderFingerprintPath::new(
+            "session",
+            session.source_path.clone(),
+        )];
+        let message_dir = paths::message_dir(storage_base, &session.id.0);
+        if message_dir.exists() {
+            fingerprint_paths.push(ProviderFingerprintPath::new(
+                "messages",
+                message_dir.clone(),
+            ));
+            for (label, path) in opencode_part_dirs(&message_dir, storage_base)? {
+                fingerprint_paths.push(ProviderFingerprintPath::new(label, path));
+            }
+        }
+        Ok(fingerprint_paths)
+    }
+}
+
+fn opencode_part_dirs(
+    message_dir: &std::path::Path,
+    storage_base: &std::path::Path,
+) -> io::Result<BTreeMap<String, PathBuf>> {
+    let part_root = paths::part_root(storage_base);
+    if !part_root.exists() {
+        return Ok(BTreeMap::new());
+    }
+
+    let mut dirs = BTreeMap::new();
+    let entries = std::fs::read_dir(message_dir)?;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(message_id) = message_id_from_file(&path).or_else(|| {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(str::to_string)
+        }) else {
+            continue;
+        };
+        let part_dir = part_root.join(&message_id);
+        if part_dir.exists() {
+            dirs.insert(format!("parts/{message_id}"), part_dir);
+        }
+    }
+    Ok(dirs)
 }

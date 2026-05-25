@@ -19,8 +19,8 @@ pub mod zed_ai;
 
 pub use error::ProviderError;
 pub use load::{
-    detect_all_providers, load_messages_for_session, HistoryProvider, ProviderMessageLoad,
-    ProviderParseStats,
+    detect_all_providers, index_fingerprint_paths_for_session, load_messages_for_session,
+    HistoryProvider, ProviderFingerprintPath, ProviderMessageLoad, ProviderParseStats,
 };
 
 pub(crate) use paths::{
