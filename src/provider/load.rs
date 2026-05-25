@@ -13,6 +13,14 @@ pub trait HistoryProvider: Send + Sync {
     fn discover_sessions(&self) -> Result<Vec<Session>, ProviderError>;
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError>;
 
+    /// Return the provider-owned filesystem inputs that determine whether a
+    /// session needs to be reindexed.
+    ///
+    /// Providers with one file per session can use the default `source_path`
+    /// fingerprint. Providers backed by directories or split metadata/message
+    /// stores should return every path that can change the loaded messages for
+    /// this session. Labels are part of the composite fingerprint, so keep them
+    /// stable once manifests have been written.
     fn index_fingerprint_paths(
         &self,
         session: &Session,
@@ -34,7 +42,9 @@ pub trait HistoryProvider: Send + Sync {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderFingerprintPath {
+    /// Stable label used when combining multiple filesystem fingerprints.
     pub label: String,
+    /// File or directory whose metadata/content fingerprint should be tracked.
     pub path: PathBuf,
 }
 

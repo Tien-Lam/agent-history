@@ -69,12 +69,22 @@ pub trait HistoryProvider: Send + Sync {
     fn base_dirs(&self) -> &[PathBuf];
     fn discover_sessions(&self) -> Result<Vec<Session>, ProviderError>;
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError>;
+    fn index_fingerprint_paths(
+        &self,
+        session: &Session,
+    ) -> std::io::Result<Vec<ProviderFingerprintPath>>;
 }
 ```
 
 Each provider implements `detect() -> Option<Self>` to check whether its data directory exists. `src/provider/registry.rs` is the single runtime registry for local detection, stateless fallback loading, explicit provider construction from directories, and remote-cache candidate dirs.
 
 The `Send + Sync` bound allows providers to be shared across threads as `Box<dyn HistoryProvider>`.
+
+`index_fingerprint_paths()` lets each provider tell the search index which files
+or directories determine a session's indexed content. Single-file providers use
+the default `Session::source_path` fingerprint. Split-store providers can return
+metadata, message, and part directories so unrelated sessions do not trigger
+needless reindexing.
 
 The user-facing provider list belongs in the README. The source of truth for
 runtime behavior is the `Provider` enum plus `src/provider/registry.rs`; avoid
@@ -98,7 +108,7 @@ All providers respect `AGHIST_HOME` as an override for the home directory, prima
 
 All provider-specific formats are normalised into three core types:
 
-- **`Session`** — metadata: ID, provider, project path/name, git branch, timestamps, summary, model, token usage, message count, source file path.
+- **`Session`** — metadata: ID, provider, project path/name, git branch, timestamps, summary, model, token usage, message count, provider source path.
 - **`Message`** — a single turn: ID, role (`User`/`Assistant`/`System`/`Tool`), timestamp, content blocks, optional model and token usage.
 - **`ContentBlock`** — the content within a message: `Text`, `CodeBlock`, `ToolUse`, `ToolResult`, `Thinking`, or `Error`.
 
@@ -186,8 +196,8 @@ Messages for a selected session are loaded synchronously on the main thread but 
 
 Full-text search uses Tantivy. The index is persisted to disk (platform cache directory, overridable via `AGHIST_INDEX_DIR`) and rebuilt incrementally:
 
-- A **manifest** (`manifest.json`) tracks which session files have been indexed and their content hashes.
-- `build_index()` skips sessions whose hash matches the manifest.
+- A **manifest** (`manifest.json`) tracks which sessions have been indexed and the provider-defined filesystem fingerprints that affect their indexed content.
+- `build_index()` skips sessions whose current fingerprint matches the manifest.
 - `aghist index --force` clears the index and manifest, forcing a full rebuild.
 - The index schema stores: session key, session ID, message key, message ID, provider, project, role, content text, tool-call output text (separate field, indexed for `--has-tool-call`), timestamp, and metadata-note fields. Source labels are kept outside Tantivy in the federated discovery map so local and remote sessions with the same raw ID can coexist.
 - `tests/recall_bench.rs` builds a mixed-provider synthetic corpus and enforces conservative recall/MRR and latency gates. `scripts/bench-search.sh` runs that bench and the broader performance smoke tests; pass `--optimized` for representative timing and `--write-report` when you need a local markdown report. Measured reports are ignored so stale timing snapshots do not become source documentation.
