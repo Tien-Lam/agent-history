@@ -13,6 +13,8 @@ pub const SEARCH_WATCH_ITERATIONS_DEFAULT: u32 = 0;
 pub const SEARCH_HYBRID_WEIGHT_DEFAULT: f32 = 0.0;
 pub const SHOW_INCLUDE_CONTEXT_DEFAULT: u32 = 0;
 pub const SHOW_INCLUDE_CONTEXT_MAX: u32 = 100;
+pub const DIFF_CONTEXT_DEFAULT: usize = 2;
+pub const DIFF_CONTEXT_MAX: usize = 10_000;
 pub const REFERENCE_MAX_BYTES: usize = 4 * 1024;
 pub const EXPORT_TURN_RANGE_MAX_BYTES: usize = 64;
 

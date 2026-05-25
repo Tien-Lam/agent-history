@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::REFERENCE_MAX_BYTES;
+use crate::schema_fragments::{DIFF_CONTEXT_DEFAULT, DIFF_CONTEXT_MAX, REFERENCE_MAX_BYTES};
 
 use super::super::super::common::{
     closed_object_schema, exit_codes, schema_props, source_qualified_session_only_ref_pattern,
@@ -39,7 +39,8 @@ pub(in crate::schema) fn diff_schema() -> Value {
                     json!({
                         "type": "integer",
                         "minimum": 0,
-                        "default": 2,
+                        "maximum": DIFF_CONTEXT_MAX,
+                        "default": DIFF_CONTEXT_DEFAULT,
                         "description": "Context lines around each changed hunk in text output."
                     }),
                 ),

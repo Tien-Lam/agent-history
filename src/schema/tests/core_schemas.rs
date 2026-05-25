@@ -312,6 +312,14 @@ fn diff_schema_includes_source_qualified_session_pattern() {
         pattern.ends_with("/[^#]+$"),
         "diff session ref pattern should reject turn suffixes"
     );
+    assert_eq!(
+        schema["params"]["properties"]["context"]["default"],
+        serde_json::json!(crate::schema_fragments::DIFF_CONTEXT_DEFAULT)
+    );
+    assert_eq!(
+        schema["params"]["properties"]["context"]["maximum"],
+        serde_json::json!(crate::schema_fragments::DIFF_CONTEXT_MAX)
+    );
 }
 
 #[test]

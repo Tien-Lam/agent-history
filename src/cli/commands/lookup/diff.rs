@@ -1,3 +1,4 @@
+use aghist::schema_fragments::{DIFF_CONTEXT_DEFAULT, DIFF_CONTEXT_MAX};
 use clap::Args;
 
 use super::parse_reference_selector;
@@ -13,10 +14,39 @@ pub(crate) struct DiffCommand {
     pub(crate) session2: String,
 
     /// Context lines around each changed hunk (default 2).
-    #[arg(long, short = 'c', default_value_t = 2, value_name = "N")]
+    #[arg(long, short = 'c', default_value_t = DIFF_CONTEXT_DEFAULT, value_name = "N", value_parser = parse_diff_context)]
     pub(crate) context: usize,
 
     /// Force JSON output (default: unified diff text on TTY, JSON on pipe).
     #[arg(long)]
     pub(crate) json: bool,
+}
+
+fn parse_diff_context(raw: &str) -> Result<usize, String> {
+    let value = raw
+        .parse::<usize>()
+        .map_err(|e| format!("invalid diff context: {e}"))?;
+    if value > DIFF_CONTEXT_MAX {
+        Err(format!("diff context must be at most {DIFF_CONTEXT_MAX}"))
+    } else {
+        Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_diff_context_accepts_zero() {
+        assert_eq!(parse_diff_context("0").unwrap(), 0);
+    }
+
+    #[test]
+    fn parse_diff_context_rejects_values_above_max() {
+        assert_eq!(
+            parse_diff_context(&(DIFF_CONTEXT_MAX + 1).to_string()).unwrap_err(),
+            format!("diff context must be at most {DIFF_CONTEXT_MAX}")
+        );
+    }
 }

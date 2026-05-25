@@ -173,3 +173,26 @@ fn diff_invalid_ref_emits_usage_envelope() {
     let parsed = common::cli::assert_stderr_error(&assert);
     assert_eq!(parsed["error"]["kind"], "usage");
 }
+
+#[test]
+fn diff_oversized_context_emits_usage_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let context = (aghist::schema_fragments::DIFF_CONTEXT_MAX + 1).to_string();
+    let assert = aghist()
+        .args([
+            "diff",
+            "claude-code/left",
+            "claude-code/right",
+            "--context",
+            &context,
+        ])
+        .env("AGHIST_HOME", dir.path())
+        .assert()
+        .code(2);
+    let parsed = common::cli::assert_stderr_error(&assert);
+    assert_eq!(parsed["error"]["kind"], "usage");
+    assert!(parsed["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("diff context"));
+}
