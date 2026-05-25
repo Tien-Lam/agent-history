@@ -1,13 +1,12 @@
 use std::collections::HashSet;
 
-use aghist::session_warnings::SessionLoadWarning;
 use aghist::todos::{self, TodoCandidate, TodoKind};
 use aghist::{provider, query_scope};
 
 use crate::cli::FilterArgs;
 use crate::commands::discovery::{federated_discovery_for_commands, source_for_session};
 use crate::commands::filtering::{
-    message_matches, metadata_filter_matches_source, session_matches,
+    load_messages_or_warn, message_matches, metadata_filter_matches_source, session_matches,
 };
 
 use super::TodoRow;
@@ -32,15 +31,8 @@ pub(super) fn collect_federated_todo_candidates(
         if !metadata_filter_matches_source(&session, &source, metadata_keys) {
             continue;
         }
-        let messages = match provider::load_messages_for_session(&session, providers) {
-            Ok(messages) => messages,
-            Err(error) => {
-                eprintln!(
-                    "{}",
-                    SessionLoadWarning::new(&source, &session, error).warning_line()
-                );
-                continue;
-            }
+        let Some(messages) = load_messages_or_warn(providers, &source, &session) else {
+            continue;
         };
         for candidate in
             todos::extract_from_messages(session.provider, &session.id, &messages, kinds)

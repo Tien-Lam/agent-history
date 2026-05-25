@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use aghist::cli_error::ErrorEnvelope;
 use aghist::metadata;
 use aghist::model::{Message, Session};
+use aghist::provider;
 use aghist::session_resolver;
+use aghist::session_warnings::SessionLoadWarning;
 
 use super::super::cli::FilterArgs;
 use super::metadata::{metadata_error, open_metadata_db};
@@ -63,4 +65,21 @@ pub(crate) fn metadata_filter_matches_source(
 
 pub(crate) fn message_matches(message: &Message, filters: &FilterArgs) -> bool {
     filters.to_search_filters().matches_message(message)
+}
+
+pub(crate) fn load_messages_or_warn(
+    providers: &[Box<dyn provider::HistoryProvider>],
+    source: &str,
+    session: &Session,
+) -> Option<Vec<Message>> {
+    match provider::load_messages_for_session(session, providers) {
+        Ok(messages) => Some(messages),
+        Err(error) => {
+            eprintln!(
+                "{}",
+                SessionLoadWarning::new(source, session, error).warning_line()
+            );
+            None
+        }
+    }
 }

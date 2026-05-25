@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use aghist::model::{Message, Session};
-use aghist::session_warnings::SessionLoadWarning;
 use aghist::{provider, query_scope};
 
 use super::super::discovery::{federated_discovery_for_commands, source_for_session};
-use super::super::filtering::{metadata_filter_matches_source, session_matches};
+use super::super::filtering::{
+    load_messages_or_warn, metadata_filter_matches_source, session_matches,
+};
 use crate::cli::FilterArgs;
 
 pub(super) type SessionBundle = (Session, Vec<Message>);
@@ -63,16 +64,9 @@ pub(super) fn collect_federated_message_bundles(
         if !include_session(&session) {
             continue;
         }
-        let messages = match provider::load_messages_for_session(&session, providers) {
-            Ok(messages) => messages,
-            Err(error) => {
-                let source = source_for_session(&source_by_session, &session);
-                eprintln!(
-                    "{}",
-                    SessionLoadWarning::new(source, &session, error).warning_line()
-                );
-                continue;
-            }
+        let source = source_for_session(&source_by_session, &session);
+        let Some(messages) = load_messages_or_warn(providers, source, &session) else {
+            continue;
         };
         bundles.push((session, messages));
     }
