@@ -25,21 +25,32 @@ impl HitKind {
 
 #[derive(Debug, Clone)]
 pub struct SearchHit {
-    kind: HitKind,
-    /// Internal unique session key used for cache/index lookups. The public
-    /// `session_id` remains the provider-local id users already see.
-    session_key: String,
-    session_id: String,
-    /// Internal unique message key used by pagination and embeddings.
-    message_key: String,
-    message_id: String,
+    target: SearchHitTarget,
     pub snippet: String,
     pub score: f32,
-    /// `Some` when `kind == HitKind::Note`: the metadata.db row id.
-    note_id: Option<i64>,
-    /// `Some` when `kind == HitKind::Note`: the note's `session_ref`
-    /// (`<provider>/<session-id>[#<turn>]`), as stored in the sidecar.
-    note_session_ref: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum SearchHitTarget {
+    Message {
+        /// Internal unique session key used for cache/index lookups. The public
+        /// `session_id` remains the provider-local id users already see.
+        session_key: String,
+        session_id: String,
+        /// Internal unique message key used by pagination and embeddings.
+        message_key: String,
+        message_id: String,
+    },
+    Note {
+        /// Stable note key used by pagination. Prefers metadata.db row id and
+        /// falls back to the source-aware note ref for older in-memory hits.
+        message_key: String,
+        /// The metadata.db row id.
+        note_id: Option<i64>,
+        /// The note's `session_ref` (`<provider>/<session-id>[#<turn>]`), as
+        /// stored in the sidecar.
+        note_session_ref: Option<String>,
+    },
 }
 
 impl SearchHit {
@@ -52,15 +63,14 @@ impl SearchHit {
         score: f32,
     ) -> Self {
         Self {
-            kind: HitKind::Message,
-            session_key,
-            session_id,
-            message_key,
-            message_id,
+            target: SearchHitTarget::Message {
+                session_key,
+                session_id,
+                message_key,
+                message_id,
+            },
             snippet,
             score,
-            note_id: None,
-            note_session_ref: None,
         }
     }
 
@@ -79,44 +89,65 @@ impl SearchHit {
             |id| format!("note:{id}"),
         );
         Self {
-            kind: HitKind::Note,
-            session_key: String::new(),
-            session_id: String::new(),
-            message_key,
-            message_id: String::new(),
+            target: SearchHitTarget::Note {
+                message_key,
+                note_id,
+                note_session_ref,
+            },
             snippet,
             score,
-            note_id,
-            note_session_ref,
         }
     }
 
     pub fn kind(&self) -> HitKind {
-        self.kind
+        match self.target {
+            SearchHitTarget::Message { .. } => HitKind::Message,
+            SearchHitTarget::Note { .. } => HitKind::Note,
+        }
     }
 
     pub fn session_key(&self) -> &str {
-        self.session_key.as_str()
+        match &self.target {
+            SearchHitTarget::Message { session_key, .. } => session_key.as_str(),
+            SearchHitTarget::Note { .. } => "",
+        }
     }
 
     pub fn session_id(&self) -> &str {
-        self.session_id.as_str()
+        match &self.target {
+            SearchHitTarget::Message { session_id, .. } => session_id.as_str(),
+            SearchHitTarget::Note { .. } => "",
+        }
     }
 
     pub fn message_key(&self) -> &str {
-        self.message_key.as_str()
+        match &self.target {
+            SearchHitTarget::Message { message_key, .. }
+            | SearchHitTarget::Note { message_key, .. } => message_key.as_str(),
+        }
     }
 
     pub fn message_id(&self) -> &str {
-        self.message_id.as_str()
+        match &self.target {
+            SearchHitTarget::Message { message_id, .. } => message_id.as_str(),
+            SearchHitTarget::Note { .. } => "",
+        }
     }
 
     pub fn note_id(&self) -> Option<i64> {
-        self.note_id
+        match &self.target {
+            SearchHitTarget::Message { .. } => None,
+            SearchHitTarget::Note { note_id, .. } => *note_id,
+        }
     }
 
     pub fn note_session_ref(&self) -> Option<&str> {
-        self.note_session_ref.as_deref()
+        match &self.target {
+            SearchHitTarget::Message { .. } => None,
+            SearchHitTarget::Note {
+                note_session_ref, ..
+            } => note_session_ref.as_deref(),
+        }
     }
 }
 
