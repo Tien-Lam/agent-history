@@ -1,4 +1,5 @@
 use super::super::{aghist, common};
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 #[test]
@@ -129,6 +130,82 @@ fn schema_all_dumps_every_subcommand() {
 }
 
 #[test]
+fn schema_all_matches_command_registry_and_fragments_compile() {
+    let all = aghist().args(["schema", "--all"]).assert().success();
+    let all_stdout = String::from_utf8(all.get_output().stdout.clone()).unwrap();
+    let all: Value = serde_json::from_str(all_stdout.trim()).unwrap();
+    let map = all.as_object().expect("schema --all top-level object");
+
+    let expected: BTreeSet<&str> = aghist::command_spec::command_names().collect();
+    let actual: BTreeSet<&str> = map.keys().map(String::as_str).collect();
+    assert_eq!(actual, expected);
+
+    for (name, schema) in map {
+        assert_eq!(
+            schema["$schema"], "https://json-schema.org/draft/2020-12/schema",
+            "{name} schema should declare draft-2020-12"
+        );
+        assert_eq!(
+            schema["params"]["additionalProperties"], false,
+            "{name} params should be a closed object"
+        );
+        assert_exit_contract(name, &schema["exit_codes"]);
+        assert_schema_fragment_compiles(name, "params", schema, &schema["params"]);
+        assert_schema_fragment_compiles(name, "response", schema, &schema["response"]);
+
+        if let Some(subcommands) = schema["subcommands"].as_object() {
+            for (subcommand, sub_schema) in subcommands {
+                let label = format!("{name} {subcommand}");
+                assert_eq!(
+                    sub_schema["params"]["additionalProperties"], false,
+                    "{label} params should be a closed object"
+                );
+                assert_schema_fragment_compiles(&label, "params", schema, &sub_schema["params"]);
+                assert_schema_fragment_compiles(
+                    &label,
+                    "response",
+                    schema,
+                    &sub_schema["response"],
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn params_reject_unknown_fields_for_closed_param_bodies() {
+    for args in [
+        [
+            "search",
+            "--params",
+            r#"{"query":"needle","limit":1,"unknown":true}"#,
+        ],
+        [
+            "show",
+            "--params",
+            r#"{"reference":"claude-code/session#1","unknown":true}"#,
+        ],
+        [
+            "export",
+            "--params",
+            r#"{"format":"json","session":"claude-code/session","unknown":true}"#,
+        ],
+        ["index", "--params", r#"{"force":false,"unknown":true}"#],
+    ] {
+        let assert = aghist().args(args).assert().code(2);
+        let envelope = common::cli::assert_stderr_error(&assert);
+        assert_eq!(envelope["error"]["kind"], "usage");
+        assert!(
+            envelope["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("unknown field"),
+            "unexpected error envelope for {args:?}: {envelope:#}"
+        );
+    }
+}
+
+#[test]
 fn schema_unknown_subcommand_exits_two_with_envelope() {
     let output = aghist().args(["schema", "nonsense"]).output().unwrap();
     assert_eq!(output.status.code(), Some(2));
@@ -164,4 +241,30 @@ fn schema_rejects_oversized_subcommand() {
 fn schema_without_args_exits_two_usage() {
     let output = aghist().arg("schema").output().unwrap();
     assert_eq!(output.status.code(), Some(2));
+}
+
+fn assert_exit_contract(name: &str, exit_codes: &Value) {
+    let codes = exit_codes
+        .as_object()
+        .unwrap_or_else(|| panic!("{name} exit_codes should be an object"));
+    for code in ["0", "1", "2"] {
+        assert!(
+            codes.get(code).and_then(Value::as_str).is_some(),
+            "{name} schema should document exit code {code}"
+        );
+    }
+}
+
+fn assert_schema_fragment_compiles(label: &str, kind: &str, root: &Value, fragment: &Value) {
+    let wrapper = serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": format!("aghist:test-schema/{}/{}", label.replace(' ', "-"), kind),
+        "$ref": "#/fragment",
+        "fragment": fragment,
+        "definitions": root.get("definitions").cloned().unwrap_or_else(|| serde_json::json!({})),
+    });
+
+    jsonschema::validator_for(&wrapper).unwrap_or_else(|err| {
+        panic!("{label} {kind} schema failed to compile: {err}\n{wrapper:#}")
+    });
 }
