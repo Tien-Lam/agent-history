@@ -32,6 +32,7 @@ impl McpServer {
                 hybrid_weight: 0.0,
                 metadata_keys: None,
                 provider_scope: Some(&provider_scope),
+                exhaustive: false,
             },
         )
         .map_err(|e| e.to_string())?;

@@ -22,6 +22,10 @@ pub struct SearchSessionsRequest<'a> {
     pub hybrid_weight: f32,
     pub metadata_keys: Option<&'a HashSet<String>>,
     pub provider_scope: Option<&'a HashSet<Provider>>,
+    /// Force full result collection even for the first page. Watch mode uses
+    /// this with an overfetching page size so dedupe cannot strand unseen hits
+    /// behind the public one-shot search limit.
+    pub exhaustive: bool,
 }
 
 pub struct SearchSessionsPage<'a> {
@@ -98,6 +102,9 @@ pub fn search_sessions<'a>(
 }
 
 fn search_collection(request: SearchSessionsRequest<'_>) -> SearchCollection {
+    if request.exhaustive {
+        return SearchCollection::Full;
+    }
     if request.cursor.is_none()
         && request.metadata_keys.is_none()
         && request.filters.project_needle().is_none()

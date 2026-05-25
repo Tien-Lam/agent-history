@@ -4,7 +4,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_OK};
-use aghist::schema_fragments::SEARCH_LIMIT_MAX;
 use aghist::search::SearchFilters;
 use aghist::services::search as search_service;
 use aghist::{provider, query_scope};
@@ -57,6 +56,7 @@ pub(crate) fn search_watch_command(
                 hybrid_weight: 0.0,
                 metadata_keys,
                 provider_scope: Some(scope.providers()),
+                exhaustive: true,
             },
         )
         .map_err(|e| ErrorEnvelope::new("index-error", e.to_string()))?;
@@ -102,9 +102,7 @@ pub(crate) fn search_watch_command(
 }
 
 fn watch_candidate_limit(page_limit: usize, seen_count: usize) -> usize {
-    page_limit
-        .saturating_add(seen_count)
-        .clamp(1, SEARCH_LIMIT_MAX)
+    page_limit.saturating_add(seen_count).max(1)
 }
 
 #[cfg(test)]
@@ -112,11 +110,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn watch_candidate_limit_is_capped() {
-        assert_eq!(
-            watch_candidate_limit(SEARCH_LIMIT_MAX, usize::MAX),
-            SEARCH_LIMIT_MAX
-        );
+    fn watch_candidate_limit_grows_with_seen_hits() {
+        assert_eq!(watch_candidate_limit(1, 2), 3);
+        assert_eq!(watch_candidate_limit(usize::MAX, 1), usize::MAX);
     }
 }
 
