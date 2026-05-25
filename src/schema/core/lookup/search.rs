@@ -2,7 +2,8 @@ use serde_json::{json, Value};
 
 use crate::schema_fragments::{
     CURSOR_TOKEN_MAX_BYTES, SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX,
-    SEARCH_QUERY_MAX_BYTES, SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_ITERATIONS_DEFAULT,
+    SEARCH_QUERY_MAX_BYTES, SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_INTERVAL_MS_MAX,
+    SEARCH_WATCH_ITERATIONS_DEFAULT, SEARCH_WATCH_ITERATIONS_MAX,
 };
 
 use super::super::super::common::{
@@ -46,11 +47,11 @@ fn search_params_properties() -> SchemaProperties {
         ),
         (
             "watch_interval_ms",
-            json!({ "type": "integer", "minimum": 1, "default": SEARCH_WATCH_INTERVAL_MS_DEFAULT }),
+            json!({ "type": "integer", "minimum": 1, "maximum": SEARCH_WATCH_INTERVAL_MS_MAX, "default": SEARCH_WATCH_INTERVAL_MS_DEFAULT }),
         ),
         (
             "watch_iterations",
-            json!({ "type": "integer", "minimum": 0, "default": SEARCH_WATCH_ITERATIONS_DEFAULT, "description": "Stop after N polls (0 = run until interrupted)." }),
+            json!({ "type": "integer", "minimum": 0, "maximum": SEARCH_WATCH_ITERATIONS_MAX, "default": SEARCH_WATCH_ITERATIONS_DEFAULT, "description": "Stop after N polls (0 = run until interrupted)." }),
         ),
         (
             "hybrid_weight",

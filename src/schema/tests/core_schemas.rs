@@ -29,8 +29,16 @@ fn search_schema_describes_query_param() {
         serde_json::json!(crate::schema_fragments::SEARCH_WATCH_INTERVAL_MS_DEFAULT)
     );
     assert_eq!(
+        params["watch_interval_ms"]["maximum"],
+        serde_json::json!(crate::schema_fragments::SEARCH_WATCH_INTERVAL_MS_MAX)
+    );
+    assert_eq!(
         params["watch_iterations"]["default"],
         serde_json::json!(crate::schema_fragments::SEARCH_WATCH_ITERATIONS_DEFAULT)
+    );
+    assert_eq!(
+        params["watch_iterations"]["maximum"],
+        serde_json::json!(crate::schema_fragments::SEARCH_WATCH_ITERATIONS_MAX)
     );
     assert_eq!(
         params["hybrid_weight"]["default"],

@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use aghist::schema_fragments::{
     SEARCH_HYBRID_WEIGHT_DEFAULT, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX,
-    SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_ITERATIONS_DEFAULT,
+    SEARCH_WATCH_INTERVAL_MS_DEFAULT, SEARCH_WATCH_INTERVAL_MS_MAX,
+    SEARCH_WATCH_ITERATIONS_DEFAULT, SEARCH_WATCH_ITERATIONS_MAX,
 };
 use clap::Args;
 
@@ -71,7 +72,7 @@ pub(crate) struct SearchCommand {
     /// Stop watch mode after N polls (0 = run until interrupted; default 0).
     ///
     /// Mostly useful for tests and one-shot snapshots.
-    #[arg(long, default_value_t = SEARCH_WATCH_ITERATIONS_DEFAULT, value_name = "N", conflicts_with = "params")]
+    #[arg(long, default_value_t = SEARCH_WATCH_ITERATIONS_DEFAULT, value_name = "N", value_parser = parse_watch_iterations, conflicts_with = "params")]
     pub(crate) watch_iterations: u32,
 
     /// Show BM25 score breakdown per result (Tantivy explanation tree).
@@ -125,8 +126,23 @@ fn parse_watch_interval_ms(raw: &str) -> Result<u64, String> {
     let value = raw
         .parse::<u64>()
         .map_err(|e| format!("invalid watch interval: {e}"))?;
-    if value == 0 {
-        Err("watch interval must be at least 1 millisecond".to_string())
+    match value {
+        0 => Err("watch interval must be at least 1 millisecond".to_string()),
+        value if value > SEARCH_WATCH_INTERVAL_MS_MAX => Err(format!(
+            "watch interval must be at most {SEARCH_WATCH_INTERVAL_MS_MAX} milliseconds"
+        )),
+        value => Ok(value),
+    }
+}
+
+fn parse_watch_iterations(raw: &str) -> Result<u32, String> {
+    let value = raw
+        .parse::<u32>()
+        .map_err(|e| format!("invalid watch iterations: {e}"))?;
+    if value > SEARCH_WATCH_ITERATIONS_MAX {
+        Err(format!(
+            "watch iterations must be at most {SEARCH_WATCH_ITERATIONS_MAX}"
+        ))
     } else {
         Ok(value)
     }
@@ -160,6 +176,27 @@ mod tests {
         assert_eq!(
             parse_search_limit(&(SEARCH_LIMIT_MAX + 1).to_string()).unwrap_err(),
             format!("search limit must be at most {SEARCH_LIMIT_MAX}")
+        );
+    }
+
+    #[test]
+    fn parse_watch_interval_ms_rejects_out_of_range_values() {
+        assert_eq!(
+            parse_watch_interval_ms("0").unwrap_err(),
+            "watch interval must be at least 1 millisecond"
+        );
+        assert_eq!(
+            parse_watch_interval_ms(&(SEARCH_WATCH_INTERVAL_MS_MAX + 1).to_string()).unwrap_err(),
+            format!("watch interval must be at most {SEARCH_WATCH_INTERVAL_MS_MAX} milliseconds")
+        );
+    }
+
+    #[test]
+    fn parse_watch_iterations_allows_zero_and_rejects_values_above_max() {
+        assert_eq!(parse_watch_iterations("0").unwrap(), 0);
+        assert_eq!(
+            parse_watch_iterations(&(SEARCH_WATCH_ITERATIONS_MAX + 1).to_string()).unwrap_err(),
+            format!("watch iterations must be at most {SEARCH_WATCH_ITERATIONS_MAX}")
         );
     }
 }

@@ -42,7 +42,7 @@ pub(crate) fn search_watch_command(
     let stdout = io::stdout();
 
     loop {
-        iteration += 1;
+        iteration = iteration.saturating_add(1);
 
         let federation = federated_discovery_for_commands(providers, scope);
         let page = search_service::search_sessions(
