@@ -12,13 +12,13 @@ pub(crate) enum SourcesCommand {
     /// Register a new remote source. Persists to `config.toml`.
     Add {
         /// Stable identifier for the source (used by `remove`).
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", value_parser = parse_source_name)]
         name: String,
         /// Hostname or `user@host` pointing at the remote machine.
-        #[arg(long, value_name = "HOST")]
+        #[arg(long, value_name = "HOST", value_parser = parse_rsync_host)]
         host: String,
         /// Path on the remote machine where the agent history lives.
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH", value_parser = parse_rsync_path)]
         path: String,
         /// Transport used to reach the remote (`ssh` or `rsync`). Defaults to `ssh`.
         #[arg(long, default_value = "ssh", value_parser = parse_transport, value_name = "TRANSPORT")]
@@ -29,7 +29,7 @@ pub(crate) enum SourcesCommand {
     /// Remove a registered remote source by name.
     Remove {
         /// Name of the source to remove (matches `add --name`).
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", value_parser = parse_source_name)]
         name: String,
     },
     /// Pull a remote source's history into a local cache via rsync.
@@ -46,7 +46,7 @@ pub(crate) enum SourcesCommand {
     /// overridden with `AGHIST_RSYNC_BIN` (used by tests; not for end users).
     Pull {
         /// Name of the source to pull. Mutually exclusive with `--all`.
-        #[arg(value_name = "NAME", conflicts_with = "all")]
+        #[arg(value_name = "NAME", conflicts_with = "all", value_parser = parse_source_name)]
         name: Option<String>,
 
         /// Pull every registered source.
@@ -57,6 +57,21 @@ pub(crate) enum SourcesCommand {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+fn parse_source_name(raw: &str) -> Result<String, String> {
+    config::validate_source_name(raw)?;
+    Ok(raw.to_string())
+}
+
+fn parse_rsync_host(raw: &str) -> Result<String, String> {
+    config::validate_rsync_host(raw, "--host")?;
+    Ok(raw.to_string())
+}
+
+fn parse_rsync_path(raw: &str) -> Result<String, String> {
+    config::validate_rsync_path(raw, "--path")?;
+    Ok(raw.to_string())
 }
 
 /// Subcommands of `aghist note` that manage per-user session annotations.
@@ -216,5 +231,22 @@ mod tests {
         let raw = "t".repeat(METADATA_TAG_MAX_BYTES + 1);
         let err = parse_metadata_tag(&raw).unwrap_err();
         assert!(err.contains(&METADATA_TAG_MAX_BYTES.to_string()));
+    }
+
+    #[test]
+    fn source_parsers_reuse_config_validation() {
+        assert!(parse_source_name("local").is_err());
+        assert!(parse_rsync_host("example.test:2222").is_err());
+        assert!(parse_rsync_path("/path with spaces").is_err());
+
+        assert_eq!(parse_source_name("laptop").unwrap(), "laptop");
+        assert_eq!(
+            parse_rsync_host("user@example.test").unwrap(),
+            "user@example.test"
+        );
+        assert_eq!(
+            parse_rsync_path("/home/me/.aghist").unwrap(),
+            "/home/me/.aghist"
+        );
     }
 }
