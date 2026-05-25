@@ -105,10 +105,10 @@ aghist --reindex          # Rebuild search index from scratch
 
 aghist's command surface is designed to be scriptable. Schema-exposed commands:
 
-- emits stable JSON on a pipe (or with `--json`) and a human-readable table on a TTY
-- uses semantic exit codes — `0` success, `1` runtime error, `2` usage error, `3` success-but-empty
-- on error, writes a single-line JSON envelope `{"error":{"kind":"…","message":"…","hint":"…"}}` to stderr
-- have a discoverable JSON-Schema for params and response (`aghist schema <subcmd>`)
+- emit stable JSON on a pipe (or with `--json`) and a human-readable table on a TTY
+- use semantic exit codes — `0` success, `1` runtime error, `2` usage error, `3` success-but-empty
+- on error, write a single-line JSON envelope `{"error":{"kind":"…","message":"…","hint":"…"}}` to stderr
+- expose discoverable JSON-Schema for params and response (`aghist schema <subcmd>`)
 
 ```sh
 # Search
@@ -207,6 +207,9 @@ max_messages_per_session = 5000
 # path = "~/.claude"
 # transport = "ssh"  # or "rsync"
 ```
+
+Config parsing is strict: malformed TOML, unknown keys, invalid provider slugs,
+and invalid remote-source entries fail command startup instead of being ignored.
 
 ## License
 

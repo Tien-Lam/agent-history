@@ -11,7 +11,10 @@ Maintenance release for the 0.3 line.
 ### Fixed
 
 - Preserve TUI message-level filters during render, so role/tool/message filters cannot leak messages from hidden sessions.
+- Keep long-running `aghist search --watch` polling past previously seen hits instead of starving once the seen set grows beyond the public search limit.
+- Reject unknown config keys in top-level, `[providers]`, and `[[sources]]` tables instead of accepting typoed fields.
 - Reject unknown provider slugs in config instead of silently ignoring invalid allowlist entries.
+- Validate release packaging `--repo` values before constructing GitHub release URLs.
 - Surface partial provider/source discovery failures consistently in CLI, TUI, and MCP flows.
 - Harden provider parsers against recent shape drift across Claude Code, Codex CLI, Copilot CLI, Gemini CLI, OpenCode, Cursor, Cline, Continue.dev, and Zed AI histories.
 - Keep source-qualified refs intact across `show`, `export`, `diff`, metadata filters, MCP resources, and federated search results.
