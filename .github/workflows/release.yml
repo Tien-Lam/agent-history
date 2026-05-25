@@ -55,6 +55,9 @@ jobs:
       - name: No production panics
         run: cargo clippy --locked --lib --bins -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::indexing_slicing -D clippy::panic
 
+      - name: No production panics with release features
+        run: cargo clippy --locked --lib --bins --features self-update -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::indexing_slicing -D clippy::panic
+
       - name: Test
         run: cargo test --locked
 

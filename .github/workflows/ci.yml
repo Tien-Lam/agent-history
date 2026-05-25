@@ -134,6 +134,9 @@ jobs:
       - name: Clippy all-features
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
+      - name: No production panics all-features
+        run: cargo clippy --locked --lib --bins --all-features -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::indexing_slicing -D clippy::panic
+
       - name: Test all-features lib
         run: cargo test --locked --all-features --lib
 
