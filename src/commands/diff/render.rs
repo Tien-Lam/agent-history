@@ -3,7 +3,7 @@ use std::io::{self, Write as _};
 use aghist::cli_error::ErrorEnvelope;
 use aghist::output::write_json_line;
 
-use super::{DiffOp, DiffRenderInput};
+use super::{algorithm::DiffOp, DiffRenderInput};
 
 struct FlatOp {
     marker: char,
