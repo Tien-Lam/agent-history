@@ -69,12 +69,13 @@ pub use track::{
 #[cfg(test)]
 pub mod test_support {
     use super::{LlmError, LlmTransport};
+    use std::collections::VecDeque;
     use std::sync::Mutex;
 
     /// Test transport. Returns canned responses in order; records each
     /// outgoing request for assertion.
     pub struct MockTransport {
-        pub responses: Mutex<Vec<(u16, String)>>,
+        pub responses: Mutex<VecDeque<(u16, String)>>,
         pub requests: Mutex<Vec<(String, String)>>,
     }
 
@@ -82,7 +83,7 @@ pub mod test_support {
         #[must_use]
         pub fn new(responses: Vec<(u16, String)>) -> Self {
             Self {
-                responses: Mutex::new(responses),
+                responses: Mutex::new(responses.into()),
                 requests: Mutex::new(Vec::new()),
             }
         }
@@ -100,10 +101,8 @@ pub mod test_support {
                 .unwrap()
                 .push((url.to_string(), body.to_string()));
             let mut r = self.responses.lock().unwrap();
-            if r.is_empty() {
-                return Err(LlmError::Parse("mock: no responses left".into()));
-            }
-            Ok(r.remove(0))
+            r.pop_front()
+                .ok_or_else(|| LlmError::Parse("mock: no responses left".into()))
         }
     }
 }

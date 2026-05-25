@@ -6,9 +6,12 @@ mod hybrid;
 mod lexical;
 mod session_filter;
 
-fn combined_query(mut clauses: Vec<(Occur, Box<dyn Query>)>) -> Box<dyn Query> {
+fn combined_query(clauses: Vec<(Occur, Box<dyn Query>)>) -> Box<dyn Query> {
     if clauses.len() == 1 {
-        clauses.remove(0).1
+        match clauses.into_iter().next() {
+            Some((_, query)) => query,
+            None => Box::new(BooleanQuery::new(Vec::new())),
+        }
     } else {
         Box::new(BooleanQuery::new(clauses))
     }
