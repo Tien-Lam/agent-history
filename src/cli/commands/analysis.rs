@@ -6,13 +6,14 @@ use super::super::resolvers::parse_todo_kind;
 use aghist::schema_fragments::{
     ANALYSIS_DECISIONS_LIMIT_DEFAULT, ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LIMIT_DEFAULT,
     ANALYSIS_THREADS_LLM_MAX_SESSIONS_DEFAULT, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX,
-    ANALYSIS_TODOS_LIMIT_DEFAULT, ANALYSIS_TRACK_LIMIT_DEFAULT, LLM_MODEL_MAX_BYTES,
+    ANALYSIS_TODOS_LIMIT_DEFAULT, ANALYSIS_TRACK_LIMIT_DEFAULT, ANALYSIS_TRACK_TOPIC_MAX_BYTES,
+    LLM_MODEL_MAX_BYTES, REFERENCE_MAX_BYTES,
 };
 
 #[derive(Args)]
 pub(crate) struct TrackCommand {
     /// Free-text topic to track (e.g. "auth middleware", "BM25 scoring").
-    #[arg(value_name = "TOPIC")]
+    #[arg(value_name = "TOPIC", value_parser = parse_track_topic)]
     pub(crate) topic: String,
 
     /// Maximum matching sessions to send to the LLM.
@@ -32,7 +33,7 @@ pub(crate) struct TrackCommand {
 pub(crate) struct DecisionsCommand {
     /// Restrict to a single session by id, unique id prefix, or full
     /// citation ref `<provider>/<session-id>#<turn>` (turn ignored).
-    #[arg(long, short = 's', value_name = "SESSION_OR_REF")]
+    #[arg(long, short = 's', value_name = "SESSION_OR_REF", value_parser = parse_session_filter)]
     pub(crate) session: Option<String>,
 
     /// Drop sentences whose score is below this threshold.
@@ -140,6 +141,29 @@ fn parse_track_limit(raw: &str) -> Result<usize, String> {
     parse_positive_bounded_limit(raw, "track limit", ANALYSIS_LIMIT_MAX)
 }
 
+fn parse_track_topic(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        Err("track <topic> must not be empty".to_string())
+    } else if trimmed.len() > ANALYSIS_TRACK_TOPIC_MAX_BYTES {
+        Err(format!(
+            "track <topic> must be at most {ANALYSIS_TRACK_TOPIC_MAX_BYTES} bytes"
+        ))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
+fn parse_session_filter(raw: &str) -> Result<String, String> {
+    if raw.len() > REFERENCE_MAX_BYTES {
+        Err(format!(
+            "session selector must be at most {REFERENCE_MAX_BYTES} bytes"
+        ))
+    } else {
+        Ok(raw.to_string())
+    }
+}
+
 fn parse_decisions_limit(raw: &str) -> Result<usize, String> {
     parse_positive_bounded_limit(raw, "decisions limit", ANALYSIS_LIMIT_MAX)
 }
@@ -222,12 +246,45 @@ fn parse_llm_model(raw: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_decisions_limit, parse_llm_model, parse_threads_limit,
-        parse_threads_llm_max_sessions, parse_todos_limit, parse_track_limit,
+        parse_decisions_limit, parse_llm_model, parse_session_filter, parse_threads_limit,
+        parse_threads_llm_max_sessions, parse_todos_limit, parse_track_limit, parse_track_topic,
     };
     use aghist::schema_fragments::{
-        ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX, LLM_MODEL_MAX_BYTES,
+        ANALYSIS_LIMIT_MAX, ANALYSIS_THREADS_LLM_MAX_SESSIONS_MAX, ANALYSIS_TRACK_TOPIC_MAX_BYTES,
+        LLM_MODEL_MAX_BYTES, REFERENCE_MAX_BYTES,
     };
+
+    #[test]
+    fn parse_track_topic_rejects_blank_values() {
+        assert_eq!(
+            parse_track_topic(" \t ").unwrap_err(),
+            "track <topic> must not be empty"
+        );
+    }
+
+    #[test]
+    fn parse_track_topic_rejects_values_above_max() {
+        let oversized = "x".repeat(ANALYSIS_TRACK_TOPIC_MAX_BYTES + 1);
+        assert!(parse_track_topic(&oversized)
+            .unwrap_err()
+            .contains("must be at most"));
+    }
+
+    #[test]
+    fn parse_track_topic_trims_valid_values() {
+        assert_eq!(
+            parse_track_topic(" auth middleware ").unwrap(),
+            "auth middleware"
+        );
+    }
+
+    #[test]
+    fn parse_session_filter_rejects_values_above_max() {
+        let oversized = "s".repeat(REFERENCE_MAX_BYTES + 1);
+        assert!(parse_session_filter(&oversized)
+            .unwrap_err()
+            .contains("must be at most"));
+    }
 
     #[test]
     fn parse_llm_model_rejects_blank_values() {

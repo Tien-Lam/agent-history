@@ -1,7 +1,8 @@
 use clap::Args;
 
 use aghist::schema_fragments::{
-    REPORT_DAYS_MAX, REPORT_SECTION_LIMIT_MAX, USAGE_LIMIT_DEFAULT, USAGE_LIMIT_MAX,
+    FILTER_PROJECT_MAX_BYTES, REPORT_DAYS_MAX, REPORT_SECTION_LIMIT_MAX, USAGE_LIMIT_DEFAULT,
+    USAGE_LIMIT_MAX,
 };
 
 use super::super::resolvers::parse_usage_group_by;
@@ -26,7 +27,7 @@ pub(crate) struct UsageCommand {
 pub(crate) struct ProjectCommand {
     /// Project name. Matched as a case-insensitive substring against
     /// each session's `project_name`.
-    #[arg(value_name = "NAME")]
+    #[arg(value_name = "NAME", value_parser = parse_project_name)]
     pub(crate) name: String,
 
     /// Cap the decisions section.
@@ -89,6 +90,19 @@ fn parse_usage_limit(raw: &str) -> Result<usize, String> {
     parse_positive_bounded_usize(raw, "usage limit", USAGE_LIMIT_MAX)
 }
 
+fn parse_project_name(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        Err("project <name> must not be empty".to_string())
+    } else if trimmed.len() > FILTER_PROJECT_MAX_BYTES {
+        Err(format!(
+            "project <name> must be at most {FILTER_PROJECT_MAX_BYTES} bytes"
+        ))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
 fn parse_section_limit(raw: &str) -> Result<usize, String> {
     parse_positive_bounded_usize(raw, "section limit", REPORT_SECTION_LIMIT_MAX)
 }
@@ -121,8 +135,34 @@ fn parse_report_days(raw: &str) -> Result<i64, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_report_days, parse_section_limit, parse_usage_limit};
-    use aghist::schema_fragments::{REPORT_DAYS_MAX, REPORT_SECTION_LIMIT_MAX, USAGE_LIMIT_MAX};
+    use super::{parse_project_name, parse_report_days, parse_section_limit, parse_usage_limit};
+    use aghist::schema_fragments::{
+        FILTER_PROJECT_MAX_BYTES, REPORT_DAYS_MAX, REPORT_SECTION_LIMIT_MAX, USAGE_LIMIT_MAX,
+    };
+
+    #[test]
+    fn parse_project_name_rejects_blank_values() {
+        assert_eq!(
+            parse_project_name(" \t ").unwrap_err(),
+            "project <name> must not be empty"
+        );
+    }
+
+    #[test]
+    fn parse_project_name_rejects_values_above_max() {
+        let oversized = "p".repeat(FILTER_PROJECT_MAX_BYTES + 1);
+        assert!(parse_project_name(&oversized)
+            .unwrap_err()
+            .contains("must be at most"));
+    }
+
+    #[test]
+    fn parse_project_name_trims_valid_values() {
+        assert_eq!(
+            parse_project_name(" agent-history ").unwrap(),
+            "agent-history"
+        );
+    }
 
     #[test]
     fn bounded_report_parsers_reject_zero() {

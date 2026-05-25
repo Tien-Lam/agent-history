@@ -116,6 +116,10 @@ fn decisions_schema_documents_llm_params_and_response() {
         props["limit"]["maximum"],
         serde_json::json!(aghist::schema_fragments::ANALYSIS_LIMIT_MAX)
     );
+    assert_eq!(
+        props["session"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::REFERENCE_MAX_BYTES)
+    );
     assert!(
         props["llm_model"].is_object(),
         "llm_model param should be in schema"
@@ -137,6 +141,24 @@ fn decisions_schema_documents_llm_params_and_response() {
             "llm response items must include {field}"
         );
     }
+}
+
+#[test]
+fn decisions_rejects_oversized_session_filter() {
+    let oversized = "s".repeat(aghist::schema_fragments::REFERENCE_MAX_BYTES + 1);
+    let assert = aghist()
+        .args(["decisions", "--session", oversized.as_str()])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("session selector must be at most"),
+        "unexpected error envelope: {envelope:#}"
+    );
 }
 
 #[test]

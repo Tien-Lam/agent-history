@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::schema_fragments::REPORT_SECTION_LIMIT_MAX;
+use crate::schema_fragments::{FILTER_PROJECT_MAX_BYTES, REPORT_SECTION_LIMIT_MAX};
 
 use super::super::common::{
     closed_object_schema, exit_codes, schema_props_with_filters, SCHEMA_DRAFT,
@@ -64,6 +64,7 @@ pub(in crate::schema) fn project_schema() -> Value {
                 json!({
                     "type": "string",
                     "minLength": 1,
+                    "maxLength": FILTER_PROJECT_MAX_BYTES,
                     "description": "Project name. Matched as a case-insensitive substring against each session's project_name."
                 }),
             ),

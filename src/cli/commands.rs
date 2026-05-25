@@ -97,7 +97,7 @@ pub(crate) enum Command {
     /// `--all` to dump every schema in one document.
     Schema {
         /// Subcommand name (e.g. `search`, `list`, `health`). Omit with `--list` or `--all`.
-        #[arg(value_name = "SUBCMD")]
+        #[arg(value_name = "SUBCMD", value_parser = parse_schema_subcommand)]
         subcommand: Option<String>,
 
         /// List available schema subcommand names as JSON.
@@ -241,4 +241,37 @@ pub(crate) enum Command {
     Update,
     /// Remove a self-managed release binary and data
     Uninstall,
+}
+
+fn parse_schema_subcommand(raw: &str) -> Result<String, String> {
+    if raw.len() > aghist::schema_fragments::SCHEMA_SUBCOMMAND_MAX_BYTES {
+        return Err(format!(
+            "schema subcommand must be at most {} bytes",
+            aghist::schema_fragments::SCHEMA_SUBCOMMAND_MAX_BYTES
+        ));
+    }
+    if aghist::command_spec::command_spec(raw).is_none() {
+        let valid = aghist::schema::subcommands().join(", ");
+        return Err(format!("unknown schema subcommand '{raw}'. Valid: {valid}"));
+    }
+    Ok(raw.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_schema_subcommand;
+    use aghist::schema_fragments::SCHEMA_SUBCOMMAND_MAX_BYTES;
+
+    #[test]
+    fn parse_schema_subcommand_rejects_unknown_values() {
+        let err = parse_schema_subcommand("nonsense").unwrap_err();
+        assert!(err.contains("unknown schema subcommand"));
+    }
+
+    #[test]
+    fn parse_schema_subcommand_rejects_oversized_values() {
+        let raw = "s".repeat(SCHEMA_SUBCOMMAND_MAX_BYTES + 1);
+        let err = parse_schema_subcommand(&raw).unwrap_err();
+        assert!(err.contains(&SCHEMA_SUBCOMMAND_MAX_BYTES.to_string()));
+    }
 }

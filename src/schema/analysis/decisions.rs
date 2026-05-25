@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::schema_fragments::{
-    ANALYSIS_DECISIONS_LIMIT_DEFAULT, ANALYSIS_LIMIT_MAX, LLM_MODEL_MAX_BYTES,
+    ANALYSIS_DECISIONS_LIMIT_DEFAULT, ANALYSIS_LIMIT_MAX, LLM_MODEL_MAX_BYTES, REFERENCE_MAX_BYTES,
 };
 
 use super::super::common::{
@@ -16,6 +16,7 @@ pub(in crate::schema) fn decisions_schema() -> Value {
                 "session",
                 json!({
                     "type": "string",
+                    "maxLength": REFERENCE_MAX_BYTES,
                     "description": "Restrict to a session id, unique id prefix, or full citation ref (turn ignored)."
                 }),
             ),

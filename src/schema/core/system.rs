@@ -310,6 +310,8 @@ pub(in crate::schema) fn mcp_schema() -> Value {
 }
 
 pub(in crate::schema) fn schema_schema() -> Value {
+    use crate::schema_fragments::SCHEMA_SUBCOMMAND_MAX_BYTES;
+
     json!({
         "$schema": SCHEMA_DRAFT,
         "$id": "aghist:schema/schema",
@@ -322,6 +324,7 @@ pub(in crate::schema) fn schema_schema() -> Value {
                     "subcommand",
                     json!({
                         "type": "string",
+                        "maxLength": SCHEMA_SUBCOMMAND_MAX_BYTES,
                         "enum": subcommands(),
                         "description": "Subcommand whose schema to emit. Use `--all` or `--list` on the CLI for index/dump."
                     }),

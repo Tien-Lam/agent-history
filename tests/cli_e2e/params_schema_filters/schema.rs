@@ -1,4 +1,4 @@
-use super::super::aghist;
+use super::super::{aghist, common};
 use std::collections::BTreeSet;
 
 #[test]
@@ -140,6 +140,24 @@ fn schema_unknown_subcommand_exits_two_with_envelope() {
         .as_str()
         .unwrap()
         .contains("nonsense"));
+}
+
+#[test]
+fn schema_rejects_oversized_subcommand() {
+    let oversized = "s".repeat(aghist::schema_fragments::SCHEMA_SUBCOMMAND_MAX_BYTES + 1);
+    let assert = aghist()
+        .args(["schema", oversized.as_str()])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("schema subcommand must be at most"),
+        "unexpected error envelope: {envelope:#}"
+    );
 }
 
 #[test]

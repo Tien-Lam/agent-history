@@ -16,6 +16,10 @@ fn schema_subcommand_includes_project() {
     let props = &parsed["params"]["properties"];
     assert_eq!(props["name"]["minLength"], 1);
     assert_eq!(
+        props["name"]["maxLength"],
+        serde_json::json!(aghist::schema_fragments::FILTER_PROJECT_MAX_BYTES)
+    );
+    assert_eq!(
         props["decisions"]["maximum"],
         serde_json::json!(aghist::schema_fragments::REPORT_SECTION_LIMIT_MAX)
     );
@@ -58,6 +62,24 @@ fn schema_subcommand_includes_report() {
     assert!(resp["window"].is_object());
     assert!(resp["top_projects"].is_object());
     assert!(resp["project_count"].is_object());
+}
+
+#[test]
+fn project_rejects_oversized_name() {
+    let oversized = "p".repeat(aghist::schema_fragments::FILTER_PROJECT_MAX_BYTES + 1);
+    let assert = aghist()
+        .args(["project", oversized.as_str()])
+        .assert()
+        .code(2);
+    let envelope = common::cli::assert_stderr_error(&assert);
+    assert_eq!(envelope["error"]["kind"], "usage");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("project <name> must be at most"),
+        "unexpected error envelope: {envelope:#}"
+    );
 }
 
 #[test]
