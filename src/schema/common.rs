@@ -69,6 +69,7 @@ pub(super) fn filter_params_fragment() -> Vec<(&'static str, Value)> {
             json!({
                 "type": "string",
                 "format": "date-time",
+                "maxLength": schema_fragments::FILTER_TIMESTAMP_MAX_BYTES,
                 "description": "RFC 3339 lower bound on message/session timestamp (inclusive)."
             }),
         ),
@@ -77,6 +78,7 @@ pub(super) fn filter_params_fragment() -> Vec<(&'static str, Value)> {
             json!({
                 "type": "string",
                 "format": "date-time",
+                "maxLength": schema_fragments::FILTER_TIMESTAMP_MAX_BYTES,
                 "description": "RFC 3339 upper bound on message/session timestamp (inclusive)."
             }),
         ),
@@ -84,6 +86,7 @@ pub(super) fn filter_params_fragment() -> Vec<(&'static str, Value)> {
             "project",
             json!({
                 "type": "string",
+                "maxLength": schema_fragments::FILTER_PROJECT_MAX_BYTES,
                 "description": "Substring match against the session's project name (case-insensitive)."
             }),
         ),

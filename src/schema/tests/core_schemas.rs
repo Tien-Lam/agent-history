@@ -25,6 +25,22 @@ fn search_schema_describes_query_param() {
         serde_json::json!(crate::schema_fragments::CURSOR_TOKEN_MAX_BYTES)
     );
     assert_eq!(
+        params["project"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::FILTER_PROJECT_MAX_BYTES)
+    );
+    assert_eq!(
+        params["since"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::FILTER_TIMESTAMP_MAX_BYTES)
+    );
+    assert_eq!(
+        params["note"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::METADATA_NOTE_FILTER_MAX_BYTES)
+    );
+    assert_eq!(
+        params["tag"]["maxLength"],
+        serde_json::json!(crate::schema_fragments::METADATA_TAG_MAX_BYTES)
+    );
+    assert_eq!(
         params["watch_interval_ms"]["default"],
         serde_json::json!(crate::schema_fragments::SEARCH_WATCH_INTERVAL_MS_DEFAULT)
     );

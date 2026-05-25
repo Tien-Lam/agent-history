@@ -1,4 +1,8 @@
 use aghist::model::{Provider, Role};
+use aghist::schema_fragments::{
+    FILTER_PROJECT_MAX_BYTES, FILTER_TIMESTAMP_MAX_BYTES, METADATA_NOTE_FILTER_MAX_BYTES,
+    METADATA_TAG_MAX_BYTES,
+};
 use aghist::search::SearchFilters;
 use chrono::{DateTime, Utc};
 use clap::Args;
@@ -30,7 +34,7 @@ pub(crate) struct FilterArgs {
     pub(crate) until: Option<DateTime<Utc>>,
 
     /// Substring match against the session's project name (case-insensitive).
-    #[arg(long, global = true, value_name = "NAME")]
+    #[arg(long, global = true, value_name = "NAME", value_parser = parse_project_filter)]
     pub(crate) project: Option<String>,
 
     /// Restrict to messages with this role: `user`, `assistant`, or `tool`.
@@ -47,12 +51,12 @@ pub(crate) struct FilterArgs {
     /// substring (case-insensitive). Matches notes attached to the session
     /// itself or to any of its turns. Notes live in the metadata sidecar
     /// (`~/.local/share/aghist/metadata.db`; `AGHIST_METADATA_DB` overrides).
-    #[arg(long, global = true, value_name = "SUBSTR")]
+    #[arg(long, global = true, value_name = "SUBSTR", value_parser = parse_note_filter)]
     pub(crate) note: Option<String>,
 
     /// Keep only sessions that have this exact tag attached (session-level
     /// OR on any of its turns). Tags live in the same metadata sidecar.
-    #[arg(long, global = true, value_name = "NAME")]
+    #[arg(long, global = true, value_name = "NAME", value_parser = parse_tag_filter)]
     pub(crate) tag: Option<String>,
 
     /// Keep only sessions that have at least one star (session-level OR on
@@ -84,7 +88,61 @@ fn parse_role_slug(raw: &str) -> Result<Role, String> {
 }
 
 fn parse_rfc3339(raw: &str) -> Result<DateTime<Utc>, String> {
+    if raw.len() > FILTER_TIMESTAMP_MAX_BYTES {
+        return Err(format!(
+            "timestamp filter must be at most {FILTER_TIMESTAMP_MAX_BYTES} bytes"
+        ));
+    }
     DateTime::parse_from_rfc3339(raw)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| format!("invalid RFC 3339 timestamp '{raw}': {e}"))
+}
+
+fn parse_project_filter(raw: &str) -> Result<String, String> {
+    parse_bounded_filter(raw, "project filter", FILTER_PROJECT_MAX_BYTES)
+}
+
+fn parse_note_filter(raw: &str) -> Result<String, String> {
+    parse_bounded_filter(raw, "note filter", METADATA_NOTE_FILTER_MAX_BYTES)
+}
+
+fn parse_tag_filter(raw: &str) -> Result<String, String> {
+    parse_bounded_filter(raw, "tag filter", METADATA_TAG_MAX_BYTES)
+}
+
+fn parse_bounded_filter(raw: &str, label: &str, max: usize) -> Result<String, String> {
+    if raw.len() > max {
+        Err(format!("{label} must be at most {max} bytes"))
+    } else {
+        Ok(raw.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_rfc3339_rejects_oversized_values() {
+        let raw = "2".repeat(FILTER_TIMESTAMP_MAX_BYTES + 1);
+        let err = parse_rfc3339(&raw).unwrap_err();
+        assert!(err.contains(&FILTER_TIMESTAMP_MAX_BYTES.to_string()));
+    }
+
+    #[test]
+    fn filter_string_parsers_reject_oversized_values() {
+        assert!(
+            parse_project_filter(&"p".repeat(FILTER_PROJECT_MAX_BYTES + 1))
+                .unwrap_err()
+                .contains(&FILTER_PROJECT_MAX_BYTES.to_string())
+        );
+        assert!(
+            parse_note_filter(&"n".repeat(METADATA_NOTE_FILTER_MAX_BYTES + 1))
+                .unwrap_err()
+                .contains(&METADATA_NOTE_FILTER_MAX_BYTES.to_string())
+        );
+        assert!(parse_tag_filter(&"t".repeat(METADATA_TAG_MAX_BYTES + 1))
+            .unwrap_err()
+            .contains(&METADATA_TAG_MAX_BYTES.to_string()));
+    }
 }

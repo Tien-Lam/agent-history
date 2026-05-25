@@ -20,6 +20,8 @@ pub const DIFF_CONTEXT_DEFAULT: usize = 2;
 pub const DIFF_CONTEXT_MAX: usize = 10_000;
 pub const REFERENCE_MAX_BYTES: usize = 4 * 1024;
 pub const EXPORT_TURN_RANGE_MAX_BYTES: usize = 64;
+pub const FILTER_PROJECT_MAX_BYTES: usize = 1_024;
+pub const FILTER_TIMESTAMP_MAX_BYTES: usize = 128;
 
 pub const ANALYSIS_LIMIT_MAX: usize = 10_000;
 pub const ANALYSIS_TRACK_LIMIT_DEFAULT: usize = 50;
