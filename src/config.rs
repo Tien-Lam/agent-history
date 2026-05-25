@@ -56,6 +56,7 @@ pub enum ConfigLoadError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub cache_size: usize,
     pub show_tool_calls: bool,
@@ -70,6 +71,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderConfig {
     pub enabled: Vec<String>,
     /// Per-provider allowlist for the `aghist mcp` server. When `None`, all

@@ -93,6 +93,49 @@ fn strict_config_rejects_corrupt_toml() {
 }
 
 #[test]
+fn strict_config_rejects_unknown_top_level_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, "cache_szie = 50\n").unwrap();
+
+    let error = Config::try_load_from(&path).unwrap_err().to_string();
+    assert!(error.contains("unknown field"));
+    assert!(error.contains("cache_szie"));
+}
+
+#[test]
+fn strict_config_rejects_unknown_provider_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, "[providers]\nexposed_to_mcp = [\"claude-code\"]\n").unwrap();
+
+    let error = Config::try_load_from(&path).unwrap_err().to_string();
+    assert!(error.contains("unknown field"));
+    assert!(error.contains("exposed_to_mcp"));
+}
+
+#[test]
+fn strict_config_rejects_unknown_remote_source_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(
+        &path,
+        r#"
+[[sources]]
+name = "work"
+host = "example.test"
+path = "~/.claude"
+extra = "ignored?"
+"#,
+    )
+    .unwrap();
+
+    let error = Config::try_load_from(&path).unwrap_err().to_string();
+    assert!(error.contains("unknown field"));
+    assert!(error.contains("extra"));
+}
+
+#[test]
 fn partial_config_fills_defaults() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");

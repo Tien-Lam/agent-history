@@ -14,6 +14,7 @@ pub use validation::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RemoteSource {
     pub name: String,
     pub host: String,
