@@ -1,0 +1,26 @@
+---
+source: tests/json_contract_snapshots.rs
+expression: pretty
+---
+{
+  "cache_dir": "[sources-cache]",
+  "results": [
+    {
+      "byte_count": 14,
+      "data_dir": "[source-data-dir]",
+      "dry_run": false,
+      "file_count": 1,
+      "host": "user@laptop.local",
+      "name": "laptop",
+      "path": "/home/user/.claude",
+      "pulled_at": "[timestamp]",
+      "transport": "ssh"
+    }
+  ],
+  "summary": {
+    "byte_count": 14,
+    "dry_run": false,
+    "file_count": 1,
+    "source_count": 1
+  }
+}

@@ -48,6 +48,16 @@ fn normalize_health_doc(doc: &mut Value) {
     }
 }
 
+fn normalize_sources_pull_doc(doc: &mut Value) {
+    doc["cache_dir"] = serde_json::json!("[sources-cache]");
+    if let Some(results) = doc.get_mut("results").and_then(Value::as_array_mut) {
+        for result in results {
+            result["data_dir"] = serde_json::json!("[source-data-dir]");
+            result["pulled_at"] = serde_json::json!("[timestamp]");
+        }
+    }
+}
+
 fn compact_mcp_tools_list_contract(result: &Value) -> Value {
     let mut compact = result.clone();
     let tools = compact["tools"]
@@ -111,6 +121,17 @@ fn command_response_schema(name: &str) -> Value {
     })
 }
 
+fn command_subcommand_response_schema(name: &str, subcommand: &str) -> Value {
+    let schema = command_schema(name);
+    serde_json::json!({
+        "$schema": schema["$schema"].clone(),
+        "$id": format!("aghist:schema/{name}/{subcommand}/response-test"),
+        "$ref": format!("#/subcommands/{subcommand}/response"),
+        "subcommands": schema["subcommands"].clone(),
+        "definitions": schema.get("definitions").cloned().unwrap_or_else(|| serde_json::json!({})),
+    })
+}
+
 fn assert_json_schema_matches(schema: &Value, doc: &Value, label: &str) {
     let validator = jsonschema::validator_for(schema)
         .unwrap_or_else(|err| panic!("{label} schema failed to compile: {err}\n{schema:#}"));
@@ -146,6 +167,27 @@ fn assert_health_fixture_is_exercised(doc: &Value) {
         !fidelity.is_empty(),
         "contract fixture should produce provider fidelity"
     );
+}
+
+#[cfg(unix)]
+fn write_contract_rsync(dir: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let script = dir.join("fake-rsync.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\n\
+         dest=\n\
+         for a in \"$@\"; do dest=\"$a\"; done\n\
+         mkdir -p \"$dest\"\n\
+         printf 'contract-jsonl' > \"$dest/sample.jsonl\"\n\
+         exit 0\n",
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script, perms).unwrap();
+    script
 }
 
 #[test]
@@ -319,6 +361,50 @@ fn health_json_contract_snapshot() {
     normalize_health_doc(&mut doc);
 
     assert_json_snapshot("health_json_contract", &doc);
+}
+
+#[cfg(unix)]
+#[test]
+fn sources_pull_json_contract_snapshot() {
+    let workdir = tempfile::tempdir().unwrap();
+    let config_path = workdir.path().join("config.toml");
+    let cache_dir = workdir.path().join("sources-cache");
+    let fake_rsync = write_contract_rsync(workdir.path());
+
+    aghist()
+        .args([
+            "sources",
+            "add",
+            "laptop",
+            "--host",
+            "user@laptop.local",
+            "--path",
+            "/home/user/.claude",
+            "--transport",
+            "ssh",
+            "--json",
+        ])
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["sources", "pull", "laptop", "--json"])
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_RSYNC_BIN", &fake_rsync)
+        .assert()
+        .success();
+    let mut doc = parse_stdout_json(&output);
+    assert_json_schema_matches(
+        &command_subcommand_response_schema("sources", "pull"),
+        &doc,
+        "sources pull response",
+    );
+    normalize_sources_pull_doc(&mut doc);
+
+    assert_json_snapshot("sources_pull_json_contract", &doc);
 }
 
 #[test]
