@@ -4,7 +4,9 @@ use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::{Provider, Role};
 use chrono::{DateTime, Utc};
 
-use super::super::common::{llm_config_from_env, map_llm_error, should_emit_json};
+use super::super::common::{
+    llm_config_from_env, map_llm_error, ordered_session_groups, should_emit_json,
+};
 use super::output::{render_llm_decisions_human, render_llm_decisions_json};
 use super::{DecisionRow, LlmRow};
 
@@ -59,41 +61,31 @@ pub(super) fn run_llm_decisions(
 /// Group heuristic rows by `(provider, session_id)`, preserving first-seen
 /// order so the API call sequence stays predictable.
 fn group_by_session(rows: Vec<DecisionRow>) -> Vec<SessionGroup> {
-    let mut order: Vec<(String, Provider, aghist::model::SessionId)> = Vec::new();
-    let mut grouped: std::collections::HashMap<
-        (String, Provider, aghist::model::SessionId),
-        SessionGroup,
-    > = std::collections::HashMap::new();
-    for row in rows {
-        let key = (
-            row.source.clone(),
-            row.citation.provider,
-            row.citation.session_id.clone(),
-        );
-        let entry = grouped.entry(key.clone()).or_insert_with(|| {
-            order.push(key.clone());
-            SessionGroup {
-                source: row.source.clone(),
-                provider: row.citation.provider,
-                session_id: row.citation.session_id.clone(),
-                project: row.project.clone(),
-                started_at: row.started_at,
-                candidates: Vec::new(),
-            }
-        });
-        entry.candidates.push(GroupedCandidate {
-            turn: row.candidate.turn,
-            role: row.candidate.role,
-            snippet: row.candidate.snippet,
-        });
-    }
-    let mut out = Vec::with_capacity(order.len());
-    for key in order {
-        if let Some(group) = grouped.remove(&key) {
-            out.push(group);
-        }
-    }
-    out
+    ordered_session_groups(
+        rows,
+        |row| {
+            (
+                row.source.clone(),
+                row.citation.provider,
+                row.citation.session_id.clone(),
+            )
+        },
+        |row| SessionGroup {
+            source: row.source.clone(),
+            provider: row.citation.provider,
+            session_id: row.citation.session_id.clone(),
+            project: row.project.clone(),
+            started_at: row.started_at,
+            candidates: Vec::new(),
+        },
+        |group, row| {
+            group.candidates.push(GroupedCandidate {
+                turn: row.candidate.turn,
+                role: row.candidate.role,
+                snippet: row.candidate.snippet,
+            });
+        },
+    )
 }
 
 fn run_extraction<T: aghist::llm::LlmTransport + ?Sized>(

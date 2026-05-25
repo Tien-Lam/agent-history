@@ -4,7 +4,9 @@ use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::Provider;
 use aghist::todos::TodoCandidate;
 
-use super::super::common::{llm_config_from_env, map_llm_error, should_emit_json};
+use super::super::common::{
+    llm_config_from_env, map_llm_error, ordered_session_groups, should_emit_json,
+};
 use super::output::{render_llm_todos_human, render_llm_todos_json};
 use super::{LlmTodoRow, TodoRow};
 
@@ -55,38 +57,25 @@ pub(super) fn run_llm_todos(
 }
 
 fn group_by_session(rows: Vec<TodoRow>) -> Vec<SessionGroup> {
-    let mut order: Vec<(String, Provider, aghist::model::SessionId)> = Vec::new();
-    let mut grouped: std::collections::HashMap<
-        (String, Provider, aghist::model::SessionId),
-        SessionGroup,
-    > = std::collections::HashMap::new();
-    for row in rows {
-        let key = (
-            row.source.clone(),
-            row.candidate.citation.provider,
-            row.candidate.citation.session_id.clone(),
-        );
-        let entry = grouped.entry(key.clone()).or_insert_with(|| {
-            order.push(key.clone());
-            SessionGroup {
-                source: row.source.clone(),
-                provider: row.candidate.citation.provider,
-                session_id: row.candidate.citation.session_id.clone(),
-                project: row.project.clone(),
-                started_at: row.started_at,
-                candidates: Vec::new(),
-            }
-        });
-        entry.candidates.push(row.candidate);
-    }
-
-    let mut out = Vec::with_capacity(order.len());
-    for key in order {
-        if let Some(group) = grouped.remove(&key) {
-            out.push(group);
-        }
-    }
-    out
+    ordered_session_groups(
+        rows,
+        |row| {
+            (
+                row.source.clone(),
+                row.candidate.citation.provider,
+                row.candidate.citation.session_id.clone(),
+            )
+        },
+        |row| SessionGroup {
+            source: row.source.clone(),
+            provider: row.candidate.citation.provider,
+            session_id: row.candidate.citation.session_id.clone(),
+            project: row.project.clone(),
+            started_at: row.started_at,
+            candidates: Vec::new(),
+        },
+        |group, row| group.candidates.push(row.candidate),
+    )
 }
 
 fn run_extraction<T: aghist::llm::LlmTransport + ?Sized>(

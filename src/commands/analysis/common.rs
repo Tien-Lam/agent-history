@@ -1,6 +1,11 @@
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::io::{self, IsTerminal};
 
 use aghist::cli_error::ErrorEnvelope;
+use aghist::model::{Provider, SessionId};
+
+pub(super) type SessionGroupKey = (String, Provider, SessionId);
 
 pub(super) fn should_emit_json(force_json: bool) -> bool {
     force_json || !io::stdout().is_terminal()
@@ -16,6 +21,37 @@ pub(super) fn llm_config_from_env(
             .map_err(|e| map_llm_error(&e))?;
     }
     Ok(config)
+}
+
+pub(super) fn ordered_session_groups<Row, Group>(
+    rows: Vec<Row>,
+    mut key_for: impl FnMut(&Row) -> SessionGroupKey,
+    mut init: impl FnMut(&Row) -> Group,
+    mut push: impl FnMut(&mut Group, Row),
+) -> Vec<Group> {
+    let mut order: Vec<SessionGroupKey> = Vec::new();
+    let mut grouped: HashMap<SessionGroupKey, Group> = HashMap::new();
+
+    for row in rows {
+        let key = key_for(&row);
+        match grouped.entry(key.clone()) {
+            Entry::Occupied(mut entry) => push(entry.get_mut(), row),
+            Entry::Vacant(entry) => {
+                order.push(key);
+                let mut group = init(&row);
+                push(&mut group, row);
+                entry.insert(group);
+            }
+        }
+    }
+
+    let mut out = Vec::with_capacity(order.len());
+    for key in order {
+        if let Some(group) = grouped.remove(&key) {
+            out.push(group);
+        }
+    }
+    out
 }
 
 pub(super) fn map_llm_error(e: &aghist::llm::LlmError) -> ErrorEnvelope {
