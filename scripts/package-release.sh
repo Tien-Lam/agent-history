@@ -47,6 +47,23 @@ validate_artifact_component() {
     esac
 }
 
+validate_repo() {
+    local value="$1"
+    case "$value" in
+        ""|/*|*/|*/*/*|*\\*|*..*|*[!A-Za-z0-9._/-]*)
+            echo "Error: --repo must be a safe GitHub owner/name, got: $value" >&2
+            echo "Allowed characters: ASCII letters, digits, '.', '_', and '-'; exactly one '/' separator; no '..'." >&2
+            exit 1
+            ;;
+        */*) ;;
+        *)
+            echo "Error: --repo must be a safe GitHub owner/name, got: $value" >&2
+            echo "Allowed characters: ASCII letters, digits, '.', '_', and '-'; exactly one '/' separator; no '..'." >&2
+            exit 1
+            ;;
+    esac
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --target)
@@ -98,6 +115,7 @@ if [ -z "$REPO" ]; then
     echo "Error: --repo must not be empty" >&2
     exit 1
 fi
+validate_repo "$REPO"
 if [ -z "$OUT_DIR" ]; then
     echo "Error: --out-dir must not be empty" >&2
     exit 1

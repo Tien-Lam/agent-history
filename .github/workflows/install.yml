@@ -75,6 +75,12 @@ jobs:
           fi
           grep -q "unsafe archive filename" err.txt
 
+          if bash scripts/package-release.sh --target x86_64-unknown-linux-gnu --tag v0.0.0 --repo bad/repo/extra --out-dir "$RUNNER_TEMP" >out.txt 2>err.txt; then
+            echo "package-release accepted an unsafe --repo value" >&2
+            exit 1
+          fi
+          grep -q "safe GitHub owner/name" err.txt
+
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           printf '#!/usr/bin/env sh\nprintf "fake aghist\\n"\n' > "$tmp/aghist"
