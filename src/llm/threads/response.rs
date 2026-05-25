@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::super::common::{response_json_object, LlmError};
+use super::super::common::{response_payload, LlmError};
 use super::StructuredThread;
 
 #[derive(Deserialize)]
@@ -12,12 +12,6 @@ struct ThreadsPayload {
 /// JSON-extraction rules as `parse_response`: tolerate code fences and
 /// trailing prose.
 pub fn parse_threads_response(body: &str) -> Result<Vec<StructuredThread>, LlmError> {
-    let json_slice = response_json_object(body)?;
-    let parsed: ThreadsPayload = serde_json::from_str(&json_slice).map_err(|e| {
-        LlmError::Parse(format!(
-            "threads payload: {e} (slice starts: {})",
-            json_slice.chars().take(80).collect::<String>()
-        ))
-    })?;
+    let parsed: ThreadsPayload = response_payload(body, "threads payload")?;
     Ok(parsed.threads)
 }

@@ -1,3 +1,4 @@
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 use super::LlmError;
@@ -33,6 +34,19 @@ pub(crate) fn response_json_object(body: &str) -> Result<String, LlmError> {
     extract_json_object(&text)
         .map(str::to_string)
         .ok_or_else(|| LlmError::NoJson(text.chars().take(200).collect()))
+}
+
+pub(crate) fn response_payload<T>(body: &str, label: &str) -> Result<T, LlmError>
+where
+    T: DeserializeOwned,
+{
+    let json_slice = response_json_object(body)?;
+    serde_json::from_str(&json_slice).map_err(|e| {
+        LlmError::Parse(format!(
+            "{label}: {e} (slice starts: {})",
+            json_slice.chars().take(80).collect::<String>()
+        ))
+    })
 }
 
 /// Find the first balanced `{...}` object in `text`. Returns `None` if no

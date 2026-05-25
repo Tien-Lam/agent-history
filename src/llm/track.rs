@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::common::{
-    build_request_body_with_system, post_request, response_json_object, LlmConfig, LlmError,
+    build_request_body_with_system, post_request, response_payload, LlmConfig, LlmError,
     LlmTransport,
 };
 use crate::model::{Provider, SessionId};
@@ -89,13 +89,7 @@ struct TrackPayload {
 
 /// Parse the Messages API response into a timeline of change events.
 pub fn parse_track_response(body: &str) -> Result<Vec<TrackEvent>, LlmError> {
-    let json_slice = response_json_object(body)?;
-    let parsed: TrackPayload = serde_json::from_str(&json_slice).map_err(|e| {
-        LlmError::Parse(format!(
-            "track payload: {e} (slice: {})",
-            json_slice.chars().take(80).collect::<String>()
-        ))
-    })?;
+    let parsed: TrackPayload = response_payload(body, "track payload")?;
     Ok(parsed.timeline)
 }
 
