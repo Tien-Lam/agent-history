@@ -8,10 +8,12 @@ use crate::fs_atomic;
 use crate::fs_read;
 use crate::model::Provider;
 
+mod providers;
 mod sources;
 
 const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 
+pub use providers::ProviderConfig;
 pub use sources::{
     sources_cache_root, validate_rsync_endpoint, validate_rsync_host, validate_rsync_path,
     validate_source_name, RemoteSource, SourceCacheManifest, SourceCacheManifestLoadError,
@@ -69,20 +71,6 @@ pub struct Config {
     pub sources: Vec<RemoteSource>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-#[serde(deny_unknown_fields)]
-pub struct ProviderConfig {
-    pub enabled: Vec<String>,
-    /// Per-provider allowlist for the `aghist mcp` server. When `None`, all
-    /// `enabled` providers are visible to MCP clients. When `Some`, only the
-    /// intersection of `mcp_exposed` and `enabled` is exposed — letting users
-    /// hide history (e.g. a personal Claude account) from agents that don't
-    /// need it without disabling the provider for the local TUI/CLI.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mcp_exposed: Option<Vec<String>>,
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -91,18 +79,6 @@ impl Default for Config {
             max_messages_per_session: 5000,
             providers: ProviderConfig::default(),
             sources: Vec::new(),
-        }
-    }
-}
-
-impl Default for ProviderConfig {
-    fn default() -> Self {
-        Self {
-            enabled: Provider::all()
-                .iter()
-                .map(|p| p.slug().to_string())
-                .collect(),
-            mcp_exposed: None,
         }
     }
 }
@@ -177,11 +153,7 @@ impl Config {
     }
 
     fn validate_provider_slugs(&self, path: &Path) -> Result<(), ConfigLoadError> {
-        validate_provider_slug_list(path, "providers.enabled", &self.providers.enabled)?;
-        if let Some(exposed) = self.providers.mcp_exposed.as_ref() {
-            validate_provider_slug_list(path, "providers.mcp_exposed", exposed)?;
-        }
-        Ok(())
+        self.providers.validate_slugs(path)
     }
 
     fn validate_remote_sources(&self, path: &Path) -> Result<(), ConfigLoadError> {
@@ -219,11 +191,7 @@ impl Config {
     }
 
     pub fn enabled_providers(&self) -> HashSet<Provider> {
-        self.providers
-            .enabled
-            .iter()
-            .filter_map(|s| Provider::from_slug(s))
-            .collect()
+        self.providers.enabled_set()
     }
 
     /// Providers that may be exposed by the `aghist mcp` server.
@@ -234,43 +202,8 @@ impl Config {
     ///   providers that aren't in `enabled` are dropped — narrowing only, no
     ///   escalation.
     pub fn mcp_exposed_providers(&self) -> HashSet<Provider> {
-        let enabled = self.enabled_providers();
-        let Some(allow) = self.providers.mcp_exposed.as_ref() else {
-            return enabled;
-        };
-        allow
-            .iter()
-            .filter_map(|s| Provider::from_slug(s))
-            .filter(|p| enabled.contains(p))
-            .collect()
+        self.providers.mcp_exposed_set()
     }
-}
-
-fn validate_provider_slug_list(
-    path: &Path,
-    field: &'static str,
-    slugs: &[String],
-) -> Result<(), ConfigLoadError> {
-    if let Some(slug) = slugs
-        .iter()
-        .find(|slug| Provider::from_slug(slug.as_str()).is_none())
-    {
-        return Err(ConfigLoadError::UnknownProviderSlug {
-            path: path.to_path_buf(),
-            field,
-            slug: slug.clone(),
-            expected: expected_provider_slugs(),
-        });
-    }
-    Ok(())
-}
-
-fn expected_provider_slugs() -> String {
-    Provider::all()
-        .iter()
-        .map(|provider| provider.slug())
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 fn invalid_remote_source(
