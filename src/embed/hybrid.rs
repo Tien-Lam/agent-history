@@ -46,10 +46,11 @@ pub fn try_hybrid_search(
     };
     let cache_dir = index_dir.join("models");
     let mut embedder = Embedder::try_new(&cache_dir).ok()?;
-    let q_vec = match embedder.embed_batch(&[query.to_string()]) {
-        Ok(mut v) if !v.is_empty() => v.swap_remove(0),
-        _ => return None,
-    };
+    let q_vec = embedder
+        .embed_batch(&[query.to_string()])
+        .ok()?
+        .into_iter()
+        .next()?;
 
     let mut ranked: Vec<(String, f32)> = store
         .iter()
