@@ -1,4 +1,22 @@
+use std::io::{self, IsTerminal};
+
 use aghist::cli_error::ErrorEnvelope;
+
+pub(super) fn should_emit_json(force_json: bool) -> bool {
+    force_json || !io::stdout().is_terminal()
+}
+
+pub(super) fn llm_config_from_env(
+    llm_model: Option<&str>,
+) -> Result<aghist::llm::LlmConfig, ErrorEnvelope> {
+    let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
+    if let Some(model) = llm_model {
+        config = config
+            .with_model(model.to_string())
+            .map_err(|e| map_llm_error(&e))?;
+    }
+    Ok(config)
+}
 
 pub(super) fn map_llm_error(e: &aghist::llm::LlmError) -> ErrorEnvelope {
     use aghist::llm::LlmError;

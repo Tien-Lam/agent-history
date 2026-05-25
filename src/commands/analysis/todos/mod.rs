@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::io::{self, IsTerminal};
+use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::CitationRef;
@@ -8,6 +8,8 @@ use aghist::{provider, query_scope};
 use chrono::{DateTime, Utc};
 
 use crate::cli::FilterArgs;
+
+use super::common::should_emit_json;
 
 mod collect;
 mod llm;
@@ -63,7 +65,7 @@ pub(crate) fn todos_command(
         return Ok(EXIT_EMPTY);
     }
 
-    let want_json = force_json || !io::stdout().is_terminal();
+    let want_json = should_emit_json(force_json);
     let stdout = io::stdout();
     let mut out = stdout.lock();
     if want_json {

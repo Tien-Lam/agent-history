@@ -1,11 +1,11 @@
-use std::io::{self, IsTerminal};
+use std::io;
 
 use aghist::cli_error::{ErrorEnvelope, EXIT_EMPTY, EXIT_OK};
 use aghist::model::Session;
 
 use crate::commands::discovery::{qualified_session_ref, source_for_session};
 
-use super::super::common::map_llm_error;
+use super::super::common::{llm_config_from_env, map_llm_error, should_emit_json};
 use super::output::{render_llm_threads_human, render_llm_threads_json};
 use super::LlmThreadRow;
 
@@ -29,12 +29,7 @@ pub(super) fn run_llm_threads(
     let sorted = most_recent_sessions(sessions, llm_max_sessions);
     let digests = session_digests(&sorted, source_by_session);
 
-    let mut config = aghist::llm::LlmConfig::from_env().map_err(|e| map_llm_error(&e))?;
-    if let Some(model) = llm_model {
-        config = config
-            .with_model(model.to_string())
-            .map_err(|e| map_llm_error(&e))?;
-    }
+    let config = llm_config_from_env(llm_model)?;
     let transport = aghist::llm::UreqTransport::new(config.timeout);
 
     let raw = aghist::llm::extract_threads(&transport, &config, &digests)
@@ -54,7 +49,7 @@ pub(super) fn run_llm_threads(
         return Ok(EXIT_EMPTY);
     }
 
-    let want_json = force_json || !io::stdout().is_terminal();
+    let want_json = should_emit_json(force_json);
     let stdout = io::stdout();
     let mut out = stdout.lock();
     if want_json {
