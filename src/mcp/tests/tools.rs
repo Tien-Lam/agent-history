@@ -128,6 +128,17 @@ fn tool_limit_schemas_use_shared_contract_constants() {
         serde_json::json!(schema_fragments::MCP_LIST_LIMIT_MAX)
     );
 
+    let get_session = tool_by_name(tools, "get_session");
+    let max_turns = &get_session["inputSchema"]["properties"]["max_turns"];
+    assert_eq!(
+        max_turns["default"],
+        serde_json::json!(schema_fragments::MCP_SESSION_TURNS_DEFAULT)
+    );
+    assert_eq!(
+        max_turns["maximum"],
+        serde_json::json!(schema_fragments::MCP_SESSION_TURNS_MAX)
+    );
+
     let get_message = tool_by_name(tools, "get_message");
     let include_context = &get_message["inputSchema"]["properties"]["include_context"];
     assert_eq!(

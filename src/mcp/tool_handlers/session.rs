@@ -13,6 +13,7 @@ use crate::model::QualifiedCitationRef;
 use crate::schema_fragments::{
     MCP_FILTER_STRING_MAX_BYTES, MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX,
     MCP_LIST_LIMIT_DEFAULT, MCP_LIST_LIMIT_MAX, MCP_LOOKUP_STRING_MAX_BYTES,
+    MCP_SESSION_TURNS_DEFAULT, MCP_SESSION_TURNS_MAX,
 };
 use crate::search::SearchFilters;
 use crate::services::list as list_service;
@@ -74,6 +75,13 @@ impl McpServer {
         let provider_filter = optional_provider(args, "provider")?;
         let source_filter =
             optional_str_with_limit(args, "source", crate::config::MAX_SOURCE_NAME_BYTES)?;
+        let max_turns = optional_usize(
+            args,
+            "max_turns",
+            MCP_SESSION_TURNS_DEFAULT,
+            1,
+            MCP_SESSION_TURNS_MAX,
+        )?;
         let discovery = self.collect_discovery();
         let provider_scope = self.provider_scope();
         let loaded = lookup_service::load_session_by_prefix(
@@ -85,15 +93,24 @@ impl McpServer {
             Some(&provider_scope),
         )
         .map_err(|e| e.message)?;
+        let turns_total = loaded.messages.len();
         let turns: Vec<Value> = loaded
             .messages
             .iter()
+            .take(max_turns)
             .enumerate()
             .map(|(i, m)| message_row_with_source(&loaded.session, m, i + 1, &loaded.source))
             .collect();
+        let turns_returned = turns.len();
         Ok(json!({
             "session": session_row_with_source(&loaded.session, &loaded.source),
             "turns": turns,
+            "meta": {
+                "turns_total": turns_total,
+                "turns_returned": turns_returned,
+                "turn_limit": max_turns,
+                "truncated": turns_returned < turns_total,
+            },
         }))
     }
 

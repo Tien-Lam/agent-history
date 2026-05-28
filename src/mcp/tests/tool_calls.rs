@@ -44,6 +44,22 @@ fn get_message_with_missing_ref_arg_reports_error() {
 }
 
 #[test]
+fn get_session_honors_max_turns_and_reports_truncation() {
+    let resp = run_one(
+        &server_with_fake_session(3),
+        r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"get_session","arguments":{"session_id":"fake-session","provider":"claude-code","max_turns":2}}}"#,
+    );
+
+    assert_eq!(resp["result"]["isError"], false);
+    let structured = &resp["result"]["structuredContent"];
+    assert_eq!(structured["turns"].as_array().unwrap().len(), 2);
+    assert_eq!(structured["meta"]["turns_total"], 3);
+    assert_eq!(structured["meta"]["turns_returned"], 2);
+    assert_eq!(structured["meta"]["turn_limit"], 2);
+    assert_eq!(structured["meta"]["truncated"], true);
+}
+
+#[test]
 fn list_sessions_validates_provider_slug() {
     let resp = run_one(
         &server(),

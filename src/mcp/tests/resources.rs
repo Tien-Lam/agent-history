@@ -26,6 +26,27 @@ fn resources_list_with_no_providers_returns_empty() {
 }
 
 #[test]
+fn resources_list_is_capped_and_reports_truncation() {
+    let total = schema_fragments::MCP_RESOURCES_LIST_MAX + 2;
+    let resp = run_one(
+        &server_with_fake_sessions(total, 1),
+        r#"{"jsonrpc":"2.0","id":1,"method":"resources/list"}"#,
+    );
+
+    assert_eq!(resp["error"], Value::Null);
+    assert_eq!(
+        resp["result"]["resources"].as_array().unwrap().len(),
+        schema_fragments::MCP_RESOURCES_LIST_MAX
+    );
+    assert_eq!(resp["result"]["meta"]["total"], total);
+    assert_eq!(
+        resp["result"]["meta"]["returned"],
+        schema_fragments::MCP_RESOURCES_LIST_MAX
+    );
+    assert_eq!(resp["result"]["meta"]["truncated"], true);
+}
+
+#[test]
 fn resources_templates_list_advertises_session_and_turn() {
     let resp = run_one(
         &server(),
@@ -104,4 +125,27 @@ fn resources_read_rejects_zero_turn() {
     assert_eq!(resp["error"]["code"], ERR_INVALID_PARAMS);
     let msg = resp["error"]["message"].as_str().unwrap();
     assert!(msg.contains("turn"), "got: {msg}");
+}
+
+#[test]
+fn resources_read_session_is_capped_and_reports_truncation() {
+    let total = schema_fragments::MCP_SESSION_TURNS_MAX + 2;
+    let resp = run_one(
+        &server_with_fake_session(total),
+        r#"{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"aghist://session/claude-code/fake-session"}}"#,
+    );
+
+    assert_eq!(resp["error"], Value::Null);
+    let text = resp["result"]["contents"][0]["text"].as_str().unwrap();
+    let body: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(
+        body["turns"].as_array().unwrap().len(),
+        schema_fragments::MCP_SESSION_TURNS_MAX
+    );
+    assert_eq!(body["meta"]["turns_total"], total);
+    assert_eq!(
+        body["meta"]["turns_returned"],
+        schema_fragments::MCP_SESSION_TURNS_MAX
+    );
+    assert_eq!(body["meta"]["truncated"], true);
 }

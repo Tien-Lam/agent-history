@@ -64,8 +64,21 @@ pub(crate) fn mcp_get_session_response_schema() -> Value {
         schema_props([
             ("session", mcp_session_row_schema()),
             ("turns", array_schema(message_row_schema())),
+            ("meta", session_turns_meta_schema()),
         ]),
-        &["session", "turns"],
+        &["session", "turns", "meta"],
+    )
+}
+
+fn session_turns_meta_schema() -> Value {
+    closed_object_schema(
+        schema_props([
+            ("turns_total", json!({ "type": "integer", "minimum": 0 })),
+            ("turns_returned", json!({ "type": "integer", "minimum": 0 })),
+            ("turn_limit", json!({ "type": "integer", "minimum": 1 })),
+            ("truncated", json!({ "type": "boolean" })),
+        ]),
+        &["turns_total", "turns_returned", "turn_limit", "truncated"],
     )
 }
 

@@ -39,7 +39,7 @@ pub(super) fn resource_templates() -> Value {
         .collect::<Vec<_>>()
         .join(", ");
     let session_description = format!(
-        "Full session metadata + ordered turns. `provider` is the kebab-case slug ({provider_slugs})."
+        "Session metadata + bounded ordered turns. `provider` is the kebab-case slug ({provider_slugs})."
     );
     json!([
         {
@@ -59,7 +59,7 @@ pub(super) fn resource_templates() -> Value {
         {
             "uriTemplate": "aghist://source/{source}/session/{provider}/{session_id}",
             "name": "Remote source session",
-            "description": "Full session metadata + ordered turns from a registered remote source.",
+            "description": "Session metadata + bounded ordered turns from a registered remote source.",
             "mimeType": "application/json"
         },
         {

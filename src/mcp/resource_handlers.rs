@@ -10,6 +10,7 @@ use super::server::McpServer;
 
 use crate::federated::LOCAL_SOURCE;
 use crate::model::{CitationRef, Provider, SessionId};
+use crate::schema_fragments::{MCP_RESOURCES_LIST_MAX, MCP_SESSION_TURNS_MAX};
 use crate::services::lookup as lookup_service;
 use crate::session_resolver::LookupSource;
 
@@ -23,13 +24,24 @@ impl McpServer {
         let discovery = self.collect_discovery();
         let mut sessions = discovery.sessions.clone();
         sessions.sort_by_key(|session| std::cmp::Reverse(session.started_at));
+        let total = sessions.len();
         let resources: Vec<Value> = sessions
             .iter()
+            .take(MCP_RESOURCES_LIST_MAX)
             .map(|session| {
                 resource_descriptor_with_source(session, discovery.source_of_session(session))
             })
             .collect();
-        json!({ "resources": resources })
+        let returned = resources.len();
+        json!({
+            "resources": resources,
+            "meta": {
+                "total": total,
+                "returned": returned,
+                "limit": MCP_RESOURCES_LIST_MAX,
+                "truncated": returned < total,
+            }
+        })
     }
 
     pub(super) fn resources_read(&self, params: &Value) -> Result<Value, RpcError> {
@@ -89,13 +101,22 @@ impl McpServer {
         let turns: Vec<Value> = loaded
             .messages
             .iter()
+            .take(MCP_SESSION_TURNS_MAX)
             .enumerate()
             .map(|(i, m)| message_row_with_source(&loaded.session, m, i + 1, &loaded.source))
             .collect();
+        let turns_total = loaded.messages.len();
+        let turns_returned = turns.len();
         Ok(json!({
             "uri": session_uri_for_source(&loaded.source, loaded.session.provider, &loaded.session.id.0),
             "session": session_row_with_source(&loaded.session, &loaded.source),
             "turns": turns,
+            "meta": {
+                "turns_total": turns_total,
+                "turns_returned": turns_returned,
+                "turn_limit": MCP_SESSION_TURNS_MAX,
+                "truncated": turns_returned < turns_total,
+            },
         }))
     }
 

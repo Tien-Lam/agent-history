@@ -7,17 +7,17 @@
 //! Tools exposed (see `tools/list`):
 //! - `search_sessions` — full-text search, returns hits keyed by citation ref
 //! - `list_sessions`   — provider-aware session listing
-//! - `get_session`     — one session's metadata + ordered turns
+//! - `get_session`     — one session's metadata + bounded ordered turns
 //! - `get_message`     — resolves `<provider>/<id>#<turn>` or
 //!   `<source>:<provider>/<id>#<turn>`
 //! - `reindex`         — incremental or `--force` rebuild of the search index
 //! - `health`          — same checks as `aghist health`
 //!
 //! Resources exposed (see `resources/list` / `resources/read`):
-//! - `aghist://session/<provider>/<session-id>` — session metadata + all turns
+//! - `aghist://session/<provider>/<session-id>` — session metadata + bounded turns
 //! - `aghist://session/<provider>/<session-id>/turn/<n>` — single turn (1-based)
 //! - `aghist://source/<source>/session/<provider>/<session-id>` — remote
-//!   source session metadata + all turns
+//!   source session metadata + bounded turns
 //! - `aghist://source/<source>/session/<provider>/<session-id>/turn/<n>` —
 //!   single turn from a remote source
 //!

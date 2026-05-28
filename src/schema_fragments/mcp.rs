@@ -13,7 +13,7 @@ use super::responses::{
 use super::{
     MCP_FILTER_STRING_MAX_BYTES, MCP_INCLUDE_CONTEXT_DEFAULT, MCP_INCLUDE_CONTEXT_MAX,
     MCP_LIST_LIMIT_DEFAULT, MCP_LIST_LIMIT_MAX, MCP_LOOKUP_STRING_MAX_BYTES, MCP_SEARCH_LIMIT_MAX,
-    SEARCH_LIMIT_DEFAULT, SEARCH_QUERY_MAX_BYTES,
+    MCP_SESSION_TURNS_DEFAULT, MCP_SESSION_TURNS_MAX, SEARCH_LIMIT_DEFAULT, SEARCH_QUERY_MAX_BYTES,
 };
 
 pub(crate) struct McpToolContract {
@@ -39,7 +39,7 @@ pub(crate) fn mcp_tool_contracts() -> Vec<McpToolContract> {
         },
         McpToolContract {
             name: "get_session",
-            description: "Resolve a session by ID (full or unique prefix) and return its metadata plus all turns. Use provider/source to disambiguate federated sessions.",
+            description: "Resolve a session by ID (full or unique prefix) and return its metadata plus bounded turns. Use provider/source to disambiguate federated sessions.",
             input_schema: mcp_get_session_input_schema(),
             output_schema: Some(mcp_get_session_response_schema()),
         },
@@ -114,6 +114,10 @@ fn mcp_get_session_input_schema() -> Value {
             (
                 "source",
                 json!({ "type": "string", "maxLength": MAX_SOURCE_NAME_BYTES, "description": "Source name from list_sessions. Omit for unique matches; use 'local' for local-only lookup." }),
+            ),
+            (
+                "max_turns",
+                json!({ "type": "integer", "minimum": 1, "maximum": MCP_SESSION_TURNS_MAX, "default": MCP_SESSION_TURNS_DEFAULT, "description": "Maximum number of turns to return from the start of the session." }),
             ),
         ]),
         &["session_id"],
