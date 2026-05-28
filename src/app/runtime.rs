@@ -83,6 +83,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
+    use crate::stars::StarStore;
 
     use super::*;
 
@@ -91,7 +92,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let index_path = dir.path().join("index-file");
         std::fs::write(&index_path, b"not a directory").unwrap();
-        let mut app = App::new(Vec::new(), Config::default());
+        let mut app = App::with_stars(Vec::new(), Config::default(), StarStore::ephemeral());
 
         app.open_search_index(index_path);
 
