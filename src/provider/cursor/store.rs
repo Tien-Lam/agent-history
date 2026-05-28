@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use super::format::{millis_value_to_datetime, ComposerData};
 use super::ProviderError;
@@ -11,6 +11,9 @@ use crate::provider::project_name_from_path;
 mod messages;
 
 pub(crate) use messages::load_messages_from_db_with_stats;
+
+pub(super) const MAX_CURSOR_VALUE_BYTES: i64 = 16 * 1024 * 1024;
+const MAX_CURSOR_DISCOVERY_ROWS: i64 = 100_000;
 
 pub(crate) fn state_db_path(base: &Path) -> PathBuf {
     base.join("User").join("globalStorage").join("state.vscdb")
@@ -26,15 +29,22 @@ pub(crate) fn read_sessions(db_path: &Path) -> Result<Vec<Session>, ProviderErro
     }
 
     let mut stmt = conn
-        .prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
+        .prepare(
+            "SELECT key, value FROM cursorDiskKV \
+             WHERE key LIKE 'composerData:%' AND length(value) <= ?1 \
+             LIMIT ?2",
+        )
         .map_err(sql_err(db_path))?;
 
     let rows = stmt
-        .query_map([], |row| {
-            let key: String = row.get(0)?;
-            let value: Vec<u8> = row.get(1)?;
-            Ok((key, value))
-        })
+        .query_map(
+            params![MAX_CURSOR_VALUE_BYTES, MAX_CURSOR_DISCOVERY_ROWS],
+            |row| {
+                let key: String = row.get(0)?;
+                let value: Vec<u8> = row.get(1)?;
+                Ok((key, value))
+            },
+        )
         .map_err(sql_err(db_path))?;
 
     let mut sessions = Vec::new();

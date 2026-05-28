@@ -260,6 +260,65 @@ fn corrupt_bubble_value_does_not_crash() {
 }
 
 #[test]
+fn skips_oversized_composer_rows() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = setup_db(tmp.path());
+    let conn = Connection::open(&db_path).unwrap();
+    let oversized = vec![b' '; usize::try_from(store::MAX_CURSOR_VALUE_BYTES).unwrap() + 1];
+    conn.execute(
+        "INSERT INTO cursorDiskKV (key, value) VALUES (?1, ?2)",
+        rusqlite::params!["composerData:too-big", oversized],
+    )
+    .unwrap();
+    drop(conn);
+
+    let provider = CursorProvider::new(vec![tmp.path().to_path_buf()]);
+    let sessions = provider.discover_sessions().unwrap();
+
+    assert!(sessions.is_empty());
+}
+
+#[test]
+fn skips_oversized_bubble_rows() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = setup_db(tmp.path());
+    let conn = Connection::open(&db_path).unwrap();
+
+    insert(
+        &conn,
+        "composerData:comp-huge-bubble",
+        &serde_json::json!({
+            "composerId": "comp-huge-bubble",
+            "createdAt": 1_767_225_600_000_i64,
+            "fullConversationHeadersOnly": [
+                {"bubbleId": "b1", "type": 1},
+                {"bubbleId": "b2", "type": 2},
+            ],
+        }),
+    );
+    let oversized = vec![b' '; usize::try_from(store::MAX_CURSOR_VALUE_BYTES).unwrap() + 1];
+    conn.execute(
+        "INSERT INTO cursorDiskKV (key, value) VALUES (?1, ?2)",
+        rusqlite::params!["bubbleId:comp-huge-bubble:b1", oversized],
+    )
+    .unwrap();
+    insert(
+        &conn,
+        "bubbleId:comp-huge-bubble:b2",
+        &serde_json::json!({"type": 2, "text": "kept"}),
+    );
+    drop(conn);
+
+    let provider = CursorProvider::new(vec![tmp.path().to_path_buf()]);
+    let sessions = provider.discover_sessions().unwrap();
+    let load = provider.load_messages_with_stats(&sessions[0]).unwrap();
+
+    assert_eq!(load.messages.len(), 1);
+    assert_eq!(load.messages[0].id.0, "b2");
+    assert_eq!(load.parse_stats.records_seen, 1);
+}
+
+#[test]
 fn orphan_bubble_row_decode_error_is_reported() {
     let tmp = TempDir::new().unwrap();
     let db_path = setup_db(tmp.path());

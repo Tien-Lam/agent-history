@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use super::super::format::{ComposerData, HeaderEntry};
 use super::super::message::{build_message_result, BuildMessageResult};
@@ -8,6 +8,9 @@ use super::super::ProviderError;
 use crate::model::Message;
 use crate::provider::json_text::{stringish, value_u8};
 use crate::provider::{ProviderMessageLoad, ProviderParseStats};
+
+const MAX_CURSOR_MESSAGE_ROWS: usize = 100_000;
+const MAX_CURSOR_MESSAGE_ROWS_I64: i64 = MAX_CURSOR_MESSAGE_ROWS as i64;
 
 pub(crate) fn load_messages_from_db_with_stats(
     db_path: &Path,
@@ -25,8 +28,8 @@ pub(crate) fn load_messages_from_db_with_stats(
     let composer_key = format!("composerData:{composer_id}");
     let composer: Option<ComposerData> = conn
         .query_row(
-            "SELECT value FROM cursorDiskKV WHERE key = ?1",
-            [&composer_key],
+            "SELECT value FROM cursorDiskKV WHERE key = ?1 AND length(value) <= ?2",
+            params![composer_key, super::MAX_CURSOR_VALUE_BYTES],
             |row| row.get::<_, Vec<u8>>(0),
         )
         .ok()
@@ -47,7 +50,7 @@ pub(crate) fn load_messages_from_db_with_stats(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut parse_stats = ProviderParseStats::default();
 
-    for (idx, h) in headers.iter().enumerate() {
+    for (idx, h) in headers.iter().take(MAX_CURSOR_MESSAGE_ROWS).enumerate() {
         let Some(bid) = stringish(h.bubble_id.as_ref(), &["bubbleId", "id"]) else {
             continue;
         };
@@ -68,14 +71,25 @@ pub(crate) fn load_messages_from_db_with_stats(
     // approximate the original ordering.
     let pattern = format!("bubbleId:{composer_id}:%");
     let mut stmt = conn
-        .prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE ?1")
+        .prepare(
+            "SELECT key, value FROM cursorDiskKV \
+             WHERE key LIKE ?1 AND length(value) <= ?2 \
+             LIMIT ?3",
+        )
         .map_err(super::sql_err(db_path))?;
     let rows = stmt
-        .query_map([&pattern], |row| {
-            let key: String = row.get(0)?;
-            let value: Vec<u8> = row.get(1)?;
-            Ok((key, value))
-        })
+        .query_map(
+            params![
+                pattern,
+                super::MAX_CURSOR_VALUE_BYTES,
+                MAX_CURSOR_MESSAGE_ROWS_I64
+            ],
+            |row| {
+                let key: String = row.get(0)?;
+                let value: Vec<u8> = row.get(1)?;
+                Ok((key, value))
+            },
+        )
         .map_err(super::sql_err(db_path))?;
     let mut orphans: Vec<Message> = Vec::new();
     for row in rows {
@@ -122,8 +136,8 @@ fn push_cursor_message_result(
 
 fn read_value(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>, ProviderError> {
     match conn.query_row(
-        "SELECT value FROM cursorDiskKV WHERE key = ?1",
-        [key],
+        "SELECT value FROM cursorDiskKV WHERE key = ?1 AND length(value) <= ?2",
+        params![key, super::MAX_CURSOR_VALUE_BYTES],
         |row| row.get::<_, Vec<u8>>(0),
     ) {
         Ok(v) => Ok(Some(v)),
