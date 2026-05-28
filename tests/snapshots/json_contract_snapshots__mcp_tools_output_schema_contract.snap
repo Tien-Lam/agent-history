@@ -1,5 +1,6 @@
 ---
 source: tests/json_contract_snapshots.rs
+assertion_line: 16
 expression: pretty
 ---
 {
@@ -184,6 +185,33 @@ expression: pretty
   "get_session": {
     "additionalProperties": false,
     "properties": {
+      "meta": {
+        "additionalProperties": false,
+        "properties": {
+          "truncated": {
+            "type": "boolean"
+          },
+          "turn_limit": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "turns_returned": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "turns_total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "turns_total",
+          "turns_returned",
+          "turn_limit",
+          "truncated"
+        ],
+        "type": "object"
+      },
       "session": {
         "additionalProperties": false,
         "properties": {
@@ -345,7 +373,8 @@ expression: pretty
     },
     "required": [
       "session",
-      "turns"
+      "turns",
+      "meta"
     ],
     "type": "object"
   },

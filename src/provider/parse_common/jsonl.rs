@@ -47,6 +47,7 @@ where
     )
 }
 
+#[cfg(test)]
 pub(super) fn visit_jsonl_records_with_max_line_bytes<T, F, E>(
     path: &Path,
     max_line_bytes: usize,
