@@ -115,11 +115,11 @@ fn visit_jsonl_records_rejects_total_file_over_budget() {
     )
     .unwrap();
 
-    let err =
-        match jsonl::visit_jsonl_records_with_limits::<Row, _, _>(&path, 64, 32, |_| {}, |_| {}) {
-            Ok(_) => panic!("expected oversized JSONL file to be rejected"),
-            Err(err) => err,
-        };
+    let Err(err) =
+        jsonl::visit_jsonl_records_with_limits::<Row, _, _>(&path, 64, 32, |_| {}, |_| {})
+    else {
+        panic!("expected oversized JSONL file to be rejected");
+    };
 
     assert!(
         matches!(err, ProviderError::Io(ref io) if io.kind() == std::io::ErrorKind::InvalidData && io.to_string().contains("32 byte limit"))
@@ -137,9 +137,8 @@ fn visit_jsonl_records_rejects_symlinked_files() {
     std::fs::write(&target, "{\"value\":\"one\"}\n").unwrap();
     symlink(&target, &link).unwrap();
 
-    let err = match visit_jsonl_records::<Row, _, _>(&link, |_| {}, |_| {}) {
-        Ok(_) => panic!("expected symlinked JSONL file to be rejected"),
-        Err(err) => err,
+    let Err(err) = visit_jsonl_records::<Row, _, _>(&link, |_| {}, |_| {}) else {
+        panic!("expected symlinked JSONL file to be rejected");
     };
 
     assert!(

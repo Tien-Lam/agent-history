@@ -10,7 +10,7 @@ use crate::provider::json_text::{stringish, value_u8};
 use crate::provider::{ProviderMessageLoad, ProviderParseStats};
 
 const MAX_CURSOR_MESSAGE_ROWS: usize = 100_000;
-const MAX_CURSOR_MESSAGE_ROWS_I64: i64 = MAX_CURSOR_MESSAGE_ROWS as i64;
+const MAX_CURSOR_MESSAGE_ROWS_I64: i64 = 100_000;
 
 pub(crate) fn load_messages_from_db_with_stats(
     db_path: &Path,
