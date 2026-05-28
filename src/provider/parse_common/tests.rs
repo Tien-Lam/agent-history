@@ -105,6 +105,27 @@ fn visit_jsonl_records_rejects_oversized_unterminated_line() {
     assert!(errors[0].error.contains("byte limit"));
 }
 
+#[test]
+fn visit_jsonl_records_rejects_total_file_over_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("data.jsonl");
+    std::fs::write(
+        &path,
+        "{\"value\":\"one\"}\n{\"value\":\"two\"}\n{\"value\":\"three\"}\n",
+    )
+    .unwrap();
+
+    let err =
+        match jsonl::visit_jsonl_records_with_limits::<Row, _, _>(&path, 64, 32, |_| {}, |_| {}) {
+            Ok(_) => panic!("expected oversized JSONL file to be rejected"),
+            Err(err) => err,
+        };
+
+    assert!(
+        matches!(err, ProviderError::Io(ref io) if io.kind() == std::io::ErrorKind::InvalidData && io.to_string().contains("32 byte limit"))
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn visit_jsonl_records_rejects_symlinked_files() {

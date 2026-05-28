@@ -5,6 +5,8 @@ use serde::de::DeserializeOwned;
 
 use crate::provider::ProviderError;
 
+use super::MAX_PROVIDER_SESSION_FILE_BYTES;
+
 const MAX_JSONL_LINE_BYTES: usize = 16 * 1024 * 1024;
 
 pub(crate) struct JsonlRecord<T> {
@@ -36,12 +38,39 @@ where
     F: FnMut(JsonlRecord<T>),
     E: FnMut(JsonlError),
 {
-    visit_jsonl_records_with_max_line_bytes(path, MAX_JSONL_LINE_BYTES, on_record, on_error)
+    visit_jsonl_records_with_limits(
+        path,
+        MAX_JSONL_LINE_BYTES,
+        MAX_PROVIDER_SESSION_FILE_BYTES,
+        on_record,
+        on_error,
+    )
 }
 
 pub(super) fn visit_jsonl_records_with_max_line_bytes<T, F, E>(
     path: &Path,
     max_line_bytes: usize,
+    on_record: F,
+    on_error: E,
+) -> Result<JsonlStats, ProviderError>
+where
+    T: DeserializeOwned,
+    F: FnMut(JsonlRecord<T>),
+    E: FnMut(JsonlError),
+{
+    visit_jsonl_records_with_limits(
+        path,
+        max_line_bytes,
+        MAX_PROVIDER_SESSION_FILE_BYTES,
+        on_record,
+        on_error,
+    )
+}
+
+pub(super) fn visit_jsonl_records_with_limits<T, F, E>(
+    path: &Path,
+    max_line_bytes: usize,
+    max_file_bytes: usize,
     mut on_record: F,
     mut on_error: E,
 ) -> Result<JsonlStats, ProviderError>
@@ -55,6 +84,12 @@ where
         return Err(ProviderError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!("{} is not a regular file", path.display()),
+        )));
+    }
+    if metadata.len() > max_file_bytes as u64 {
+        return Err(ProviderError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("file exceeds {max_file_bytes} byte limit"),
         )));
     }
     let file = std::fs::File::open(path)?;
