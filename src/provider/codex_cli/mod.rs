@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{
+    discovery_error, entry_is_regular_file, HistoryProvider, ProviderError, ProviderMessageLoad,
+};
 use crate::model::{Message, Provider, Session};
 use parse::{
     build_session_from_rollout, parse_rollout_messages, parse_rollout_messages_with_stats,
@@ -107,6 +109,9 @@ fn collect_rollout_files(base: &Path, sessions: &mut Vec<Session>) -> Result<(),
 
                 for file_entry in files {
                     let file_entry = file_entry.map_err(discovery_error("Codex CLI"))?;
+                    if !entry_is_regular_file(&file_entry) {
+                        continue;
+                    }
                     let path = file_entry.path();
                     let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 

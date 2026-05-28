@@ -20,7 +20,7 @@ pub(crate) fn load_messages_from_path_with_stats(
     path: &Path,
 ) -> Result<ProviderMessageLoad, ProviderError> {
     tracing::debug!(path = %path.display(), "loading Gemini CLI messages");
-    let data = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)?;
+    let data = fs_read::read_regular_file_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)?;
     let raw: Value = serde_json::from_str(&data)?;
     let raw_messages = raw
         .get("messages")

@@ -115,3 +115,37 @@ fn sources_pull_refuses_symlinked_data_dir_before_rsync() {
         "pull must not write through symlinked data dir"
     );
 }
+
+#[test]
+fn sources_pull_rejects_symlinks_left_by_rsync() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+    let cache_dir = dir.path().join("cache");
+    let args_log = dir.path().join("rsync-args.txt");
+    let fake = write_symlink_rsync(dir.path(), &args_log);
+
+    aghist()
+        .args(["sources", "add", "box", "--host", "h", "--path", "/p"])
+        .env("AGHIST_CONFIG", &config_path)
+        .assert()
+        .success();
+
+    let output = aghist()
+        .args(["sources", "pull", "box"])
+        .env("AGHIST_CONFIG", &config_path)
+        .env("AGHIST_SOURCES_CACHE_DIR", &cache_dir)
+        .env("AGHIST_RSYNC_BIN", &fake)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stderr_error_kind(&output), "unsafe-cache-dir");
+    assert!(
+        args_log.exists(),
+        "rsync should run before the post-pull scan"
+    );
+    assert!(
+        !cache_dir.join("box").join(".aghist-source.json").exists(),
+        "manifest should not be written after unsafe pull"
+    );
+}

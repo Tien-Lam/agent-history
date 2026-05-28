@@ -26,7 +26,7 @@ pub(crate) struct IndexEntry {
 }
 
 pub(crate) fn load_index(sessions_dir: &Path) -> Option<Vec<IndexEntry>> {
-    let bytes = fs_read::read_limited(
+    let bytes = fs_read::read_regular_file_limited(
         &sessions_dir.join(INDEX_FILE),
         MAX_PROVIDER_METADATA_FILE_BYTES,
     )

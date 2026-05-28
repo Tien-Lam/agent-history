@@ -21,7 +21,7 @@ mod store;
 
 use std::path::PathBuf;
 
-use super::{HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{path_is_regular_file, HistoryProvider, ProviderError, ProviderMessageLoad};
 use crate::model::{Message, Provider, Session};
 use store::{load_messages_from_db_with_stats, read_sessions, state_db_path};
 
@@ -36,7 +36,7 @@ impl CursorProvider {
 
     pub fn detect() -> Option<Self> {
         let dirs = base_dirs();
-        if dirs.iter().any(|d| state_db_path(d).exists()) {
+        if dirs.iter().any(|d| path_is_regular_file(&state_db_path(d))) {
             Some(Self { dirs })
         } else {
             None
@@ -93,7 +93,7 @@ impl HistoryProvider for CursorProvider {
 
         for base in &self.dirs {
             let db_path = state_db_path(base);
-            if !db_path.exists() {
+            if !path_is_regular_file(&db_path) {
                 continue;
             }
 

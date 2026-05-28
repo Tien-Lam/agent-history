@@ -24,5 +24,6 @@ pub use load::{
 };
 
 pub(crate) use paths::{
-    discovery_error, env_path, env_var_is_non_empty, home_dir, project_name_from_path,
+    discovery_error, entry_is_directory, entry_is_regular_file, env_path, env_var_is_non_empty,
+    home_dir, path_is_regular_file, project_name_from_path,
 };

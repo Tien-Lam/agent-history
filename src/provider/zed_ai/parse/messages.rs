@@ -14,12 +14,13 @@ use super::{zed_timestamp, ZedConversation, ZedMessage};
 pub(crate) fn load_messages_from_path_with_stats(
     path: &Path,
 ) -> Result<ProviderMessageLoad, ProviderError> {
-    let bytes = fs_read::read_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).map_err(|e| {
-        ProviderError::Parse {
-            path: path.to_path_buf(),
-            reason: e.to_string(),
-        }
-    })?;
+    let bytes =
+        fs_read::read_regular_file_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).map_err(|e| {
+            ProviderError::Parse {
+                path: path.to_path_buf(),
+                reason: e.to_string(),
+            }
+        })?;
     let raw: ZedConversation =
         serde_json::from_slice(&bytes).map_err(|e| ProviderError::Parse {
             path: path.to_path_buf(),

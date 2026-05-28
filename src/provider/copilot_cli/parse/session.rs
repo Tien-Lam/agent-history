@@ -9,7 +9,7 @@ use crate::provider::json_text::stringish;
 use crate::provider::parse_common::{
     timestamp_value_to_utc, visit_jsonl_records, MAX_PROVIDER_METADATA_FILE_BYTES,
 };
-use crate::provider::project_name_from_path;
+use crate::provider::{path_is_regular_file, project_name_from_path};
 
 #[derive(Deserialize)]
 struct WorkspaceYaml {
@@ -20,8 +20,11 @@ struct WorkspaceYaml {
 }
 
 pub(crate) fn build_session(session_dir: &Path, workspace_path: &Path) -> Option<Session> {
-    let yaml_content =
-        fs_read::read_to_string_limited(workspace_path, MAX_PROVIDER_METADATA_FILE_BYTES).ok()?;
+    let yaml_content = fs_read::read_regular_file_to_string_limited(
+        workspace_path,
+        MAX_PROVIDER_METADATA_FILE_BYTES,
+    )
+    .ok()?;
     let workspace: WorkspaceYaml = serde_yaml_ng::from_str(&yaml_content).ok()?;
 
     let session_id = stringish(workspace.id.as_ref(), &["id"]).or_else(|| {
@@ -40,7 +43,7 @@ pub(crate) fn build_session(session_dir: &Path, workspace_path: &Path) -> Option
     let project_path = cwd.map(PathBuf::from);
 
     let events_path = session_dir.join("events.jsonl");
-    let message_count = if events_path.exists() {
+    let message_count = if path_is_regular_file(&events_path) {
         count_message_events(&events_path)
     } else {
         0

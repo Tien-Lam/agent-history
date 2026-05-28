@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{
+    discovery_error, path_is_regular_file, HistoryProvider, ProviderError, ProviderMessageLoad,
+};
 use crate::model::{Message, Provider, Session};
 use parse::{
     build_session, parse_checkpoint_md, parse_events_jsonl, parse_events_jsonl_with_stats,
@@ -63,7 +65,7 @@ impl HistoryProvider for CopilotCliProvider {
                 let session_dir = entry.path();
                 let workspace_path = session_dir.join("workspace.yaml");
 
-                if !workspace_path.exists() {
+                if !path_is_regular_file(&workspace_path) {
                     continue;
                 }
 
@@ -80,12 +82,12 @@ impl HistoryProvider for CopilotCliProvider {
     fn load_messages(&self, session: &Session) -> Result<Vec<Message>, ProviderError> {
         // Look for events.jsonl in the session directory
         let events_path = session.source_path.join("events.jsonl");
-        if events_path.exists() {
+        if path_is_regular_file(&events_path) {
             parse_events_jsonl(&events_path)
         } else {
             // Fall back to checkpoint markdown
             let checkpoint_path = session.source_path.join("checkpoints").join("index.md");
-            if checkpoint_path.exists() {
+            if path_is_regular_file(&checkpoint_path) {
                 parse_checkpoint_md(&checkpoint_path)
             } else {
                 Ok(Vec::new())
@@ -98,7 +100,7 @@ impl HistoryProvider for CopilotCliProvider {
         session: &Session,
     ) -> Result<ProviderMessageLoad, ProviderError> {
         let events_path = session.source_path.join("events.jsonl");
-        if events_path.exists() {
+        if path_is_regular_file(&events_path) {
             parse_events_jsonl_with_stats(&events_path)
         } else {
             self.load_messages(session)

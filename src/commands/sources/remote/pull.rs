@@ -10,7 +10,10 @@ use chrono::Utc;
 use super::{load_sources_config, resolve_config_path};
 use output::{write_pull_results, PullResult};
 use rsync::run_rsync_pull;
-use safety::{count_dir, ensure_cache_dir, ensure_cache_root_safe, resolve_sources_cache_root};
+use safety::{
+    count_dir, ensure_cache_dir, ensure_cache_root_safe, ensure_tree_has_no_symlinks,
+    resolve_sources_cache_root,
+};
 
 mod output;
 mod rsync;
@@ -155,6 +158,7 @@ fn pull_one_source(
         });
     }
 
+    ensure_tree_has_no_symlinks(&data_dir)?;
     let (file_count, byte_count) = count_dir(&data_dir)?;
     let manifest = config::SourceCacheManifest {
         name: src.name.clone(),

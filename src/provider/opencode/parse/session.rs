@@ -7,7 +7,7 @@ use crate::fs_read;
 use crate::model::{Provider, Session, SessionId};
 use crate::provider::json_text::stringish;
 use crate::provider::parse_common::MAX_PROVIDER_METADATA_FILE_BYTES;
-use crate::provider::project_name_from_path;
+use crate::provider::{entry_is_regular_file, project_name_from_path};
 
 use super::super::paths;
 use super::{timestamp_from_values, RawModel, RawTime};
@@ -32,7 +32,8 @@ struct RawSession {
 }
 
 pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Option<Session> {
-    let data = fs_read::read_to_string_limited(path, MAX_PROVIDER_METADATA_FILE_BYTES).ok()?;
+    let data = fs_read::read_regular_file_to_string_limited(path, MAX_PROVIDER_METADATA_FILE_BYTES)
+        .ok()?;
     let raw: RawSession = serde_json::from_str(&data).ok()?;
     let id = stringish(raw.id.as_ref(), &["id"]).or_else(|| {
         path.file_stem()
@@ -68,6 +69,7 @@ pub(crate) fn build_session_from_file(path: &Path, storage_base: &Path) -> Optio
         std::fs::read_dir(&message_dir).map_or(0, |entries| {
             entries
                 .filter_map(Result::ok)
+                .filter(entry_is_regular_file)
                 .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
                 .count()
         })

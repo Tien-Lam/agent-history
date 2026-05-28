@@ -44,6 +44,32 @@ fn write_failing_rsync(dir: &std::path::Path) -> std::path::PathBuf {
     script
 }
 
+/// Same as `write_fake_rsync` but leaves a symlink in the destination so the
+/// post-pull cache safety scan can reject it.
+#[cfg(unix)]
+fn write_symlink_rsync(dir: &std::path::Path, args_log: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let target = dir.join("outside.jsonl");
+    std::fs::write(&target, "{}\n").unwrap();
+    let script = dir.join("fake-rsync-symlink.sh");
+    let body = format!(
+        "#!/bin/sh\n\
+         for a in \"$@\"; do printf '%s\\n' \"$a\" >> {log:?}; done\n\
+         dest=\n\
+         for a in \"$@\"; do dest=\"$a\"; done\n\
+         mkdir -p \"$dest\"\n\
+         ln -s {target:?} \"$dest/linked.jsonl\"\n\
+         exit 0\n",
+        log = args_log.display().to_string(),
+        target = target.display().to_string(),
+    );
+    std::fs::write(&script, body).unwrap();
+    let mut perms = std::fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script, perms).unwrap();
+    script
+}
+
 #[cfg(unix)]
 fn stderr_error_kind(output: &std::process::Output) -> String {
     let stderr = String::from_utf8(output.stderr.clone()).unwrap();

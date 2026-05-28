@@ -17,7 +17,7 @@ pub(super) fn run_rsync_pull(
     }
 
     let mut cmd = std::process::Command::new(&rsync_bin);
-    cmd.arg("-a").arg("--delete");
+    cmd.arg("-a").arg("--delete").arg("--no-links");
     if dry_run {
         cmd.arg("--dry-run");
     }

@@ -64,9 +64,54 @@ pub(super) fn count_dir(dir: &Path) -> Result<(u64, u64), ErrorEnvelope> {
         })
 }
 
+pub(super) fn ensure_tree_has_no_symlinks(dir: &Path) -> Result<(), ErrorEnvelope> {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = std::fs::read_dir(&current).map_err(|e| {
+            ErrorEnvelope::new(
+                "io-error",
+                format!(
+                    "failed to inspect source data dir {}: {e}",
+                    current.display()
+                ),
+            )
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|e| {
+                ErrorEnvelope::new(
+                    "io-error",
+                    format!(
+                        "failed to inspect source data dir {}: {e}",
+                        current.display()
+                    ),
+                )
+            })?;
+            let path = entry.path();
+            let metadata = std::fs::symlink_metadata(&path).map_err(|e| {
+                ErrorEnvelope::new(
+                    "io-error",
+                    format!("failed to inspect source data path {}: {e}", path.display()),
+                )
+            })?;
+            let file_type = metadata.file_type();
+            if file_type.is_symlink() {
+                return Err(ErrorEnvelope::new(
+                    "unsafe-cache-dir",
+                    format!("source data path {} is a symlink", path.display()),
+                )
+                .with_hint("Remove the symlink and retry; aghist remote caches must contain regular files and directories only."));
+            }
+            if file_type.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(all(test, unix))]
 mod tests {
-    use super::count_dir;
+    use super::{count_dir, ensure_tree_has_no_symlinks};
     use std::os::unix::fs::symlink;
 
     #[test]
@@ -92,5 +137,20 @@ mod tests {
             err.message.contains("failed to account source data dir"),
             "unexpected error: {err:?}"
         );
+    }
+
+    #[test]
+    fn tree_safety_rejects_nested_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let nested = root.join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(root.join("real.txt"), "ok").unwrap();
+        symlink(root.join("real.txt"), nested.join("linked.txt")).unwrap();
+
+        let err = ensure_tree_has_no_symlinks(root).unwrap_err();
+
+        assert_eq!(err.kind, "unsafe-cache-dir");
+        assert!(err.message.contains("is a symlink"));
     }
 }

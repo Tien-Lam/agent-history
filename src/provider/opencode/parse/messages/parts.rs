@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::fs_read;
 use crate::model::ContentBlock;
+use crate::provider::entry_is_regular_file;
 use crate::provider::json_text::stringish;
 use crate::provider::parse_common::{
     pretty_json_opt, tool_result_block, tool_use_block, MAX_PROVIDER_SESSION_FILE_BYTES,
@@ -26,12 +27,16 @@ pub(super) fn load_parts_into_content(part_dir: &Path, content: &mut Vec<Content
                 continue;
             }
         };
+        if !entry_is_regular_file(&entry) {
+            continue;
+        }
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
 
-        let Ok(data) = fs_read::read_to_string_limited(&path, MAX_PROVIDER_SESSION_FILE_BYTES)
+        let Ok(data) =
+            fs_read::read_regular_file_to_string_limited(&path, MAX_PROVIDER_SESSION_FILE_BYTES)
         else {
             continue;
         };

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use super::super::{discovery_error, ProviderError};
+use super::super::{discovery_error, entry_is_regular_file, ProviderError};
 use super::parse::read_session;
 use crate::model::Session;
 
@@ -56,6 +56,9 @@ pub(super) fn discover_sessions(dirs: &[PathBuf]) -> Result<Vec<Session>, Provid
         let entries = std::fs::read_dir(&conv_dir).map_err(discovery_error("Zed AI"))?;
         for entry in entries {
             let entry = entry.map_err(discovery_error("Zed AI"))?;
+            if !entry_is_regular_file(&entry) {
+                continue;
+            }
             let path = entry.path();
             if path.extension().is_none_or(|x| x != "json") {
                 continue;

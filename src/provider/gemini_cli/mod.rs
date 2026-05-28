@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 mod parse;
 
-use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{
+    discovery_error, entry_is_regular_file, HistoryProvider, ProviderError, ProviderMessageLoad,
+};
 use crate::model::{Message, Provider, Session};
 use parse::{build_session_from_file, load_messages_from_path_with_stats, load_project_map};
 
@@ -76,6 +78,9 @@ impl HistoryProvider for GeminiCliProvider {
 
                 for file_entry in chat_files {
                     let file_entry = file_entry.map_err(discovery_error("Gemini CLI"))?;
+                    if !entry_is_regular_file(&file_entry) {
+                        continue;
+                    }
                     let path = file_entry.path();
                     let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 

@@ -7,8 +7,8 @@ mod parse;
 pub(crate) mod paths;
 
 use super::{
-    HistoryProvider, ProviderError, ProviderFingerprintPath, ProviderMessageLoad,
-    ProviderParseStats,
+    entry_is_regular_file, path_is_regular_file, HistoryProvider, ProviderError,
+    ProviderFingerprintPath, ProviderMessageLoad, ProviderParseStats,
 };
 use crate::model::{Message, Provider, Session};
 use discovery::{base_dirs, discover_sessions};
@@ -73,6 +73,9 @@ impl HistoryProvider for OpenCodeProvider {
 
         for file_entry in files {
             let file_entry = file_entry?;
+            if !entry_is_regular_file(&file_entry) {
+                continue;
+            }
             let path = file_entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
@@ -103,7 +106,7 @@ impl HistoryProvider for OpenCodeProvider {
         &self,
         session: &Session,
     ) -> io::Result<Vec<ProviderFingerprintPath>> {
-        if !session.source_path.is_file() {
+        if !path_is_regular_file(&session.source_path) {
             return Ok(vec![ProviderFingerprintPath::new(
                 "source",
                 session.source_path.clone(),
@@ -148,6 +151,9 @@ fn opencode_part_dirs(
     let entries = std::fs::read_dir(message_dir)?;
     for entry in entries {
         let entry = entry?;
+        if !entry_is_regular_file(&entry) {
+            continue;
+        }
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
             continue;

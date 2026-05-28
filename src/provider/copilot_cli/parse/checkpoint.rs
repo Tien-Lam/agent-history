@@ -9,7 +9,8 @@ use crate::provider::parse_common::{
 use crate::provider::text_blocks::parse_text_with_code_blocks;
 
 pub(crate) fn parse_checkpoint_md(path: &Path) -> Result<Vec<Message>, ProviderError> {
-    let content = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)?;
+    let content =
+        fs_read::read_regular_file_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)?;
     if content.trim().is_empty()
         || content
             .lines()

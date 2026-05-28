@@ -24,7 +24,7 @@ pub(crate) fn load_project_map(base: &Path) -> HashMap<String, String> {
         return HashMap::new();
     }
 
-    fs_read::read_to_string_limited(&path, MAX_PROVIDER_METADATA_FILE_BYTES)
+    fs_read::read_regular_file_to_string_limited(&path, MAX_PROVIDER_METADATA_FILE_BYTES)
         .ok()
         .and_then(|s| serde_json::from_str::<ProjectsFile>(&s).ok())
         .map(|pf| {
@@ -42,7 +42,8 @@ pub(crate) fn build_session_from_file(
     project_slug: &str,
     project_map: &HashMap<String, String>,
 ) -> Option<Session> {
-    let data = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).ok()?;
+    let data =
+        fs_read::read_regular_file_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).ok()?;
     let raw: RawSession = serde_json::from_str(&data).ok()?;
     let session_id = stringish(raw.session_id.as_ref(), &["sessionId", "id"]).or_else(|| {
         path.file_stem()

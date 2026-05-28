@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 mod parse;
 
-use super::{discovery_error, HistoryProvider, ProviderError, ProviderMessageLoad};
+use super::{
+    discovery_error, entry_is_regular_file, HistoryProvider, ProviderError, ProviderMessageLoad,
+};
 use crate::model::{Message, Provider, Session};
 pub use crate::provider::text_blocks::parse_text_with_code_blocks;
 use parse::{
@@ -86,6 +88,9 @@ impl HistoryProvider for ClaudeCodeProvider {
 
                 for file_entry in entries {
                     let file_entry = file_entry.map_err(discovery_error("Claude Code"))?;
+                    if !entry_is_regular_file(&file_entry) {
+                        continue;
+                    }
                     let path = file_entry.path();
                     if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                         continue;

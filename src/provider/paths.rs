@@ -1,5 +1,6 @@
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::fs::DirEntry;
+use std::path::{Path, PathBuf};
 
 use super::ProviderError;
 
@@ -34,6 +35,18 @@ pub(crate) fn env_var_is_non_empty(var: &str) -> bool {
 
 pub(crate) fn discovery_error(provider: &'static str) -> impl Fn(std::io::Error) -> ProviderError {
     move |source| ProviderError::Discovery { provider, source }
+}
+
+pub(crate) fn entry_is_regular_file(entry: &DirEntry) -> bool {
+    entry.file_type().is_ok_and(|ty| ty.is_file())
+}
+
+pub(crate) fn entry_is_directory(entry: &DirEntry) -> bool {
+    entry.file_type().is_ok_and(|ty| ty.is_dir())
+}
+
+pub(crate) fn path_is_regular_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
 }
 
 fn home_dir_from_env_value(

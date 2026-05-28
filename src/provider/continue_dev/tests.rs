@@ -48,6 +48,23 @@ fn ignores_non_jsonl_files() {
     assert!(sessions.is_empty());
 }
 
+#[cfg(unix)]
+#[test]
+fn ignores_symlinked_jsonl_session_files() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let sd = sessions_dir(tmp.path());
+    fs::create_dir_all(&sd).unwrap();
+    let target = tmp.path().join("outside.jsonl");
+    fs::write(&target, r#"{"role":"user","content":"secret"}"#).unwrap();
+    symlink(&target, sd.join("linked.jsonl")).unwrap();
+
+    let sessions = provider_for(&tmp).discover_sessions().unwrap();
+
+    assert!(sessions.is_empty());
+}
+
 #[test]
 fn uses_index_title_as_summary() {
     let tmp = TempDir::new().unwrap();

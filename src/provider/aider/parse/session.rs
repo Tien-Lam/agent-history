@@ -10,12 +10,11 @@ use super::ProviderError;
 
 pub(crate) fn parse_sessions_in_file(path: &Path) -> Result<Vec<Session>, ProviderError> {
     let content =
-        fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).map_err(|e| {
-            ProviderError::Parse {
+        fs_read::read_regular_file_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)
+            .map_err(|e| ProviderError::Parse {
                 path: path.to_path_buf(),
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
 
     let project_dir = path.parent().map(Path::to_path_buf);
     let project_name = project_dir

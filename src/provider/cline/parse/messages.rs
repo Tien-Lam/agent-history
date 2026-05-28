@@ -31,7 +31,7 @@ pub(crate) fn parse_api_history_with_stats(
     path: &Path,
     base_ts: &DateTime<Utc>,
 ) -> Result<ProviderMessageLoad, String> {
-    let bytes = fs_read::read_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)
+    let bytes = fs_read::read_regular_file_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)
         .map_err(|e| format!("read: {e}"))?;
     let raw: Vec<Value> = serde_json::from_slice(&bytes).map_err(|e| format!("parse: {e}"))?;
 

@@ -63,6 +63,10 @@ fn sources_pull_invokes_rsync_and_writes_manifest() {
         logged.contains("--delete"),
         "missing --delete flag: {logged}"
     );
+    assert!(
+        logged.contains("--no-links"),
+        "missing symlink hardening flag: {logged}"
+    );
 
     let manifest_path = cache_dir.join("laptop").join(".aghist-source.json");
     let manifest_text = std::fs::read_to_string(&manifest_path).unwrap();

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::super::{discovery_error, ProviderError};
+use super::super::{discovery_error, entry_is_regular_file, ProviderError};
 use super::parse::build_session_from_file;
 use crate::model::Session;
 
@@ -71,6 +71,9 @@ pub(super) fn discover_sessions(dirs: &[PathBuf]) -> Result<Vec<Session>, Provid
 
             for file_entry in files {
                 let file_entry = file_entry.map_err(discovery_error("OpenCode"))?;
+                if !entry_is_regular_file(&file_entry) {
+                    continue;
+                }
                 let path = file_entry.path();
                 if path.extension().and_then(|e| e.to_str()) != Some("json") {
                     continue;

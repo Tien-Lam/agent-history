@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use super::super::{discovery_error, ProviderError};
+use super::super::{discovery_error, entry_is_regular_file, ProviderError};
 use super::parse::{build_session_from_file, load_index};
 use crate::model::Session;
 
@@ -39,6 +39,9 @@ pub(super) fn discover_sessions(dirs: &[PathBuf]) -> Result<Vec<Session>, Provid
 
         for entry in entries {
             let entry = entry.map_err(discovery_error("Continue"))?;
+            if !entry_is_regular_file(&entry) {
+                continue;
+            }
             let path = entry.path();
             let Some(ext) = path.extension() else {
                 continue;

@@ -16,12 +16,10 @@ pub(crate) fn load_messages_from_file(
     target_started_at: DateTime<Utc>,
     session_id: &str,
 ) -> Result<Vec<Message>, ProviderError> {
-    let bytes =
-        fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).map_err(|e| {
-            ProviderError::Parse {
-                path: path.to_path_buf(),
-                reason: e.to_string(),
-            }
+    let bytes = fs_read::read_regular_file_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)
+        .map_err(|e| ProviderError::Parse {
+            path: path.to_path_buf(),
+            reason: e.to_string(),
         })?;
     for block in split_sessions(&bytes) {
         if block.started_at == target_started_at {

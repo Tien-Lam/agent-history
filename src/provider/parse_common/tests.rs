@@ -1,6 +1,8 @@
 use proptest::prelude::*;
 use serde::Deserialize;
 
+use crate::provider::ProviderError;
+
 use super::*;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -101,6 +103,27 @@ fn visit_jsonl_records_rejects_oversized_unterminated_line() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].line_number, 1);
     assert!(errors[0].error.contains("byte limit"));
+}
+
+#[cfg(unix)]
+#[test]
+fn visit_jsonl_records_rejects_symlinked_files() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("target.jsonl");
+    let link = dir.path().join("linked.jsonl");
+    std::fs::write(&target, "{\"value\":\"one\"}\n").unwrap();
+    symlink(&target, &link).unwrap();
+
+    let err = match visit_jsonl_records::<Row, _, _>(&link, |_| {}, |_| {}) {
+        Ok(_) => panic!("expected symlinked JSONL file to be rejected"),
+        Err(err) => err,
+    };
+
+    assert!(
+        matches!(err, ProviderError::Io(ref io) if io.kind() == std::io::ErrorKind::InvalidInput)
+    );
 }
 
 proptest::proptest! {

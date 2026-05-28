@@ -16,7 +16,8 @@ mod parts;
 use parts::load_parts_into_content;
 
 pub(crate) fn message_id_from_file(path: &Path) -> Option<String> {
-    let data = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).ok()?;
+    let data =
+        fs_read::read_regular_file_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES).ok()?;
     let raw = serde_json::from_str::<RawMessage>(&data).ok()?;
     stringish(raw.id.as_ref(), &["id"])
 }
@@ -52,7 +53,9 @@ enum MessageFileOutcome {
 }
 
 fn parse_message_file_outcome(path: &Path, part_dir: &Path) -> MessageFileOutcome {
-    let Ok(data) = fs_read::read_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES) else {
+    let Ok(data) =
+        fs_read::read_regular_file_to_string_limited(path, MAX_PROVIDER_SESSION_FILE_BYTES)
+    else {
         return MessageFileOutcome::ParseError;
     };
     let Ok(raw) = serde_json::from_str::<RawMessage>(&data) else {

@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use super::super::{discovery_error, ProviderError};
+use super::super::{discovery_error, entry_is_directory, ProviderError};
 use super::parse::parse_task_dir;
 use crate::model::Session;
 
@@ -64,10 +64,10 @@ pub(super) fn discover_sessions(dirs: &[PathBuf]) -> Result<Vec<Session>, Provid
         let entries = std::fs::read_dir(&td).map_err(discovery_error("Cline"))?;
         for entry in entries {
             let entry = entry.map_err(discovery_error("Cline"))?;
-            let path = entry.path();
-            if !path.is_dir() {
+            if !entry_is_directory(&entry) {
                 continue;
             }
+            let path = entry.path();
             let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
             if !seen.insert(canonical) {
                 continue;

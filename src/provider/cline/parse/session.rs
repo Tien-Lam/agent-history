@@ -63,7 +63,9 @@ pub(crate) fn parse_task_dir(path: &Path) -> Option<Session> {
 /// 3. Directory mtime
 fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
     let meta_path = path.join(METADATA_FILE);
-    if let Ok(bytes) = fs_read::read_limited(&meta_path, MAX_PROVIDER_METADATA_FILE_BYTES) {
+    if let Ok(bytes) =
+        fs_read::read_regular_file_limited(&meta_path, MAX_PROVIDER_METADATA_FILE_BYTES)
+    {
         if let Ok(meta) = serde_json::from_slice::<TaskMetadata>(&bytes) {
             if let Some(dt) = meta.created_at.as_ref().and_then(|value| {
                 timestamp_value_to_utc(Some(value), &["createdAt", "timestamp", "value"])
@@ -84,7 +86,7 @@ fn started_at_for(path: &Path, task_id: &str) -> DateTime<Utc> {
 
 /// Extract a human-readable summary from `ui_messages.json` first entry's text.
 fn task_summary(path: &Path) -> Option<String> {
-    let bytes = fs_read::read_limited(
+    let bytes = fs_read::read_regular_file_limited(
         &path.join(UI_MESSAGES_FILE),
         MAX_PROVIDER_METADATA_FILE_BYTES,
     )

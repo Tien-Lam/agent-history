@@ -50,6 +50,13 @@ where
     F: FnMut(JsonlRecord<T>),
     E: FnMut(JsonlError),
 {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() {
+        return Err(ProviderError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{} is not a regular file", path.display()),
+        )));
+    }
     let file = std::fs::File::open(path)?;
     let mut reader = BufReader::new(file);
     let mut physical_line_number = 0;
