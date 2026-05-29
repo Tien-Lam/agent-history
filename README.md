@@ -93,6 +93,9 @@ the data directories manually if desired.
 
 ## Usage
 
+Contributor workflow and feature-extension notes are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
 ### TUI
 
 ```sh

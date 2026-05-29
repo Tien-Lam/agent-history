@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Added contributor workflow documentation and a local `scripts/verify.sh` check runner.
 - `aghist sources pull --json` now includes a `summary` object with aggregate source, file, byte, and dry-run totals.
 
 ### Changed
