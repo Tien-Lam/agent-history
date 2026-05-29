@@ -1,10 +1,10 @@
 //! Per-provider format-fidelity diagnostic.
 //!
 //! Runs a provider through `discover_sessions` + `load_messages` and counts
-//! [`ContentBlock`] kinds and tool-call/tool-result pairing fidelity. The
-//! resulting [`ProviderDiagnostic`] is a stable serialisable record that
-//! both `tests/provider_format_diagnostic.rs` (asserting on fixtures) and
-//! `aghist health` (sampling real user data) consume.
+//! [`crate::model::ContentBlock`] kinds and tool-call/tool-result pairing
+//! fidelity. The resulting [`ProviderDiagnostic`] is a stable serialisable
+//! record that both `tests/provider_format_diagnostic.rs` (asserting on
+//! fixtures) and `aghist health` (sampling real user data) consume.
 
 mod messages;
 mod provider;

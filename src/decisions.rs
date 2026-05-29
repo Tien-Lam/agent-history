@@ -31,7 +31,7 @@ pub struct DecisionCandidate {
     /// Human-readable marker labels (lowercased, deduped) that fired on
     /// the sentence. Useful for explaining *why* the candidate ranked.
     pub markers: Vec<String>,
-    /// Trimmed sentence, truncated to [`MAX_SNIPPET_CHARS`] for table display.
+    /// Trimmed sentence, truncated to the table-display snippet limit.
     pub snippet: String,
 }
 

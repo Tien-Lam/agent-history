@@ -7,7 +7,7 @@
 //! - [`pricing_for`]: map a model id (`claude-sonnet-4-5-20250929`) to its
 //!   pricing. Matches by longest known prefix so dated variants resolve
 //!   to the same family rate.
-//! - [`aggregate`]: walk a slice of [`Session`]s and produce one
+//! - [`aggregate`]: walk a slice of [`crate::model::Session`]s and produce one
 //!   [`UsageRow`] per group key, plus an overall total.
 //!
 //! ## What's *not* here

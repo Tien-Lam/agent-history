@@ -12,8 +12,9 @@ use super::MetadataError;
 /// prefixed with a registered-source-style name:
 /// `<source>:<provider-slug>/<session-id>[#<turn>]`.
 ///
-/// The provider slug must match a known [`Provider`]; the session id must be
-/// non-empty; if a turn is present it must parse as a positive integer.
+/// The provider slug must match a known [`crate::model::Provider`]; the session
+/// id must be non-empty; if a turn is present it must parse as a positive
+/// integer.
 pub fn validate_session_ref(raw: &str) -> std::result::Result<&str, MetadataError> {
     let invalid = |reason: &'static str| MetadataError::InvalidSessionRef(raw.to_string(), reason);
     if raw.len() > REFERENCE_MAX_BYTES {

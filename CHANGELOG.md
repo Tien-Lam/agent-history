@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Tests
 
 - Added command-schema contract checks for every schema-exposed command.
+- Added a CI rustdoc build with warnings denied, so public documentation links cannot drift.
 - Added provider diagnostic coverage for malformed edge-case fixtures.
 - Added dense-corpus search indexing coverage for result limits and duplicate-hit regressions.
 - Added a JSON contract snapshot for `aghist sources pull --json`.
