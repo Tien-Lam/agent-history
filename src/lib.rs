@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(rustdoc::private_intra_doc_links)]
 
 pub mod action;
 pub mod app;
